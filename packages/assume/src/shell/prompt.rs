@@ -47,7 +47,8 @@ _gs_assume_prompt() {
 if [[ "$PS1" != *'$(_gs_assume_prompt)'* ]]; then
     PS1='$(_gs_assume_prompt)'"$PS1"
 fi
-"#.to_string(),
+"#
+        .to_string(),
         "zsh" => r#"
 _gs_assume_prompt() {
     local segments
@@ -59,7 +60,8 @@ _gs_assume_prompt() {
 if [[ "$PROMPT" != *'$(_gs_assume_prompt)'* ]]; then
     PROMPT='$(_gs_assume_prompt)'"$PROMPT"
 fi
-"#.to_string(),
+"#
+        .to_string(),
         "fish" => r#"
 function _gs_assume_prompt
     set -l segments (gs-assume status --prompt 2>/dev/null)
@@ -74,7 +76,8 @@ if not functions -q _original_fish_prompt
         _original_fish_prompt
     end
 end
-"#.to_string(),
+"#
+        .to_string(),
         _ => format!("# Unsupported shell: {shell}\n"),
     }
 }
@@ -92,14 +95,20 @@ mod tests {
         let result = format_segment(&seg);
         assert!(result.contains("aws:dev/deploy"));
         assert!(result.contains("\x1b[32m")); // green
-        assert!(result.contains("\x1b[0m"));  // reset
+        assert!(result.contains("\x1b[0m")); // reset
     }
 
     #[test]
     fn test_format_multiple_segments() {
         let segments = vec![
-            PromptSegment { text: "aws:dev".into(), color: "green".into() },
-            PromptSegment { text: "gcp:my-project".into(), color: "blue".into() },
+            PromptSegment {
+                text: "aws:dev".into(),
+                color: "green".into(),
+            },
+            PromptSegment {
+                text: "gcp:my-project".into(),
+                color: "blue".into(),
+            },
         ];
         let result = format_prompt(&segments);
         assert!(result.contains("aws:dev"));

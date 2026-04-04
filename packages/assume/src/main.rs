@@ -50,11 +50,7 @@ fn build_registry(cfg: &config::Config) -> anyhow::Result<PluginRegistry> {
     let mut registry = PluginRegistry::new();
 
     // Register AWS if enabled (or if no providers are configured, enable by default)
-    let aws_enabled = cfg
-        .providers
-        .get("aws")
-        .map(|p| p.enabled)
-        .unwrap_or(true);
+    let aws_enabled = cfg.providers.get("aws").map(|p| p.enabled).unwrap_or(true);
     if aws_enabled {
         let aws_config = cfg.providers.get("aws").cloned().unwrap_or_default();
         let aws = AwsProvider::from_config(&aws_config);
@@ -62,11 +58,7 @@ fn build_registry(cfg: &config::Config) -> anyhow::Result<PluginRegistry> {
     }
 
     // Register GCP if explicitly enabled
-    let gcp_enabled = cfg
-        .providers
-        .get("gcp")
-        .map(|p| p.enabled)
-        .unwrap_or(false);
+    let gcp_enabled = cfg.providers.get("gcp").map(|p| p.enabled).unwrap_or(false);
     if gcp_enabled {
         let gcp = GcpProvider::new();
         registry.register(Arc::new(gcp))?;
@@ -79,9 +71,7 @@ fn build_registry(cfg: &config::Config) -> anyhow::Result<PluginRegistry> {
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-        )
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(std::io::stderr)
         .init();
 
@@ -105,7 +95,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Logout(args) => cli::logout::run(args, &registry).await,
         Commands::ShellInit(args) => cli::shell_init::run(args, &registry, &cfg).await,
         Commands::Console(args) => cli::console::run(args, &registry, &cfg).await,
-        Commands::CredentialProcess(args) => cli::credential_process::run(args, &registry, &cfg).await,
+        Commands::CredentialProcess(args) => {
+            cli::credential_process::run(args, &registry, &cfg).await
+        }
         Commands::Upgrade(args) => cli::upgrade::run(args).await,
     }
 }

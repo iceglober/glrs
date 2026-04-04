@@ -66,9 +66,7 @@ pub async fn login(config: &ProviderConfig) -> Result<AuthTokens, ProviderError>
         .verification_uri_complete()
         .or(device_auth.verification_uri())
         .unwrap_or("https://device.sso.amazonaws.com/");
-    let poll_interval = std::time::Duration::from_secs(
-        device_auth.interval().max(1) as u64
-    );
+    let poll_interval = std::time::Duration::from_secs(device_auth.interval().max(1) as u64);
 
     // Step 3: Open browser and show user code
     eprintln!("Opening browser for AWS Identity Center...");
@@ -80,7 +78,14 @@ pub async fn login(config: &ProviderConfig) -> Result<AuthTokens, ProviderError>
     }
 
     // Step 4: Poll for token
-    let tokens = poll_for_token(&client, &client_id, &client_secret, device_code, poll_interval).await?;
+    let tokens = poll_for_token(
+        &client,
+        &client_id,
+        &client_secret,
+        device_code,
+        poll_interval,
+    )
+    .await?;
 
     Ok(tokens)
 }

@@ -194,8 +194,8 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
 
     let schedule = provider.refresh_schedule();
     let now = Utc::now();
-    let buffer = chrono::Duration::from_std(schedule.refresh_buffer)
-        .unwrap_or(chrono::Duration::minutes(5));
+    let buffer =
+        chrono::Duration::from_std(schedule.refresh_buffer).unwrap_or(chrono::Duration::minutes(5));
 
     // 1. Check if active context's credentials need refresh
     if let Some(ref active_ctx) = plugin_state.active_context {
@@ -367,20 +367,18 @@ async fn serve_credential_endpoint(
 
                     // Check auth
                     let authed = match &auth {
-                        crate::plugin::EndpointAuth::BearerToken { token } => {
-                            req.headers()
-                                .get("authorization")
-                                .and_then(|v| v.to_str().ok())
-                                .map(|v| v.strip_prefix("Bearer ").unwrap_or("") == token.as_str())
-                                .unwrap_or(false)
-                        }
-                        crate::plugin::EndpointAuth::RequiredHeader { key, value } => {
-                            req.headers()
-                                .get(key.as_str())
-                                .and_then(|v| v.to_str().ok())
-                                .map(|v| v == value.as_str())
-                                .unwrap_or(false)
-                        }
+                        crate::plugin::EndpointAuth::BearerToken { token } => req
+                            .headers()
+                            .get("authorization")
+                            .and_then(|v| v.to_str().ok())
+                            .map(|v| v.strip_prefix("Bearer ").unwrap_or("") == token.as_str())
+                            .unwrap_or(false),
+                        crate::plugin::EndpointAuth::RequiredHeader { key, value } => req
+                            .headers()
+                            .get(key.as_str())
+                            .and_then(|v| v.to_str().ok())
+                            .map(|v| v == value.as_str())
+                            .unwrap_or(false),
                     };
 
                     if !authed {
@@ -486,12 +484,10 @@ async fn handle_rpc_connection(
     while let Some(line) = lines.next_line().await? {
         let response = match handle_rpc_request(&line, &state).await {
             Ok(resp) => resp,
-            Err(e) => {
-                serde_json::json!({
-                    "error": e.to_string()
-                })
-                .to_string()
-            }
+            Err(e) => serde_json::json!({
+                "error": e.to_string()
+            })
+            .to_string(),
         };
 
         writer
@@ -514,10 +510,7 @@ async fn handle_rpc_request(request: &str, state: &SharedDaemonState) -> Result<
     let req: serde_json::Value =
         serde_json::from_str(request).context("Invalid JSON in RPC request")?;
 
-    let method = req
-        .get("method")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
     match method {
         "status" => rpc_status(state).await,
@@ -533,10 +526,7 @@ async fn handle_rpc_request(request: &str, state: &SharedDaemonState) -> Result<
                 .get("provider_id")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let context_id = req
-                .get("context_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let context_id = req.get("context_id").and_then(|v| v.as_str()).unwrap_or("");
             rpc_switch_context(state, provider_id, context_id).await
         }
         "refresh" => {
@@ -551,14 +541,8 @@ async fn handle_rpc_request(request: &str, state: &SharedDaemonState) -> Result<
                 .get("provider_id")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let session_id = req
-                .get("session_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let context_id = req
-                .get("context_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let session_id = req.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+            let context_id = req.get("context_id").and_then(|v| v.as_str()).unwrap_or("");
             rpc_pin_session(state, provider_id, session_id, context_id).await
         }
         "unpin_session" => {
@@ -566,10 +550,7 @@ async fn handle_rpc_request(request: &str, state: &SharedDaemonState) -> Result<
                 .get("provider_id")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let session_id = req
-                .get("session_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let session_id = req.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
             rpc_unpin_session(state, provider_id, session_id).await
         }
         "ping" => Ok(serde_json::json!({"ok": true}).to_string()),
@@ -744,8 +725,7 @@ async fn rpc_pin_session(
         .cloned()
         .with_context(|| format!("Context not found: {context_id}"))?;
 
-    ps.pinned_sessions
-        .insert(session_id.to_string(), target);
+    ps.pinned_sessions.insert(session_id.to_string(), target);
     tracing::info!("Pinned session {session_id} to {provider_id}:{context_id}");
 
     Ok(serde_json::json!({

@@ -71,12 +71,24 @@ impl Default for LogConfig {
     }
 }
 
-fn default_true() -> bool { true }
-fn default_tick_interval() -> u64 { 60 }
-fn default_refresh_buffer() -> u64 { 5 }
-fn default_prompt_format() -> String { "[{provider}:{alias}]".to_string() }
-fn default_log_path() -> String { "~/.config/gs-assume/audit.log".to_string() }
-fn default_retention_days() -> u64 { 90 }
+fn default_true() -> bool {
+    true
+}
+fn default_tick_interval() -> u64 {
+    60
+}
+fn default_refresh_buffer() -> u64 {
+    5
+}
+fn default_prompt_format() -> String {
+    "[{provider}:{alias}]".to_string()
+}
+fn default_log_path() -> String {
+    "~/.config/gs-assume/audit.log".to_string()
+}
+fn default_retention_days() -> u64 {
+    90
+}
 
 /// Config directory: $GS_ASSUME_CONFIG_DIR or ~/.config/gs-assume/
 pub fn config_dir() -> PathBuf {
@@ -146,10 +158,12 @@ fn find_and_load_team_config() -> Result<Option<Config>> {
     loop {
         let team_path = dir.join("gs-assume.team.toml");
         if team_path.exists() {
-            let content = std::fs::read_to_string(&team_path)
-                .with_context(|| format!("Failed to read team config from {}", team_path.display()))?;
-            let team: Config = toml::from_str(&content)
-                .with_context(|| format!("Failed to parse team config from {}", team_path.display()))?;
+            let content = std::fs::read_to_string(&team_path).with_context(|| {
+                format!("Failed to read team config from {}", team_path.display())
+            })?;
+            let team: Config = toml::from_str(&content).with_context(|| {
+                format!("Failed to parse team config from {}", team_path.display())
+            })?;
             return Ok(Some(team));
         }
         match dir.parent() {
@@ -162,15 +176,16 @@ fn find_and_load_team_config() -> Result<Option<Config>> {
 /// Merge team config under user config. User profiles win on alias conflict.
 fn merge_team_config(user: &mut Config, team: &Config) {
     for (provider_id, team_provider) in &team.providers {
-        let user_provider = user.providers.entry(provider_id.clone()).or_insert_with(|| {
-            ProviderConfig {
+        let user_provider = user
+            .providers
+            .entry(provider_id.clone())
+            .or_insert_with(|| ProviderConfig {
                 enabled: team_provider.enabled,
                 port: team_provider.port,
                 default_region: team_provider.default_region.clone(),
                 extra: team_provider.extra.clone(),
                 profiles: Vec::new(),
-            }
-        });
+            });
 
         // Merge profiles: add team profiles that don't conflict with user aliases
         let user_aliases: std::collections::HashSet<String> = user_provider

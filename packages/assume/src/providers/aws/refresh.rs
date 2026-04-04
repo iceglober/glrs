@@ -108,9 +108,13 @@ pub async fn refresh(tokens: &AuthTokens, region: &str) -> Result<AuthTokens, Pr
                     || err_str.contains("connection")
                     || err_str.contains("ConnectorError")
                 {
-                    Err(ProviderError::NetworkError(format!("Token refresh network error: {sdk_err}")))
+                    Err(ProviderError::NetworkError(format!(
+                        "Token refresh network error: {sdk_err}"
+                    )))
                 } else {
-                    Err(ProviderError::Other(format!("Token refresh failed: {sdk_err}")))
+                    Err(ProviderError::Other(format!(
+                        "Token refresh failed: {sdk_err}"
+                    )))
                 }
             }
         }

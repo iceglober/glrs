@@ -9,7 +9,11 @@ pub struct ConsoleArgs {
     pub pattern: Option<String>,
 }
 
-pub async fn run(args: ConsoleArgs, registry: &PluginRegistry, _cfg: &config::Config) -> Result<()> {
+pub async fn run(
+    args: ConsoleArgs,
+    registry: &PluginRegistry,
+    _cfg: &config::Config,
+) -> Result<()> {
     // Collect all contexts
     let mut all_contexts = Vec::new();
     for provider_id in registry.ids() {
@@ -45,13 +49,14 @@ pub async fn run(args: ConsoleArgs, registry: &PluginRegistry, _cfg: &config::Co
     let tokens = keychain::load_tokens(&context.provider_id)?
         .ok_or_else(|| anyhow::anyhow!("Not authenticated for {}", context.provider_id))?;
 
-    let credentials = provider.get_credentials(&tokens, &context).await.map_err(|e| {
-        anyhow::anyhow!("Failed to get credentials: {e}")
-    })?;
+    let credentials = provider
+        .get_credentials(&tokens, &context)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get credentials: {e}"))?;
 
-    let url = provider.console_url(&context, &credentials).map_err(|e| {
-        anyhow::anyhow!("Failed to generate console URL: {e}")
-    })?;
+    let url = provider
+        .console_url(&context, &credentials)
+        .map_err(|e| anyhow::anyhow!("Failed to generate console URL: {e}"))?;
 
     eprintln!(
         "Opening {} console for {}...",

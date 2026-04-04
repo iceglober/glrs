@@ -14,18 +14,18 @@ fn token_entry(provider_id: &str) -> Result<Entry> {
 /// Build a keyring entry for a provider's OIDC client registration.
 /// Used by AWS to persist the client_id/client_secret across sessions.
 fn client_entry(provider_id: &str) -> Result<Entry> {
-    Entry::new(SERVICE_NAME, &format!("{provider_id}:client"))
-        .map_err(|e| anyhow::anyhow!("Failed to create keyring entry for {provider_id}:client: {e}"))
+    Entry::new(SERVICE_NAME, &format!("{provider_id}:client")).map_err(|e| {
+        anyhow::anyhow!("Failed to create keyring entry for {provider_id}:client: {e}")
+    })
 }
 
 /// Store auth tokens in the OS keychain
 pub fn store_tokens(provider_id: &str, tokens: &AuthTokens) -> Result<()> {
     let entry = token_entry(provider_id)?;
-    let json = serde_json::to_string(tokens)
-        .context("Failed to serialize tokens")?;
-    entry
-        .set_password(&json)
-        .map_err(|e| anyhow::anyhow!("Failed to store tokens in keychain for {provider_id}: {e}"))?;
+    let json = serde_json::to_string(tokens).context("Failed to serialize tokens")?;
+    entry.set_password(&json).map_err(|e| {
+        anyhow::anyhow!("Failed to store tokens in keychain for {provider_id}: {e}")
+    })?;
     tracing::debug!("Stored tokens in keychain for provider {provider_id}");
     Ok(())
 }
@@ -71,11 +71,10 @@ pub fn delete_tokens(provider_id: &str) -> Result<()> {
 /// Store OIDC client registration (used by AWS SSO)
 pub fn store_client_registration(provider_id: &str, data: &serde_json::Value) -> Result<()> {
     let entry = client_entry(provider_id)?;
-    let json = serde_json::to_string(data)
-        .context("Failed to serialize client registration")?;
-    entry
-        .set_password(&json)
-        .map_err(|e| anyhow::anyhow!("Failed to store client registration for {provider_id}: {e}"))?;
+    let json = serde_json::to_string(data).context("Failed to serialize client registration")?;
+    entry.set_password(&json).map_err(|e| {
+        anyhow::anyhow!("Failed to store client registration for {provider_id}: {e}")
+    })?;
     tracing::debug!("Stored client registration in keychain for {provider_id}");
     Ok(())
 }
@@ -85,8 +84,9 @@ pub fn load_client_registration(provider_id: &str) -> Result<Option<serde_json::
     let entry = client_entry(provider_id)?;
     match entry.get_password() {
         Ok(json) => {
-            let data: serde_json::Value = serde_json::from_str(&json)
-                .with_context(|| format!("Failed to deserialize client registration for {provider_id}"))?;
+            let data: serde_json::Value = serde_json::from_str(&json).with_context(|| {
+                format!("Failed to deserialize client registration for {provider_id}")
+            })?;
             Ok(Some(data))
         }
         Err(keyring::Error::NoEntry) => Ok(None),

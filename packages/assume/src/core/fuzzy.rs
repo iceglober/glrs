@@ -237,9 +237,12 @@ mod tests {
 
     #[test]
     fn test_fuzzy_match() {
-        let contexts = vec![
-            make_ctx("aws", "development-account", "Development Account", vec![]),
-        ];
+        let contexts = vec![make_ctx(
+            "aws",
+            "development-account",
+            "Development Account",
+            vec![],
+        )];
         let results = match_contexts("dvlp", &contexts);
         assert!(!results.is_empty());
         assert!(results[0].score > 0);
@@ -247,9 +250,7 @@ mod tests {
 
     #[test]
     fn test_no_match() {
-        let contexts = vec![
-            make_ctx("aws", "dev", "Development", vec![]),
-        ];
+        let contexts = vec![make_ctx("aws", "dev", "Development", vec![])];
         let results = match_contexts("zzzzz", &contexts);
         assert!(results.is_empty());
     }

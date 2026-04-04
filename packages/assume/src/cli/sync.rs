@@ -26,7 +26,10 @@ pub async fn run(args: SyncArgs, registry: &PluginRegistry, _cfg: &config::Confi
         let tokens = match keychain::load_tokens(provider_id)? {
             Some(t) => t,
             None => {
-                eprintln!("{}: not authenticated. Run: gs-assume login {provider_id}", provider.display_name());
+                eprintln!(
+                    "{}: not authenticated. Run: gs-assume login {provider_id}",
+                    provider.display_name()
+                );
                 continue;
             }
         };
@@ -41,12 +44,19 @@ pub async fn run(args: SyncArgs, registry: &PluginRegistry, _cfg: &config::Confi
                     contexts.len()
                 );
                 for ctx in &contexts {
-                    let alias = ctx.metadata.get("alias").map(|a| format!(" ({})", a)).unwrap_or_default();
+                    let alias = ctx
+                        .metadata
+                        .get("alias")
+                        .map(|a| format!(" ({})", a))
+                        .unwrap_or_default();
                     eprintln!("  {} {}{}", ctx.display_name, ctx.region, alias);
                 }
             }
             Err(crate::plugin::ProviderError::AccessTokenExpired) => {
-                eprintln!("{}: access token expired, attempting refresh...", provider.display_name());
+                eprintln!(
+                    "{}: access token expired, attempting refresh...",
+                    provider.display_name()
+                );
                 match provider.refresh(&tokens).await {
                     Ok(new_tokens) => {
                         keychain::store_tokens(provider_id, &new_tokens)?;
@@ -58,11 +68,17 @@ pub async fn run(args: SyncArgs, registry: &PluginRegistry, _cfg: &config::Confi
                                     contexts.len()
                                 );
                             }
-                            Err(e) => eprintln!("{}: failed to list after refresh: {e}", provider.display_name()),
+                            Err(e) => eprintln!(
+                                "{}: failed to list after refresh: {e}",
+                                provider.display_name()
+                            ),
                         }
                     }
                     Err(e) => {
-                        eprintln!("{}: refresh failed: {e}. Run: gs-assume login {provider_id}", provider.display_name());
+                        eprintln!(
+                            "{}: refresh failed: {e}. Run: gs-assume login {provider_id}",
+                            provider.display_name()
+                        );
                     }
                 }
             }

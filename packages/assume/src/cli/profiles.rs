@@ -9,7 +9,11 @@ pub struct ProfilesArgs {
     pub provider: Option<String>,
 }
 
-pub async fn run(args: ProfilesArgs, registry: &PluginRegistry, cfg: &config::Config) -> Result<()> {
+pub async fn run(
+    args: ProfilesArgs,
+    registry: &PluginRegistry,
+    cfg: &config::Config,
+) -> Result<()> {
     let mut found_any = false;
 
     for provider_id in registry.ids() {
@@ -59,15 +63,9 @@ pub async fn run(args: ProfilesArgs, registry: &PluginRegistry, cfg: &config::Co
 
         // Print header based on provider
         if provider_id == "aws" {
-            println!(
-                "{:<30} {:<25} {:<15} Region",
-                "Account", "Role", "Alias",
-            );
+            println!("{:<30} {:<25} {:<15} Region", "Account", "Role", "Alias",);
         } else {
-            println!(
-                "{:<40} {:<15} Region",
-                "Context", "Alias",
-            );
+            println!("{:<40} {:<15} Region", "Context", "Alias",);
         }
 
         for ctx in &contexts {
@@ -79,8 +77,16 @@ pub async fn run(args: ProfilesArgs, registry: &PluginRegistry, cfg: &config::Co
             };
 
             if provider_id == "aws" {
-                let account = ctx.metadata.get("account_name").map(String::as_str).unwrap_or("?");
-                let role = ctx.metadata.get("role_name").map(String::as_str).unwrap_or("?");
+                let account = ctx
+                    .metadata
+                    .get("account_name")
+                    .map(String::as_str)
+                    .unwrap_or("?");
+                let role = ctx
+                    .metadata
+                    .get("role_name")
+                    .map(String::as_str)
+                    .unwrap_or("?");
                 println!(
                     "{:<30} {:<25} {:<15} {}{}",
                     account, role, alias, ctx.region, tags_str

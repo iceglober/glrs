@@ -42,11 +42,7 @@ pub fn shell_env(port: u16, session_token: &str) -> Vec<(String, String)> {
 
 /// Generate the AWS federation console sign-in URL.
 /// Uses the GetSigninToken → Login flow.
-pub fn console_url(
-    access_key_id: &str,
-    secret_access_key: &str,
-    session_token: &str,
-) -> String {
+pub fn console_url(access_key_id: &str, secret_access_key: &str, session_token: &str) -> String {
     // The federation URL accepts a JSON session blob
     let session_json = serde_json::json!({
         "sessionId": access_key_id,

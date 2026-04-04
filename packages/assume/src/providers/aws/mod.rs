@@ -5,8 +5,8 @@ pub mod endpoint;
 pub mod refresh;
 
 use crate::plugin::{
-    AuthTokens, Context, CredentialEndpoint, Credentials, ProfileConfig, PromptSegment,
-    Provider, ProviderConfig, ProviderError, RefreshSchedule,
+    AuthTokens, Context, CredentialEndpoint, Credentials, ProfileConfig, PromptSegment, Provider,
+    ProviderConfig, ProviderError, RefreshSchedule,
 };
 use async_trait::async_trait;
 use std::time::Duration;
@@ -69,7 +69,8 @@ impl Provider for AwsProvider {
     }
 
     async fn list_contexts(&self, tokens: &AuthTokens) -> Result<Vec<Context>, ProviderError> {
-        let mut ctxs = contexts::list_contexts(tokens, &self.sso_region, &self.default_region).await?;
+        let mut ctxs =
+            contexts::list_contexts(tokens, &self.sso_region, &self.default_region).await?;
         contexts::merge_profile_configs(&mut ctxs, &self.profiles);
         Ok(ctxs)
     }
@@ -87,34 +88,38 @@ impl Provider for AwsProvider {
     }
 
     fn shell_env(&self, endpoint_port: u16) -> Vec<(String, String)> {
-        let port = if endpoint_port > 0 { endpoint_port } else { self.port };
+        let port = if endpoint_port > 0 {
+            endpoint_port
+        } else {
+            self.port
+        };
         endpoint::shell_env(port, &self.session_token)
     }
 
     fn prompt_segment(&self, context: &Context) -> PromptSegment {
-        let alias = context
-            .metadata
-            .get("alias")
-            .cloned()
-            .unwrap_or_else(|| {
-                let account = context.metadata.get("account_name").map(String::as_str).unwrap_or("?");
-                let role = context.metadata.get("role_name").map(String::as_str).unwrap_or("?");
-                format!("{account}/{role}")
-            });
+        let alias = context.metadata.get("alias").cloned().unwrap_or_else(|| {
+            let account = context
+                .metadata
+                .get("account_name")
+                .map(String::as_str)
+                .unwrap_or("?");
+            let role = context
+                .metadata
+                .get("role_name")
+                .map(String::as_str)
+                .unwrap_or("?");
+            format!("{account}/{role}")
+        });
 
-        let color = context
-            .metadata
-            .get("color")
-            .cloned()
-            .unwrap_or_else(|| {
-                if context.tags.contains(&"dangerous".to_string())
-                    || context.tags.contains(&"production".to_string())
-                {
-                    "red".to_string()
-                } else {
-                    "green".to_string()
-                }
-            });
+        let color = context.metadata.get("color").cloned().unwrap_or_else(|| {
+            if context.tags.contains(&"dangerous".to_string())
+                || context.tags.contains(&"production".to_string())
+            {
+                "red".to_string()
+            } else {
+                "green".to_string()
+            }
+        });
 
         PromptSegment {
             text: format!("aws:{alias}"),

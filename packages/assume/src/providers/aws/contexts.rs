@@ -137,13 +137,18 @@ pub async fn list_contexts(
 
 /// Merge user-configured profile metadata (alias, tags, color, region) into
 /// discovered contexts. Matches on account_id + role_name.
-pub fn merge_profile_configs(
-    contexts: &mut [Context],
-    profiles: &[crate::plugin::ProfileConfig],
-) {
+pub fn merge_profile_configs(contexts: &mut [Context], profiles: &[crate::plugin::ProfileConfig]) {
     for ctx in contexts.iter_mut() {
-        let account_id = ctx.metadata.get("account_id").map(String::as_str).unwrap_or("");
-        let role_name = ctx.metadata.get("role_name").map(String::as_str).unwrap_or("");
+        let account_id = ctx
+            .metadata
+            .get("account_id")
+            .map(String::as_str)
+            .unwrap_or("");
+        let role_name = ctx
+            .metadata
+            .get("role_name")
+            .map(String::as_str)
+            .unwrap_or("");
 
         for profile in profiles {
             let profile_account = profile

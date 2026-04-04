@@ -34,9 +34,8 @@ pub async fn run(_args: ServeArgs, registry: PluginRegistry, cfg: config::Config
     daemon::write_pid_file()?;
 
     // Build shared state
-    let state: daemon::SharedDaemonState = Arc::new(RwLock::new(
-        daemon::DaemonState::new(cfg, registry),
-    ));
+    let state: daemon::SharedDaemonState =
+        Arc::new(RwLock::new(daemon::DaemonState::new(cfg, registry)));
 
     audit::log_event(audit::AuditEvent::DaemonStart, "daemon", "started");
 
@@ -51,7 +50,10 @@ pub async fn run(_args: ServeArgs, registry: PluginRegistry, cfg: config::Config
             tracing::error!("RPC listener failed: {e}");
         }
     });
-    eprintln!("RPC listener started on {}", config::socket_path().display());
+    eprintln!(
+        "RPC listener started on {}",
+        config::socket_path().display()
+    );
 
     // Start refresh loop
     let refresh_state = Arc::clone(&state);

@@ -12,9 +12,9 @@ fn is_valid_provider_id(id: &str) -> bool {
     if !bytes[0].is_ascii_lowercase() {
         return false;
     }
-    bytes[1..].iter().all(|&b| {
-        b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-'
-    })
+    bytes[1..]
+        .iter()
+        .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
 }
 
 #[derive(Default)]

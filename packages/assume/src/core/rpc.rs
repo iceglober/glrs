@@ -1,5 +1,5 @@
 use crate::core::config;
-use crate::core::daemon::{SharedDaemonState, PluginStatus};
+use crate::core::daemon::{PluginStatus, SharedDaemonState};
 use crate::core::keychain;
 use crate::plugin::Context;
 use anyhow::{Context as _, Result};
@@ -26,10 +26,16 @@ struct RpcResponse {
 
 impl RpcResponse {
     fn ok(result: Value) -> Self {
-        Self { result: Some(result), error: None }
+        Self {
+            result: Some(result),
+            error: None,
+        }
     }
     fn err(msg: impl Into<String>) -> Self {
-        Self { result: None, error: Some(msg.into()) }
+        Self {
+            result: None,
+            error: Some(msg.into()),
+        }
     }
 }
 
@@ -74,10 +80,7 @@ pub async fn start_rpc_listener(state: SharedDaemonState) -> Result<()> {
     }
 }
 
-async fn handle_connection(
-    stream: tokio::net::UnixStream,
-    state: SharedDaemonState,
-) -> Result<()> {
+async fn handle_connection(stream: tokio::net::UnixStream, state: SharedDaemonState) -> Result<()> {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
@@ -130,31 +133,52 @@ async fn handle_status(state: &SharedDaemonState) -> RpcResponse {
         let provider = s.registry.get(id);
         let mut info = serde_json::Map::new();
 
-        info.insert("status".into(), Value::String(match &ps.status {
-            PluginStatus::Active => "active".into(),
-            PluginStatus::NeedsLogin => "needs_login".into(),
-            PluginStatus::Broken(msg) => format!("broken: {msg}"),
-        }));
+        info.insert(
+            "status".into(),
+            Value::String(match &ps.status {
+                PluginStatus::Active => "active".into(),
+                PluginStatus::NeedsLogin => "needs_login".into(),
+                PluginStatus::Broken(msg) => format!("broken: {msg}"),
+            }),
+        );
 
         if let Some(ref ctx) = ps.active_context {
-            info.insert("active_context".into(), serde_json::to_value(ctx).unwrap_or_default());
+            info.insert(
+                "active_context".into(),
+                serde_json::to_value(ctx).unwrap_or_default(),
+            );
         }
 
         if let Some(ref tokens) = ps.tokens {
-            info.insert("session_expires_at".into(), Value::String(tokens.session_expires_at.to_rfc3339()));
-            info.insert("refresh_expires_at".into(), Value::String(tokens.refresh_expires_at.to_rfc3339()));
+            info.insert(
+                "session_expires_at".into(),
+                Value::String(tokens.session_expires_at.to_rfc3339()),
+            );
+            info.insert(
+                "refresh_expires_at".into(),
+                Value::String(tokens.refresh_expires_at.to_rfc3339()),
+            );
         }
 
         if let Some(ref ctx) = ps.active_context {
             if let Some(creds) = ps.credential_cache.get(&ctx.id) {
-                info.insert("credential_expires_at".into(), Value::String(creds.expires_at.to_rfc3339()));
+                info.insert(
+                    "credential_expires_at".into(),
+                    Value::String(creds.expires_at.to_rfc3339()),
+                );
             }
         }
 
-        info.insert("context_count".into(), Value::Number(ps.contexts.len().into()));
+        info.insert(
+            "context_count".into(),
+            Value::Number(ps.contexts.len().into()),
+        );
 
         if let Some(p) = provider {
-            info.insert("display_name".into(), Value::String(p.display_name().to_string()));
+            info.insert(
+                "display_name".into(),
+                Value::String(p.display_name().to_string()),
+            );
         }
 
         providers.insert(id.clone(), Value::Object(info));
@@ -241,7 +265,11 @@ async fn handle_refresh(req: &RpcRequest, state: &SharedDaemonState) -> RpcRespo
             Some(p) => Arc::clone(p),
             None => return RpcResponse::err(format!("Provider not found: {provider_id}")),
         };
-        let tokens = match s.plugin_states.get(&provider_id).and_then(|ps| ps.tokens.clone()) {
+        let tokens = match s
+            .plugin_states
+            .get(&provider_id)
+            .and_then(|ps| ps.tokens.clone())
+        {
             Some(t) => t,
             None => return RpcResponse::err("No tokens available — run gs-assume login"),
         };
@@ -339,8 +367,8 @@ pub async fn rpc_call(method: &str, params: Value) -> Result<Value> {
     let mut line = String::new();
     reader.read_line(&mut line).await?;
 
-    let response: RpcResponse = serde_json::from_str(&line)
-        .context("Invalid response from daemon")?;
+    let response: RpcResponse =
+        serde_json::from_str(&line).context("Invalid response from daemon")?;
 
     if let Some(error) = response.error {
         anyhow::bail!("{error}");

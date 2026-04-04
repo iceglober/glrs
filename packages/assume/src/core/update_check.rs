@@ -55,7 +55,9 @@ fn write_cache(version: &str) {
 /// Fetch latest version using gh CLI (sync, fast)
 fn fetch_latest_version_gh() -> Option<String> {
     let output = std::process::Command::new("gh")
-        .args(["release", "list", "-R", REPO, "--json", "tagName", "-L", "10"])
+        .args([
+            "release", "list", "-R", REPO, "--json", "tagName", "-L", "10",
+        ])
         .stderr(std::process::Stdio::null())
         .output()
         .ok()?;
@@ -82,15 +84,21 @@ fn fetch_latest_version_api() -> Option<String> {
     let mut cmd = std::process::Command::new("curl");
     cmd.args([
         "-fsSL",
-        "--max-time", "5",
-        "-H", "Accept: application/vnd.github+json",
-        "-H", "User-Agent: gs-assume-cli",
-        "-H", "X-GitHub-Api-Version: 2022-11-28",
+        "--max-time",
+        "5",
+        "-H",
+        "Accept: application/vnd.github+json",
+        "-H",
+        "User-Agent: gs-assume-cli",
+        "-H",
+        "X-GitHub-Api-Version: 2022-11-28",
     ]);
     if let Some(ref tok) = token {
         cmd.args(["-H", &format!("Authorization: Bearer {tok}")]);
     }
-    cmd.arg(format!("https://api.github.com/repos/{REPO}/releases?per_page=10"));
+    cmd.arg(format!(
+        "https://api.github.com/repos/{REPO}/releases?per_page=10"
+    ));
     cmd.stderr(std::process::Stdio::null());
 
     let output = cmd.output().ok()?;
@@ -107,9 +115,7 @@ fn fetch_latest_version_api() -> Option<String> {
 }
 
 fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
-    let parse = |v: &str| -> Vec<u64> {
-        v.split('.').map(|s| s.parse().unwrap_or(0)).collect()
-    };
+    let parse = |v: &str| -> Vec<u64> { v.split('.').map(|s| s.parse().unwrap_or(0)).collect() };
     let pa = parse(a);
     let pb = parse(b);
     let len = pa.len().max(pb.len());
@@ -125,8 +131,16 @@ fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 fn is_major_bump(current: &str, latest: &str) -> bool {
-    let cur_major: u64 = current.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
-    let lat_major: u64 = latest.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let cur_major: u64 = current
+        .split('.')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let lat_major: u64 = latest
+        .split('.')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
     lat_major > cur_major
 }
 
@@ -157,10 +171,15 @@ fn try_auto_upgrade(tag: &str) -> bool {
     // Try gh CLI download
     let result = std::process::Command::new("gh")
         .args([
-            "release", "download", tag,
-            "-R", REPO,
-            "-p", &asset_name,
-            "-O", &tmp,
+            "release",
+            "download",
+            tag,
+            "-R",
+            REPO,
+            "-p",
+            &asset_name,
+            "-O",
+            &tmp,
             "--clobber",
         ])
         .stderr(std::process::Stdio::null())
@@ -191,8 +210,16 @@ fn try_auto_upgrade(tag: &str) -> bool {
 }
 
 fn detect_platform() -> &'static str {
-    let os = if cfg!(target_os = "macos") { "darwin" } else { "linux" };
-    let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
+    let os = if cfg!(target_os = "macos") {
+        "darwin"
+    } else {
+        "linux"
+    };
+    let arch = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "amd64"
+    };
     match (os, arch) {
         ("darwin", "arm64") => "darwin-arm64",
         ("darwin", "amd64") => "darwin-amd64",
@@ -213,8 +240,7 @@ pub fn check_for_update() {
             cached
         } else {
             // Try gh CLI first (fast), then REST API
-            let fetched = fetch_latest_version_gh()
-                .or_else(fetch_latest_version_api);
+            let fetched = fetch_latest_version_gh().or_else(fetch_latest_version_api);
             match fetched {
                 Some(v) => {
                     write_cache(&v);

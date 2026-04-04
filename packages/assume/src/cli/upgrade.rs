@@ -15,8 +15,16 @@ struct Release {
 }
 
 fn detect_platform() -> &'static str {
-    let os = if cfg!(target_os = "macos") { "darwin" } else { "linux" };
-    let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
+    let os = if cfg!(target_os = "macos") {
+        "darwin"
+    } else {
+        "linux"
+    };
+    let arch = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "amd64"
+    };
     // Return static str via leak since there are only 4 possibilities
     match (os, arch) {
         ("darwin", "arm64") => "darwin-arm64",
@@ -28,9 +36,7 @@ fn detect_platform() -> &'static str {
 }
 
 fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
-    let parse = |v: &str| -> Vec<u64> {
-        v.split('.').map(|s| s.parse().unwrap_or(0)).collect()
-    };
+    let parse = |v: &str| -> Vec<u64> { v.split('.').map(|s| s.parse().unwrap_or(0)).collect() };
     let pa = parse(a);
     let pb = parse(b);
     let len = pa.len().max(pb.len());
@@ -58,7 +64,9 @@ async fn fetch_latest_release() -> anyhow::Result<Option<Release>> {
 
 fn try_gh_cli() -> Option<Release> {
     let output = std::process::Command::new("gh")
-        .args(["release", "list", "-R", REPO, "--json", "tagName", "-L", "50"])
+        .args([
+            "release", "list", "-R", REPO, "--json", "tagName", "-L", "50",
+        ])
         .stderr(std::process::Stdio::null())
         .output()
         .ok()?;
@@ -94,7 +102,9 @@ async fn fetch_from_api() -> anyhow::Result<Option<Release>> {
 
     let client = reqwest::Client::new();
     let mut req = client
-        .get(format!("https://api.github.com/repos/{REPO}/releases?per_page=20"))
+        .get(format!(
+            "https://api.github.com/repos/{REPO}/releases?per_page=20"
+        ))
         .header("Accept", "application/vnd.github+json")
         .header("User-Agent", "gs-assume-cli")
         .header("X-GitHub-Api-Version", "2022-11-28");
@@ -127,9 +137,9 @@ async fn fetch_from_api() -> anyhow::Result<Option<Release>> {
             .get("assets")
             .and_then(|a| a.as_array())
             .and_then(|assets| {
-                assets.iter().find(|a| {
-                    a.get("name").and_then(|n| n.as_str()) == Some(&asset_name)
-                })
+                assets
+                    .iter()
+                    .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(&asset_name))
             })
             .and_then(|a| a.get("browser_download_url"))
             .and_then(|u| u.as_str())
@@ -154,10 +164,15 @@ async fn download_binary(release: &Release, dest: &str) -> anyhow::Result<bool> 
     let tmp = format!("{dest}.tmp");
     let gh_result = std::process::Command::new("gh")
         .args([
-            "release", "download", &release.tag,
-            "-R", REPO,
-            "-p", &asset_name,
-            "-O", &tmp,
+            "release",
+            "download",
+            &release.tag,
+            "-R",
+            REPO,
+            "-p",
+            &asset_name,
+            "-O",
+            &tmp,
             "--clobber",
         ])
         .stderr(std::process::Stdio::null())
@@ -203,7 +218,9 @@ async fn download_binary(release: &Release, dest: &str) -> anyhow::Result<bool> 
 }
 
 fn recreate_alias(binary_path: &str) {
-    let dir = std::path::Path::new(binary_path).parent().unwrap_or(std::path::Path::new("."));
+    let dir = std::path::Path::new(binary_path)
+        .parent()
+        .unwrap_or(std::path::Path::new("."));
     let alias_path = dir.join("gsa");
     // Remove old symlink if it exists
     let _ = fs::remove_file(&alias_path);
@@ -247,7 +264,10 @@ pub async fn run(_args: UpgradeArgs) -> anyhow::Result<()> {
         // Try writing a test file
         let test_path = install_dir.join(".gs-assume-write-test");
         if fs::write(&test_path, "test").is_err() {
-            eprintln!("\x1b[31merror:\x1b[0m no write permission to {} — try with sudo", install_dir.display());
+            eprintln!(
+                "\x1b[31merror:\x1b[0m no write permission to {} — try with sudo",
+                install_dir.display()
+            );
             std::process::exit(1);
         }
         let _ = fs::remove_file(&test_path);

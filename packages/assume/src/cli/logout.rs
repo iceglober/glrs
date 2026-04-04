@@ -26,7 +26,11 @@ pub async fn run(args: LogoutArgs, registry: &PluginRegistry) -> Result<()> {
         keychain::delete_all(provider_id)?;
         eprintln!("Logged out from {}", provider.display_name());
 
-        audit::log_event(audit::AuditEvent::Logout, provider_id, provider.display_name());
+        audit::log_event(
+            audit::AuditEvent::Logout,
+            provider_id,
+            provider.display_name(),
+        );
     }
 
     if provider_ids.len() > 1 {

@@ -44,8 +44,9 @@ fn write_audit_entry(event: AuditEvent, provider: &str, details: &str) -> Result
 
     // Ensure parent directory exists
     if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create audit log directory: {}", parent.display()))?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!("Failed to create audit log directory: {}", parent.display())
+        })?;
     }
 
     let timestamp = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
@@ -108,7 +109,9 @@ pub fn prune(retention_days: u64) -> Result<usize> {
         .into_iter()
         .filter(|line| {
             // Keep lines whose timestamp is >= cutoff
-            line.split('\t').next().map_or(true, |ts| ts >= cutoff_str.as_str())
+            line.split('\t')
+                .next()
+                .map_or(true, |ts| ts >= cutoff_str.as_str())
         })
         .collect();
 

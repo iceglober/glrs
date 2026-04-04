@@ -15,7 +15,11 @@ pub struct CredentialProcessArgs {
     pub context: String,
 }
 
-pub async fn run(args: CredentialProcessArgs, registry: &PluginRegistry, _cfg: &config::Config) -> Result<()> {
+pub async fn run(
+    args: CredentialProcessArgs,
+    registry: &PluginRegistry,
+    _cfg: &config::Config,
+) -> Result<()> {
     if args.provider != "aws" {
         bail!("credential-process is only supported for AWS");
     }
@@ -28,20 +32,25 @@ pub async fn run(args: CredentialProcessArgs, registry: &PluginRegistry, _cfg: &
         .ok_or_else(|| anyhow::anyhow!("Not authenticated. Run: gs-assume login aws"))?;
 
     // Find the context
-    let all_contexts = provider.list_contexts(&tokens).await.map_err(|e| {
-        anyhow::anyhow!("Failed to list contexts: {e}")
-    })?;
+    let all_contexts = provider
+        .list_contexts(&tokens)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to list contexts: {e}"))?;
 
     let matches = fuzzy::match_contexts(&args.context, &all_contexts);
     let context = match matches.first() {
         Some(m) => &m.context,
-        None => bail!("No context matching '{}'. Run: gs-assume sync aws", args.context),
+        None => bail!(
+            "No context matching '{}'. Run: gs-assume sync aws",
+            args.context
+        ),
     };
 
     // Get credentials
-    let creds = provider.get_credentials(&tokens, context).await.map_err(|e| {
-        anyhow::anyhow!("Failed to get credentials: {e}")
-    })?;
+    let creds = provider
+        .get_credentials(&tokens, context)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get credentials: {e}"))?;
 
     let sts = credentials::extract_sts_credentials(&creds)?;
     let output = sts.to_credential_process_response();

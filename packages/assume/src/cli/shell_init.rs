@@ -10,7 +10,11 @@ pub struct ShellInitArgs {
     pub shell: String,
 }
 
-pub async fn run(args: ShellInitArgs, registry: &PluginRegistry, cfg: &config::Config) -> Result<()> {
+pub async fn run(
+    args: ShellInitArgs,
+    registry: &PluginRegistry,
+    cfg: &config::Config,
+) -> Result<()> {
     let shell = &args.shell;
 
     // Validate shell

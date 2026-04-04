@@ -28,17 +28,14 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
         .get(&provider_id)
         .ok_or_else(|| anyhow::anyhow!("Unknown provider: {provider_id}"))?;
 
-    let provider_config = cfg
-        .providers
-        .get(&provider_id)
-        .cloned()
-        .unwrap_or_default();
+    let provider_config = cfg.providers.get(&provider_id).cloned().unwrap_or_default();
 
     eprintln!("Logging in to {}...", provider.display_name());
 
-    let tokens = provider.login(&provider_config).await.map_err(|e| {
-        anyhow::anyhow!("{} login failed: {e}", provider.display_name())
-    })?;
+    let tokens = provider
+        .login(&provider_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("{} login failed: {e}", provider.display_name()))?;
 
     // Store tokens in keychain
     keychain::store_tokens(&provider_id, &tokens)?;
@@ -54,7 +51,11 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
             );
             // Show summary of discovered contexts
             for ctx in &contexts {
-                let alias = ctx.metadata.get("alias").map(|a| format!(" ({})", a)).unwrap_or_default();
+                let alias = ctx
+                    .metadata
+                    .get("alias")
+                    .map(|a| format!(" ({})", a))
+                    .unwrap_or_default();
                 eprintln!("  {} {}{}", ctx.display_name, ctx.region, alias);
             }
         }
@@ -67,7 +68,11 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
     let expires = tokens.session_expires_at.format("%Y-%m-%d %H:%M UTC");
     eprintln!("Session valid until {expires}");
 
-    audit::log_event(audit::AuditEvent::Login, &provider_id, provider.display_name());
+    audit::log_event(
+        audit::AuditEvent::Login,
+        &provider_id,
+        provider.display_name(),
+    );
 
     Ok(())
 }

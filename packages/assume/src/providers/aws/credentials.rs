@@ -138,25 +138,18 @@ pub async fn get_credentials(
 
 /// Extract STS credentials from the opaque payload (for env var injection, credential_process, etc.)
 pub fn extract_sts_credentials(credentials: &Credentials) -> Result<StsCredentials, ProviderError> {
-    let ecs_json: serde_json::Value = serde_json::from_slice(&credentials.payload)
-        .map_err(|e| ProviderError::Other(format!("Failed to deserialize credential payload: {e}")))?;
+    let ecs_json: serde_json::Value =
+        serde_json::from_slice(&credentials.payload).map_err(|e| {
+            ProviderError::Other(format!("Failed to deserialize credential payload: {e}"))
+        })?;
 
     Ok(StsCredentials {
-        access_key_id: ecs_json["AccessKeyId"]
-            .as_str()
-            .unwrap_or("")
-            .to_string(),
+        access_key_id: ecs_json["AccessKeyId"].as_str().unwrap_or("").to_string(),
         secret_access_key: ecs_json["SecretAccessKey"]
             .as_str()
             .unwrap_or("")
             .to_string(),
-        session_token: ecs_json["Token"]
-            .as_str()
-            .unwrap_or("")
-            .to_string(),
-        expiration: ecs_json["Expiration"]
-            .as_str()
-            .unwrap_or("")
-            .to_string(),
+        session_token: ecs_json["Token"].as_str().unwrap_or("").to_string(),
+        expiration: ecs_json["Expiration"].as_str().unwrap_or("").to_string(),
     })
 }

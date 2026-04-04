@@ -14,10 +14,7 @@ pub enum PickerResult {
 }
 
 /// Run the interactive context picker. Returns the selected context or None if cancelled.
-pub fn run(
-    contexts: &[Context],
-    active_context_id: Option<&str>,
-) -> io::Result<PickerResult> {
+pub fn run(contexts: &[Context], active_context_id: Option<&str>) -> io::Result<PickerResult> {
     // Setup terminal
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -119,7 +116,7 @@ fn render_picker(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(2), // search
-            Constraint::Min(3),   // list
+            Constraint::Min(3),    // list
             Constraint::Length(1), // help
         ])
         .split(inner);
@@ -143,19 +140,22 @@ fn render_picker(
                 line_to_idx.push(None);
             }
             current_provider = ctx.provider_id.clone();
-            let header = Line::from(vec![
-                Span::styled(
-                    format!(" {}", current_provider.to_uppercase()),
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                ),
-            ]);
+            let header = Line::from(vec![Span::styled(
+                format!(" {}", current_provider.to_uppercase()),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )]);
             lines.push(header);
             line_to_idx.push(None);
         }
 
         // Context line
         let is_active = active_context_id.is_some_and(|id| id == ctx.id);
-        let is_dangerous = ctx.tags.iter().any(|t| t == "dangerous" || t == "production");
+        let is_dangerous = ctx
+            .tags
+            .iter()
+            .any(|t| t == "dangerous" || t == "production");
         let is_selected = idx == selected_idx;
 
         let marker = if is_active { "\u{25cf}" } else { " " };
@@ -185,7 +185,14 @@ fn render_picker(
         };
 
         let line = Line::from(vec![
-            Span::styled(format!("  {marker} "), if is_active { Style::default().fg(Color::Green) } else { Style::default().fg(Color::DarkGray) }),
+            Span::styled(
+                format!("  {marker} "),
+                if is_active {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                },
+            ),
             Span::styled(display, style),
             Span::styled(danger, Style::default().fg(Color::Yellow)),
             Span::styled(region_str, Style::default().fg(Color::DarkGray)),
@@ -206,14 +213,13 @@ fn render_picker(
         )));
     }
 
-    let list = Paragraph::new(lines)
-        .scroll((
-            // Scroll to keep selected item visible
-            display_selected_line
-                .map(|l| l.saturating_sub(chunks[1].height as usize / 2) as u16)
-                .unwrap_or(0),
-            0,
-        ));
+    let list = Paragraph::new(lines).scroll((
+        // Scroll to keep selected item visible
+        display_selected_line
+            .map(|l| l.saturating_sub(chunks[1].height as usize / 2) as u16)
+            .unwrap_or(0),
+        0,
+    ));
     frame.render_widget(list, chunks[1]);
 
     // Help line

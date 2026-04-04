@@ -48,9 +48,15 @@ pub async fn run(args: ExecArgs, registry: &PluginRegistry, _cfg: &config::Confi
     let tokens = keychain::load_tokens(&context.provider_id)?
         .ok_or_else(|| anyhow::anyhow!("Not authenticated for {}", context.provider_id))?;
 
-    let credentials = provider.get_credentials(&tokens, context).await.map_err(|e| {
-        anyhow::anyhow!("Failed to get credentials for {}: {e}", context.display_name)
-    })?;
+    let credentials = provider
+        .get_credentials(&tokens, context)
+        .await
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to get credentials for {}: {e}",
+                context.display_name
+            )
+        })?;
 
     // Build env vars based on provider
     let mut env_vars: Vec<(String, String)> = Vec::new();
