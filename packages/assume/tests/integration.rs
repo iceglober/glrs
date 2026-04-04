@@ -23,7 +23,9 @@ fn test_help() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Unified credential assume manager"));
+        .stdout(predicate::str::contains(
+            "Unified credential assume manager",
+        ));
 }
 
 #[test]
@@ -38,18 +40,12 @@ fn test_login_help() {
 #[test]
 fn test_status_no_auth() {
     // Status should work even with no authentication
-    gs_assume()
-        .arg("status")
-        .assert()
-        .success();
+    gs_assume().arg("status").assert().success();
 }
 
 #[test]
 fn test_profiles_no_auth() {
-    gs_assume()
-        .arg("profiles")
-        .assert()
-        .success();
+    gs_assume().arg("profiles").assert().success();
 }
 
 #[test]
@@ -90,16 +86,10 @@ fn test_shell_init_invalid() {
 #[test]
 fn test_logout_no_auth() {
     // Logout should succeed even with nothing to logout from
-    gs_assume()
-        .args(["logout", "aws"])
-        .assert()
-        .success();
+    gs_assume().args(["logout", "aws"]).assert().success();
 }
 
 #[test]
 fn test_exec_no_args() {
-    gs_assume()
-        .arg("exec")
-        .assert()
-        .failure();
+    gs_assume().arg("exec").assert().failure();
 }

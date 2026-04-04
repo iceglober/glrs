@@ -16,7 +16,9 @@ fn is_valid_id(id: &str) -> bool {
     if !bytes[0].is_ascii_lowercase() {
         return false;
     }
-    bytes[1..].iter().all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+    bytes[1..]
+        .iter()
+        .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
 }
 
 #[cfg(test)]
@@ -33,21 +35,31 @@ mod aws_conformance {
     #[test]
     fn test_trait_version() {
         let p = make_provider();
-        assert_eq!(p.trait_version(), 1, "AWS provider must return trait version 1");
+        assert_eq!(
+            p.trait_version(),
+            1,
+            "AWS provider must return trait version 1"
+        );
     }
 
     #[test]
     fn test_id_format() {
         let p = make_provider();
         let id = p.id();
-        assert!(is_valid_id(id), "Provider ID '{id}' must match ^[a-z][a-z0-9_-]{{0,31}}$");
+        assert!(
+            is_valid_id(id),
+            "Provider ID '{id}' must match ^[a-z][a-z0-9_-]{{0,31}}$"
+        );
         assert_eq!(id, "aws");
     }
 
     #[test]
     fn test_display_name_non_empty() {
         let p = make_provider();
-        assert!(!p.display_name().is_empty(), "display_name must not be empty");
+        assert!(
+            !p.display_name().is_empty(),
+            "display_name must not be empty"
+        );
     }
 
     #[test]
@@ -73,9 +85,18 @@ mod aws_conformance {
     fn test_refresh_schedule_valid() {
         let p = make_provider();
         let sched = p.refresh_schedule();
-        assert!(!sched.check_interval.is_zero(), "check_interval must be non-zero");
-        assert!(!sched.refresh_buffer.is_zero(), "refresh_buffer must be non-zero");
-        assert!(!sched.credential_ttl.is_zero(), "credential_ttl must be non-zero");
+        assert!(
+            !sched.check_interval.is_zero(),
+            "check_interval must be non-zero"
+        );
+        assert!(
+            !sched.refresh_buffer.is_zero(),
+            "refresh_buffer must be non-zero"
+        );
+        assert!(
+            !sched.credential_ttl.is_zero(),
+            "credential_ttl must be non-zero"
+        );
         assert!(
             sched.refresh_buffer < sched.credential_ttl,
             "refresh_buffer ({:?}) must be < credential_ttl ({:?})",
@@ -100,8 +121,14 @@ mod aws_conformance {
             region: "us-east-1".into(),
         };
         let seg = p.prompt_segment(&ctx);
-        assert!(!seg.text.is_empty(), "prompt segment text must not be empty");
-        assert!(!seg.color.is_empty(), "prompt segment color must not be empty");
+        assert!(
+            !seg.text.is_empty(),
+            "prompt segment text must not be empty"
+        );
+        assert!(
+            !seg.color.is_empty(),
+            "prompt segment color must not be empty"
+        );
     }
 }
 
