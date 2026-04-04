@@ -6,10 +6,32 @@ pub const DEFAULT_PORT: u16 = 9911;
 /// Default path for the credential endpoint
 pub const CREDENTIAL_PATH: &str = "/credentials";
 
-/// Generate a unique bearer token for this daemon session.
-/// This token is set as AWS_CONTAINER_AUTHORIZATION_TOKEN in the shell env.
-pub fn generate_session_token() -> String {
-    Uuid::new_v4().to_string()
+/// Get or create a persistent session token shared between the daemon and shell-init.
+/// Both processes must use the same token so the shell's AWS_CONTAINER_AUTHORIZATION_TOKEN
+/// matches what the daemon expects. The token is stored in the config directory.
+pub fn get_or_create_session_token() -> String {
+    let path = crate::core::config::config_dir().join("session-token");
+
+    // Try to read existing token
+    if let Ok(token) = std::fs::read_to_string(&path) {
+        let token = token.trim().to_string();
+        if !token.is_empty() {
+            return token;
+        }
+    }
+
+    // Generate new token and persist
+    let token = Uuid::new_v4().to_string();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(&path, &token);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    token
 }
 
 /// Build the credential endpoint configuration for the AWS plugin.

@@ -34,7 +34,7 @@ impl AwsProvider {
             .unwrap_or_else(|| sso_region.clone());
 
         let port = config.port.unwrap_or(endpoint::DEFAULT_PORT);
-        let session_token = endpoint::generate_session_token();
+        let session_token = endpoint::get_or_create_session_token();
 
         Self {
             sso_region,

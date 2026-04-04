@@ -75,7 +75,7 @@ gsa() {{
         local output
         output=$(command {bin} "$@")
         local rc=$?
-        if [[ $rc -eq 0 && -n "$output" ]]; then
+        if [[ $rc -eq 0 && "$output" == *"export "* ]]; then
             eval "$output"
         fi
         return $rc
