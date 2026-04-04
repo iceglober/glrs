@@ -129,7 +129,81 @@ fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
     std::cmp::Ordering::Equal
 }
 
-/// Check for updates and print a notice if a newer version is available.
+fn is_major_bump(current: &str, latest: &str) -> bool {
+    let cur_major: u64 = current.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let lat_major: u64 = latest.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    lat_major > cur_major
+}
+
+fn detect_platform() -> &'static str {
+    let os = if cfg!(target_os = "macos") { "darwin" } else { "linux" };
+    let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
+    match (os, arch) {
+        ("darwin", "arm64") => "darwin-arm64",
+        ("darwin", "amd64") => "darwin-amd64",
+        ("linux", "arm64") => "linux-arm64",
+        _ => "linux-amd64",
+    }
+}
+
+/// Attempt to download and replace the running binary. Returns true on success.
+fn try_auto_upgrade(tag: &str) -> bool {
+    let exe_path = match std::env::current_exe().and_then(fs::canonicalize) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+
+    let install_dir = match exe_path.parent() {
+        Some(d) => d,
+        None => return false,
+    };
+
+    // Check write permission
+    if fs::metadata(install_dir)
+        .map(|m| m.permissions().readonly())
+        .unwrap_or(true)
+    {
+        let test_path = install_dir.join(".gs-assume-write-test");
+        if fs::write(&test_path, "test").is_err() {
+            return false;
+        }
+        let _ = fs::remove_file(&test_path);
+    }
+
+    let platform = detect_platform();
+    let asset_name = format!("gs-assume-{platform}");
+    let tmp = format!("{}.tmp", exe_path.to_string_lossy());
+
+    // Try gh CLI download
+    let result = std::process::Command::new("gh")
+        .args([
+            "release", "download", tag, "-R", REPO,
+            "-p", &asset_name, "-O", &tmp, "--clobber",
+        ])
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    match result {
+        Ok(status) if status.success() => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755));
+            }
+            if fs::rename(&tmp, &exe_path).is_ok() {
+                return true;
+            }
+            let _ = fs::remove_file(&tmp);
+            false
+        }
+        _ => {
+            let _ = fs::remove_file(&tmp);
+            false
+        }
+    }
+}
+
+/// Check for updates. Auto-upgrades minor/patch, warns for major.
 /// Never panics or returns errors — all failures are silently swallowed.
 /// This is called early in main() for every CLI invocation.
 pub fn check_for_update() {
@@ -155,8 +229,23 @@ pub fn check_for_update() {
             return;
         }
 
-        eprintln!(
-            "\x1b[33mwarning:\x1b[0m Update available: gs-assume v{latest} (current: v{current}). Run `gsa upgrade` to update."
-        );
+        if is_major_bump(current, &latest) {
+            eprintln!(
+                "\x1b[33mwarning:\x1b[0m gs-assume v{latest} available (major update) — run `gsa upgrade` to update"
+            );
+            return;
+        }
+
+        // Auto-upgrade for minor/patch
+        let tag = format!("{TAG_PREFIX}{latest}");
+        eprintln!("\x1b[36m▸\x1b[0m updating gs-assume v{current} → v{latest}...");
+        if try_auto_upgrade(&tag) {
+            eprintln!("\x1b[32m✓\x1b[0m updated to v{latest} — changes take effect on next run");
+            write_cache(&latest);
+        } else {
+            eprintln!(
+                "\x1b[33mwarning:\x1b[0m gs-assume v{latest} available — run `gsa upgrade` to update"
+            );
+        }
     });
 }
