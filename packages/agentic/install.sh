@@ -60,16 +60,15 @@ fetch_release_public() {
   json=$(curl -fsSL \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
-    "${API_BASE}/releases/latest" 2>/dev/null) || return 1
+    "${API_BASE}/releases" 2>/dev/null) || return 1
 
-  # Check it's not an error response
-  echo "$json" | node -e "
-    const r = JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));
-    if (r.message) process.exit(1);
-    process.exit(0);
-  " 2>/dev/null || return 1
+  RELEASE_JSON=$(echo "$json" | node -e "
+    const releases = JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));
+    const r = releases.find(r => r.tag_name && r.tag_name.startsWith('${TAG_PREFIX}') && !r.tag_name.startsWith('assume-'));
+    if (!r) process.exit(1);
+    console.log(JSON.stringify(r));
+  " 2>/dev/null) || return 1
 
-  RELEASE_JSON="$json"
   return 0
 }
 
@@ -77,8 +76,15 @@ fetch_release_gh() {
   command -v gh &>/dev/null || return 1
   gh auth status &>/dev/null 2>&1 || return 1
   local json
-  json=$(gh api "repos/${REPO}/releases/latest" 2>/dev/null) || return 1
-  RELEASE_JSON="$json"
+  json=$(gh api "repos/${REPO}/releases" 2>/dev/null) || return 1
+
+  RELEASE_JSON=$(echo "$json" | node -e "
+    const releases = JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));
+    const r = releases.find(r => r.tag_name && r.tag_name.startsWith('${TAG_PREFIX}') && !r.tag_name.startsWith('assume-'));
+    if (!r) process.exit(1);
+    console.log(JSON.stringify(r));
+  " 2>/dev/null) || return 1
+
   return 0
 }
 

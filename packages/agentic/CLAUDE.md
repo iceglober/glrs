@@ -69,17 +69,10 @@ src/
     ├── spec-review.ts    # /spec-review — spec gap analysis
     ├── spec-lab.ts       # /spec-lab — validation experiments
     │
-    │  # Product documentation pipeline
-    ├── product-discovery-new.ts      # /product-discovery-new — new discovery doc
-    ├── product-discovery-refine.ts   # /product-discovery-refine — update discovery doc
-    ├── product-discovery-user.ts     # /product-discovery-user — user interview for discovery
-    ├── product-prd-new.ts            # /product-prd-new — create PRD from discovery
-    ├── product-prd-refine.ts         # /product-prd-refine — update PRD with feedback
-    ├── product-pipeline.ts           # /product-pipeline — full discovery-to-PRD pipeline
-    │
     │  # Product management suite
     ├── product-manager.ts            # /product-manager — end-to-end PM workflow
     ├── product-acceptance.ts         # /product-acceptance — acceptance criteria
+    ├── product-build.ts              # /product-build — build product artifacts
     ├── product-evaluate.ts           # /product-evaluate — artifact quality scoring
     ├── product-engineering-handoff.ts # /product-engineering-handoff — eng handoff doc
     ├── product-interview.ts          # /product-interview — stakeholder interview
