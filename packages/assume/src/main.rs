@@ -38,6 +38,8 @@ enum Commands {
     Logout(cli::logout::LogoutArgs),
     /// Print shell integration script
     ShellInit(cli::shell_init::ShellInitArgs),
+    /// View or modify configuration
+    Config(cli::config_cmd::ConfigArgs),
     /// Open provider's web console
     Console(cli::console::ConsoleArgs),
     /// Output credentials for AWS credential_process
@@ -85,6 +87,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     match cli.command {
+        Commands::Config(args) => cli::config_cmd::run(args).await,
         Commands::Login(args) => cli::login::run(args, &registry, &cfg).await,
         Commands::Use(args) => cli::use_cmd::run(args, &registry, &cfg).await,
         Commands::Status(args) => cli::status::run(args, &registry, &cfg).await,

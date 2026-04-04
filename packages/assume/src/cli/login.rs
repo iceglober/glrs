@@ -2,6 +2,7 @@ use crate::core::{audit, config, keychain};
 use crate::plugin::registry::PluginRegistry;
 use anyhow::{bail, Result};
 use clap::Args;
+use std::io::{self, BufRead, Write};
 
 #[derive(Args, Debug)]
 pub struct LoginArgs {
@@ -9,11 +10,102 @@ pub struct LoginArgs {
     pub provider: Option<String>,
 }
 
+/// Prompt the user for input with an optional default value.
+fn prompt(message: &str, default: Option<&str>) -> String {
+    let suffix = match default {
+        Some(d) => format!(" [{d}]: "),
+        None => ": ".to_string(),
+    };
+    eprint!("{message}{suffix}");
+    io::stderr().flush().unwrap();
+
+    let mut input = String::new();
+    io::stdin().lock().read_line(&mut input).unwrap();
+    let trimmed = input.trim().to_string();
+
+    if trimmed.is_empty() {
+        default.unwrap_or("").to_string()
+    } else {
+        trimmed
+    }
+}
+
+/// Check if AWS provider needs interactive setup, and if so, prompt and save config.
+fn ensure_aws_configured(provider_config: &mut crate::plugin::ProviderConfig) -> Result<bool> {
+    let has_start_url = provider_config
+        .extra
+        .get("start_url")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty());
+
+    if has_start_url {
+        return Ok(false); // Already configured
+    }
+
+    eprintln!("AWS Identity Center not configured. Let's set it up.\n");
+
+    let start_url = prompt(
+        "Enter your SSO start URL (e.g., https://myorg.awsapps.com/start)",
+        None,
+    );
+    if start_url.is_empty() {
+        bail!("SSO start URL is required");
+    }
+
+    let region = prompt("Enter your SSO region", Some("us-east-1"));
+
+    // Update in-memory config
+    provider_config.extra.insert(
+        "start_url".to_string(),
+        toml::Value::String(start_url.clone()),
+    );
+    provider_config
+        .extra
+        .insert("region".to_string(), toml::Value::String(region.clone()));
+    provider_config.enabled = true;
+
+    // Save to config file
+    let path = config::config_path();
+    let dir = path.parent().unwrap();
+    std::fs::create_dir_all(dir)?;
+
+    let mut doc: toml::Table = if path.exists() {
+        let content = std::fs::read_to_string(&path)?;
+        content.parse::<toml::Table>()?
+    } else {
+        toml::Table::new()
+    };
+
+    // Ensure providers.aws table exists
+    let providers = doc
+        .entry("providers".to_string())
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .unwrap();
+
+    let aws = providers
+        .entry("aws".to_string())
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .unwrap();
+
+    aws.insert("enabled".to_string(), toml::Value::Boolean(true));
+    aws.insert("start_url".to_string(), toml::Value::String(start_url));
+    aws.insert("region".to_string(), toml::Value::String(region));
+
+    let content = toml::to_string_pretty(&toml::Value::Table(doc))?;
+    std::fs::write(&path, content)?;
+
+    eprintln!("\nConfig saved to {}", path.display());
+    eprintln!();
+
+    Ok(true) // Was configured
+}
+
 pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Config) -> Result<()> {
     let provider_id = match args.provider {
         Some(ref id) => id.clone(),
         None => {
-            // If only one provider is enabled, use it
             let ids = registry.ids();
             if ids.len() == 1 {
                 ids[0].clone()
@@ -28,7 +120,12 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
         .get(&provider_id)
         .ok_or_else(|| anyhow::anyhow!("Unknown provider: {provider_id}"))?;
 
-    let provider_config = cfg.providers.get(&provider_id).cloned().unwrap_or_default();
+    let mut provider_config = cfg.providers.get(&provider_id).cloned().unwrap_or_default();
+
+    // Interactive setup if provider not configured
+    if provider_id == "aws" {
+        ensure_aws_configured(&mut provider_config)?;
+    }
 
     eprintln!("Logging in to {}...", provider.display_name());
 
@@ -49,7 +146,6 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
                 provider.display_name(),
                 contexts.len()
             );
-            // Show summary of discovered contexts
             for ctx in &contexts {
                 let alias = ctx
                     .metadata

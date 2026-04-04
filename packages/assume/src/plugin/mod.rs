@@ -165,9 +165,14 @@ pub trait Provider: Send + Sync + 'static {
     fn refresh_schedule(&self) -> RefreshSchedule;
 }
 
+fn default_enabled() -> bool {
+    true
+}
+
 /// Provider-specific configuration from the config file.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProviderConfig {
+    #[serde(default = "default_enabled")]
     pub enabled: bool,
     pub port: Option<u16>,
     pub default_region: Option<String>,

@@ -1,3 +1,4 @@
+pub mod config_cmd;
 pub mod console;
 pub mod credential_process;
 pub mod exec;
