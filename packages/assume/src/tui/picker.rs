@@ -74,9 +74,7 @@ fn run_picker_loop(
                     }
                 }
                 KeyCode::Up => {
-                    if selected_idx > 0 {
-                        selected_idx -= 1;
-                    }
+                    selected_idx = selected_idx.saturating_sub(1);
                 }
                 KeyCode::Down => {
                     if selected_idx + 1 < filtered.len() {
@@ -156,7 +154,7 @@ fn render_picker(
         }
 
         // Context line
-        let is_active = active_context_id.map_or(false, |id| id == ctx.id);
+        let is_active = active_context_id.is_some_and(|id| id == ctx.id);
         let is_dangerous = ctx.tags.iter().any(|t| t == "dangerous" || t == "production");
         let is_selected = idx == selected_idx;
 

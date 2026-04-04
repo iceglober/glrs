@@ -60,13 +60,13 @@ pub async fn run(args: ProfilesArgs, registry: &PluginRegistry, cfg: &config::Co
         // Print header based on provider
         if provider_id == "aws" {
             println!(
-                "{:<30} {:<25} {:<15} {}",
-                "Account", "Role", "Alias", "Region"
+                "{:<30} {:<25} {:<15} Region",
+                "Account", "Role", "Alias",
             );
         } else {
             println!(
-                "{:<40} {:<15} {}",
-                "Context", "Alias", "Region"
+                "{:<40} {:<15} Region",
+                "Context", "Alias",
             );
         }
 

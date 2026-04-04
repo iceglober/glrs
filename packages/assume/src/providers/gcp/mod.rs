@@ -11,6 +11,7 @@ use crate::plugin::{
 use async_trait::async_trait;
 use std::time::Duration;
 
+#[derive(Default)]
 pub struct GcpProvider;
 
 impl GcpProvider {

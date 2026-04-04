@@ -17,15 +17,14 @@ fn is_valid_provider_id(id: &str) -> bool {
     })
 }
 
+#[derive(Default)]
 pub struct PluginRegistry {
     providers: HashMap<String, Arc<dyn Provider>>,
 }
 
 impl PluginRegistry {
     pub fn new() -> Self {
-        Self {
-            providers: HashMap::new(),
-        }
+        Self::default()
     }
 
     /// Register and validate a provider. Fails hard on any validation error.

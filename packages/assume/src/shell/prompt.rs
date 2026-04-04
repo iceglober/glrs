@@ -11,7 +11,7 @@ pub fn format_segment(segment: &PromptSegment) -> String {
 pub fn format_prompt(segments: &[PromptSegment]) -> String {
     segments
         .iter()
-        .map(|s| format_segment(s))
+        .map(format_segment)
         .collect::<Vec<_>>()
         .join(" ")
 }

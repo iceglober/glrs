@@ -32,8 +32,8 @@ pub struct PluginState {
     pub pinned_sessions: HashMap<String, Context>,
 }
 
-impl PluginState {
-    pub fn new() -> Self {
+impl Default for PluginState {
+    fn default() -> Self {
         Self {
             status: PluginStatus::NeedsLogin,
             tokens: None,
@@ -59,7 +59,7 @@ impl DaemonState {
     pub fn new(config: Config, registry: PluginRegistry) -> Self {
         let mut plugin_states = HashMap::new();
         for id in registry.ids() {
-            let mut state = PluginState::new();
+            let mut state = PluginState::default();
             // Try to load tokens from keychain
             match keychain::load_tokens(&id) {
                 Ok(Some(tokens)) => {

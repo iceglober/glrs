@@ -94,7 +94,7 @@ async fn get_or_register_client(client: &OidcClient) -> Result<(String, String),
             cached.get("expires_at").and_then(|v| v.as_i64()),
         ) {
             let expires_at = chrono::DateTime::from_timestamp(expires, 0);
-            if expires_at.map_or(false, |e| e > Utc::now()) {
+            if expires_at.is_some_and(|e| e > Utc::now()) {
                 tracing::debug!("Using cached OIDC client registration");
                 return Ok((id.to_string(), secret.to_string()));
             }

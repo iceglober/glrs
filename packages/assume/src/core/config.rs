@@ -109,13 +109,12 @@ pub fn pid_path() -> PathBuf {
 /// Audit log path (resolved from config)
 #[allow(dead_code)]
 pub fn resolve_log_path(configured: &str) -> PathBuf {
-    let expanded = if configured.starts_with("~/") {
+    if configured.starts_with("~/") {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        home.join(&configured[2..])
+        home.join(configured.strip_prefix("~/").unwrap())
     } else {
         PathBuf::from(configured)
-    };
-    expanded
+    }
 }
 
 /// Load config from disk, merging user config with optional team config.
