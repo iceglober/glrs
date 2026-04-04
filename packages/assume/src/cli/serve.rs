@@ -11,16 +11,39 @@ pub struct ServeArgs {
     #[arg(long)]
     pub foreground: bool,
 
-    /// AWS ECS endpoint port
-    #[arg(long, default_value_t = 9911)]
-    pub aws_port: u16,
+    /// Install gs-assume to PATH and start daemon on login
+    #[arg(long)]
+    pub install: bool,
 
-    /// GCP metadata server port
-    #[arg(long, default_value_t = 9912)]
-    pub gcp_port: u16,
+    /// Uninstall gs-assume and remove login service
+    #[arg(long)]
+    pub uninstall: bool,
 }
 
-pub async fn run(_args: ServeArgs, registry: PluginRegistry, cfg: config::Config) -> Result<()> {
+pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config) -> Result<()> {
+    if args.uninstall {
+        let actions = daemon::uninstall()?;
+        if actions.is_empty() {
+            eprintln!("Nothing to uninstall.");
+        } else {
+            for action in &actions {
+                eprintln!("  {action}");
+            }
+            eprintln!("Done. Restart your shell for PATH changes to take effect.");
+        }
+        return Ok(());
+    }
+
+    if args.install {
+        let actions = daemon::install()?;
+        for action in &actions {
+            eprintln!("  {action}");
+        }
+        eprintln!();
+        eprintln!("Restart your shell, then `gs-assume` and `gsa` will be available everywhere.");
+        return Ok(());
+    }
+
     // Check if daemon is already running
     if daemon::is_daemon_running() {
         anyhow::bail!("Daemon is already running. Use 'gs-assume logout' or stop it first.");

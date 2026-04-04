@@ -58,6 +58,12 @@ fn write_audit_entry(event: AuditEvent, provider: &str, details: &str) -> Result
         .open(&log_path)
         .with_context(|| format!("Failed to open audit log: {}", log_path.display()))?;
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&log_path, fs::Permissions::from_mode(0o600));
+    }
+
     file.write_all(line.as_bytes())?;
     Ok(())
 }

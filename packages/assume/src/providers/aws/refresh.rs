@@ -90,30 +90,29 @@ pub async fn refresh(tokens: &AuthTokens, region: &str) -> Result<AuthTokens, Pr
             })
         }
         Err(sdk_err) => {
-            let err_str = format!("{sdk_err}");
-            if err_str.contains("UnauthorizedClientException")
-                || err_str.contains("InvalidGrantException")
-                || err_str.contains("ExpiredTokenException")
-                || err_str.contains("invalid_grant")
-                || err_str.contains("unauthorized_client")
+            let service_err = sdk_err.into_service_error();
+            if service_err.is_unauthorized_client_exception()
+                || service_err.is_invalid_grant_exception()
+                || service_err.is_expired_token_exception()
             {
                 Err(ProviderError::RefreshTokenExpired)
-            } else if err_str.contains("InvalidClientException") {
+            } else if service_err.is_invalid_client_exception() {
                 Err(ProviderError::Other(
                     "OIDC client registration expired. Run: gs-assume login aws".into(),
                 ))
             } else {
+                let err_str = format!("{service_err}");
                 // Classify as network error if it looks transient
                 if err_str.contains("timeout")
                     || err_str.contains("connection")
                     || err_str.contains("ConnectorError")
                 {
                     Err(ProviderError::NetworkError(format!(
-                        "Token refresh network error: {sdk_err}"
+                        "Token refresh network error: {service_err}"
                     )))
                 } else {
                     Err(ProviderError::Other(format!(
-                        "Token refresh failed: {sdk_err}"
+                        "Token refresh failed: {service_err}"
                     )))
                 }
             }

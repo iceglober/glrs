@@ -51,6 +51,11 @@ pub async fn run(args: SyncArgs, registry: &PluginRegistry, _cfg: &config::Confi
                         .unwrap_or_default();
                     eprintln!("  {} {}{}", ctx.display_name, ctx.region, alias);
                 }
+
+                // Update cache
+                if let Err(e) = crate::core::cache::save_contexts(provider_id, &contexts) {
+                    tracing::warn!("Failed to cache contexts: {e}");
+                }
             }
             Err(crate::plugin::ProviderError::AccessTokenExpired) => {
                 eprintln!(
@@ -67,6 +72,11 @@ pub async fn run(args: SyncArgs, registry: &PluginRegistry, _cfg: &config::Confi
                                     provider.display_name(),
                                     contexts.len()
                                 );
+
+                                // Update cache
+                                if let Err(e) = crate::core::cache::save_contexts(provider_id, &contexts) {
+                                    tracing::warn!("Failed to cache contexts: {e}");
+                                }
                             }
                             Err(e) => eprintln!(
                                 "{}: failed to list after refresh: {e}",

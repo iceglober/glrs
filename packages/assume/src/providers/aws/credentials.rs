@@ -143,13 +143,29 @@ pub fn extract_sts_credentials(credentials: &Credentials) -> Result<StsCredentia
             ProviderError::Other(format!("Failed to deserialize credential payload: {e}"))
         })?;
 
+    let access_key_id = ecs_json["AccessKeyId"]
+        .as_str()
+        .ok_or_else(|| ProviderError::Other("Missing AccessKeyId in credential payload".into()))?
+        .to_string();
+    let secret_access_key = ecs_json["SecretAccessKey"]
+        .as_str()
+        .ok_or_else(|| {
+            ProviderError::Other("Missing SecretAccessKey in credential payload".into())
+        })?
+        .to_string();
+    let session_token = ecs_json["Token"]
+        .as_str()
+        .ok_or_else(|| ProviderError::Other("Missing Token in credential payload".into()))?
+        .to_string();
+    let expiration = ecs_json["Expiration"]
+        .as_str()
+        .ok_or_else(|| ProviderError::Other("Missing Expiration in credential payload".into()))?
+        .to_string();
+
     Ok(StsCredentials {
-        access_key_id: ecs_json["AccessKeyId"].as_str().unwrap_or("").to_string(),
-        secret_access_key: ecs_json["SecretAccessKey"]
-            .as_str()
-            .unwrap_or("")
-            .to_string(),
-        session_token: ecs_json["Token"].as_str().unwrap_or("").to_string(),
-        expiration: ecs_json["Expiration"].as_str().unwrap_or("").to_string(),
+        access_key_id,
+        secret_access_key,
+        session_token,
+        expiration,
     })
 }

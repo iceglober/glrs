@@ -56,6 +56,13 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
             println!("  Run: gs-assume login {provider_id}");
         }
 
+        // Show active context
+        if let Some(ref active) = crate::core::cache::load_active_context() {
+            if active.provider_id == provider_id {
+                println!("  Active context: {} ({})", active.display_name, active.region);
+            }
+        }
+
         println!();
     }
 
@@ -74,27 +81,13 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
 }
 
 async fn print_prompt_segments(registry: &PluginRegistry, _cfg: &config::Config) -> Result<()> {
-    let mut segments = Vec::new();
-
-    for provider_id in registry.ids() {
-        let provider = registry.get(&provider_id).unwrap();
-        let tokens = match keychain::load_tokens(&provider_id)? {
-            Some(t) => t,
-            None => continue,
-        };
-
-        // Get first available context for prompt display
-        if let Ok(contexts) = provider.list_contexts(&tokens).await {
-            if let Some(ctx) = contexts.first() {
-                segments.push(provider.prompt_segment(ctx));
-            }
+    // Read active context from disk — must be instant for shell prompt
+    if let Some(ctx) = crate::core::cache::load_active_context() {
+        if let Some(provider) = registry.get(&ctx.provider_id) {
+            let segment = provider.prompt_segment(&ctx);
+            print!("{}", prompt::format_segment(&segment));
         }
     }
-
-    if !segments.is_empty() {
-        print!("{}", prompt::format_prompt(&segments));
-    }
-
     Ok(())
 }
 

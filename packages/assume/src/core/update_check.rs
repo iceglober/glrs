@@ -1,5 +1,4 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 const REPO: &str = "iceglober/glorious";
@@ -130,105 +129,7 @@ fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
     std::cmp::Ordering::Equal
 }
 
-fn is_major_bump(current: &str, latest: &str) -> bool {
-    let cur_major: u64 = current
-        .split('.')
-        .next()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    let lat_major: u64 = latest
-        .split('.')
-        .next()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    lat_major > cur_major
-}
-
-/// Attempt auto-upgrade: download and replace the binary. Returns true on success.
-fn try_auto_upgrade(tag: &str) -> bool {
-    let exe_path = match std::env::current_exe().and_then(fs::canonicalize) {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-
-    let exe_str = exe_path.to_string_lossy().to_string();
-    let install_dir = match exe_path.parent() {
-        Some(d) => d,
-        None => return false,
-    };
-
-    // Check write permission
-    let test_file = install_dir.join(".gs-assume-upgrade-test");
-    if fs::write(&test_file, "t").is_err() {
-        return false;
-    }
-    let _ = fs::remove_file(&test_file);
-
-    let platform = detect_platform();
-    let asset_name = format!("gs-assume-{platform}");
-    let tmp = format!("{exe_str}.tmp");
-
-    // Try gh CLI download
-    let result = std::process::Command::new("gh")
-        .args([
-            "release",
-            "download",
-            tag,
-            "-R",
-            REPO,
-            "-p",
-            &asset_name,
-            "-O",
-            &tmp,
-            "--clobber",
-        ])
-        .stderr(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .status();
-
-    match result {
-        Ok(status) if status.success() => {
-            if fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755)).is_err() {
-                let _ = fs::remove_file(&tmp);
-                return false;
-            }
-            if fs::rename(&tmp, &exe_str).is_err() {
-                let _ = fs::remove_file(&tmp);
-                return false;
-            }
-            // Recreate gsa alias
-            let alias_path = install_dir.join("gsa");
-            let _ = fs::remove_file(&alias_path);
-            let _ = std::os::unix::fs::symlink(&exe_str, &alias_path);
-            true
-        }
-        _ => {
-            let _ = fs::remove_file(&tmp);
-            false
-        }
-    }
-}
-
-fn detect_platform() -> &'static str {
-    let os = if cfg!(target_os = "macos") {
-        "darwin"
-    } else {
-        "linux"
-    };
-    let arch = if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        "amd64"
-    };
-    match (os, arch) {
-        ("darwin", "arm64") => "darwin-arm64",
-        ("darwin", "amd64") => "darwin-amd64",
-        ("linux", "arm64") => "linux-arm64",
-        _ => "linux-amd64",
-    }
-}
-
-/// Check for updates. Auto-upgrades minor/patch, warns for major.
+/// Check for updates and print a notice if a newer version is available.
 /// Never panics or returns errors — all failures are silently swallowed.
 /// This is called early in main() for every CLI invocation.
 pub fn check_for_update() {
@@ -254,23 +155,8 @@ pub fn check_for_update() {
             return;
         }
 
-        if is_major_bump(current, &latest) {
-            eprintln!(
-                "\x1b[33mwarning:\x1b[0m gs-assume v{latest} available (major update) — run `gs-assume upgrade` to update"
-            );
-            return;
-        }
-
-        // Auto-upgrade for minor/patch
-        eprintln!("\x1b[36m▸\x1b[0m updating gs-assume v{current} → v{latest}...");
-        let tag = format!("{TAG_PREFIX}{latest}");
-        if try_auto_upgrade(&tag) {
-            eprintln!("\x1b[32m✓\x1b[0m updated to v{latest} — changes take effect on next run");
-            write_cache(&latest);
-        } else {
-            eprintln!(
-                "\x1b[33mwarning:\x1b[0m gs-assume v{latest} available (current: v{current}) — run `gs-assume upgrade`"
-            );
-        }
+        eprintln!(
+            "\x1b[33mwarning:\x1b[0m Update available: gs-assume v{latest} (current: v{current}). Run `gsa upgrade` to update."
+        );
     });
 }

@@ -8,7 +8,7 @@
 #   bash <(gh api repos/iceglober/glorious/contents/packages/assume/install.sh --jq .content | base64 -d)
 #
 # Usage (from local clone):
-#   bash install-assume.sh
+#   bash install.sh
 set -euo pipefail
 
 REPO="iceglober/glorious"
@@ -32,6 +32,11 @@ warn()  { echo -e "${YELLOW}warning:${RESET} $1"; }
 # ── Prerequisites ─────────────────────────────────────────────────────
 if ! command -v curl &>/dev/null; then
   err "curl is required but was not found on PATH"
+  exit 1
+fi
+
+if ! command -v python3 &>/dev/null; then
+  err "python3 is required but was not found on PATH"
   exit 1
 fi
 
@@ -216,5 +221,9 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
   echo ""
 fi
 
-# ── Verify ────────────────────────────────────────────────────────────
-"${INSTALL_PATH}" --version
+# ── Setup: shell integration + daemon ─────────────────────────────────
+info "running setup (shell integration + daemon)..."
+"${INSTALL_PATH}" serve --install
+
+echo ""
+ok "done! restart your shell or run: source ~/.zshrc"

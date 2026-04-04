@@ -24,21 +24,37 @@ pub async fn run(
         }
 
         let provider = registry.get(&provider_id).unwrap();
-        let tokens = match keychain::load_tokens(&provider_id)? {
-            Some(t) => t,
-            None => {
-                eprintln!("{}: not authenticated", provider.display_name());
-                continue;
+
+        // Load contexts from cache (fast) or fall back to live API
+        let mut contexts = if let Some(cached) = crate::core::cache::load_contexts(&provider_id) {
+            cached
+        } else {
+            // No cache — need tokens for live API call
+            let tokens = match keychain::load_tokens(&provider_id)? {
+                Some(t) => t,
+                None => {
+                    eprintln!("{}: not authenticated", provider.display_name());
+                    continue;
+                }
+            };
+            match provider.list_contexts(&tokens).await {
+                Ok(c) => {
+                    if let Err(e) = crate::core::cache::save_contexts(&provider_id, &c) {
+                        tracing::warn!("Failed to cache contexts: {e}");
+                    }
+                    c
+                }
+                Err(e) => {
+                    eprintln!("{}: {e}", provider.display_name());
+                    continue;
+                }
             }
         };
 
-        let mut contexts = match provider.list_contexts(&tokens).await {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("{}: {e}", provider.display_name());
-                continue;
-            }
-        };
+        // Auto-tag dangerous contexts
+        if provider_id == "aws" {
+            crate::providers::aws::contexts::auto_tag_dangerous(&mut contexts);
+        }
 
         // Merge profile configs
         if let Some(provider_cfg) = cfg.providers.get(&provider_id) {
@@ -68,15 +84,16 @@ pub async fn run(
             println!("{:<40} {:<15} Region", "Context", "Alias",);
         }
 
+        // Check active context
+        let active_id = crate::core::cache::load_active_context().map(|c| c.id);
+
         for ctx in &contexts {
             let alias = ctx.metadata.get("alias").map(String::as_str).unwrap_or("-");
-            let tags_str = if ctx.tags.is_empty() {
-                String::new()
-            } else {
-                format!(" [{}]", ctx.tags.join(", "))
-            };
+            let is_dangerous = ctx.tags.contains(&"dangerous".to_string());
+            let is_active = active_id.as_deref() == Some(ctx.id.as_str());
+            let marker = if is_active { "\x1b[32m● \x1b[0m" } else { "  " };
 
-            if provider_id == "aws" {
+            let line = if provider_id == "aws" {
                 let account = ctx
                     .metadata
                     .get("account_name")
@@ -87,15 +104,15 @@ pub async fn run(
                     .get("role_name")
                     .map(String::as_str)
                     .unwrap_or("?");
-                println!(
-                    "{:<30} {:<25} {:<15} {}{}",
-                    account, role, alias, ctx.region, tags_str
-                );
+                format!("{:<28} {:<25} {:<15} {}", account, role, alias, ctx.region)
             } else {
-                println!(
-                    "{:<40} {:<15} {}{}",
-                    ctx.display_name, alias, ctx.region, tags_str
-                );
+                format!("{:<38} {:<15} {}", ctx.display_name, alias, ctx.region)
+            };
+
+            if is_dangerous {
+                println!("{marker}\x1b[31m{line} ⚠ dangerous\x1b[0m");
+            } else {
+                println!("{marker}{line}");
             }
         }
         println!();

@@ -2,12 +2,11 @@ use crate::core::config::{self, Config};
 use crate::core::keychain;
 use crate::plugin::registry::PluginRegistry;
 use crate::plugin::{AuthTokens, Context, Credentials, ProviderError};
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result};
 use chrono::Utc;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::net::UnixListener;
 use tokio::sync::RwLock;
 
 /// Per-provider state managed by the daemon
@@ -428,340 +427,6 @@ async fn serve_credential_endpoint(
     }
 }
 
-/// Start the Unix socket RPC listener for CLI-to-daemon communication.
-/// Handles commands like status, switch context, list contexts, etc.
-#[allow(dead_code)]
-pub async fn start_rpc_listener(state: SharedDaemonState) -> Result<()> {
-    let sock_path = config::socket_path();
-
-    // Remove stale socket file if it exists
-    if sock_path.exists() {
-        std::fs::remove_file(&sock_path)?;
-    }
-
-    config::ensure_config_dir()?;
-    let listener = UnixListener::bind(&sock_path)
-        .with_context(|| format!("Failed to bind Unix socket: {}", sock_path.display()))?;
-
-    // Set socket permissions to owner-only (0o600)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o600))?;
-    }
-
-    tracing::info!("RPC listener started on {}", sock_path.display());
-
-    loop {
-        match listener.accept().await {
-            Ok((stream, _addr)) => {
-                let state = Arc::clone(&state);
-                tokio::spawn(async move {
-                    if let Err(e) = handle_rpc_connection(stream, state).await {
-                        tracing::debug!("RPC connection error: {e}");
-                    }
-                });
-            }
-            Err(e) => {
-                tracing::warn!("Failed to accept RPC connection: {e}");
-            }
-        }
-    }
-}
-
-/// Handle a single RPC connection over a Unix socket.
-/// Protocol: newline-delimited JSON request/response.
-#[allow(dead_code)]
-async fn handle_rpc_connection(
-    stream: tokio::net::UnixStream,
-    state: SharedDaemonState,
-) -> Result<()> {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-
-    let (reader, mut writer) = stream.into_split();
-    let mut lines = BufReader::new(reader).lines();
-
-    while let Some(line) = lines.next_line().await? {
-        let response = match handle_rpc_request(&line, &state).await {
-            Ok(resp) => resp,
-            Err(e) => serde_json::json!({
-                "error": e.to_string()
-            })
-            .to_string(),
-        };
-
-        writer
-            .write_all(response.as_bytes())
-            .await
-            .context("Failed to write RPC response")?;
-        writer
-            .write_all(b"\n")
-            .await
-            .context("Failed to write RPC newline")?;
-        writer.flush().await.context("Failed to flush RPC writer")?;
-    }
-
-    Ok(())
-}
-
-/// Parse and dispatch a single RPC request
-#[allow(dead_code)]
-async fn handle_rpc_request(request: &str, state: &SharedDaemonState) -> Result<String> {
-    let req: serde_json::Value =
-        serde_json::from_str(request).context("Invalid JSON in RPC request")?;
-
-    let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("");
-
-    match method {
-        "status" => rpc_status(state).await,
-        "list_contexts" => {
-            let provider_id = req
-                .get("provider_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            rpc_list_contexts(state, provider_id).await
-        }
-        "switch_context" => {
-            let provider_id = req
-                .get("provider_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let context_id = req.get("context_id").and_then(|v| v.as_str()).unwrap_or("");
-            rpc_switch_context(state, provider_id, context_id).await
-        }
-        "refresh" => {
-            let provider_id = req
-                .get("provider_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            rpc_refresh(state, provider_id).await
-        }
-        "pin_session" => {
-            let provider_id = req
-                .get("provider_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let session_id = req.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
-            let context_id = req.get("context_id").and_then(|v| v.as_str()).unwrap_or("");
-            rpc_pin_session(state, provider_id, session_id, context_id).await
-        }
-        "unpin_session" => {
-            let provider_id = req
-                .get("provider_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let session_id = req.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
-            rpc_unpin_session(state, provider_id, session_id).await
-        }
-        "ping" => Ok(serde_json::json!({"ok": true}).to_string()),
-        "shutdown" => {
-            tracing::info!("Shutdown requested via RPC");
-            // Signal the process to exit cleanly
-            tokio::spawn(async {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                std::process::exit(0);
-            });
-            Ok(serde_json::json!({"ok": true, "message": "shutting down"}).to_string())
-        }
-        _ => Ok(serde_json::json!({
-            "error": format!("unknown method: {method}")
-        })
-        .to_string()),
-    }
-}
-
-/// RPC: return status of all plugins
-#[allow(dead_code)]
-async fn rpc_status(state: &SharedDaemonState) -> Result<String> {
-    let s = state.read().await;
-    let mut providers = serde_json::Map::new();
-
-    for (id, ps) in &s.plugin_states {
-        let status_str = match &ps.status {
-            PluginStatus::Active => "active",
-            PluginStatus::NeedsLogin => "needs_login",
-            PluginStatus::Broken(_) => "broken",
-        };
-        let mut entry = serde_json::Map::new();
-        entry.insert("status".into(), serde_json::json!(status_str));
-        if let PluginStatus::Broken(msg) = &ps.status {
-            entry.insert("error".into(), serde_json::json!(msg));
-        }
-        if let Some(ref ctx) = ps.active_context {
-            entry.insert("active_context".into(), serde_json::json!(ctx.display_name));
-            entry.insert("active_context_id".into(), serde_json::json!(ctx.id));
-        }
-        entry.insert("context_count".into(), serde_json::json!(ps.contexts.len()));
-        entry.insert(
-            "cached_credentials".into(),
-            serde_json::json!(ps.credential_cache.len()),
-        );
-        entry.insert(
-            "pinned_sessions".into(),
-            serde_json::json!(ps.pinned_sessions.len()),
-        );
-        providers.insert(id.clone(), serde_json::Value::Object(entry));
-    }
-
-    Ok(serde_json::json!({
-        "ok": true,
-        "providers": providers
-    })
-    .to_string())
-}
-
-/// RPC: list contexts for a provider
-#[allow(dead_code)]
-async fn rpc_list_contexts(state: &SharedDaemonState, provider_id: &str) -> Result<String> {
-    if provider_id.is_empty() {
-        bail!("provider_id is required");
-    }
-
-    let s = state.read().await;
-    let ps = s
-        .plugin_states
-        .get(provider_id)
-        .with_context(|| format!("Unknown provider: {provider_id}"))?;
-
-    let contexts: Vec<serde_json::Value> = ps
-        .contexts
-        .iter()
-        .map(|ctx| {
-            serde_json::json!({
-                "id": ctx.id,
-                "display_name": ctx.display_name,
-                "provider_id": ctx.provider_id,
-                "tags": ctx.tags,
-                "region": ctx.region,
-                "active": ps.active_context.as_ref().map(|a| a.id == ctx.id).unwrap_or(false),
-            })
-        })
-        .collect();
-
-    Ok(serde_json::json!({
-        "ok": true,
-        "contexts": contexts
-    })
-    .to_string())
-}
-
-/// RPC: switch active context for a provider
-#[allow(dead_code)]
-async fn rpc_switch_context(
-    state: &SharedDaemonState,
-    provider_id: &str,
-    context_id: &str,
-) -> Result<String> {
-    if provider_id.is_empty() || context_id.is_empty() {
-        bail!("provider_id and context_id are required");
-    }
-
-    let mut s = state.write().await;
-    let ps = s
-        .plugin_states
-        .get_mut(provider_id)
-        .with_context(|| format!("Unknown provider: {provider_id}"))?;
-
-    let target = ps
-        .contexts
-        .iter()
-        .find(|c| c.id == context_id)
-        .cloned()
-        .with_context(|| format!("Context not found: {context_id}"))?;
-
-    let display_name = target.display_name.clone();
-    ps.active_context = Some(target);
-
-    // Invalidate credential cache for the old context so the refresh loop
-    // picks up credentials for the new one immediately
-    tracing::info!("Switched {provider_id} to context {context_id} ({display_name})");
-
-    Ok(serde_json::json!({
-        "ok": true,
-        "active_context": context_id,
-        "display_name": display_name
-    })
-    .to_string())
-}
-
-/// RPC: force a refresh for a specific provider
-#[allow(dead_code)]
-async fn rpc_refresh(state: &SharedDaemonState, provider_id: &str) -> Result<String> {
-    if provider_id.is_empty() {
-        bail!("provider_id is required");
-    }
-
-    refresh_provider(state, provider_id).await?;
-
-    Ok(serde_json::json!({
-        "ok": true,
-        "message": format!("Refresh triggered for {provider_id}")
-    })
-    .to_string())
-}
-
-/// RPC: pin a session to a specific context (for worktree isolation)
-#[allow(dead_code)]
-async fn rpc_pin_session(
-    state: &SharedDaemonState,
-    provider_id: &str,
-    session_id: &str,
-    context_id: &str,
-) -> Result<String> {
-    if provider_id.is_empty() || session_id.is_empty() || context_id.is_empty() {
-        bail!("provider_id, session_id, and context_id are required");
-    }
-
-    let mut s = state.write().await;
-    let ps = s
-        .plugin_states
-        .get_mut(provider_id)
-        .with_context(|| format!("Unknown provider: {provider_id}"))?;
-
-    let target = ps
-        .contexts
-        .iter()
-        .find(|c| c.id == context_id)
-        .cloned()
-        .with_context(|| format!("Context not found: {context_id}"))?;
-
-    ps.pinned_sessions.insert(session_id.to_string(), target);
-    tracing::info!("Pinned session {session_id} to {provider_id}:{context_id}");
-
-    Ok(serde_json::json!({
-        "ok": true,
-        "pinned": { "session_id": session_id, "context_id": context_id }
-    })
-    .to_string())
-}
-
-/// RPC: unpin a session
-#[allow(dead_code)]
-async fn rpc_unpin_session(
-    state: &SharedDaemonState,
-    provider_id: &str,
-    session_id: &str,
-) -> Result<String> {
-    if provider_id.is_empty() || session_id.is_empty() {
-        bail!("provider_id and session_id are required");
-    }
-
-    let mut s = state.write().await;
-    let ps = s
-        .plugin_states
-        .get_mut(provider_id)
-        .with_context(|| format!("Unknown provider: {provider_id}"))?;
-
-    ps.pinned_sessions.remove(session_id);
-    tracing::info!("Unpinned session {session_id} from {provider_id}");
-
-    Ok(serde_json::json!({
-        "ok": true,
-        "unpinned": session_id
-    })
-    .to_string())
-}
-
 /// Send a desktop notification when a session has expired
 fn notify_session_expired(provider_display_name: &str) {
     if let Err(e) = notify_rust::Notification::new()
@@ -777,8 +442,236 @@ fn notify_session_expired(provider_display_name: &str) {
     }
 }
 
+/// Ensure the daemon is running. If not, fork a background process.
+/// Called automatically by CLI commands that need the daemon.
+pub fn ensure_daemon_running() {
+    if is_daemon_running() {
+        return;
+    }
+
+    let bin = match std::env::current_exe().ok().and_then(|p| p.canonicalize().ok()) {
+        Some(p) => p,
+        None => {
+            tracing::debug!("Cannot resolve binary path for daemon auto-start");
+            return;
+        }
+    };
+
+    tracing::debug!("Auto-starting daemon in background");
+    match std::process::Command::new(&bin)
+        .arg("serve")
+        .arg("--foreground")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(_child) => {
+            // Note: Uses blocking sleep intentionally. This runs at the end of CLI commands
+            // that are about to exit, so blocking the executor briefly is acceptable.
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            tracing::debug!("Daemon auto-started");
+        }
+        Err(e) => {
+            tracing::warn!("Failed to auto-start daemon: {e}");
+        }
+    }
+}
+
+/// Install directory for the binary
+fn install_dir() -> std::path::PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".local/bin")
+}
+
+/// launchd plist path on macOS
+fn launchd_plist_path() -> std::path::PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("Library/LaunchAgents/com.glorious.gs-assume.plist")
+}
+
+/// Full install: copy binary to ~/.local/bin, create gsa symlink,
+/// ensure PATH, install launchd agent. Returns a summary of what was done.
+pub fn install() -> Result<Vec<String>> {
+    let mut actions = Vec::new();
+
+    // 1. Resolve current binary
+    let src = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.canonicalize().ok())
+        .with_context(|| "Cannot resolve binary path")?;
+
+    // 2. Copy to ~/.local/bin/gs-assume
+    let dest_dir = install_dir();
+    std::fs::create_dir_all(&dest_dir)
+        .with_context(|| format!("Failed to create {}", dest_dir.display()))?;
+
+    let dest = dest_dir.join("gs-assume");
+    std::fs::copy(&src, &dest)
+        .with_context(|| format!("Failed to copy binary to {}", dest.display()))?;
+
+    // Make executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))?;
+    }
+    actions.push(format!("Installed binary to {}", dest.display()));
+
+    // 3. Create gsa symlink
+    let symlink = dest_dir.join("gsa");
+    let _ = std::fs::remove_file(&symlink); // remove stale symlink
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&dest, &symlink)
+        .with_context(|| format!("Failed to create symlink {}", symlink.display()))?;
+    actions.push(format!("Created symlink {}", symlink.display()));
+
+    // 4. Ensure ~/.local/bin is in PATH via shell rc
+    let dest_dir_str = dest_dir.to_string_lossy().to_string();
+    if let Ok(path) = std::env::var("PATH") {
+        if !path.split(':').any(|p| p == dest_dir_str) {
+            // Add to shell rc files
+            let home = dirs::home_dir().unwrap_or_default();
+            let line = format!("\nexport PATH=\"{}:$PATH\"\n", dest_dir_str);
+            for rc in [".zshrc", ".bashrc", ".bash_profile"] {
+                let rc_path = home.join(rc);
+                if rc_path.exists() {
+                    let content = std::fs::read_to_string(&rc_path).unwrap_or_default();
+                    if !content.contains(&dest_dir_str) {
+                        std::fs::OpenOptions::new()
+                            .append(true)
+                            .open(&rc_path)
+                            .and_then(|mut f| {
+                                use std::io::Write;
+                                f.write_all(line.as_bytes())
+                            })
+                            .ok();
+                        actions.push(format!("Added {} to PATH in ~/{rc}", dest_dir_str));
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Add shell integration (eval + prompt) to rc files
+    {
+        let home = dirs::home_dir().unwrap_or_default();
+        // Map shell rc to the shell type for shell-init
+        let rc_shells: &[(&str, &str)] = &[
+            (".zshrc", "zsh"),
+            (".bashrc", "bash"),
+            (".bash_profile", "bash"),
+        ];
+        for (rc, _shell) in rc_shells {
+            let rc_path = home.join(rc);
+            if rc_path.exists() {
+                let content = std::fs::read_to_string(&rc_path).unwrap_or_default();
+                if !content.contains("gs-assume shell-init") && !content.contains("_gs_assume_prompt") {
+                    let shell_eval = format!(
+                        "\neval \"$({} shell-init {_shell})\"\n",
+                        dest.to_string_lossy()
+                    );
+                    std::fs::OpenOptions::new()
+                        .append(true)
+                        .open(&rc_path)
+                        .and_then(|mut f| {
+                            use std::io::Write;
+                            f.write_all(shell_eval.as_bytes())
+                        })
+                        .ok();
+                    actions.push(format!("Added shell integration to ~/{rc}"));
+                }
+            }
+        }
+    }
+
+    // 6. Install launchd agent (macOS)
+    #[cfg(target_os = "macos")]
+    {
+        let plist_path = launchd_plist_path();
+        let plist_dir = plist_path.parent().unwrap();
+        std::fs::create_dir_all(plist_dir)?;
+
+        let plist = generate_launchd_plist(&dest.to_string_lossy());
+        std::fs::write(&plist_path, &plist)
+            .with_context(|| format!("Failed to write plist to {}", plist_path.display()))?;
+
+        // Unload any existing version first (ignore errors)
+        let _ = std::process::Command::new("launchctl")
+            .args(["bootout", &format!("gui/{}", unsafe { nix::libc::getuid() })])
+            .arg(&plist_path)
+            .stderr(std::process::Stdio::null())
+            .status();
+
+        // Load with modern bootstrap API
+        let status = std::process::Command::new("launchctl")
+            .args(["bootstrap", &format!("gui/{}", unsafe { nix::libc::getuid() })])
+            .arg(&plist_path)
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                actions.push(format!("Installed launch agent: {}", plist_path.display()));
+            }
+            _ => {
+                actions.push(format!("Wrote plist to {} (will load on next login)", plist_path.display()));
+            }
+        }
+    }
+
+    Ok(actions)
+}
+
+/// Uninstall: remove binary, symlink, and launchd agent.
+pub fn uninstall() -> Result<Vec<String>> {
+    let mut actions = Vec::new();
+
+    // Unload and remove launchd plist
+    #[cfg(target_os = "macos")]
+    {
+        let plist_path = launchd_plist_path();
+        if plist_path.exists() {
+            let _ = std::process::Command::new("launchctl")
+                .args(["bootout", &format!("gui/{}", unsafe { nix::libc::getuid() })])
+                .arg(&plist_path)
+                .stderr(std::process::Stdio::null())
+                .status();
+            std::fs::remove_file(&plist_path)?;
+            actions.push("Removed launch agent".to_string());
+        }
+    }
+
+    // Remove binary and symlink
+    let dest_dir = install_dir();
+    for name in ["gs-assume", "gsa"] {
+        let path = dest_dir.join(name);
+        if path.exists() {
+            std::fs::remove_file(&path)?;
+            actions.push(format!("Removed {}", path.display()));
+        }
+    }
+
+    // Stop running daemon
+    if is_daemon_running() {
+        // Kill the running daemon process
+        if let Ok(pid_str) = std::fs::read_to_string(config::pid_path()) {
+            if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                unsafe { nix::libc::kill(pid, nix::libc::SIGTERM); }
+                // Brief wait for graceful shutdown
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+        }
+        remove_pid_file();
+        remove_socket_file();
+        actions.push("Stopped daemon".to_string());
+    }
+
+    Ok(actions)
+}
+
 /// Generate a launchd plist for auto-starting the daemon on macOS
-#[allow(dead_code)]
 pub fn generate_launchd_plist(binary_path: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>

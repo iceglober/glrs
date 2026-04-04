@@ -192,26 +192,24 @@ async fn poll_for_token(
                 });
             }
             Err(sdk_err) => {
-                let err_str = format!("{sdk_err}");
-                if err_str.contains("AuthorizationPendingException")
-                    || err_str.contains("authorization_pending")
-                {
+                let service_err = sdk_err.into_service_error();
+                if service_err.is_authorization_pending_exception() {
                     if attempt % 12 == 0 && attempt > 0 {
                         eprintln!("Still waiting for browser authorization...");
                     }
                     continue;
                 }
-                if err_str.contains("SlowDownException") || err_str.contains("slow_down") {
+                if service_err.is_slow_down_exception() {
                     tokio::time::sleep(interval).await; // Extra delay
                     continue;
                 }
-                if err_str.contains("ExpiredTokenException") || err_str.contains("expired_token") {
+                if service_err.is_expired_token_exception() {
                     return Err(ProviderError::LoginFailed(
                         "Device authorization expired. Please try again.".into(),
                     ));
                 }
                 return Err(ProviderError::LoginFailed(format!(
-                    "CreateToken failed: {sdk_err}"
+                    "CreateToken failed: {service_err}"
                 )));
             }
         }

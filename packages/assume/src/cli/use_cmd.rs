@@ -4,6 +4,16 @@ use crate::tui::picker::{self, PickerResult};
 use anyhow::{bail, Result};
 use clap::Args;
 
+/// Escape a string for safe interpolation inside double-quoted shell values.
+/// Prevents injection when the output is `eval`'d by the shell wrapper.
+fn shell_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('$', "\\$")
+        .replace('`', "\\`")
+        .replace('!', "\\!")
+}
+
 #[derive(Args, Debug)]
 pub struct UseArgs {
     /// Context pattern to match (e.g., "dev", "aws:prod/admin")
@@ -21,32 +31,50 @@ pub struct UseArgs {
 pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config) -> Result<()> {
     // Collect all contexts across all providers
     let mut all_contexts = Vec::new();
-    let active_context_id: Option<String> = None;
+    let active_context_id = crate::core::cache::load_active_context().map(|c| c.id);
 
     for provider_id in registry.ids() {
         let provider = registry.get(&provider_id).unwrap();
-        let tokens = match keychain::load_tokens(&provider_id)? {
-            Some(t) => t,
-            None => continue,
+
+        // Load contexts from cache (fast) or fall back to live API
+        let mut contexts = if let Some(cached) = crate::core::cache::load_contexts(&provider_id) {
+            cached
+        } else {
+            // No cache — need tokens for live API call
+            let tokens = match keychain::load_tokens(&provider_id)? {
+                Some(t) => t,
+                None => continue,
+            };
+            match provider.list_contexts(&tokens).await {
+                Ok(c) => {
+                    if let Err(e) = crate::core::cache::save_contexts(&provider_id, &c) {
+                        tracing::warn!("Failed to cache contexts: {e}");
+                    }
+                    c
+                }
+                Err(e) => {
+                    eprintln!("Warning: {} — {e}", provider.display_name());
+                    continue;
+                }
+            }
         };
 
-        match provider.list_contexts(&tokens).await {
-            Ok(mut contexts) => {
-                // Merge profile configs if available
-                if let Some(provider_cfg) = cfg.providers.get(&provider_id) {
-                    if provider_id == "aws" {
-                        crate::providers::aws::contexts::merge_profile_configs(
-                            &mut contexts,
-                            &provider_cfg.profiles,
-                        );
-                    }
-                }
-                all_contexts.extend(contexts);
-            }
-            Err(e) => {
-                eprintln!("Warning: {} — {e}", provider.display_name());
+        // Merge profile configs if available
+        if let Some(provider_cfg) = cfg.providers.get(&provider_id) {
+            if provider_id == "aws" {
+                crate::providers::aws::contexts::merge_profile_configs(
+                    &mut contexts,
+                    &provider_cfg.profiles,
+                );
             }
         }
+
+        // Auto-tag dangerous contexts
+        if provider_id == "aws" {
+            crate::providers::aws::contexts::auto_tag_dangerous(&mut contexts);
+        }
+
+        all_contexts.extend(contexts);
     }
 
     if all_contexts.is_empty() {
@@ -124,10 +152,36 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
         }
     }
 
-    eprintln!(
-        "Switched to [{}] {} ({})",
-        selected.provider_id, selected.display_name, selected.region
-    );
+    let is_dangerous = selected.tags.contains(&"dangerous".to_string());
+
+    if is_dangerous {
+        eprintln!(
+            "\x1b[33m⚠\x1b[0m  Switched to [{}] \x1b[31m{}\x1b[0m ({})",
+            selected.provider_id, selected.display_name, selected.region
+        );
+    } else {
+        eprintln!(
+            "Switched to [{}] {} ({})",
+            selected.provider_id, selected.display_name, selected.region
+        );
+    }
+
+    // Output env vars to stdout for the shell wrapper to eval.
+    // This is what makes context per-shell instead of global.
+    let prompt_label = format!("{}:{}", selected.provider_id, selected.display_name);
+    let color = if is_dangerous { "red" } else { "green" };
+    println!("export GS_ASSUME_CONTEXT=\"{}\"", shell_escape(&prompt_label));
+    println!("export GS_ASSUME_CONTEXT_COLOR=\"{}\"", shell_escape(color));
+    println!("export GS_ASSUME_CONTEXT_ID=\"{}\"", shell_escape(&selected.id));
+    println!("export GS_ASSUME_CONTEXT_PROVIDER=\"{}\"", shell_escape(&selected.provider_id));
+
+    // Auto-start daemon if not running
+    crate::core::daemon::ensure_daemon_running();
+
+    // Persist active context for status command (non-prompt uses)
+    if let Err(e) = crate::core::cache::save_active_context(&selected) {
+        tracing::warn!("Failed to save active context: {e}");
+    }
 
     audit::log_event(
         audit::AuditEvent::ContextSwitch,

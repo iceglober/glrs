@@ -135,6 +135,28 @@ pub async fn list_contexts(
     Ok(contexts)
 }
 
+/// Auto-tag contexts whose account names suggest production or privileged environments.
+/// This runs BEFORE merge_profile_configs so user config can override.
+pub fn auto_tag_dangerous(contexts: &mut [Context]) {
+    let dangerous_patterns = ["prod", "production", "admin", "payer", "master", "root"];
+
+    for ctx in contexts.iter_mut() {
+        let account_name = ctx
+            .metadata
+            .get("account_name")
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+
+        let is_dangerous = dangerous_patterns
+            .iter()
+            .any(|p| account_name.contains(p));
+
+        if is_dangerous && !ctx.tags.contains(&"dangerous".to_string()) {
+            ctx.tags.push("dangerous".to_string());
+        }
+    }
+}
+
 /// Merge user-configured profile metadata (alias, tags, color, region) into
 /// discovered contexts. Matches on account_id + role_name.
 pub fn merge_profile_configs(contexts: &mut [Context], profiles: &[crate::plugin::ProfileConfig]) {

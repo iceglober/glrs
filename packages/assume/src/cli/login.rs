@@ -11,22 +11,22 @@ pub struct LoginArgs {
 }
 
 /// Prompt the user for input with an optional default value.
-fn prompt(message: &str, default: Option<&str>) -> String {
+fn prompt(message: &str, default: Option<&str>) -> Result<String> {
     let suffix = match default {
         Some(d) => format!(" [{d}]: "),
         None => ": ".to_string(),
     };
     eprint!("{message}{suffix}");
-    io::stderr().flush().unwrap();
+    io::stderr().flush()?;
 
     let mut input = String::new();
-    io::stdin().lock().read_line(&mut input).unwrap();
+    io::stdin().lock().read_line(&mut input)?;
     let trimmed = input.trim().to_string();
 
     if trimmed.is_empty() {
-        default.unwrap_or("").to_string()
+        Ok(default.unwrap_or("").to_string())
     } else {
-        trimmed
+        Ok(trimmed)
     }
 }
 
@@ -47,12 +47,12 @@ fn ensure_aws_configured(provider_config: &mut crate::plugin::ProviderConfig) ->
     let start_url = prompt(
         "Enter your SSO start URL (e.g., https://myorg.awsapps.com/start)",
         None,
-    );
+    )?;
     if start_url.is_empty() {
         bail!("SSO start URL is required");
     }
 
-    let region = prompt("Enter your SSO region", Some("us-east-1"));
+    let region = prompt("Enter your SSO region", Some("us-east-1"))?;
 
     // Update in-memory config
     provider_config.extra.insert(
@@ -134,13 +134,18 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
         .await
         .map_err(|e| anyhow::anyhow!("{} login failed: {e}", provider.display_name()))?;
 
-    // Store tokens in keychain
+    // Store tokens (encrypted at rest)
     keychain::store_tokens(&provider_id, &tokens)?;
 
     // Discover available contexts
     eprintln!("Discovering available contexts...");
     match provider.list_contexts(&tokens).await {
-        Ok(contexts) => {
+        Ok(mut contexts) => {
+            // Auto-tag dangerous contexts
+            if provider_id == "aws" {
+                crate::providers::aws::contexts::auto_tag_dangerous(&mut contexts);
+            }
+
             eprintln!(
                 "Authenticated as {} — {} context(s) available",
                 provider.display_name(),
@@ -154,6 +159,11 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
                     .unwrap_or_default();
                 eprintln!("  {} {}{}", ctx.display_name, ctx.region, alias);
             }
+
+            // Cache contexts for fast offline access
+            if let Err(e) = crate::core::cache::save_contexts(&provider_id, &contexts) {
+                tracing::warn!("Failed to cache contexts: {e}");
+            }
         }
         Err(e) => {
             eprintln!("Warning: Failed to list contexts: {e}");
@@ -163,6 +173,9 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
 
     let expires = tokens.session_expires_at.format("%Y-%m-%d %H:%M UTC");
     eprintln!("Session valid until {expires}");
+
+    // Auto-start daemon if not running
+    crate::core::daemon::ensure_daemon_running();
 
     audit::log_event(
         audit::AuditEvent::Login,

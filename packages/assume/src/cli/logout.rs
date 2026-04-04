@@ -24,6 +24,14 @@ pub async fn run(args: LogoutArgs, registry: &PluginRegistry) -> Result<()> {
         let provider = registry.get(provider_id).unwrap();
 
         keychain::delete_all(provider_id)?;
+
+        // Clear active context if it belonged to this provider
+        if let Some(active) = crate::core::cache::load_active_context() {
+            if active.provider_id == *provider_id {
+                crate::core::cache::clear_active_context();
+            }
+        }
+
         eprintln!("Logged out from {}", provider.display_name());
 
         audit::log_event(
