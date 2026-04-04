@@ -354,15 +354,28 @@ async fn serve_credential_endpoint(
                 let provider_id = provider_id.clone();
 
                 async move {
-                    // Check path
-                    if req.uri().path() != expected_path {
+                    // Accept both /credentials and /credentials/{context_id}
+                    // Per-shell context: each shell sets AWS_CONTAINER_CREDENTIALS_FULL_URI
+                    // to include its context ID in the path.
+                    let path = req.uri().path().to_string();
+                    let context_id = if path == expected_path {
+                        // Legacy: /credentials — use the global active context
+                        None
+                    } else if let Some(id) = path.strip_prefix(&format!("{}/", expected_path)) {
+                        // Per-shell: /credentials/{context_id}
+                        if id.is_empty() {
+                            None
+                        } else {
+                            Some(id.to_string())
+                        }
+                    } else {
                         return Ok::<_, hyper::Error>(
                             Response::builder()
                                 .status(StatusCode::NOT_FOUND)
                                 .body(Full::new(Bytes::from("Not Found")))
                                 .unwrap(),
                         );
-                    }
+                    };
 
                     // Check auth
                     let authed = match &auth {
@@ -387,32 +400,94 @@ async fn serve_credential_endpoint(
                             .unwrap());
                     }
 
-                    // Serve credentials
-                    let s = state.read().await;
-                    let response = if let Some(ps) = s.plugin_states.get(&provider_id) {
-                        if let Some(ref ctx) = ps.active_context {
-                            if let Some(creds) = ps.credential_cache.get(&ctx.id) {
-                                Response::builder()
-                                    .status(StatusCode::OK)
-                                    .header("content-type", "application/json")
-                                    .body(Full::new(Bytes::from(creds.payload.clone())))
-                                    .unwrap()
-                            } else {
-                                Response::builder()
-                                    .status(StatusCode::SERVICE_UNAVAILABLE)
-                                    .body(Full::new(Bytes::from("Credentials not yet available")))
-                                    .unwrap()
+                    // Serve credentials for the requested context.
+                    // If cached, return immediately. If not cached but context is
+                    // known, fetch on-demand so per-shell switching works without
+                    // waiting for the refresh loop.
+
+                    // Resolve target context ID and try cache (read lock)
+                    let (target_ctx_id, cached_response) = {
+                        let s = state.read().await;
+                        let ps = s.plugin_states.get(&provider_id);
+
+                        let resolved_id = context_id.or_else(|| {
+                            ps.and_then(|p| p.active_context.as_ref().map(|c| c.id.clone()))
+                        });
+
+                        let cached = match (&resolved_id, ps) {
+                            (Some(ctx_id), Some(ps)) => {
+                                ps.credential_cache.get(ctx_id).map(|creds| {
+                                    Response::builder()
+                                        .status(StatusCode::OK)
+                                        .header("content-type", "application/json")
+                                        .body(Full::new(Bytes::from(creds.payload.clone())))
+                                        .unwrap()
+                                })
                             }
-                        } else {
-                            Response::builder()
+                            _ => None,
+                        };
+
+                        (resolved_id, cached)
+                    };
+
+                    let response = if let Some(resp) = cached_response {
+                        // Cache hit — fast path
+                        resp
+                    } else if let Some(ref ctx_id) = target_ctx_id {
+                        // Cache miss — fetch credentials on-demand
+                        let fetch_result = {
+                            let s = state.read().await;
+                            let ps = s.plugin_states.get(&provider_id);
+                            if let Some(ps) = ps {
+                                let ctx = ps.contexts.iter()
+                                    .find(|c| c.id == *ctx_id)
+                                    .or(ps.active_context.as_ref())
+                                    .cloned();
+                                let tokens = ps.tokens.clone();
+                                let provider = s.registry.get(&provider_id).map(Arc::clone);
+                                (ctx, tokens, provider)
+                            } else {
+                                (None, None, None)
+                            }
+                        };
+
+                        match fetch_result {
+                            (Some(ctx), Some(tokens), Some(provider)) => {
+                                match provider.get_credentials(&tokens, &ctx).await {
+                                    Ok(creds) => {
+                                        let payload = creds.payload.clone();
+                                        let mut s = state.write().await;
+                                        if let Some(ps) = s.plugin_states.get_mut(&provider_id) {
+                                            ps.credential_cache
+                                                .insert(ctx.id.clone(), creds);
+                                        }
+                                        Response::builder()
+                                            .status(StatusCode::OK)
+                                            .header("content-type", "application/json")
+                                            .body(Full::new(Bytes::from(payload)))
+                                            .unwrap()
+                                    }
+                                    Err(e) => Response::builder()
+                                        .status(StatusCode::SERVICE_UNAVAILABLE)
+                                        .body(Full::new(Bytes::from(format!(
+                                            "Failed to fetch credentials: {e}"
+                                        ))))
+                                        .unwrap(),
+                                }
+                            }
+                            _ => Response::builder()
                                 .status(StatusCode::SERVICE_UNAVAILABLE)
-                                .body(Full::new(Bytes::from("No active context")))
-                                .unwrap()
+                                .body(Full::new(Bytes::from(
+                                    "Context not found or not logged in",
+                                )))
+                                .unwrap(),
                         }
                     } else {
                         Response::builder()
                             .status(StatusCode::SERVICE_UNAVAILABLE)
-                            .body(Full::new(Bytes::from("Provider not found")))
+                            .body(Full::new(Bytes::from(
+                                "No active context. Run: gsa use <pattern>",
+                            )))
                             .unwrap()
                     };
 

@@ -175,6 +175,21 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
     println!("export GS_ASSUME_CONTEXT_ID=\"{}\"", shell_escape(&selected.id));
     println!("export GS_ASSUME_CONTEXT_PROVIDER=\"{}\"", shell_escape(&selected.provider_id));
 
+    // Update the credential endpoint URL to include the context ID so each shell
+    // gets its own credentials from the daemon (not the global active context).
+    if selected.provider_id == "aws" {
+        let port = cfg
+            .providers
+            .get("aws")
+            .and_then(|p| p.port)
+            .unwrap_or(crate::providers::aws::endpoint::DEFAULT_PORT);
+        println!(
+            "export AWS_CONTAINER_CREDENTIALS_FULL_URI=\"http://localhost:{port}/credentials/{context_id}\"",
+            port = port,
+            context_id = shell_escape(&selected.id),
+        );
+    }
+
     // Auto-start daemon if not running
     crate::core::daemon::ensure_daemon_running();
 
