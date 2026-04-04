@@ -78,6 +78,17 @@ impl DaemonState {
                     state.status = PluginStatus::NeedsLogin;
                 }
             }
+            // Load cached contexts so the credential endpoint can resolve context IDs
+            if let Some(contexts) = crate::core::cache::load_contexts(&id) {
+                state.contexts = contexts;
+                tracing::info!("Loaded {} cached contexts for {id}", state.contexts.len());
+            }
+            // Load active context from cache
+            if let Some(active) = crate::core::cache::load_active_context() {
+                if active.provider_id == id {
+                    state.active_context = Some(active);
+                }
+            }
             plugin_states.insert(id, state);
         }
         Self {
