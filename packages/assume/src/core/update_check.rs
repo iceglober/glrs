@@ -51,56 +51,25 @@ fn write_cache(version: &str) {
     let _ = fs::write(&path, serde_json::to_string(&cached).unwrap_or_default());
 }
 
-/// Fetch latest version using gh CLI (sync, fast)
-fn fetch_latest_version_gh() -> Option<String> {
-    let output = std::process::Command::new("gh")
+/// Fetch latest version from the public GitHub API via curl.
+/// Uses a 3-second timeout so it never blocks the CLI.
+fn fetch_latest_version() -> Option<String> {
+    let output = std::process::Command::new("curl")
         .args([
-            "release", "list", "-R", REPO, "--json", "tagName", "-L", "10",
+            "-fsSL",
+            "--max-time", "3",
+            "-H", "Accept: application/vnd.github+json",
+            "-H", "User-Agent: gs-assume-cli",
+            "-H", "X-GitHub-Api-Version: 2022-11-28",
         ])
+        .arg(format!(
+            "https://api.github.com/repos/{REPO}/releases?per_page=10"
+        ))
+        .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .output()
         .ok()?;
 
-    if !output.status.success() {
-        return None;
-    }
-
-    let stdout = String::from_utf8(output.stdout).ok()?;
-    let releases: Vec<serde_json::Value> = serde_json::from_str(&stdout).ok()?;
-
-    releases.iter().find_map(|r| {
-        let tag = r.get("tagName")?.as_str()?;
-        tag.strip_prefix(TAG_PREFIX).map(|v| v.to_string())
-    })
-}
-
-/// Fetch latest version using GitHub REST API via curl (avoids nested tokio runtime)
-fn fetch_latest_version_api() -> Option<String> {
-    let token = std::env::var("GITHUB_TOKEN")
-        .or_else(|_| std::env::var("GH_TOKEN"))
-        .ok();
-
-    let mut cmd = std::process::Command::new("curl");
-    cmd.args([
-        "-fsSL",
-        "--max-time",
-        "5",
-        "-H",
-        "Accept: application/vnd.github+json",
-        "-H",
-        "User-Agent: gs-assume-cli",
-        "-H",
-        "X-GitHub-Api-Version: 2022-11-28",
-    ]);
-    if let Some(ref tok) = token {
-        cmd.args(["-H", &format!("Authorization: Bearer {tok}")]);
-    }
-    cmd.arg(format!(
-        "https://api.github.com/repos/{REPO}/releases?per_page=10"
-    ));
-    cmd.stderr(std::process::Stdio::null());
-
-    let output = cmd.output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -174,12 +143,16 @@ fn try_auto_upgrade(tag: &str) -> bool {
     let asset_name = format!("gs-assume-{platform}");
     let tmp = format!("{}.tmp", exe_path.to_string_lossy());
 
-    // Try gh CLI download
-    let result = std::process::Command::new("gh")
+    // Download binary from public GitHub release via curl
+    let download_url = format!(
+        "https://github.com/{REPO}/releases/download/{tag}/{asset_name}"
+    );
+    let result = std::process::Command::new("curl")
         .args([
-            "release", "download", tag, "-R", REPO,
-            "-p", &asset_name, "-O", &tmp, "--clobber",
+            "-fsSL", "--max-time", "30",
+            "-o", &tmp, &download_url,
         ])
+        .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
 
@@ -214,14 +187,16 @@ pub fn check_for_update() {
         let latest = if let Some(cached) = read_cache() {
             cached
         } else {
-            // Try gh CLI first (fast), then REST API
-            let fetched = fetch_latest_version_gh().or_else(fetch_latest_version_api);
-            match fetched {
-                Some(v) => {
+            // No cache — fetch from public API (curl with 3s timeout)
+            let handle = std::thread::spawn(fetch_latest_version);
+
+            // Wait at most 3 seconds for the version check
+            match handle.join() {
+                Ok(Some(v)) => {
                     write_cache(&v);
                     v
                 }
-                None => return,
+                _ => return,
             }
         };
 

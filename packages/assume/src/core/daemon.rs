@@ -535,6 +535,32 @@ pub fn ensure_daemon_running() {
         return;
     }
 
+    start_daemon_background();
+}
+
+/// Restart the daemon. Kills the running instance (if any) and starts fresh.
+/// Used after login so the new daemon picks up freshly stored tokens from the vault.
+pub fn restart_daemon() {
+    stop_daemon();
+    start_daemon_background();
+}
+
+/// Stop the running daemon process (if any).
+fn stop_daemon() {
+    if is_daemon_running() {
+        if let Ok(pid_str) = std::fs::read_to_string(config::pid_path()) {
+            if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                unsafe { nix::libc::kill(pid, nix::libc::SIGTERM); }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+        }
+        remove_pid_file();
+        remove_socket_file();
+    }
+}
+
+/// Fork a daemon process in the background.
+fn start_daemon_background() {
     let bin = match std::env::current_exe().ok().and_then(|p| p.canonicalize().ok()) {
         Some(p) => p,
         None => {
@@ -543,7 +569,7 @@ pub fn ensure_daemon_running() {
         }
     };
 
-    tracing::debug!("Auto-starting daemon in background");
+    tracing::debug!("Starting daemon in background");
     match std::process::Command::new(&bin)
         .arg("serve")
         .arg("--foreground")
@@ -556,10 +582,10 @@ pub fn ensure_daemon_running() {
             // Note: Uses blocking sleep intentionally. This runs at the end of CLI commands
             // that are about to exit, so blocking the executor briefly is acceptable.
             std::thread::sleep(std::time::Duration::from_millis(300));
-            tracing::debug!("Daemon auto-started");
+            tracing::debug!("Daemon started");
         }
         Err(e) => {
-            tracing::warn!("Failed to auto-start daemon: {e}");
+            tracing::warn!("Failed to start daemon: {e}");
         }
     }
 }
@@ -582,6 +608,12 @@ fn launchd_plist_path() -> std::path::PathBuf {
 /// ensure PATH, install launchd agent. Returns a summary of what was done.
 pub fn install() -> Result<Vec<String>> {
     let mut actions = Vec::new();
+
+    // Stop any running daemon so we can replace the binary
+    if is_daemon_running() {
+        stop_daemon();
+        actions.push("Stopped existing daemon".to_string());
+    }
 
     // 1. Resolve current binary
     let src = std::env::current_exe()
@@ -707,6 +739,10 @@ pub fn install() -> Result<Vec<String>> {
         }
     }
 
+    // Start the new daemon so the user has a running daemon with the updated binary
+    ensure_daemon_running();
+    actions.push("Started daemon with new binary".to_string());
+
     Ok(actions)
 }
 
@@ -741,16 +777,7 @@ pub fn uninstall() -> Result<Vec<String>> {
 
     // Stop running daemon
     if is_daemon_running() {
-        // Kill the running daemon process
-        if let Ok(pid_str) = std::fs::read_to_string(config::pid_path()) {
-            if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                unsafe { nix::libc::kill(pid, nix::libc::SIGTERM); }
-                // Brief wait for graceful shutdown
-                std::thread::sleep(std::time::Duration::from_millis(500));
-            }
-        }
-        remove_pid_file();
-        remove_socket_file();
+        stop_daemon();
         actions.push("Stopped daemon".to_string());
     }
 

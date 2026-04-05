@@ -174,8 +174,8 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
     let expires = tokens.session_expires_at.format("%Y-%m-%d %H:%M UTC");
     eprintln!("Session valid until {expires}");
 
-    // Auto-start daemon if not running
-    crate::core::daemon::ensure_daemon_running();
+    // Restart daemon so it picks up the fresh tokens from vault
+    crate::core::daemon::restart_daemon();
 
     audit::log_event(
         audit::AuditEvent::Login,

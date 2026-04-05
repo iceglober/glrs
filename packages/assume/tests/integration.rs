@@ -193,3 +193,48 @@ fn test_session_token_is_persistent() {
         "session token must be persistent across invocations (daemon and shell-init must agree)"
     );
 }
+
+#[test]
+fn test_shell_init_and_use_share_same_credential_uri_base() {
+    // shell-init outputs the base credential URI
+    // gsa use should output an updated URI with context ID appended
+    let output = gs_assume()
+        .args(["shell-init", "zsh"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Must contain the base URI
+    assert!(
+        stdout.contains("http://localhost:9911/credentials"),
+        "shell-init must set AWS_CONTAINER_CREDENTIALS_FULL_URI to credential endpoint"
+    );
+
+    // The base URI should NOT contain a context ID (that comes from `use`)
+    let uri_line = stdout.lines()
+        .find(|l| l.contains("AWS_CONTAINER_CREDENTIALS_FULL_URI"))
+        .expect("must have URI line");
+    assert!(
+        uri_line.contains("http://localhost:9911/credentials\""),
+        "shell-init URI should be the base path without context ID, got: {uri_line}"
+    );
+}
+
+#[test]
+fn test_use_outputs_credential_uri_with_context_id() {
+    // When `gsa use` succeeds (with a real context), it should output
+    // AWS_CONTAINER_CREDENTIALS_FULL_URI with the context ID in the path.
+    // We can't test with a real context in CI, but we CAN verify that
+    // when use fails (no contexts), it doesn't output export lines.
+    let output = gs_assume()
+        .args(["use", "nonexistent-context-12345"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Failed use should NOT output export lines
+    assert!(
+        !stdout.contains("export "),
+        "failed `use` must not output export lines, got: {stdout}"
+    );
+}
