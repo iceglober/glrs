@@ -2,13 +2,13 @@
 
 <br/>
 
-# `agentic`
+# `glorious-agentic`
 
 **Design specs. Write code. Ship it.**<br/>
 AI workflows for product & engineering, powered by Claude Code.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
-[![GitHub Release](https://img.shields.io/github/v/release/iceglober/glorious?style=flat-square&label=latest)](https://github.com/iceglober/glorious/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/iceglober/glorious?filter=agentic-*&style=flat-square&label=latest)](https://github.com/iceglober/glorious/releases)
 
 <br/>
 
@@ -25,26 +25,26 @@ AI workflows for product & engineering, powered by Claude Code.
 curl -fsSL https://raw.githubusercontent.com/iceglober/glorious/main/packages/agentic/install.sh | bash
 ```
 
-### Get the skills
+### Install the Claude Code skills
 
 ```bash
 gs-agentic skills
 ```
 
+This installs slash commands (`/work`, `/ship`, etc.) into your Claude Code project settings. All commands below are invoked inside Claude Code sessions, not directly in the terminal.
+
 <br/>
 
 ## The Full Loop
 
-> From blank page to merged PR — 7 commands.
+> From blank page to merged PR — 7 slash commands in Claude Code.
 
-```bash
-# ── design ──────────────────────────────────────────
+```
 /research-web  Build a multi-tenant billing system with usage-based pricing
 /spec-make     research/billing focused on metering and invoicing
 /spec-enrich
 /spec-refine
 
-# ── build ───────────────────────────────────────────
 /work  billing system spec
 /qa
 /ship
@@ -54,17 +54,31 @@ gs-agentic skills
 
 ## Commands
 
-### `design` — idea to spec
-
-> Each step reduces ambiguity. Loop `enrich → refine` until unknowns hit zero.
-
-```
-/research-web  →  /spec-make  →  /spec-enrich  →  /spec-refine × N  →  /spec-review
-                                                                           ↕
-                                                                       /spec-lab
-```
+### CLI
 
 | Command | What happens |
+|:--|:--|
+| `gs-agentic start` | Launch the pipeline orchestrator for a task |
+| `gs-agentic status` | Show task tree and progress |
+| `gs-agentic skills` | Install Claude Code slash commands into project |
+| `gs-agentic hooks` | Create post-create hook templates |
+| `gs-agentic upgrade` | Self-update to latest release |
+| `gs-agentic wt create <name>` | Create branch + worktree |
+| `gs-agentic wt checkout <name>` | Checkout existing remote branch as worktree |
+| `gs-agentic wt list` | List all worktrees |
+| `gs-agentic wt cleanup` | Delete merged/stale worktrees |
+
+### Design — idea to spec
+
+> Each step reduces ambiguity. Loop `enrich -> refine` until unknowns hit zero.
+
+```
+/research-web  ->  /spec-make  ->  /spec-enrich  ->  /spec-refine x N  ->  /spec-review
+                                                                              |
+                                                                          /spec-lab
+```
+
+| Slash command | What happens |
 |:--|:--|
 | `/research-web` | Spawns parallel research agents, synthesizes findings |
 | `/spec-make` | Turns research _or a plain description_ into a spec with tracked unknowns |
@@ -73,52 +87,53 @@ gs-agentic skills
 | `/spec-review` | Audits the spec for gaps, conflicts, and opportunities |
 | `/spec-lab` | Runs yes/no validation experiments against unknowns |
 
-<details>
-<summary><code>/spec-make</code> works from research or a description</summary>
+### Build — spec to production
 
-```bash
-/spec-make research/billing focused on metering
-/spec-make A CSV export feature with configurable column selection
-```
-</details>
-
-<br/>
-
-### `build` — spec to production
-
-| Command | What happens |
+| Slash command | What happens |
 |:--|:--|
 | `/think` | Strategy session — forces "why" before "how" |
 | `/work` | Implements from a description. Pulls latest, creates branch, codes. |
 | `/work-backlog` | Works through `.glorious/backlog.json` checklist items |
 | `/fix` | Targeted bug fixes within task scope |
 | `/qa` | Diffs against acceptance criteria. PASS/FAIL per scenario. |
-| `/ship` | Typecheck → review → commit → push → PR |
+| `/ship` | Typecheck -> review -> version bump -> release notes -> PR |
 
-<br/>
+### Product management
 
-## Skills
+| Slash command | What happens |
+|:--|:--|
+| `/product-manager` | End-to-end PM workflow |
+| `/product-problem` | Problem definition |
+| `/product-interview` | Stakeholder interview |
+| `/product-requirements` | Tier-1 PRD |
+| `/product-acceptance` | Acceptance criteria |
+| `/product-build` | Build product artifacts |
+| `/product-evaluate` | Artifact quality scoring |
+| `/product-engineering-handoff` | Engineering handoff doc |
+| `/product-research-benchmarks` | Industry KPIs |
+| `/product-research-competitive` | Competitor analysis |
+| `/product-research-domain` | Domain knowledge |
+| `/product-research-market` | Market sizing |
+| `/product-research-technical` | Codebase feasibility |
 
-> Skills activate automatically when relevant — no slash command needed.
+### Auto-activated skills
+
+> These activate automatically when relevant — no slash command needed.
 
 | Skill | When it activates |
 |:--|:--|
 | `/browser` | UI testing in `/qa`, PR screenshots in `/ship`. Powered by [Playwright CLI](https://github.com/microsoft/playwright-cli). |
-| `/research-auto` | Autonomous think→test→reflect experimentation loop. Based on [ResearcherSkill](https://github.com/krzysztofdudek/ResearcherSkill). |
-
-```bash
-/research-auto  Optimize p99 latency of /api/billing/usage endpoint
-```
+| `/research-auto` | Autonomous think->test->reflect experimentation loop. Based on [ResearcherSkill](https://github.com/krzysztofdudek/ResearcherSkill). |
 
 <br/>
 
-## Worktrees
+## Development
 
 ```bash
-gs-agentic wt create feature-auth        # new branch + worktree
-gs-agentic wt checkout feature-payments   # from existing remote branch
-gs-agentic wt list                        # show all
-gs-agentic wt cleanup                     # delete merged/stale
+bun run build        # Build to dist/index.js
+bun run dev          # Watch mode build
+bun run typecheck    # bun x tsc --noEmit
+bun test             # Run tests
 ```
 
 ---
