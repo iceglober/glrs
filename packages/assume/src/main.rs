@@ -19,6 +19,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Agent access management and MCP server
+    Agent(cli::agent::AgentArgs),
     /// Authenticate with a cloud provider
     Login(cli::login::LoginArgs),
     /// Switch active context (account/role/project)
@@ -87,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     match cli.command {
+        Commands::Agent(args) => cli::agent::run(args, &registry, &cfg).await,
         Commands::Config(args) => cli::config_cmd::run(args).await,
         Commands::Login(args) => cli::login::run(args, &registry, &cfg).await,
         Commands::Use(args) => cli::use_cmd::run(args, &registry, &cfg).await,

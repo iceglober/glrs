@@ -63,3 +63,42 @@ pub fn clear_active_context() {
     let path = active_path();
     let _ = std::fs::remove_file(path);
 }
+
+fn agent_allowed_path() -> PathBuf {
+    super::config::config_dir().join("agent-allowed.json")
+}
+
+/// Load the set of context IDs that are approved for agent access.
+pub fn load_agent_allowed() -> std::collections::HashSet<String> {
+    let path = agent_allowed_path();
+    let json = match std::fs::read_to_string(&path) {
+        Ok(j) => j,
+        Err(_) => return std::collections::HashSet::new(),
+    };
+    let ids: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+    ids.into_iter().collect()
+}
+
+/// Save the set of context IDs approved for agent access.
+pub fn save_agent_allowed(ids: &std::collections::HashSet<String>) -> Result<()> {
+    let path = agent_allowed_path();
+    let sorted: Vec<&String> = {
+        let mut v: Vec<&String> = ids.iter().collect();
+        v.sort();
+        v
+    };
+    let json = serde_json::to_string_pretty(&sorted)?;
+    std::fs::write(&path, json).with_context(|| "Failed to write agent-allowed.json")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+/// Clear all agent access permissions.
+pub fn clear_agent_allowed() {
+    let path = agent_allowed_path();
+    let _ = std::fs::remove_file(path);
+}
