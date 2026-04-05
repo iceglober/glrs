@@ -635,29 +635,35 @@ pub fn install() -> Result<Vec<String>> {
         .and_then(|p| p.canonicalize().ok())
         .with_context(|| "Cannot resolve binary path")?;
 
-    // 2. Copy to ~/.local/bin/gs-assume
+    // 2. Copy to ~/.local/bin/gs-assume (skip if already there — self-copy truncates the file)
     let dest_dir = install_dir();
     std::fs::create_dir_all(&dest_dir)
         .with_context(|| format!("Failed to create {}", dest_dir.display()))?;
 
     let dest = dest_dir.join("gs-assume");
-    std::fs::copy(&src, &dest)
-        .with_context(|| format!("Failed to copy binary to {}", dest.display()))?;
+    let already_installed = dest.canonicalize().ok().map(|d| d == src).unwrap_or(false);
 
-    // Make executable and clear quarantine xattrs (macOS kills binaries with provenance flags)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))?;
+    if already_installed {
+        actions.push(format!("Binary already at {}", dest.display()));
+    } else {
+        std::fs::copy(&src, &dest)
+            .with_context(|| format!("Failed to copy binary to {}", dest.display()))?;
+
+        // Make executable and clear quarantine xattrs (macOS kills binaries with provenance flags)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))?;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("xattr")
+                .args(["-cr"])
+                .arg(&dest)
+                .status();
+        }
+        actions.push(format!("Installed binary to {}", dest.display()));
     }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("xattr")
-            .args(["-cr"])
-            .arg(&dest)
-            .status();
-    }
-    actions.push(format!("Installed binary to {}", dest.display()));
 
     // 3. Create gsa symlink
     let symlink = dest_dir.join("gsa");
