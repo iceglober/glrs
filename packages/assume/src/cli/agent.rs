@@ -100,45 +100,6 @@ async fn run_allow(args: AllowArgs, registry: &PluginRegistry) -> Result<()> {
     Ok(())
 }
 
-/// Fetch credentials from the daemon's HTTP endpoint via curl.
-/// Returns the raw JSON payload on success.
-fn fetch_credentials_from_daemon(context_id: &str, port: u16) -> Option<String> {
-    let token = crate::providers::aws::endpoint::get_or_create_session_token();
-    let url = format!("http://localhost:{port}/credentials/{context_id}");
-
-    let output = std::process::Command::new("curl")
-        .args([
-            "-fsSL",
-            "--max-time", "5",
-            "-H", &format!("Authorization: Bearer {token}"),
-        ])
-        .arg(&url)
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    String::from_utf8(output.stdout).ok()
-}
-
-/// Parse AWS ECS credential JSON into env var pairs.
-fn parse_ecs_credentials(json: &str) -> Option<Vec<(String, String)>> {
-    let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    let access_key = v.get("AccessKeyId")?.as_str()?;
-    let secret_key = v.get("SecretAccessKey")?.as_str()?;
-    let session_token = v.get("Token")?.as_str()?;
-
-    Some(vec![
-        ("AWS_ACCESS_KEY_ID".into(), access_key.to_string()),
-        ("AWS_SECRET_ACCESS_KEY".into(), secret_key.to_string()),
-        ("AWS_SESSION_TOKEN".into(), session_token.to_string()),
-    ])
-}
-
 async fn run_exec(args: AgentExecArgs, cfg: &config::Config) -> Result<()> {
     if args.command.is_empty() {
         bail!("No command specified. Usage: gsa agent exec -- <command>");
@@ -146,7 +107,6 @@ async fn run_exec(args: AgentExecArgs, cfg: &config::Config) -> Result<()> {
 
     // 1. Resolve context
     let context = if let Some(ref pattern) = args.profile {
-        // Fuzzy match against cached contexts
         let mut all_contexts = Vec::new();
         for provider_id in ["aws"] {
             if let Some(contexts) = cache::load_contexts(provider_id) {
@@ -159,7 +119,6 @@ async fn run_exec(args: AgentExecArgs, cfg: &config::Config) -> Result<()> {
             None => bail!("No context matching '{pattern}'"),
         }
     } else {
-        // Default to active context
         cache::load_active_context()
             .ok_or_else(|| anyhow::anyhow!("No active context. Run: gsa use <pattern>"))?
     };
@@ -173,28 +132,27 @@ async fn run_exec(args: AgentExecArgs, cfg: &config::Config) -> Result<()> {
         );
     }
 
-    // 3. Fetch credentials from daemon
+    // 3. Ensure daemon is running (child process will fetch creds from it)
+    crate::core::daemon::ensure_daemon_running();
+
+    // 4. Build env vars — point at daemon endpoint for auto-refreshing credentials
     let port = cfg
         .providers
         .get("aws")
         .and_then(|p| p.port)
         .unwrap_or(crate::providers::aws::endpoint::DEFAULT_PORT);
+    let token = crate::providers::aws::endpoint::get_or_create_session_token();
 
-    let cred_json = fetch_credentials_from_daemon(&context.id, port)
-        .ok_or_else(|| anyhow::anyhow!(
-            "Failed to fetch credentials from daemon. Is it running? Try: gsa login aws"
-        ))?;
+    let mut env_vars: Vec<(String, String)> = vec![
+        ("AWS_CONTAINER_CREDENTIALS_FULL_URI".into(), format!("http://localhost:{port}/credentials/{}", context.id)),
+        ("AWS_CONTAINER_AUTHORIZATION_TOKEN".into(), format!("Bearer {token}")),
+    ];
 
-    let mut env_vars = parse_ecs_credentials(&cred_json)
-        .ok_or_else(|| anyhow::anyhow!("Failed to parse credential response from daemon"))?;
-
-    // 4. Add region
     if !context.region.is_empty() {
         env_vars.push(("AWS_REGION".into(), context.region.clone()));
         env_vars.push(("AWS_DEFAULT_REGION".into(), context.region.clone()));
     }
 
-    // Add context metadata for prompt/tooling
     env_vars.push(("GS_ASSUME_CONTEXT".into(), format!("{}:{}", context.provider_id, context.display_name)));
     env_vars.push(("GS_ASSUME_CONTEXT_ID".into(), context.id.clone()));
     env_vars.push(("GS_ASSUME_CONTEXT_PROVIDER".into(), context.provider_id.clone()));

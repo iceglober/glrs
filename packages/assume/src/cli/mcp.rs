@@ -208,19 +208,20 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
         )));
     }
 
-    // 3. Fetch credentials from daemon
+    // 3. Ensure daemon is running
+    crate::core::daemon::ensure_daemon_running();
+
+    // 4. Build env vars — point at daemon endpoint for auto-refreshing credentials
     let cfg = config::load_config().map_err(|e| (-32603, format!("Config error: {e}")))?;
     let port = cfg.providers.get("aws").and_then(|p| p.port)
         .unwrap_or(crate::providers::aws::endpoint::DEFAULT_PORT);
+    let token = crate::providers::aws::endpoint::get_or_create_session_token();
 
-    let cred_json = fetch_credentials_from_daemon(&context.id, port)
-        .ok_or((-32603, "Failed to fetch credentials from daemon. Is it running? User should run: gsa login aws".to_string()))?;
+    let mut env: Vec<(String, String)> = vec![
+        ("AWS_CONTAINER_CREDENTIALS_FULL_URI".into(), format!("http://localhost:{port}/credentials/{}", context.id)),
+        ("AWS_CONTAINER_AUTHORIZATION_TOKEN".into(), format!("Bearer {token}")),
+    ];
 
-    let env_vars = parse_ecs_credentials(&cred_json)
-        .ok_or((-32603, "Failed to parse credential response".to_string()))?;
-
-    // 4. Build full env
-    let mut env: Vec<(String, String)> = env_vars;
     if !context.region.is_empty() {
         env.push(("AWS_REGION".into(), context.region.clone()));
         env.push(("AWS_DEFAULT_REGION".into(), context.region.clone()));
@@ -244,7 +245,6 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
         &format!("mcp run_with_credentials: {command}"),
     );
 
-    // Build response text
     let mut text = String::new();
     if !stdout_str.is_empty() {
         text.push_str(&stdout_str);
@@ -265,42 +265,4 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
         }],
         "isError": exit_code != 0
     }))
-}
-
-/// Fetch credentials from the daemon's HTTP endpoint via curl.
-fn fetch_credentials_from_daemon(context_id: &str, port: u16) -> Option<String> {
-    let token = crate::providers::aws::endpoint::get_or_create_session_token();
-    let url = format!("http://localhost:{port}/credentials/{context_id}");
-
-    let output = std::process::Command::new("curl")
-        .args([
-            "-fsSL",
-            "--max-time", "5",
-            "-H", &format!("Authorization: Bearer {token}"),
-        ])
-        .arg(&url)
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    String::from_utf8(output.stdout).ok()
-}
-
-/// Parse AWS ECS credential JSON into env var pairs.
-fn parse_ecs_credentials(json: &str) -> Option<Vec<(String, String)>> {
-    let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    let access_key = v.get("AccessKeyId")?.as_str()?;
-    let secret_key = v.get("SecretAccessKey")?.as_str()?;
-    let session_token = v.get("Token")?.as_str()?;
-
-    Some(vec![
-        ("AWS_ACCESS_KEY_ID".into(), access_key.to_string()),
-        ("AWS_SECRET_ACCESS_KEY".into(), secret_key.to_string()),
-        ("AWS_SESSION_TOKEN".into(), session_token.to_string()),
-    ])
 }
