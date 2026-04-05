@@ -7,7 +7,7 @@ import { VERSION } from "../lib/version.js";
 import { ok, info, warn, red } from "../lib/fmt.js";
 
 const REPO = "iceglober/glorious";
-const TAG_PREFIX = "v";
+const TAG_PREFIX = "agentic-v";
 
 interface Release {
   version: string;
@@ -167,7 +167,7 @@ export const upgrade = command({
     if (!latest) {
       warn("no releases found");
       console.log("  Push a tag to create the first release:");
-      console.log("    git tag v0.2.0 && git push origin --tags");
+      console.log("    git tag agentic-v0.2.0 && git push origin --tags");
       process.exit(1);
     }
 
