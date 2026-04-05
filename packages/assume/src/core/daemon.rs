@@ -638,11 +638,18 @@ pub fn install() -> Result<Vec<String>> {
     std::fs::copy(&src, &dest)
         .with_context(|| format!("Failed to copy binary to {}", dest.display()))?;
 
-    // Make executable
+    // Make executable and clear quarantine xattrs (macOS kills binaries with provenance flags)
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("xattr")
+            .args(["-cr"])
+            .arg(&dest)
+            .status();
     }
     actions.push(format!("Installed binary to {}", dest.display()));
 
