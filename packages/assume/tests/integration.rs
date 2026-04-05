@@ -195,6 +195,24 @@ fn test_session_token_is_persistent() {
 }
 
 #[test]
+fn test_shell_init_bearer_prefix() {
+    // AWS_CONTAINER_AUTHORIZATION_TOKEN must include Bearer prefix
+    // because AWS SDKs send this value as-is in the Authorization header
+    let output = gs_assume()
+        .args(["shell-init", "zsh"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let token_line = stdout.lines()
+        .find(|l| l.contains("AWS_CONTAINER_AUTHORIZATION_TOKEN"))
+        .expect("must have token line");
+    assert!(
+        token_line.contains("Bearer "),
+        "AWS_CONTAINER_AUTHORIZATION_TOKEN must include 'Bearer ' prefix for AWS SDK compatibility, got: {token_line}"
+    );
+}
+
+#[test]
 fn test_shell_init_and_use_share_same_credential_uri_base() {
     // shell-init outputs the base credential URI
     // gsa use should output an updated URI with context ID appended

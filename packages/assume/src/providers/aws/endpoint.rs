@@ -57,7 +57,7 @@ pub fn shell_env(port: u16, session_token: &str) -> Vec<(String, String)> {
         ),
         (
             "AWS_CONTAINER_AUTHORIZATION_TOKEN".to_string(),
-            session_token.to_string(),
+            format!("Bearer {session_token}"),
         ),
     ]
 }

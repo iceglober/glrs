@@ -394,7 +394,10 @@ async fn serve_credential_endpoint(
                             .headers()
                             .get("authorization")
                             .and_then(|v| v.to_str().ok())
-                            .map(|v| v.strip_prefix("Bearer ").unwrap_or("") == token.as_str())
+                            .map(|v| {
+                                let v = v.strip_prefix("Bearer ").unwrap_or(v);
+                                v == token.as_str()
+                            })
                             .unwrap_or(false),
                         crate::plugin::EndpointAuth::RequiredHeader { key, value } => req
                             .headers()
@@ -423,6 +426,11 @@ async fn serve_credential_endpoint(
 
                         let resolved_id = context_id.or_else(|| {
                             ps.and_then(|p| p.active_context.as_ref().map(|c| c.id.clone()))
+                        }).or_else(|| {
+                            // Fallback: re-read active context from cache in case
+                            // gsa use was run after daemon startup
+                            crate::core::cache::load_active_context()
+                                .map(|c| c.id)
                         });
 
                         let cached = match (&resolved_id, ps) {
