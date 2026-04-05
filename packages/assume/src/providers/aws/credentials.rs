@@ -121,7 +121,7 @@ pub async fn get_credentials(
         access_key_id,
         secret_access_key,
         session_token,
-        expiration: expires_at.to_rfc3339(),
+        expiration: expires_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
     };
 
     // Serialize as ECS-format JSON (this is the opaque payload)
