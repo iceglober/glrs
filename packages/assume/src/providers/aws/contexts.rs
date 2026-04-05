@@ -147,9 +147,7 @@ pub fn auto_tag_dangerous(contexts: &mut [Context]) {
             .map(|s| s.to_lowercase())
             .unwrap_or_default();
 
-        let is_dangerous = dangerous_patterns
-            .iter()
-            .any(|p| account_name.contains(p));
+        let is_dangerous = dangerous_patterns.iter().any(|p| account_name.contains(p));
 
         if is_dangerous && !ctx.tags.contains(&"dangerous".to_string()) {
             ctx.tags.push("dangerous".to_string());

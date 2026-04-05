@@ -102,16 +102,35 @@ gs-assume() {{ gsa "$@"; }}"#
     println!(r#"_gs_assume_prompt() {{"#);
     println!(r#"    if [[ -n "$GS_ASSUME_CONTEXT" ]]; then"#);
     println!(r#"        local color reset"#);
-    println!("        reset=\"{zw_open}\\033[0m{zw_close}\"", zw_open = zw_open, zw_close = zw_close);
+    println!(
+        "        reset=\"{zw_open}\\033[0m{zw_close}\"",
+        zw_open = zw_open,
+        zw_close = zw_close
+    );
     println!(r#"        case "$GS_ASSUME_CONTEXT_COLOR" in"#);
-    println!("            red)    color=\"{zw_open}\\033[31m{zw_close}\" ;;", zw_open = zw_open, zw_close = zw_close);
-    println!("            yellow) color=\"{zw_open}\\033[33m{zw_close}\" ;;", zw_open = zw_open, zw_close = zw_close);
-    println!("            *)      color=\"{zw_open}\\033[32m{zw_close}\" ;;", zw_open = zw_open, zw_close = zw_close);
+    println!(
+        "            red)    color=\"{zw_open}\\033[31m{zw_close}\" ;;",
+        zw_open = zw_open,
+        zw_close = zw_close
+    );
+    println!(
+        "            yellow) color=\"{zw_open}\\033[33m{zw_close}\" ;;",
+        zw_open = zw_open,
+        zw_close = zw_close
+    );
+    println!(
+        "            *)      color=\"{zw_open}\\033[32m{zw_close}\" ;;",
+        zw_open = zw_open,
+        zw_close = zw_close
+    );
     println!(r#"        esac"#);
     println!(r#"        echo "${{color}}[$GS_ASSUME_CONTEXT]${{reset}} ""#);
     println!(r#"    fi"#);
     println!(r#"}}"#);
-    println!("if [[ \"${pv}\" != *'$(_gs_assume_prompt)'* ]]; then", pv = pv);
+    println!(
+        "if [[ \"${pv}\" != *'$(_gs_assume_prompt)'* ]]; then",
+        pv = pv
+    );
     println!("    {pv}='$(_gs_assume_prompt)'\"${pv}\"", pv = pv);
     println!(r#"fi"#);
 }

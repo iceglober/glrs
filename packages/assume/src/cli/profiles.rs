@@ -91,7 +91,11 @@ pub async fn run(
             let alias = ctx.metadata.get("alias").map(String::as_str).unwrap_or("-");
             let is_dangerous = ctx.tags.contains(&"dangerous".to_string());
             let is_active = active_id.as_deref() == Some(ctx.id.as_str());
-            let marker = if is_active { "\x1b[32m● \x1b[0m" } else { "  " };
+            let marker = if is_active {
+                "\x1b[32m● \x1b[0m"
+            } else {
+                "  "
+            };
 
             let line = if provider_id == "aws" {
                 let account = ctx

@@ -57,10 +57,14 @@ fn fetch_latest_version() -> Option<String> {
     let output = std::process::Command::new("curl")
         .args([
             "-fsSL",
-            "--max-time", "3",
-            "-H", "Accept: application/vnd.github+json",
-            "-H", "User-Agent: gs-assume-cli",
-            "-H", "X-GitHub-Api-Version: 2022-11-28",
+            "--max-time",
+            "3",
+            "-H",
+            "Accept: application/vnd.github+json",
+            "-H",
+            "User-Agent: gs-assume-cli",
+            "-H",
+            "X-GitHub-Api-Version: 2022-11-28",
         ])
         .arg(format!(
             "https://api.github.com/repos/{REPO}/releases?per_page=10"
@@ -99,14 +103,30 @@ fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 fn is_major_bump(current: &str, latest: &str) -> bool {
-    let cur_major: u64 = current.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
-    let lat_major: u64 = latest.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let cur_major: u64 = current
+        .split('.')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let lat_major: u64 = latest
+        .split('.')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
     lat_major > cur_major
 }
 
 fn detect_platform() -> &'static str {
-    let os = if cfg!(target_os = "macos") { "darwin" } else { "linux" };
-    let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
+    let os = if cfg!(target_os = "macos") {
+        "darwin"
+    } else {
+        "linux"
+    };
+    let arch = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "amd64"
+    };
     match (os, arch) {
         ("darwin", "arm64") => "darwin-arm64",
         ("darwin", "amd64") => "darwin-amd64",
@@ -144,14 +164,9 @@ fn try_auto_upgrade(tag: &str) -> bool {
     let tmp = format!("{}.tmp", exe_path.to_string_lossy());
 
     // Download binary from public GitHub release via curl
-    let download_url = format!(
-        "https://github.com/{REPO}/releases/download/{tag}/{asset_name}"
-    );
+    let download_url = format!("https://github.com/{REPO}/releases/download/{tag}/{asset_name}");
     let result = std::process::Command::new("curl")
-        .args([
-            "-fsSL", "--max-time", "30",
-            "-o", &tmp, &download_url,
-        ])
+        .args(["-fsSL", "--max-time", "30", "-o", &tmp, &download_url])
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();

@@ -74,7 +74,9 @@ pub async fn run(args: SyncArgs, registry: &PluginRegistry, _cfg: &config::Confi
                                 );
 
                                 // Update cache
-                                if let Err(e) = crate::core::cache::save_contexts(provider_id, &contexts) {
+                                if let Err(e) =
+                                    crate::core::cache::save_contexts(provider_id, &contexts)
+                                {
                                     tracing::warn!("Failed to cache contexts: {e}");
                                 }
                             }

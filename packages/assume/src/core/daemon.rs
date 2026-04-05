@@ -424,14 +424,15 @@ async fn serve_credential_endpoint(
                         let s = state.read().await;
                         let ps = s.plugin_states.get(&provider_id);
 
-                        let resolved_id = context_id.or_else(|| {
-                            ps.and_then(|p| p.active_context.as_ref().map(|c| c.id.clone()))
-                        }).or_else(|| {
-                            // Fallback: re-read active context from cache in case
-                            // gsa use was run after daemon startup
-                            crate::core::cache::load_active_context()
-                                .map(|c| c.id)
-                        });
+                        let resolved_id = context_id
+                            .or_else(|| {
+                                ps.and_then(|p| p.active_context.as_ref().map(|c| c.id.clone()))
+                            })
+                            .or_else(|| {
+                                // Fallback: re-read active context from cache in case
+                                // gsa use was run after daemon startup
+                                crate::core::cache::load_active_context().map(|c| c.id)
+                            });
 
                         let cached = match (&resolved_id, ps) {
                             (Some(ctx_id), Some(ps)) => {
@@ -458,7 +459,9 @@ async fn serve_credential_endpoint(
                             let s = state.read().await;
                             let ps = s.plugin_states.get(&provider_id);
                             if let Some(ps) = ps {
-                                let ctx = ps.contexts.iter()
+                                let ctx = ps
+                                    .contexts
+                                    .iter()
                                     .find(|c| c.id == *ctx_id)
                                     .or(ps.active_context.as_ref())
                                     .cloned();
@@ -477,8 +480,7 @@ async fn serve_credential_endpoint(
                                         let payload = creds.payload.clone();
                                         let mut s = state.write().await;
                                         if let Some(ps) = s.plugin_states.get_mut(&provider_id) {
-                                            ps.credential_cache
-                                                .insert(ctx.id.clone(), creds);
+                                            ps.credential_cache.insert(ctx.id.clone(), creds);
                                         }
                                         Response::builder()
                                             .status(StatusCode::OK)
@@ -496,9 +498,7 @@ async fn serve_credential_endpoint(
                             }
                             _ => Response::builder()
                                 .status(StatusCode::SERVICE_UNAVAILABLE)
-                                .body(Full::new(Bytes::from(
-                                    "Context not found or not logged in",
-                                )))
+                                .body(Full::new(Bytes::from("Context not found or not logged in")))
                                 .unwrap(),
                         }
                     } else {
@@ -558,7 +558,9 @@ fn stop_daemon() {
     if is_daemon_running() {
         if let Ok(pid_str) = std::fs::read_to_string(config::pid_path()) {
             if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                unsafe { nix::libc::kill(pid, nix::libc::SIGTERM); }
+                unsafe {
+                    nix::libc::kill(pid, nix::libc::SIGTERM);
+                }
                 std::thread::sleep(std::time::Duration::from_millis(500));
             }
         }
@@ -569,7 +571,10 @@ fn stop_daemon() {
 
 /// Fork a daemon process in the background.
 fn start_daemon_background() {
-    let bin = match std::env::current_exe().ok().and_then(|p| p.canonicalize().ok()) {
+    let bin = match std::env::current_exe()
+        .ok()
+        .and_then(|p| p.canonicalize().ok())
+    {
         Some(p) => p,
         None => {
             tracing::debug!("Cannot resolve binary path for daemon auto-start");
@@ -702,7 +707,9 @@ pub fn install() -> Result<Vec<String>> {
             let rc_path = home.join(rc);
             if rc_path.exists() {
                 let content = std::fs::read_to_string(&rc_path).unwrap_or_default();
-                if !content.contains("gs-assume shell-init") && !content.contains("_gs_assume_prompt") {
+                if !content.contains("gs-assume shell-init")
+                    && !content.contains("_gs_assume_prompt")
+                {
                     let shell_eval = format!(
                         "\neval \"$({} shell-init {_shell})\"\n",
                         dest.to_string_lossy()
@@ -734,14 +741,20 @@ pub fn install() -> Result<Vec<String>> {
 
         // Unload any existing version first (ignore errors)
         let _ = std::process::Command::new("launchctl")
-            .args(["bootout", &format!("gui/{}", unsafe { nix::libc::getuid() })])
+            .args([
+                "bootout",
+                &format!("gui/{}", unsafe { nix::libc::getuid() }),
+            ])
             .arg(&plist_path)
             .stderr(std::process::Stdio::null())
             .status();
 
         // Load with modern bootstrap API
         let status = std::process::Command::new("launchctl")
-            .args(["bootstrap", &format!("gui/{}", unsafe { nix::libc::getuid() })])
+            .args([
+                "bootstrap",
+                &format!("gui/{}", unsafe { nix::libc::getuid() }),
+            ])
             .arg(&plist_path)
             .status();
 
@@ -750,7 +763,10 @@ pub fn install() -> Result<Vec<String>> {
                 actions.push(format!("Installed launch agent: {}", plist_path.display()));
             }
             _ => {
-                actions.push(format!("Wrote plist to {} (will load on next login)", plist_path.display()));
+                actions.push(format!(
+                    "Wrote plist to {} (will load on next login)",
+                    plist_path.display()
+                ));
             }
         }
     }
@@ -772,7 +788,10 @@ pub fn uninstall() -> Result<Vec<String>> {
         let plist_path = launchd_plist_path();
         if plist_path.exists() {
             let _ = std::process::Command::new("launchctl")
-                .args(["bootout", &format!("gui/{}", unsafe { nix::libc::getuid() })])
+                .args([
+                    "bootout",
+                    &format!("gui/{}", unsafe { nix::libc::getuid() }),
+                ])
                 .arg(&plist_path)
                 .stderr(std::process::Stdio::null())
                 .status();

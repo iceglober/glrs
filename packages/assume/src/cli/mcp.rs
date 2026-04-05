@@ -78,7 +78,11 @@ fn write_error(stdout: &mut impl Write, id: Value, code: i32, message: &str) -> 
             "message": message,
         },
     });
-    writeln!(stdout, "{}", serde_json::to_string(&response).unwrap_or_default())?;
+    writeln!(
+        stdout,
+        "{}",
+        serde_json::to_string(&response).unwrap_or_default()
+    )?;
     stdout.flush()
 }
 
@@ -176,7 +180,8 @@ fn tool_list_contexts() -> Result<Value, (i32, String)> {
 }
 
 fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> {
-    let command = arguments.get("command")
+    let command = arguments
+        .get("command")
         .and_then(|c| c.as_str())
         .ok_or((-32602, "Missing required parameter: command".to_string()))?;
 
@@ -191,21 +196,28 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
             }
         }
         let matches = crate::core::fuzzy::match_contexts(pattern, &all_contexts);
-        matches.into_iter().next()
+        matches
+            .into_iter()
+            .next()
             .map(|m| m.context)
             .ok_or((-32602, format!("No context matching '{pattern}'")))?
     } else {
-        cache::load_active_context()
-            .ok_or((-32602, "No active context. Run: gsa use <pattern>".to_string()))?
+        cache::load_active_context().ok_or((
+            -32602,
+            "No active context. Run: gsa use <pattern>".to_string(),
+        ))?
     };
 
     // 2. Permission check
     let allowed = cache::load_agent_allowed();
     if !allowed.contains(&context.id) {
-        return Err((-32602, format!(
+        return Err((
+            -32602,
+            format!(
             "Context '{}' is not approved for agent access. The user needs to run: gsa agent allow",
             context.display_name
-        )));
+        ),
+        ));
     }
 
     // 3. Ensure daemon is running
@@ -213,13 +225,22 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
 
     // 4. Build env vars — point at daemon endpoint for auto-refreshing credentials
     let cfg = config::load_config().map_err(|e| (-32603, format!("Config error: {e}")))?;
-    let port = cfg.providers.get("aws").and_then(|p| p.port)
+    let port = cfg
+        .providers
+        .get("aws")
+        .and_then(|p| p.port)
         .unwrap_or(crate::providers::aws::endpoint::DEFAULT_PORT);
     let token = crate::providers::aws::endpoint::get_or_create_session_token();
 
     let mut env: Vec<(String, String)> = vec![
-        ("AWS_CONTAINER_CREDENTIALS_FULL_URI".into(), format!("http://localhost:{port}/credentials/{}", context.id)),
-        ("AWS_CONTAINER_AUTHORIZATION_TOKEN".into(), format!("Bearer {token}")),
+        (
+            "AWS_CONTAINER_CREDENTIALS_FULL_URI".into(),
+            format!("http://localhost:{port}/credentials/{}", context.id),
+        ),
+        (
+            "AWS_CONTAINER_AUTHORIZATION_TOKEN".into(),
+            format!("Bearer {token}"),
+        ),
     ];
 
     if !context.region.is_empty() {
@@ -250,7 +271,9 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
         text.push_str(&stdout_str);
     }
     if !stderr_str.is_empty() {
-        if !text.is_empty() { text.push('\n'); }
+        if !text.is_empty() {
+            text.push('\n');
+        }
         text.push_str("stderr:\n");
         text.push_str(&stderr_str);
     }

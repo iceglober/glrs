@@ -88,8 +88,7 @@ fn encrypt_to_file(path: &PathBuf, plaintext: &[u8]) -> Result<()> {
     let mut output = Vec::with_capacity(12 + ciphertext.len());
     output.extend_from_slice(&nonce_bytes);
     output.extend_from_slice(&ciphertext);
-    std::fs::write(path, &output)
-        .with_context(|| format!("Failed to write {}", path.display()))?;
+    std::fs::write(path, &output).with_context(|| format!("Failed to write {}", path.display()))?;
 
     #[cfg(unix)]
     {
@@ -117,9 +116,11 @@ fn decrypt_from_file(path: &PathBuf) -> Result<Option<Vec<u8>>> {
         .map_err(|e| anyhow::anyhow!("Failed to create cipher: {e}"))?;
 
     let nonce = Nonce::from_slice(&raw[..12]);
-    let plaintext = cipher
-        .decrypt(nonce, &raw[12..])
-        .map_err(|_| anyhow::anyhow!("Decryption failed — vault key may have changed. Run: gs-assume login <provider>"))?;
+    let plaintext = cipher.decrypt(nonce, &raw[12..]).map_err(|_| {
+        anyhow::anyhow!(
+            "Decryption failed — vault key may have changed. Run: gs-assume login <provider>"
+        )
+    })?;
 
     Ok(Some(plaintext))
 }
@@ -166,8 +167,10 @@ pub fn store_client_registration(provider_id: &str, data: &serde_json::Value) ->
 pub fn load_client_registration(provider_id: &str) -> Result<Option<serde_json::Value>> {
     match decrypt_from_file(&client_path(provider_id))? {
         Some(plaintext) => {
-            let data: serde_json::Value = serde_json::from_slice(&plaintext)
-                .with_context(|| format!("Failed to deserialize client registration for {provider_id}"))?;
+            let data: serde_json::Value =
+                serde_json::from_slice(&plaintext).with_context(|| {
+                    format!("Failed to deserialize client registration for {provider_id}")
+                })?;
             Ok(Some(data))
         }
         None => Ok(None),

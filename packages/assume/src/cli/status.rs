@@ -59,7 +59,10 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
         // Show active context
         if let Some(ref active) = crate::core::cache::load_active_context() {
             if active.provider_id == provider_id {
-                println!("  Active context: {} ({})", active.display_name, active.region);
+                println!(
+                    "  Active context: {} ({})",
+                    active.display_name, active.region
+                );
             }
         }
 

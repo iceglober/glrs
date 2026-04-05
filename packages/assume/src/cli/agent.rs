@@ -78,8 +78,12 @@ async fn run_allow(args: AllowArgs, registry: &PluginRegistry) -> Result<()> {
         eprintln!("Contexts approved for agent access:");
         for ctx in &all_contexts {
             if current_allowed.contains(&ctx.id) {
-                let danger = if ctx.tags.contains(&"dangerous".to_string()) { " \u{26a0}" } else { "" };
-                eprintln!("  {} ({}){}",  ctx.display_name, ctx.region, danger);
+                let danger = if ctx.tags.contains(&"dangerous".to_string()) {
+                    " \u{26a0}"
+                } else {
+                    ""
+                };
+                eprintln!("  {} ({}){}", ctx.display_name, ctx.region, danger);
             }
         }
         return Ok(());
@@ -144,8 +148,14 @@ async fn run_exec(args: AgentExecArgs, cfg: &config::Config) -> Result<()> {
     let token = crate::providers::aws::endpoint::get_or_create_session_token();
 
     let mut env_vars: Vec<(String, String)> = vec![
-        ("AWS_CONTAINER_CREDENTIALS_FULL_URI".into(), format!("http://localhost:{port}/credentials/{}", context.id)),
-        ("AWS_CONTAINER_AUTHORIZATION_TOKEN".into(), format!("Bearer {token}")),
+        (
+            "AWS_CONTAINER_CREDENTIALS_FULL_URI".into(),
+            format!("http://localhost:{port}/credentials/{}", context.id),
+        ),
+        (
+            "AWS_CONTAINER_AUTHORIZATION_TOKEN".into(),
+            format!("Bearer {token}"),
+        ),
     ];
 
     if !context.region.is_empty() {
@@ -153,9 +163,15 @@ async fn run_exec(args: AgentExecArgs, cfg: &config::Config) -> Result<()> {
         env_vars.push(("AWS_DEFAULT_REGION".into(), context.region.clone()));
     }
 
-    env_vars.push(("GS_ASSUME_CONTEXT".into(), format!("{}:{}", context.provider_id, context.display_name)));
+    env_vars.push((
+        "GS_ASSUME_CONTEXT".into(),
+        format!("{}:{}", context.provider_id, context.display_name),
+    ));
     env_vars.push(("GS_ASSUME_CONTEXT_ID".into(), context.id.clone()));
-    env_vars.push(("GS_ASSUME_CONTEXT_PROVIDER".into(), context.provider_id.clone()));
+    env_vars.push((
+        "GS_ASSUME_CONTEXT_PROVIDER".into(),
+        context.provider_id.clone(),
+    ));
 
     // 5. Run the command
     let program = &args.command[0];
