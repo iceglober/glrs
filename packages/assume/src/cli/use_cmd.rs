@@ -175,6 +175,12 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
     println!("export GS_ASSUME_CONTEXT_ID=\"{}\"", shell_escape(&selected.id));
     println!("export GS_ASSUME_CONTEXT_PROVIDER=\"{}\"", shell_escape(&selected.provider_id));
 
+    // Set AWS_REGION / AWS_DEFAULT_REGION from the context so AWS SDKs know which region to use.
+    if !selected.region.is_empty() {
+        println!("export AWS_REGION=\"{}\"", shell_escape(&selected.region));
+        println!("export AWS_DEFAULT_REGION=\"{}\"", shell_escape(&selected.region));
+    }
+
     // Update the credential endpoint URL to include the context ID so each shell
     // gets its own credentials from the daemon (not the global active context).
     if selected.provider_id == "aws" {
