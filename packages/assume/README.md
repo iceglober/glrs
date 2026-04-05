@@ -2,7 +2,7 @@
 
 <br/>
 
-# `assume`
+# `glorious-assume`
 
 **Authenticate once, work all day.**<br/>
 Multi-cloud credential manager with per-shell context switching.
@@ -70,12 +70,58 @@ gsa console                      # open AWS console in browser
 
 <br/>
 
+## Agent & MCP Integration
+
+Permission-gated credential access for AI agents (Claude Code, etc.).
+
+| Command | What happens |
+|:--|:--|
+| `gsa agent allow` | TUI multi-select to toggle which contexts agents can access |
+| `gsa agent allow --list` | Show currently approved contexts |
+| `gsa agent allow --clear` | Revoke all agent access |
+| `gsa agent exec -- <cmd>` | Run a command with auto-refreshing credentials (permission-gated) |
+| `gsa agent mcp` | Start MCP server for AI agent integration |
+
+**Default deny** — no context is agent-accessible unless explicitly approved via `gsa agent allow`.
+
+### MCP server
+
+Register in your Claude Code settings:
+
+```json
+{
+  "mcpServers": {
+    "gsa": { "command": "gsa", "args": ["agent", "mcp"] }
+  }
+}
+```
+
+Tools provided:
+- **`run_with_credentials`** — run a shell command with auto-refreshing AWS credentials
+- **`list_contexts`** — list contexts approved for agent access
+
+### Wrapping other MCP servers
+
+Any MCP server that needs AWS credentials can be wrapped with `gsa agent exec`:
+
+```json
+{
+  "mcpServers": {
+    "aws-tools": { "command": "gsa", "args": ["agent", "exec", "--", "npx", "@aws/mcp-server"] }
+  }
+}
+```
+
+The wrapped server inherits `AWS_CONTAINER_CREDENTIALS_FULL_URI` pointing at the daemon, so credentials auto-refresh indefinitely.
+
+<br/>
+
 ## Shell Integration
 
 `serve --install` adds this to your shell rc automatically:
 
 ```bash
-eval "$(gs-assume shell-init zsh)"
+eval "$(gsa shell-init zsh)"
 ```
 
 This gives you:
@@ -114,6 +160,8 @@ Team config (`gs-assume.team.toml` in repo root) merges with user config — use
 - Encryption key stored at `vault.key` with `0600` permissions
 - Credential daemon serves tokens over `localhost` only
 - All token files are `0600`
+- Agent access gated by `agent-allowed.json` allowlist (default deny)
+- All credential operations audit-logged to `~/.config/gs-assume/audit.log`
 
 <br/>
 
@@ -123,6 +171,8 @@ Team config (`gs-assume.team.toml` in repo root) merges with user config — use
 src/
 ├── main.rs                 # CLI entry (clap)
 ├── cli/
+│   ├── agent.rs            # Agent access: allow, exec, mcp dispatch
+│   ├── mcp.rs              # MCP JSON-RPC 2.0 server over stdio
 │   ├── login.rs            # Interactive auth + first-time setup
 │   ├── use_cmd.rs          # Fuzzy context switch, per-shell env vars
 │   ├── status.rs           # Auth status + prompt segment
@@ -139,21 +189,21 @@ src/
 ├── core/
 │   ├── config.rs           # TOML config + team config merging
 │   ├── keychain.rs         # AES-256-GCM encrypted storage
-│   ├── cache.rs            # Context + active context file cache
+│   ├── cache.rs            # Context + active context + agent-allowed cache
 │   ├── daemon.rs           # Daemon lifecycle, refresh loop, launchd
 │   ├── fuzzy.rs            # nucleo fuzzy matching
 │   ├── rpc.rs              # Unix socket RPC
 │   ├── audit.rs            # Event logging
 │   ├── notify.rs           # Desktop notifications
-│   └── update_check.rs     # Version check + self-update
+│   └── update_check.rs     # Version check + auto-upgrade
 ├── plugin/
 │   ├── mod.rs              # Provider trait + data types
 │   └── registry.rs         # Plugin registry + validation
 ├── providers/
 │   ├── aws/                # AWS Identity Center (SSO OIDC + STS)
-│   └── gcp/                # Google Cloud (stub — coming soon)
+│   └── gcp/                # Google Cloud (stub)
 ├── tui/
-│   └── picker.rs           # Interactive context picker
+│   └── picker.rs           # Interactive context picker + multi-select
 └── shell/
     ├── prompt.rs           # ANSI prompt formatting
     └── completions.rs      # Shell completions

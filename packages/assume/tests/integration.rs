@@ -99,10 +99,7 @@ fn test_exec_no_args() {
 #[test]
 fn test_use_help_does_not_output_export() {
     // `gsa use --help` should NOT output export lines (the shell wrapper evals stdout)
-    let output = gs_assume()
-        .args(["use", "--help"])
-        .assert()
-        .success();
+    let output = gs_assume().args(["use", "--help"]).assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout);
     assert!(
         !stdout.contains("export "),
@@ -117,17 +114,18 @@ fn test_shell_init_contains_bearer_token() {
         .args(["shell-init", "zsh"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("AWS_CONTAINER_AUTHORIZATION_TOKEN"))
-        .stdout(predicate::str::contains("AWS_CONTAINER_CREDENTIALS_FULL_URI"));
+        .stdout(predicate::str::contains(
+            "AWS_CONTAINER_AUTHORIZATION_TOKEN",
+        ))
+        .stdout(predicate::str::contains(
+            "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        ));
 }
 
 #[test]
 fn test_shell_init_zsh_prompt_uses_zero_width_markers() {
     // ANSI codes in prompts must be wrapped in %{...%} for zsh
-    let output = gs_assume()
-        .args(["shell-init", "zsh"])
-        .assert()
-        .success();
+    let output = gs_assume().args(["shell-init", "zsh"]).assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout);
     assert!(
         stdout.contains("%{") && stdout.contains("%}"),
@@ -138,10 +136,7 @@ fn test_shell_init_zsh_prompt_uses_zero_width_markers() {
 #[test]
 fn test_shell_init_bash_prompt_uses_zero_width_markers() {
     // ANSI codes in prompts must be wrapped in \[...\] for bash
-    let output = gs_assume()
-        .args(["shell-init", "bash"])
-        .assert()
-        .success();
+    let output = gs_assume().args(["shell-init", "bash"]).assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout);
     assert!(
         stdout.contains("\\[") && stdout.contains("\\]"),
@@ -152,10 +147,7 @@ fn test_shell_init_bash_prompt_uses_zero_width_markers() {
 #[test]
 fn test_shell_init_wrapper_only_evals_exports() {
     // The shell wrapper should check for 'export ' before evaling
-    let output = gs_assume()
-        .args(["shell-init", "zsh"])
-        .assert()
-        .success();
+    let output = gs_assume().args(["shell-init", "zsh"]).assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout);
     assert!(
         stdout.contains(r#"*"export "*"#),
@@ -166,16 +158,10 @@ fn test_shell_init_wrapper_only_evals_exports() {
 #[test]
 fn test_session_token_is_persistent() {
     // Two invocations of shell-init should produce the same session token
-    let output1 = gs_assume()
-        .args(["shell-init", "zsh"])
-        .output()
-        .unwrap();
+    let output1 = gs_assume().args(["shell-init", "zsh"]).output().unwrap();
     let stdout1 = String::from_utf8_lossy(&output1.stdout);
 
-    let output2 = gs_assume()
-        .args(["shell-init", "zsh"])
-        .output()
-        .unwrap();
+    let output2 = gs_assume().args(["shell-init", "zsh"]).output().unwrap();
     let stdout2 = String::from_utf8_lossy(&output2.stdout);
 
     // Extract the token value from both outputs
@@ -198,12 +184,10 @@ fn test_session_token_is_persistent() {
 fn test_shell_init_bearer_prefix() {
     // AWS_CONTAINER_AUTHORIZATION_TOKEN must include Bearer prefix
     // because AWS SDKs send this value as-is in the Authorization header
-    let output = gs_assume()
-        .args(["shell-init", "zsh"])
-        .output()
-        .unwrap();
+    let output = gs_assume().args(["shell-init", "zsh"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let token_line = stdout.lines()
+    let token_line = stdout
+        .lines()
         .find(|l| l.contains("AWS_CONTAINER_AUTHORIZATION_TOKEN"))
         .expect("must have token line");
     assert!(
@@ -216,10 +200,7 @@ fn test_shell_init_bearer_prefix() {
 fn test_shell_init_and_use_share_same_credential_uri_base() {
     // shell-init outputs the base credential URI
     // gsa use should output an updated URI with context ID appended
-    let output = gs_assume()
-        .args(["shell-init", "zsh"])
-        .output()
-        .unwrap();
+    let output = gs_assume().args(["shell-init", "zsh"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Must contain the base URI
@@ -229,7 +210,8 @@ fn test_shell_init_and_use_share_same_credential_uri_base() {
     );
 
     // The base URI should NOT contain a context ID (that comes from `use`)
-    let uri_line = stdout.lines()
+    let uri_line = stdout
+        .lines()
         .find(|l| l.contains("AWS_CONTAINER_CREDENTIALS_FULL_URI"))
         .expect("must have URI line");
     assert!(
