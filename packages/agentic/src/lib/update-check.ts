@@ -46,8 +46,8 @@ function fetchLatestVersionGh(): string | null {
     const out = result.stdout.trim();
     if (!out) return null;
     const releases: Array<{ tagName: string }> = JSON.parse(out);
-    const match = releases.find((r) => r.tagName.startsWith("v"));
-    return match ? match.tagName.slice(1) : null;
+    const match = releases.find((r) => r.tagName.startsWith("agentic-v"));
+    return match ? match.tagName.slice("agentic-v".length) : null;
   } catch {
     return null;
   }
@@ -79,8 +79,8 @@ function fetchLatestVersionApi(): string | null {
     const out = result.stdout.trim();
     if (!out) return null;
     const releases: Array<{ tag_name: string }> = JSON.parse(out);
-    const match = releases.find((r) => r.tag_name.startsWith("v"));
-    return match ? match.tag_name.slice(1) : null;
+    const match = releases.find((r) => r.tag_name.startsWith("agentic-v"));
+    return match ? match.tag_name.slice("agentic-v".length) : null;
   } catch {
     return null;
   }
@@ -161,7 +161,7 @@ export function checkForUpdate(): void {
 
     // Auto-upgrade for minor/patch
     info(`updating glorious v${VERSION} → v${latest}...`);
-    const tag = `v${latest}`;
+    const tag = `agentic-v${latest}`;
     if (tryAutoUpgrade(tag)) {
       ok(`updated to v${latest} — changes take effect on next run`);
       // Invalidate cache so we don't re-download

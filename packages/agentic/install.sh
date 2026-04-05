@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO="iceglober/glorious"
-TAG_PREFIX="v"
+TAG_PREFIX="agentic-v"
 BINARY_NAME="gs-agentic"
 ALIAS_NAME="gsag"
 API_BASE="https://api.github.com/repos/${REPO}"
@@ -64,7 +64,7 @@ fetch_release_public() {
 
   RELEASE_JSON=$(echo "$json" | node -e "
     const releases = JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));
-    const r = releases.find(r => r.tag_name && r.tag_name.startsWith('${TAG_PREFIX}') && !r.tag_name.startsWith('assume-'));
+    const r = releases.find(r => r.tag_name && r.tag_name.startsWith('${TAG_PREFIX}'));
     if (!r) process.exit(1);
     console.log(JSON.stringify(r));
   " 2>/dev/null) || return 1
@@ -80,7 +80,7 @@ fetch_release_gh() {
 
   RELEASE_JSON=$(echo "$json" | node -e "
     const releases = JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));
-    const r = releases.find(r => r.tag_name && r.tag_name.startsWith('${TAG_PREFIX}') && !r.tag_name.startsWith('assume-'));
+    const r = releases.find(r => r.tag_name && r.tag_name.startsWith('${TAG_PREFIX}'));
     if (!r) process.exit(1);
     console.log(JSON.stringify(r));
   " 2>/dev/null) || return 1
