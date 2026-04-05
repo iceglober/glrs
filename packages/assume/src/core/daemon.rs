@@ -606,6 +606,7 @@ fn install_dir() -> std::path::PathBuf {
 }
 
 /// launchd plist path on macOS
+#[cfg(target_os = "macos")]
 fn launchd_plist_path() -> std::path::PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
