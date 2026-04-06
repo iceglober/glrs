@@ -1,7 +1,8 @@
 import { command, positional, string } from "cmd-ts";
 import fs from "node:fs";
 import { git, gitSafe, gitRoot } from "../lib/git.js";
-import { worktreePath } from "../lib/config.js";
+import { worktreePath, repoName } from "../lib/config.js";
+import { registerWorktree } from "../lib/registry.js";
 import { runHook } from "../lib/hooks.js";
 import { ok, info, bold } from "../lib/fmt.js";
 
@@ -47,6 +48,14 @@ export const checkout = command({
       WORKTREE_NAME: branch,
       BASE_BRANCH: branch,
       REPO_ROOT: gitRoot(),
+    });
+
+    registerWorktree({
+      repo: repoName(),
+      repoPath: gitRoot(),
+      wtPath,
+      branch,
+      createdAt: new Date().toISOString(),
     });
 
     ok(`worktree created at ${bold(wtPath)}`);

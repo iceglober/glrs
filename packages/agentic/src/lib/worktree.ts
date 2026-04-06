@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { git, defaultBranch, gitRoot } from "./git.js";
-import { worktreePath } from "./config.js";
+import { worktreePath, repoName } from "./config.js";
+import { registerWorktree } from "./registry.js";
 import { runHook } from "./hooks.js";
 import { ok, info, bold } from "./fmt.js";
 
@@ -40,6 +41,14 @@ export function createWorktree(
     REPO_ROOT: gitRoot(),
   });
 
+  registerWorktree({
+    repo: repoName(),
+    repoPath: gitRoot(),
+    wtPath,
+    branch: name,
+    createdAt: new Date().toISOString(),
+  });
+
   ok(`worktree created at ${bold(wtPath)}`);
   return { wtPath, name, base };
 }
@@ -49,6 +58,13 @@ export function ensureWorktree(name: string, from?: string): string {
   const wtPath = worktreePath(name);
   if (fs.existsSync(wtPath)) {
     info(`worktree already exists at ${bold(wtPath)}, reusing...`);
+    registerWorktree({
+      repo: repoName(),
+      repoPath: gitRoot(),
+      wtPath,
+      branch: name,
+      createdAt: new Date().toISOString(),
+    });
     return wtPath;
   }
   return createWorktree(name, from).wtPath;

@@ -55,6 +55,10 @@ ${bold("COMMANDS")}
 
   ${bold("Worktree management")} ${dim("(gs-agentic wt ...)")}
 
+  wt
+      Interactive worktree picker — select a worktree to open a shell in.
+      Works from any directory. Worktrees are tracked globally across repos.
+
   wt create <name> [--from <branch>]
       Create a new worktree with a fresh branch forked from <branch>
       (defaults to main/master). Opens a shell inside the worktree.
@@ -63,10 +67,11 @@ ${bold("COMMANDS")}
       Create a worktree from an existing remote branch.
 
   wt list
-      Show all worktrees with their branch and latest commit.
+      Show all worktrees across all repos, grouped by repository.
 
-  wt delete <name> [--force]
-      Remove a worktree and its local branch.
+  wt delete [name] [--force]
+      Remove worktrees and their branches. Without a name, opens an
+      interactive multi-select picker for bulk deletion.
 
   wt cleanup [--base <branch>] [--dry-run] [--yes]
       Delete worktrees whose branches are merged or whose remote is deleted.

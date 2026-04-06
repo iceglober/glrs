@@ -28,10 +28,11 @@ src/
 │   │   ├── spec.ts       # show, set, add-workstream
 │   │   ├── qa.ts         # QA report
 │   │   └── log.ts        # Transition history
+│   ├── go.ts             # gs-agentic wt (bare) — interactive worktree picker
 │   ├── create.ts         # gs-agentic wt create
 │   ├── checkout.ts       # gs-agentic wt checkout
-│   ├── list.ts           # gs-agentic wt list
-│   ├── delete.ts         # gs-agentic wt delete
+│   ├── list.ts           # gs-agentic wt list (global, registry-based)
+│   ├── delete.ts         # gs-agentic wt delete (interactive multi-select or by name)
 │   ├── cleanup.ts        # gs-agentic wt cleanup
 │   ├── install-skills.ts # gs-agentic skills
 │   ├── init-hooks.ts     # gs-agentic hooks
@@ -42,7 +43,9 @@ src/
 │   ├── pipeline.ts       # Orchestrator logic (skill sequencing, resume)
 │   ├── session-runner.ts # Spawn Claude sessions as subprocesses
 │   ├── git.ts            # Git wrappers (git, gitRoot, listWorktrees)
-│   ├── worktree.ts       # createWorktree, ensureWorktree
+│   ├── worktree.ts       # createWorktree, ensureWorktree (auto-registers)
+│   ├── registry.ts       # Global worktree registry (~/.glorious/worktrees.json)
+│   ├── select.ts         # Interactive terminal pickers (select, multiSelect)
 │   ├── config.ts         # worktreePath, repoName, isProtected
 │   ├── hooks.ts          # runHook
 │   ├── slug.ts           # slugify
