@@ -1,7 +1,9 @@
 use crate::core::{audit, config, fuzzy, keychain};
 use crate::plugin::registry::PluginRegistry;
+use crate::plugin::Context;
 use crate::tui::picker::{self, PickerResult};
 use anyhow::{bail, Result};
+use chrono::Utc;
 use clap::Args;
 
 /// Escape a string for safe interpolation inside double-quoted shell values.
@@ -28,42 +30,62 @@ pub struct UseArgs {
     pub provider: Option<String>,
 }
 
-pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config) -> Result<()> {
-    // Collect all contexts across all providers
-    let mut all_contexts = Vec::new();
-    let active_context_id = crate::core::cache::load_active_context().map(|c| c.id);
+/// Result of collecting contexts across providers.
+struct CollectResult {
+    contexts: Vec<Context>,
+    /// Provider IDs that were skipped due to missing or expired sessions.
+    expired_providers: Vec<String>,
+}
+
+/// Collect contexts from all providers that have a valid session.
+async fn collect_contexts(
+    registry: &PluginRegistry,
+    cfg: &config::Config,
+) -> Result<CollectResult> {
+    let now = Utc::now();
+    let mut contexts = Vec::new();
+    let mut expired_providers = Vec::new();
 
     for provider_id in registry.ids() {
+        // Check for valid tokens before loading contexts.
+        let tokens = match keychain::load_tokens(&provider_id)? {
+            Some(t) => t,
+            None => {
+                expired_providers.push(provider_id);
+                continue;
+            }
+        };
+        if tokens.session_expires_at < now && tokens.refresh_expires_at < now {
+            expired_providers.push(provider_id);
+            continue;
+        }
+
         let provider = registry.get(&provider_id).unwrap();
 
         // Load contexts from cache (fast) or fall back to live API
-        let mut contexts = if let Some(cached) = crate::core::cache::load_contexts(&provider_id) {
-            cached
-        } else {
-            // No cache — need tokens for live API call
-            let tokens = match keychain::load_tokens(&provider_id)? {
-                Some(t) => t,
-                None => continue,
-            };
-            match provider.list_contexts(&tokens).await {
-                Ok(c) => {
-                    if let Err(e) = crate::core::cache::save_contexts(&provider_id, &c) {
-                        tracing::warn!("Failed to cache contexts: {e}");
+        let mut provider_contexts =
+            if let Some(cached) = crate::core::cache::load_contexts(&provider_id) {
+                cached
+            } else {
+                match provider.list_contexts(&tokens).await {
+                    Ok(c) => {
+                        if let Err(e) = crate::core::cache::save_contexts(&provider_id, &c) {
+                            tracing::warn!("Failed to cache contexts: {e}");
+                        }
+                        c
                     }
-                    c
+                    Err(e) => {
+                        eprintln!("Warning: {} — {e}", provider.display_name());
+                        continue;
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Warning: {} — {e}", provider.display_name());
-                    continue;
-                }
-            }
-        };
+            };
 
         // Merge profile configs if available
         if let Some(provider_cfg) = cfg.providers.get(&provider_id) {
             if provider_id == "aws" {
                 crate::providers::aws::contexts::merge_profile_configs(
-                    &mut contexts,
+                    &mut provider_contexts,
                     &provider_cfg.profiles,
                 );
             }
@@ -71,10 +93,40 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
 
         // Auto-tag dangerous contexts
         if provider_id == "aws" {
-            crate::providers::aws::contexts::auto_tag_dangerous(&mut contexts);
+            crate::providers::aws::contexts::auto_tag_dangerous(&mut provider_contexts);
         }
 
-        all_contexts.extend(contexts);
+        contexts.extend(provider_contexts);
+    }
+
+    Ok(CollectResult {
+        contexts,
+        expired_providers,
+    })
+}
+
+pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config) -> Result<()> {
+    let active_context_id = crate::core::cache::load_active_context().map(|c| c.id);
+
+    let result = collect_contexts(registry, cfg).await?;
+    let mut all_contexts = result.contexts;
+
+    // If no contexts available and providers were skipped due to expired sessions,
+    // auto-launch login and retry.
+    if all_contexts.is_empty() && !result.expired_providers.is_empty() {
+        for provider_id in &result.expired_providers {
+            eprintln!("No valid session for {provider_id}. Launching login...");
+            eprintln!();
+            let login_args = super::login::LoginArgs {
+                provider: Some(provider_id.clone()),
+            };
+            super::login::run(login_args, registry, cfg).await?;
+            eprintln!();
+        }
+
+        // Retry context collection after login
+        let retry = collect_contexts(registry, cfg).await?;
+        all_contexts = retry.contexts;
     }
 
     if all_contexts.is_empty() {
