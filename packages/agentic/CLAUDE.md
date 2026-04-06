@@ -35,7 +35,7 @@ src/
 │   ├── delete.ts         # gs-agentic wt delete (interactive multi-select or by name)
 │   ├── cleanup.ts        # gs-agentic wt cleanup
 │   ├── install-skills.ts # gs-agentic skills
-│   ├── init-hooks.ts     # gs-agentic hooks
+│   ├── init-hooks.ts     # gs-agentic wt hooks
 │   └── upgrade.ts        # gs-agentic upgrade
 ├── lib/
 │   ├── state.ts          # Task model, CRUD, phase validation, auto-setup

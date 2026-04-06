@@ -43,6 +43,7 @@ const wt = subcommands({
     list,
     delete: del,
     cleanup,
+    hooks: initHooks,
   },
 });
 
@@ -55,7 +56,6 @@ const cli = subcommands({
     start,
     status,
     skills: installSkills,
-    hooks: initHooks,
     state,
     upgrade,
   },
