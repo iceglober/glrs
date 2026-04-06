@@ -1,0 +1,45 @@
+import { loadRegistry, type RegistryEntry } from "../lib/registry.js";
+import { select, type Group } from "../lib/select.js";
+import { spawnShell } from "../lib/git.js";
+import { warn, info, bold } from "../lib/fmt.js";
+
+/** Interactive worktree picker — select a worktree to open a shell in. */
+export async function go(): Promise<void> {
+  const entries = loadRegistry();
+
+  if (entries.length === 0) {
+    warn(
+      "no worktrees registered — create one with: gs-agentic wt create <name>",
+    );
+    return;
+  }
+
+  const byRepo = new Map<string, RegistryEntry[]>();
+  for (const entry of entries) {
+    const list = byRepo.get(entry.repo) ?? [];
+    list.push(entry);
+    byRepo.set(entry.repo, list);
+  }
+
+  const groups: Group<RegistryEntry>[] = [];
+  for (const [repo, repoEntries] of byRepo) {
+    groups.push({
+      title: repo,
+      choices: repoEntries.map((e) => ({
+        label: e.branch,
+        value: e,
+        hint: e.wtPath,
+      })),
+    });
+  }
+
+  const selected = await select({
+    message: "Select a worktree",
+    groups,
+  });
+
+  if (!selected) return;
+
+  info(`opening shell in ${bold(selected.branch)}...`);
+  spawnShell(selected.wtPath);
+}

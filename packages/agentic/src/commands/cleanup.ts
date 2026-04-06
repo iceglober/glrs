@@ -9,6 +9,7 @@ import {
   gitRoot,
 } from "../lib/git.js";
 import { isProtected } from "../lib/config.js";
+import { unregisterWorktree } from "../lib/registry.js";
 import { ok, info, warn, bold, dim, red } from "../lib/fmt.js";
 
 interface Candidate {
@@ -102,7 +103,7 @@ export const cleanup = command({
 
     console.log(`\n${bold("Candidates for cleanup:")}`);
     for (const c of candidates) {
-      console.log(`  ${red("✕")} ${c.branch}  ${dim(`(${c.path})`)}`);
+      console.log(`  ${red("\u2715")} ${c.branch}  ${dim(`(${c.path})`)}`);
     }
     console.log();
 
@@ -125,6 +126,7 @@ export const cleanup = command({
       try {
         git("worktree", "remove", c.path);
         gitSafe("branch", "-d", c.branch);
+        unregisterWorktree(c.path);
         ok(`deleted ${c.branch}`);
       } catch {
         warn(`failed to delete ${c.branch}`);

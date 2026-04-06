@@ -4,6 +4,7 @@ import { checkout } from "./commands/checkout.js";
 import { list } from "./commands/list.js";
 import { del } from "./commands/delete.js";
 import { cleanup } from "./commands/cleanup.js";
+import { go } from "./commands/go.js";
 import { initHooks } from "./commands/init-hooks.js";
 import { start } from "./commands/start.js";
 import { upgrade } from "./commands/upgrade.js";
@@ -22,6 +23,12 @@ if (args.length === 0 || args[0] === "--help" || args[0] === "-h" || args[0] ===
 }
 if (args[0] === "--version" || args[0] === "-V") {
   console.log(`gs-agentic ${VERSION}`);
+  process.exit(0);
+}
+
+// Bare `gs-agentic wt` → interactive worktree picker
+if (args[0] === "wt" && args.length === 1) {
+  await go();
   process.exit(0);
 }
 
