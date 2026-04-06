@@ -76,7 +76,7 @@ ${bold("COMMANDS")}
   wt cleanup [--base <branch>] [--dry-run] [--yes]
       Delete worktrees whose branches are merged or whose remote is deleted.
 
-  hooks
+  wt hooks
       Create .glorious/hooks/ with a post_create template.
 
   upgrade
