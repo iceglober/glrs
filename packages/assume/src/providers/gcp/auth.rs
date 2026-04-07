@@ -8,24 +8,32 @@ const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 /// Scopes needed for project listing + general GCP access
 const SCOPES: &str = "openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/cloudplatformprojects.readonly";
 
-/// Extract client_id from provider config
+/// Google Cloud SDK default OAuth credentials (same as gcloud CLI).
+/// These are public client credentials for installed/device applications.
+const DEFAULT_CLIENT_ID: &str =
+    "764086051850-6qr4p6gpi6hn506pt8ejuq83di341hur.apps.googleusercontent.com";
+const DEFAULT_CLIENT_SECRET: &str = "d-FL95Q19q7MQmFpd7hHD0Ty";
+
+/// Extract client_id from provider config, falling back to Cloud SDK defaults.
 pub fn get_client_id(config: &ProviderConfig) -> Result<String, ProviderError> {
-    config
+    Ok(config
         .extra
         .get("client_id")
         .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
         .map(String::from)
-        .ok_or_else(|| ProviderError::LoginFailed("Missing 'client_id' in GCP config".into()))
+        .unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string()))
 }
 
-/// Extract client_secret from provider config
+/// Extract client_secret from provider config, falling back to Cloud SDK defaults.
 pub fn get_client_secret(config: &ProviderConfig) -> Result<String, ProviderError> {
-    config
+    Ok(config
         .extra
         .get("client_secret")
         .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
         .map(String::from)
-        .ok_or_else(|| ProviderError::LoginFailed("Missing 'client_secret' in GCP config".into()))
+        .unwrap_or_else(|| DEFAULT_CLIENT_SECRET.to_string()))
 }
 
 /// Google device authorization response
