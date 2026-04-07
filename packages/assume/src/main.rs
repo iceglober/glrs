@@ -64,7 +64,8 @@ fn build_registry(cfg: &config::Config) -> anyhow::Result<PluginRegistry> {
     // Register GCP if explicitly enabled
     let gcp_enabled = cfg.providers.get("gcp").map(|p| p.enabled).unwrap_or(false);
     if gcp_enabled {
-        let gcp = GcpProvider::new();
+        let gcp_config = cfg.providers.get("gcp").cloned().unwrap_or_default();
+        let gcp = GcpProvider::from_config(&gcp_config);
         registry.register(Arc::new(gcp))?;
     }
 

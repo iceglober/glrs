@@ -5,18 +5,46 @@ pub mod endpoint;
 pub mod refresh;
 
 use crate::plugin::{
-    AuthTokens, Context, CredentialEndpoint, Credentials, EndpointAuth, PromptSegment, Provider,
+    AuthTokens, Context, CredentialEndpoint, Credentials, ProfileConfig, PromptSegment, Provider,
     ProviderConfig, ProviderError, RefreshSchedule,
 };
 use async_trait::async_trait;
 use std::time::Duration;
 
-#[derive(Default)]
-pub struct GcpProvider;
+pub struct GcpProvider {
+    default_region: String,
+    port: u16,
+    profiles: Vec<ProfileConfig>,
+}
+
+impl Default for GcpProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl GcpProvider {
     pub fn new() -> Self {
-        Self
+        Self {
+            default_region: "us-central1".to_string(),
+            port: endpoint::DEFAULT_PORT,
+            profiles: Vec::new(),
+        }
+    }
+
+    pub fn from_config(config: &ProviderConfig) -> Self {
+        let default_region = config
+            .default_region
+            .clone()
+            .unwrap_or_else(|| "us-central1".to_string());
+
+        let port = config.port.unwrap_or(endpoint::DEFAULT_PORT);
+
+        Self {
+            default_region,
+            port,
+            profiles: config.profiles.clone(),
+        }
     }
 }
 
@@ -34,59 +62,61 @@ impl Provider for GcpProvider {
         "Google Cloud"
     }
 
-    async fn login(&self, _config: &ProviderConfig) -> Result<AuthTokens, ProviderError> {
-        Err(ProviderError::Other(
-            "GCP plugin not yet implemented. Coming soon.".into(),
-        ))
+    async fn login(&self, config: &ProviderConfig) -> Result<AuthTokens, ProviderError> {
+        auth::login(config).await
     }
 
-    async fn refresh(&self, _tokens: &AuthTokens) -> Result<AuthTokens, ProviderError> {
-        Err(ProviderError::Other(
-            "GCP plugin not yet implemented".into(),
-        ))
+    async fn refresh(&self, tokens: &AuthTokens) -> Result<AuthTokens, ProviderError> {
+        refresh::refresh(tokens).await
     }
 
-    async fn list_contexts(&self, _tokens: &AuthTokens) -> Result<Vec<Context>, ProviderError> {
-        Err(ProviderError::Other(
-            "GCP plugin not yet implemented".into(),
-        ))
+    async fn list_contexts(&self, tokens: &AuthTokens) -> Result<Vec<Context>, ProviderError> {
+        let mut ctxs = contexts::list_contexts(tokens, &self.default_region).await?;
+        contexts::merge_profile_configs(&mut ctxs, &self.profiles);
+        Ok(ctxs)
     }
 
     async fn get_credentials(
         &self,
-        _tokens: &AuthTokens,
-        _context: &Context,
+        tokens: &AuthTokens,
+        context: &Context,
     ) -> Result<Credentials, ProviderError> {
-        Err(ProviderError::Other(
-            "GCP plugin not yet implemented".into(),
-        ))
+        credentials::get_credentials(tokens, context).await
     }
 
     fn credential_endpoint(&self) -> CredentialEndpoint {
-        CredentialEndpoint {
-            port: 9912,
-            path: "/computeMetadata/v1/instance/service-accounts/default/token".to_string(),
-            required_headers: vec![("Metadata-Flavor".to_string(), "Google".to_string())],
-            auth_mechanism: EndpointAuth::RequiredHeader {
-                key: "Metadata-Flavor".to_string(),
-                value: "Google".to_string(),
-            },
-        }
+        endpoint::build_endpoint(self.port)
     }
 
     fn shell_env(&self, endpoint_port: u16) -> Vec<(String, String)> {
         let port = if endpoint_port > 0 {
             endpoint_port
         } else {
-            9912
+            self.port
         };
-        vec![("GCE_METADATA_HOST".to_string(), format!("localhost:{port}"))]
+        endpoint::shell_env(port, None)
     }
 
     fn prompt_segment(&self, context: &Context) -> PromptSegment {
+        let alias = context
+            .metadata
+            .get("alias")
+            .cloned()
+            .unwrap_or_else(|| context.display_name.clone());
+
+        let color = context.metadata.get("color").cloned().unwrap_or_else(|| {
+            if context.tags.contains(&"dangerous".to_string())
+                || context.tags.contains(&"production".to_string())
+            {
+                "red".to_string()
+            } else {
+                "blue".to_string()
+            }
+        });
+
         PromptSegment {
-            text: format!("gcp:{}", context.display_name),
-            color: "blue".to_string(),
+            text: format!("gcp:{alias}"),
+            color,
         }
     }
 
@@ -104,8 +134,8 @@ impl Provider for GcpProvider {
     fn refresh_schedule(&self) -> RefreshSchedule {
         RefreshSchedule {
             check_interval: Duration::from_secs(60),
-            refresh_buffer: Duration::from_secs(300),
-            credential_ttl: Duration::from_secs(3600),
+            refresh_buffer: Duration::from_secs(300), // 5 minutes
+            credential_ttl: Duration::from_secs(3600), // 1 hour
         }
     }
 }

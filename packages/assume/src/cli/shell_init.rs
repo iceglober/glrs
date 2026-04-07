@@ -66,12 +66,12 @@ pub async fn run(
 }
 
 fn print_posix_integration(bin: &str, shell: &str) {
-    // Wrapper function: intercepts `gsa use` to eval env var exports
+    // Wrapper function: intercepts `gsa use` and `gsa login` to eval env var exports
     // stdout has export lines, stderr has human messages — $() only captures stdout
     println!(
-        r#"# Wrapper: `gsa use` sets per-shell context via env vars
+        r#"# Wrapper: `gsa use` and `gsa login` set per-shell context via env vars
 gsa() {{
-    if [[ "$1" == "use" ]]; then
+    if [[ "$1" == "use" || "$1" == "login" ]]; then
         local output
         output=$(command {bin} "$@")
         local rc=$?
@@ -137,9 +137,9 @@ gs-assume() {{ gsa "$@"; }}"#
 
 fn print_fish_integration(bin: &str) {
     println!(
-        r#"# Wrapper: `gsa use` sets per-shell context via env vars
+        r#"# Wrapper: `gsa use` and `gsa login` set per-shell context via env vars
 function gsa
-    if test "$argv[1]" = "use"
+    if test "$argv[1]" = "use"; or test "$argv[1]" = "login"
         set -l tmpfile (mktemp)
         command {bin} $argv 2>/dev/stderr >$tmpfile
         set -l rc $status

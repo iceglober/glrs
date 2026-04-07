@@ -536,14 +536,26 @@ fn notify_session_expired(provider_display_name: &str) {
     }
 }
 
-/// Ensure the daemon is running. If not, fork a background process.
+/// Ensure the daemon is running and healthy. If not, restart it.
 /// Called automatically by CLI commands that need the daemon.
 pub fn ensure_daemon_running() {
-    if is_daemon_running() {
+    if is_daemon_running() && is_daemon_healthy() {
         return;
     }
 
+    // Daemon is down or unhealthy — full restart
+    stop_daemon();
     start_daemon_background();
+}
+
+/// Check if the daemon is actually responding on its port.
+fn is_daemon_healthy() -> bool {
+    let port = 9911u16; // DEFAULT_PORT
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        std::time::Duration::from_millis(500),
+    )
+    .is_ok()
 }
 
 /// Restart the daemon. Kills the running instance (if any) and starts fresh.
@@ -553,20 +565,93 @@ pub fn restart_daemon() {
     start_daemon_background();
 }
 
-/// Stop the running daemon process (if any).
+/// Validate the credential endpoint is serving credentials for a given context.
+/// Returns Ok(()) if credentials can be fetched, Err with details otherwise.
+/// On failure, restarts the daemon once and retries.
+pub fn validate_credential_endpoint(port: u16, context_id: &str, session_token: &str) -> bool {
+    let url = format!("http://localhost:{port}/credentials/{context_id}");
+    let auth = format!("Bearer {session_token}");
+
+    // First attempt
+    if try_credential_fetch(&url, &auth) {
+        return true;
+    }
+
+    // Restart daemon and retry
+    eprintln!("Credential endpoint not responding, restarting daemon...");
+    restart_daemon();
+    // Give the daemon a moment to start serving
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    if try_credential_fetch(&url, &auth) {
+        return true;
+    }
+
+    eprintln!("Warning: credential endpoint still not responding after daemon restart");
+    false
+}
+
+fn try_credential_fetch(url: &str, auth: &str) -> bool {
+    let output = std::process::Command::new("curl")
+        .args([
+            "-sf",
+            "--max-time",
+            "3",
+            "-H",
+            &format!("Authorization: {auth}"),
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            url,
+        ])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output();
+
+    match output {
+        Ok(o) => {
+            let code = String::from_utf8_lossy(&o.stdout);
+            code.trim() == "200"
+        }
+        Err(_) => false,
+    }
+}
+
+/// Stop ALL running daemon processes, not just the PID file process.
+/// This handles orphaned daemons left behind by crashes or binary updates.
 fn stop_daemon() {
-    if is_daemon_running() {
-        if let Ok(pid_str) = std::fs::read_to_string(config::pid_path()) {
-            if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                unsafe {
-                    nix::libc::kill(pid, nix::libc::SIGTERM);
-                }
-                std::thread::sleep(std::time::Duration::from_millis(500));
+    // Kill the PID file process
+    if let Ok(pid_str) = std::fs::read_to_string(config::pid_path()) {
+        if let Ok(pid) = pid_str.trim().parse::<i32>() {
+            unsafe {
+                nix::libc::kill(pid, nix::libc::SIGTERM);
             }
         }
-        remove_pid_file();
-        remove_socket_file();
     }
+
+    // Also kill any orphaned gs-assume serve processes
+    if let Ok(output) = std::process::Command::new("pgrep")
+        .args(["-f", "gs-assume serve"])
+        .output()
+    {
+        if let Ok(pids) = String::from_utf8(output.stdout) {
+            let my_pid = std::process::id() as i32;
+            for line in pids.lines() {
+                if let Ok(pid) = line.trim().parse::<i32>() {
+                    if pid != my_pid {
+                        unsafe {
+                            nix::libc::kill(pid, nix::libc::SIGTERM);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    remove_pid_file();
+    remove_socket_file();
 }
 
 /// Fork a daemon process in the background.
