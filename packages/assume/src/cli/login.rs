@@ -129,88 +129,8 @@ fn ensure_aws_configured(provider_config: &mut crate::plugin::ProviderConfig) ->
     Ok(true) // Was configured
 }
 
-/// Check if GCP provider needs interactive setup, and if so, prompt and save config.
-fn ensure_gcp_configured(provider_config: &mut crate::plugin::ProviderConfig) -> Result<bool> {
-    let has_client_id = provider_config
-        .extra
-        .get("client_id")
-        .and_then(|v| v.as_str())
-        .is_some_and(|s| !s.is_empty());
-
-    if has_client_id {
-        return Ok(false); // Already configured
-    }
-
-    eprintln!("Google Cloud not configured. Let's set it up.\n");
-    eprintln!(
-        "You need a Google OAuth 2.0 client ID configured for 'TVs and Limited Input devices'."
-    );
-    eprintln!("Create one at: https://console.cloud.google.com/apis/credentials\n");
-
-    let client_id = prompt("Enter your OAuth client ID", None)?;
-    if client_id.is_empty() {
-        bail!("OAuth client ID is required");
-    }
-
-    let client_secret = prompt("Enter your OAuth client secret", None)?;
-    if client_secret.is_empty() {
-        bail!("OAuth client secret is required");
-    }
-
-    let region = prompt("Enter your default GCP region", Some("us-central1"))?;
-
-    // Update in-memory config
-    provider_config.extra.insert(
-        "client_id".to_string(),
-        toml::Value::String(client_id.clone()),
-    );
-    provider_config.extra.insert(
-        "client_secret".to_string(),
-        toml::Value::String(client_secret.clone()),
-    );
-    provider_config.default_region = Some(region.clone());
-    provider_config.enabled = true;
-
-    // Save to config file
-    let path = config::config_path();
-    let dir = path.parent().unwrap();
-    std::fs::create_dir_all(dir)?;
-
-    let mut doc: toml::Table = if path.exists() {
-        let content = std::fs::read_to_string(&path)?;
-        content.parse::<toml::Table>()?
-    } else {
-        toml::Table::new()
-    };
-
-    let providers = doc
-        .entry("providers".to_string())
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
-        .as_table_mut()
-        .unwrap();
-
-    let gcp = providers
-        .entry("gcp".to_string())
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
-        .as_table_mut()
-        .unwrap();
-
-    gcp.insert("enabled".to_string(), toml::Value::Boolean(true));
-    gcp.insert("client_id".to_string(), toml::Value::String(client_id));
-    gcp.insert(
-        "client_secret".to_string(),
-        toml::Value::String(client_secret),
-    );
-    gcp.insert("default_region".to_string(), toml::Value::String(region));
-
-    let content = toml::to_string_pretty(&toml::Value::Table(doc))?;
-    std::fs::write(&path, content)?;
-
-    eprintln!("\nConfig saved to {}", path.display());
-    eprintln!();
-
-    Ok(true)
-}
+// GCP no longer needs interactive setup — auth.rs has built-in Cloud SDK
+// default OAuth credentials. `gsa login gcp` goes straight to device auth.
 
 pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Config) -> Result<()> {
     let provider_id = match args.provider {
@@ -232,11 +152,9 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
 
     let mut provider_config = cfg.providers.get(&provider_id).cloned().unwrap_or_default();
 
-    // Interactive setup if provider not configured
+    // Interactive setup if provider not configured (GCP uses built-in defaults)
     if provider_id == "aws" {
         ensure_aws_configured(&mut provider_config)?;
-    } else if provider_id == "gcp" {
-        ensure_gcp_configured(&mut provider_config)?;
     }
 
     eprintln!("Logging in to {}...", provider.display_name());
