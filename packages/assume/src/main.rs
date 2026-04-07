@@ -10,7 +10,22 @@ use std::sync::Arc;
 #[command(
     name = "gs-assume",
     version,
-    about = "Unified credential assume manager for AWS and GCP — authenticate once, work all day"
+    about = "Unified credential assume manager for AWS and GCP — authenticate once, work all day",
+    after_help = "\x1b[1mQuick start:\x1b[0m
+  gsa login aws                              # Authenticate with AWS (browser SSO)
+  gsa login gcp                              # Authenticate with GCP (browser OAuth)
+  gsa use aws <profile>                      # Switch AWS context (shell only)
+  gsa use gcp <project>                      # Switch GCP context (shell only)
+
+\x1b[1mFor scripts and AI agents (non-interactive):\x1b[0m
+  gsa exec --profile <name> -- <command>     # Run with active provider credentials
+  gsa exec --provider gcp -- <command>       # Run with GCP credentials (active context)
+  gsa exec --profile gcp:<project> -- <cmd>  # Run with specific GCP project credentials
+
+\x1b[1mExamples:\x1b[0m
+  gsa exec --profile gcp:my-project -- gcloud projects list
+  gsa exec --profile prod/admin -- aws sts get-caller-identity
+  gsa exec -- terraform apply                # Uses active context"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -21,9 +36,9 @@ struct Cli {
 enum Commands {
     /// Agent access management and MCP server
     Agent(cli::agent::AgentArgs),
-    /// Authenticate with a cloud provider
+    /// Authenticate with a cloud provider (opens browser)
     Login(cli::login::LoginArgs),
-    /// Switch active context (account/role/project)
+    /// Switch active context — requires shell eval, use 'exec' for scripts/agents
     #[command(name = "use")]
     Use(cli::use_cmd::UseArgs),
     /// Show current authentication status
@@ -32,7 +47,7 @@ enum Commands {
     Profiles(cli::profiles::ProfilesArgs),
     /// Re-fetch contexts from providers
     Sync(cli::sync::SyncArgs),
-    /// Run a command with injected credentials
+    /// Run a command with injected credentials (best for scripts and AI agents)
     Exec(cli::exec::ExecArgs),
     /// Start the credential daemon
     Serve(cli::serve::ServeArgs),
