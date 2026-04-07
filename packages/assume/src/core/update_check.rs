@@ -198,6 +198,16 @@ fn try_auto_upgrade(tag: &str) -> bool {
     }
 }
 
+/// Re-exec the current process so the just-upgraded binary handles the command.
+fn re_exec() -> ! {
+    let exe = std::env::current_exe().expect("cannot resolve current exe");
+    let args: Vec<String> = std::env::args().collect();
+    let err = exec::execvp(&exe, &args);
+    // exec only returns on error
+    eprintln!("\x1b[33mwarning:\x1b[0m failed to re-exec after upgrade: {err}");
+    std::process::exit(1);
+}
+
 /// Check for updates. Auto-upgrades minor/patch, warns for major.
 /// Never panics or returns errors — all failures are silently swallowed.
 /// This is called early in main() for every CLI invocation.
@@ -237,8 +247,9 @@ pub fn check_for_update() {
         let tag = format!("{TAG_PREFIX}{latest}");
         eprintln!("\x1b[36m▸\x1b[0m updating gs-assume v{current} → v{latest}...");
         if try_auto_upgrade(&tag) {
-            eprintln!("\x1b[32m✓\x1b[0m updated to v{latest} — changes take effect on next run");
+            eprintln!("\x1b[32m✓\x1b[0m updated to v{latest}");
             write_cache(&latest);
+            re_exec();
         } else {
             eprintln!(
                 "\x1b[33mwarning:\x1b[0m gs-assume v{latest} available — run `gsa upgrade` to update"

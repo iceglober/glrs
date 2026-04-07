@@ -10,7 +10,7 @@ use std::sync::Arc;
 #[command(
     name = "gs-assume",
     version,
-    about = "Unified credential assume manager — authenticate once, work all day"
+    about = "Unified credential assume manager for AWS and GCP — authenticate once, work all day"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -61,8 +61,8 @@ fn build_registry(cfg: &config::Config) -> anyhow::Result<PluginRegistry> {
         registry.register(Arc::new(aws))?;
     }
 
-    // Register GCP if explicitly enabled
-    let gcp_enabled = cfg.providers.get("gcp").map(|p| p.enabled).unwrap_or(false);
+    // Register GCP (enabled by default — interactive setup runs on first login)
+    let gcp_enabled = cfg.providers.get("gcp").map(|p| p.enabled).unwrap_or(true);
     if gcp_enabled {
         let gcp_config = cfg.providers.get("gcp").cloned().unwrap_or_default();
         let gcp = GcpProvider::from_config(&gcp_config);
