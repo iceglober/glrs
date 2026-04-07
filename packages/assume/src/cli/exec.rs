@@ -6,9 +6,13 @@ use std::process::Command;
 
 #[derive(Args, Debug)]
 pub struct ExecArgs {
-    /// Context pattern (e.g., "aws:prod/admin"). Defaults to the active context.
+    /// Context pattern (e.g., "prod/admin", "novelist-app"). Defaults to the active context.
     #[arg(long = "profile")]
     pub profile: Option<String>,
+
+    /// Provider to search in (e.g., "aws", "gcp"). Narrows context matching.
+    #[arg(long)]
+    pub provider: Option<String>,
 
     /// Command and arguments to run
     #[arg(trailing_var_arg = true, required = true)]
@@ -22,27 +26,55 @@ pub async fn run(args: ExecArgs, registry: &PluginRegistry, _cfg: &config::Confi
 
     // Resolve context: use --profile if given, otherwise fall back to active context
     let context = if let Some(ref profile) = args.profile {
-        // Collect all contexts and fuzzy match
+        // Support "gcp:novelist-app" syntax — split into provider + pattern
+        let (provider_filter, pattern) = if let Some((prov, pat)) = profile.split_once(':') {
+            (Some(prov.to_string()), pat.to_string())
+        } else {
+            (args.provider.clone(), profile.clone())
+        };
+
+        // Collect contexts — prefer cache, fall back to live API
         let mut all_contexts = Vec::new();
-        for provider_id in registry.ids() {
-            let provider = registry.get(&provider_id).unwrap();
-            let tokens = match keychain::load_tokens(&provider_id)? {
-                Some(t) => t,
-                None => continue,
-            };
-            if let Ok(contexts) = provider.list_contexts(&tokens).await {
-                all_contexts.extend(contexts);
+        let providers: Vec<String> = match provider_filter {
+            Some(ref p) => vec![p.clone()],
+            None => registry.ids(),
+        };
+        for provider_id in &providers {
+            if let Some(cached) = crate::core::cache::load_contexts(provider_id) {
+                all_contexts.extend(cached);
+            } else {
+                let tokens = match keychain::load_tokens(provider_id)? {
+                    Some(t) => t,
+                    None => continue,
+                };
+                let provider = match registry.get(provider_id) {
+                    Some(p) => p,
+                    None => continue,
+                };
+                if let Ok(contexts) = provider.list_contexts(&tokens).await {
+                    all_contexts.extend(contexts);
+                }
             }
         }
-        let matches = fuzzy::match_contexts(profile, &all_contexts);
+        let matches = fuzzy::match_contexts(&pattern, &all_contexts);
         match matches.first() {
             Some(m) => m.context.clone(),
             None => bail!("No context matching '{profile}'"),
         }
+    } else if let Some(ref provider_id) = args.provider {
+        // --provider without --profile: use the active context if it matches the provider
+        let active = crate::core::cache::load_active_context().ok_or_else(|| {
+            anyhow::anyhow!("No active context. Run: gsa use {provider_id} <profile>")
+        })?;
+        if active.provider_id != *provider_id {
+            bail!("Active context is for '{}', not '{provider_id}'. Run: gsa use {provider_id} <profile>", active.provider_id);
+        }
+        active
     } else {
         // Use the active context
-        crate::core::cache::load_active_context()
-            .ok_or_else(|| anyhow::anyhow!("No active context. Run: gs-assume use <context>"))?
+        crate::core::cache::load_active_context().ok_or_else(|| {
+            anyhow::anyhow!("No active context. Run: gs-assume use <provider> <profile>")
+        })?
     };
     let context = &context;
 
@@ -84,6 +116,19 @@ pub async fn run(args: ExecArgs, registry: &PluginRegistry, _cfg: &config::Confi
             "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
             "AWS_CONTAINER_AUTHORIZATION_TOKEN",
         ]);
+    } else if context.provider_id == "gcp" {
+        // Access token for gcloud CLI
+        if let Some(access_token) = tokens.secrets.get("access_token") {
+            env_vars.push(("CLOUDSDK_AUTH_ACCESS_TOKEN".into(), access_token.clone()));
+        }
+        // Project env vars
+        let project_id = context
+            .metadata
+            .get("project_id")
+            .unwrap_or(&context.id)
+            .clone();
+        env_vars.push(("GOOGLE_CLOUD_PROJECT".into(), project_id.clone()));
+        env_vars.push(("CLOUDSDK_CORE_PROJECT".into(), project_id));
     }
 
     // Run the command
