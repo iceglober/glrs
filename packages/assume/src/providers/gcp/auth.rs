@@ -72,10 +72,7 @@ pub async fn login(config: &ProviderConfig) -> Result<AuthTokens, ProviderError>
     );
 
     eprintln!("Opening browser for Google Cloud authentication...");
-    eprintln!(
-        "If the browser doesn't open, visit:\n  {}",
-        auth_url
-    );
+    eprintln!("If the browser doesn't open, visit:\n  {}", auth_url);
 
     if let Err(e) = open::that(&auth_url) {
         tracing::debug!("Failed to open browser: {e}");
@@ -155,9 +152,7 @@ fn receive_callback(listener: TcpListener) -> Result<String, ProviderError> {
     let auth_code = request_line
         .split_whitespace()
         .nth(1) // the path
-        .and_then(|path| {
-            url::Url::parse(&format!("http://localhost{path}")).ok()
-        })
+        .and_then(|path| url::Url::parse(&format!("http://localhost{path}")).ok())
         .and_then(|url| {
             url.query_pairs()
                 .find(|(k, _)| k == "code")
@@ -168,9 +163,7 @@ fn receive_callback(listener: TcpListener) -> Result<String, ProviderError> {
     let error = request_line
         .split_whitespace()
         .nth(1)
-        .and_then(|path| {
-            url::Url::parse(&format!("http://localhost{path}")).ok()
-        })
+        .and_then(|path| url::Url::parse(&format!("http://localhost{path}")).ok())
         .and_then(|url| {
             url.query_pairs()
                 .find(|(k, _)| k == "error")
@@ -181,12 +174,14 @@ fn receive_callback(listener: TcpListener) -> Result<String, ProviderError> {
     let (status, body) = if auth_code.is_some() {
         ("200 OK", "<html><body><h2>Authentication successful!</h2><p>You can close this tab and return to your terminal.</p></body></html>")
     } else {
-        ("400 Bad Request", "<html><body><h2>Authentication failed</h2><p>Please try again.</p></body></html>")
+        (
+            "400 Bad Request",
+            "<html><body><h2>Authentication failed</h2><p>Please try again.</p></body></html>",
+        )
     };
 
-    let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n{body}"
-    );
+    let response =
+        format!("HTTP/1.1 {status}\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n{body}");
     let _ = stream.write_all(response.as_bytes());
     let _ = stream.flush();
     drop(stream);
