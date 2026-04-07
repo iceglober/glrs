@@ -167,6 +167,11 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
     // Store tokens (encrypted at rest)
     keychain::store_tokens(&provider_id, &tokens)?;
 
+    // Write ADC file so gcloud and client libraries work automatically
+    if provider_id == "gcp" {
+        crate::providers::gcp::adc::write_adc(&tokens);
+    }
+
     // Discover available contexts
     eprintln!("Discovering available contexts...");
     match provider.list_contexts(&tokens).await {

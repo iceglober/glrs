@@ -188,6 +188,16 @@ pub fn print_context_exports(selected: &Context, cfg: &config::Config) {
             .and_then(|p| p.port)
             .unwrap_or(crate::providers::gcp::endpoint::DEFAULT_PORT);
         println!("export GCE_METADATA_HOST=\"localhost:{}\"", port);
+
+        // Export access token so gcloud CLI works without separate auth
+        if let Ok(Some(tokens)) = crate::core::keychain::load_tokens("gcp") {
+            if let Some(access_token) = tokens.secrets.get("access_token") {
+                println!(
+                    "export CLOUDSDK_AUTH_ACCESS_TOKEN=\"{}\"",
+                    shell_escape(access_token)
+                );
+            }
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+pub mod adc;
 pub mod auth;
 pub mod contexts;
 pub mod credentials;
