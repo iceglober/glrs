@@ -1,9 +1,9 @@
 import fs from "node:fs";
-import { git, defaultBranch, gitRoot } from "./git.js";
+import { git, gitSafe, defaultBranch, gitRoot } from "./git.js";
 import { worktreePath, repoName } from "./config.js";
 import { registerWorktree } from "./registry.js";
 import { runHook } from "./hooks.js";
-import { ok, info, bold } from "./fmt.js";
+import { ok, info, warn, bold } from "./fmt.js";
 
 export interface CreateResult {
   wtPath: string;
@@ -25,6 +25,13 @@ export function createWorktree(
 
   info(`fetching origin/${base}...`);
   git("fetch", "origin", base, "--quiet");
+
+  // Delete stale branch if it exists (leftover from a previously removed worktree)
+  const branchExists = gitSafe("show-ref", "--verify", `refs/heads/${name}`) !== null;
+  if (branchExists) {
+    warn(`branch ${bold(name)} already exists, resetting to origin/${base}`);
+    git("branch", "-D", name);
+  }
 
   info(`creating worktree ${bold(name)} from ${base}...`);
   git("worktree", "add", "-b", name, wtPath, `origin/${base}`, "--quiet");
