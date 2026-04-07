@@ -47,7 +47,7 @@ src/
 │   ├── registry.ts       # Global worktree registry (~/.glorious/worktrees.json)
 │   ├── select.ts         # Interactive terminal pickers (select, multiSelect)
 │   ├── config.ts         # worktreePath, repoName, isProtected
-│   ├── hooks.ts          # runHook
+│   ├── hooks.ts          # runHook (non-fatal, per-command resilient)
 │   ├── slug.ts           # slugify
 │   ├── fmt.ts            # Terminal formatting (bold, dim, colors)
 │   ├── version.ts        # VERSION constant
