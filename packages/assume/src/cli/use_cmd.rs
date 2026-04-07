@@ -253,19 +253,35 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
             .get("aws")
             .and_then(|p| p.port)
             .unwrap_or(crate::providers::aws::endpoint::DEFAULT_PORT);
+        let session_token = crate::providers::aws::endpoint::get_or_create_session_token();
         println!(
             "export AWS_CONTAINER_CREDENTIALS_FULL_URI=\"http://localhost:{port}/credentials/{context_id}\"",
             port = port,
             context_id = shell_escape(&selected.id),
         );
+        println!(
+            "export AWS_CONTAINER_AUTHORIZATION_TOKEN=\"Bearer {}\"",
+            shell_escape(&session_token),
+        );
     }
-
-    // Auto-start daemon if not running
-    crate::core::daemon::ensure_daemon_running();
 
     // Persist active context for status command (non-prompt uses)
     if let Err(e) = crate::core::cache::save_active_context(&selected) {
         tracing::warn!("Failed to save active context: {e}");
+    }
+
+    // Ensure daemon is running and validate the credential endpoint works.
+    // This auto-restarts the daemon if it's stale or unhealthy.
+    crate::core::daemon::ensure_daemon_running();
+
+    if selected.provider_id == "aws" {
+        let port = cfg
+            .providers
+            .get("aws")
+            .and_then(|p| p.port)
+            .unwrap_or(crate::providers::aws::endpoint::DEFAULT_PORT);
+        let session_token = crate::providers::aws::endpoint::get_or_create_session_token();
+        crate::core::daemon::validate_credential_endpoint(port, &selected.id, &session_token);
     }
 
     audit::log_event(
