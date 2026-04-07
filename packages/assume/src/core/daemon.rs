@@ -595,10 +595,14 @@ fn try_credential_fetch(url: &str, auth: &str) -> bool {
     let output = std::process::Command::new("curl")
         .args([
             "-sf",
-            "--max-time", "3",
-            "-H", &format!("Authorization: {auth}"),
-            "-o", "/dev/null",
-            "-w", "%{http_code}",
+            "--max-time",
+            "3",
+            "-H",
+            &format!("Authorization: {auth}"),
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
             url,
         ])
         .stdin(std::process::Stdio::null())
