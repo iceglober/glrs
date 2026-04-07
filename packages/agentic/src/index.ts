@@ -6,6 +6,7 @@ import { del } from "./commands/delete.js";
 import { cleanup } from "./commands/cleanup.js";
 import { go } from "./commands/go.js";
 import { initHooks } from "./commands/init-hooks.js";
+import { root } from "./commands/root.js";
 import { start } from "./commands/start.js";
 import { upgrade } from "./commands/upgrade.js";
 import { installSkills } from "./commands/install-skills.js";
@@ -44,6 +45,7 @@ const wt = subcommands({
     delete: del,
     cleanup,
     hooks: initHooks,
+    root,
   },
 });
 

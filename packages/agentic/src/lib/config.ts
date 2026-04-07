@@ -20,8 +20,8 @@ export function repoName(): string {
 /**
  * Resolve where a worktree should live.
  *
- * - If AFLOW_DIR is set: AFLOW_DIR/<name>
- * - Otherwise: ../<repo>-wt-<name> (sibling of the repo)
+ * - If GLORIOUS_DIR is set: GLORIOUS_DIR/<name>
+ * - Otherwise: ../<name> (sibling of the repo)
  */
 export function worktreePath(name: string): string {
   const wtmDir = process.env.GLORIOUS_DIR;
@@ -29,5 +29,5 @@ export function worktreePath(name: string): string {
     return path.resolve(wtmDir, name);
   }
   const root = gitRoot();
-  return path.resolve(path.dirname(root), `${repoName()}-wt-${name}`);
+  return path.resolve(path.dirname(root), name);
 }

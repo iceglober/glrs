@@ -34,6 +34,7 @@ src/
 │   ├── list.ts           # gs-agentic wt list (global, registry-based)
 │   ├── delete.ts         # gs-agentic wt delete (interactive multi-select or by name)
 │   ├── cleanup.ts        # gs-agentic wt cleanup
+│   ├── root.ts           # gs-agentic wt root
 │   ├── install-skills.ts # gs-agentic skills
 │   ├── init-hooks.ts     # gs-agentic wt hooks
 │   └── upgrade.ts        # gs-agentic upgrade
