@@ -67,7 +67,8 @@ export function select<T>(opts: {
     let lineCount = 0;
 
     function render() {
-      if (lineCount > 0) stdout.write(`\x1b[${lineCount}A`);
+      let out = "";
+      if (lineCount > 0) out += `\x1b[${lineCount}A`;
       const lines: string[] = [];
       lines.push(`${cyan("?")} ${bold(opts.message)}`);
       lines.push("");
@@ -83,7 +84,8 @@ export function select<T>(opts: {
           lines.push(`${prefix}${label}${hint}`);
         }
       }
-      for (const line of lines) stdout.write(`\x1b[2K${line}\n`);
+      out += lines.map((l) => `\x1b[2K${l}`).join("\n") + "\n";
+      stdout.write(out);
       lineCount = lines.length;
     }
 
@@ -146,7 +148,8 @@ export function multiSelect<T>(opts: {
     let lineCount = 0;
 
     function render() {
-      if (lineCount > 0) stdout.write(`\x1b[${lineCount}A`);
+      let out = "";
+      if (lineCount > 0) out += `\x1b[${lineCount}A`;
       const lines: string[] = [];
       lines.push(
         `${cyan("?")} ${bold(opts.message)} ${dim("(space = toggle, enter = confirm)")}`,
@@ -166,7 +169,8 @@ export function multiSelect<T>(opts: {
           lines.push(`${prefix}${box} ${item.label}${hint}`);
         }
       }
-      for (const line of lines) stdout.write(`\x1b[2K${line}\n`);
+      out += lines.map((l) => `\x1b[2K${l}`).join("\n") + "\n";
+      stdout.write(out);
       lineCount = lines.length;
     }
 
