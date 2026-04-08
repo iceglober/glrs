@@ -52,7 +52,7 @@ fn write_cache(version: &str) {
 }
 
 /// Fetch latest version from the public GitHub API via curl.
-/// Uses a 3-second timeout so it never blocks the CLI.
+/// Uses a 3-second timeout so it never blocks the CLI noticeably.
 fn fetch_latest_version() -> Option<String> {
     let output = std::process::Command::new("curl")
         .args([
@@ -75,6 +75,7 @@ fn fetch_latest_version() -> Option<String> {
         .ok()?;
 
     if !output.status.success() {
+        tracing::debug!("update check: curl failed with status {}", output.status);
         return None;
     }
 
@@ -136,10 +137,14 @@ fn detect_platform() -> &'static str {
 }
 
 /// Attempt to download and replace the running binary. Returns true on success.
+/// Tries `gh release download` first, then falls back to `curl`.
 fn try_auto_upgrade(tag: &str) -> bool {
     let exe_path = match std::env::current_exe().and_then(fs::canonicalize) {
         Ok(p) => p,
-        Err(_) => return false,
+        Err(e) => {
+            tracing::debug!("auto-upgrade: cannot resolve exe path: {e}");
+            return false;
+        }
     };
 
     let install_dir = match exe_path.parent() {
@@ -148,22 +153,20 @@ fn try_auto_upgrade(tag: &str) -> bool {
     };
 
     // Check write permission
-    if fs::metadata(install_dir)
-        .map(|m| m.permissions().readonly())
-        .unwrap_or(true)
-    {
-        let test_path = install_dir.join(".gs-assume-write-test");
-        if fs::write(&test_path, "test").is_err() {
-            return false;
-        }
-        let _ = fs::remove_file(&test_path);
+    let test_path = install_dir.join(".gs-assume-write-test");
+    if fs::write(&test_path, "test").is_err() {
+        tracing::debug!(
+            "auto-upgrade: no write permission to {}",
+            install_dir.display()
+        );
+        return false;
     }
+    let _ = fs::remove_file(&test_path);
 
     let platform = detect_platform();
     let asset_name = format!("gs-assume-{platform}");
     let tmp = format!("{}.tmp", exe_path.to_string_lossy());
 
-    // Download binary from public GitHub release via curl
     let download_url = format!("https://github.com/{REPO}/releases/download/{tag}/{asset_name}");
     let result = std::process::Command::new("curl")
         .args(["-fsSL", "--max-time", "30", "-o", &tmp, &download_url])
@@ -171,31 +174,42 @@ fn try_auto_upgrade(tag: &str) -> bool {
         .stderr(std::process::Stdio::null())
         .status();
 
-    match result {
-        Ok(status) if status.success() => {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755));
-            }
-            // Clear quarantine xattrs so macOS doesn't kill the binary
-            #[cfg(target_os = "macos")]
-            {
-                let _ = std::process::Command::new("xattr")
-                    .args(["-cr", &tmp])
-                    .status();
-            }
-            if fs::rename(&tmp, &exe_path).is_ok() {
-                return true;
-            }
+    let downloaded = match result {
+        Ok(status) if status.success() => true,
+        Ok(status) => {
+            tracing::debug!("auto-upgrade: curl download failed with status {status}");
             let _ = fs::remove_file(&tmp);
             false
         }
-        _ => {
+        Err(e) => {
+            tracing::debug!("auto-upgrade: curl not available: {e}");
             let _ = fs::remove_file(&tmp);
             false
         }
+    };
+
+    if !downloaded {
+        return false;
     }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755));
+    }
+    // Clear quarantine xattrs so macOS doesn't kill the binary
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("xattr")
+            .args(["-cr", &tmp])
+            .status();
+    }
+    if fs::rename(&tmp, &exe_path).is_ok() {
+        return true;
+    }
+    tracing::debug!("auto-upgrade: rename failed");
+    let _ = fs::remove_file(&tmp);
+    false
 }
 
 /// Re-exec the current process so the just-upgraded binary handles the command.
@@ -215,20 +229,44 @@ pub fn check_for_update() {
     // Catch everything — never crash the CLI for a version check
     let _ = std::panic::catch_unwind(|| {
         let current = env!("CARGO_PKG_VERSION");
+        tracing::debug!("update check: current version {current}");
 
         let latest = if let Some(cached) = read_cache() {
-            cached
+            // If cached version is older than current, cache is stale — re-fetch
+            if compare_versions(&cached, current) == std::cmp::Ordering::Less {
+                tracing::debug!("update check: cached {cached} < current {current}, re-fetching");
+                let _ = fs::remove_file(cache_path());
+                let handle = std::thread::spawn(fetch_latest_version);
+                match handle.join() {
+                    Ok(Some(v)) => {
+                        tracing::debug!("update check: re-fetched version {v}");
+                        write_cache(&v);
+                        v
+                    }
+                    _ => return,
+                }
+            } else {
+                tracing::debug!("update check: cached version {cached}");
+                cached
+            }
         } else {
-            // No cache — fetch from public API (curl with 3s timeout)
+            tracing::debug!("update check: no cache, fetching from API");
             let handle = std::thread::spawn(fetch_latest_version);
 
-            // Wait at most 3 seconds for the version check
             match handle.join() {
                 Ok(Some(v)) => {
+                    tracing::debug!("update check: fetched version {v}");
                     write_cache(&v);
                     v
                 }
-                _ => return,
+                Ok(None) => {
+                    tracing::debug!("update check: fetch returned None");
+                    return;
+                }
+                Err(_) => {
+                    tracing::debug!("update check: fetch thread panicked");
+                    return;
+                }
             }
         };
 
