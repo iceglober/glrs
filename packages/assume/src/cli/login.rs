@@ -181,6 +181,22 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
                 crate::providers::aws::contexts::auto_tag_dangerous(&mut contexts);
             } else if provider_id == "gcp" {
                 crate::providers::gcp::contexts::auto_tag_dangerous(&mut contexts);
+
+                // No projects — offer to create one
+                if contexts.is_empty() {
+                    if let Ok(Some(_project_id)) =
+                        crate::providers::gcp::setup::maybe_create_project(&tokens).await
+                    {
+                        // Re-discover after creation
+                        if let Ok(new_contexts) =
+                            crate::providers::gcp::contexts::list_contexts(&tokens, "us-central1")
+                                .await
+                        {
+                            contexts = new_contexts;
+                            crate::providers::gcp::contexts::auto_tag_dangerous(&mut contexts);
+                        }
+                    }
+                }
             }
 
             eprintln!(
@@ -221,6 +237,43 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
         }
         Err(e) => {
             eprintln!("Warning: Failed to list contexts: {e}");
+
+            // GCP: offer to create a project if none exist
+            if provider_id == "gcp" {
+                if let Ok(Some(_project_id)) =
+                    crate::providers::gcp::setup::maybe_create_project(&tokens).await
+                {
+                    // Re-discover contexts after project creation
+                    if let Ok(mut contexts) = provider.list_contexts(&tokens).await {
+                        crate::providers::gcp::contexts::auto_tag_dangerous(&mut contexts);
+                        if let Err(e) = crate::core::cache::save_contexts(&provider_id, &contexts) {
+                            tracing::warn!("Failed to cache contexts: {e}");
+                        }
+                        if contexts.len() == 1 {
+                            let selected = &contexts[0];
+                            eprintln!(
+                                "Auto-selected: {} ({})",
+                                selected.display_name, selected.region
+                            );
+                            super::use_cmd::print_context_exports(selected, cfg);
+                            if let Err(e) = crate::core::cache::save_active_context(selected) {
+                                tracing::warn!("Failed to save active context: {e}");
+                            }
+                        }
+                        // Skip the fallback prompt — we handled it
+                        let expires = tokens.session_expires_at.format("%Y-%m-%d %H:%M UTC");
+                        eprintln!("Session valid until {expires}");
+                        crate::core::daemon::restart_daemon();
+                        audit::log_event(
+                            audit::AuditEvent::Login,
+                            &provider_id,
+                            provider.display_name(),
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+
             eprintln!("You can try: gs-assume sync {provider_id}");
             // Still set the provider prompt even without contexts
             print_provider_prompt(&provider_id);

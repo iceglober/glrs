@@ -4,6 +4,7 @@ pub mod contexts;
 pub mod credentials;
 pub mod endpoint;
 pub mod refresh;
+pub mod setup;
 
 use crate::plugin::{
     AuthTokens, Context, CredentialEndpoint, Credentials, ProfileConfig, PromptSegment, Provider,
