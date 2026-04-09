@@ -327,7 +327,30 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
             .and_then(|p| p.port)
             .unwrap_or(crate::providers::aws::endpoint::DEFAULT_PORT);
         let session_token = crate::providers::aws::endpoint::get_or_create_session_token();
-        crate::core::daemon::validate_credential_endpoint(port, &selected.id, &session_token);
+        let status =
+            crate::core::daemon::validate_credential_endpoint(port, &selected.id, &session_token);
+
+        if status == crate::core::daemon::EndpointStatus::NeedsLogin {
+            eprintln!("Session expired. Launching login...");
+            eprintln!();
+            let login_args = super::login::LoginArgs {
+                provider: Some(provider_id.clone()),
+            };
+            super::login::run(login_args, registry, cfg).await?;
+            eprintln!();
+
+            // Restart daemon so it picks up new tokens, then re-validate
+            crate::core::daemon::restart_daemon();
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            let retry = crate::core::daemon::validate_credential_endpoint(
+                port,
+                &selected.id,
+                &session_token,
+            );
+            if retry != crate::core::daemon::EndpointStatus::Ok {
+                eprintln!("Warning: credentials still unavailable after login");
+            }
+        }
     }
 
     audit::log_event(
