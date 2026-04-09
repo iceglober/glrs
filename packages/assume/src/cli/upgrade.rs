@@ -1,6 +1,9 @@
+use crate::core::daemon::DaemonRequirement;
 use clap::Args;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
 
 const REPO: &str = "iceglober/glorious";
 const TAG_PREFIX: &str = "assume-v";

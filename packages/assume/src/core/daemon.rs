@@ -618,36 +618,81 @@ pub fn restart_daemon() {
     start_daemon_background();
 }
 
+/// What a command needs from the daemon/auth system before it can run.
+/// Every cli command module must export `pub const REQUIREMENT: DaemonRequirement`.
+/// The exhaustive match in main.rs ensures new commands are classified at compile time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DaemonRequirement {
+    /// No credentials or daemon needed (status, config, upgrade, etc.)
+    None,
+    /// Needs the credential daemon running (agent, mcp, use, etc.)
+    /// Pre-dispatch will call ensure_daemon_running().
+    Daemon,
+}
+
+/// Result of a credential endpoint check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EndpointStatus {
+    /// Credentials served successfully (HTTP 200).
+    Ok,
+    /// Daemon is not reachable — connection refused, timeout, or no HTTP response.
+    Unreachable,
+    /// Endpoint responded but cannot serve credentials (e.g. expired session, HTTP 503/401/etc).
+    /// Restarting the daemon won't help — the user needs to re-authenticate.
+    NeedsLogin,
+}
+
+/// Classify an HTTP status code string (from curl `-w %{http_code}`) into an EndpointStatus.
+pub fn classify_http_status(code: &str) -> EndpointStatus {
+    match code.trim() {
+        "200" => EndpointStatus::Ok,
+        // curl writes "000" when it can't connect at all (connection refused, timeout, etc.)
+        "000" | "" => EndpointStatus::Unreachable,
+        // Any other HTTP status means the daemon is alive but can't serve credentials
+        _ => EndpointStatus::NeedsLogin,
+    }
+}
+
 /// Validate the credential endpoint is serving credentials for a given context.
-/// Returns Ok(()) if credentials can be fetched, Err with details otherwise.
-/// On failure, restarts the daemon once and retries.
-pub fn validate_credential_endpoint(port: u16, context_id: &str, session_token: &str) -> bool {
+/// Returns an `EndpointStatus` so the caller can decide how to recover:
+///   - `Ok` → credentials are flowing, nothing to do
+///   - `Unreachable` → daemon is down, was restarted (and may still be unreachable)
+///   - `NeedsLogin` → daemon is alive but session is expired, caller should launch login
+pub fn validate_credential_endpoint(
+    port: u16,
+    context_id: &str,
+    session_token: &str,
+) -> EndpointStatus {
     let url = format!("http://localhost:{port}/credentials/{context_id}");
     let auth = format!("Bearer {session_token}");
 
-    // First attempt
-    if try_credential_fetch(&url, &auth) {
-        return true;
+    let status = try_credential_fetch(&url, &auth);
+
+    match status {
+        EndpointStatus::Ok => EndpointStatus::Ok,
+        EndpointStatus::NeedsLogin => {
+            // Daemon is alive but can't serve credentials — restarting won't help
+            EndpointStatus::NeedsLogin
+        }
+        EndpointStatus::Unreachable => {
+            // Daemon is down — restart and retry
+            eprintln!("Credential endpoint not responding, restarting daemon...");
+            restart_daemon();
+            std::thread::sleep(std::time::Duration::from_secs(3));
+
+            let retry = try_credential_fetch(&url, &auth);
+            if retry == EndpointStatus::Unreachable {
+                eprintln!("Warning: credential endpoint still not responding after daemon restart");
+            }
+            retry
+        }
     }
-
-    // Restart daemon and retry
-    eprintln!("Credential endpoint not responding, restarting daemon...");
-    restart_daemon();
-    // Give the daemon time to start serving — needs to init tokens and bind port
-    std::thread::sleep(std::time::Duration::from_secs(3));
-
-    if try_credential_fetch(&url, &auth) {
-        return true;
-    }
-
-    eprintln!("Warning: credential endpoint still not responding after daemon restart");
-    false
 }
 
-fn try_credential_fetch(url: &str, auth: &str) -> bool {
+fn try_credential_fetch(url: &str, auth: &str) -> EndpointStatus {
     let output = std::process::Command::new("curl")
         .args([
-            "-sf",
+            "-s",
             "--max-time",
             "10",
             "-H",
@@ -665,9 +710,125 @@ fn try_credential_fetch(url: &str, auth: &str) -> bool {
     match output {
         Ok(o) => {
             let code = String::from_utf8_lossy(&o.stdout);
-            code.trim() == "200"
+            classify_http_status(&code)
         }
-        Err(_) => false,
+        Err(_) => EndpointStatus::Unreachable,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── classify_http_status unit tests ──────────────────────────────
+
+    #[test]
+    fn classify_200_is_ok() {
+        assert_eq!(classify_http_status("200"), EndpointStatus::Ok);
+    }
+
+    #[test]
+    fn classify_000_is_unreachable() {
+        // curl writes "000" when it can't connect at all
+        assert_eq!(classify_http_status("000"), EndpointStatus::Unreachable);
+    }
+
+    #[test]
+    fn classify_empty_is_unreachable() {
+        assert_eq!(classify_http_status(""), EndpointStatus::Unreachable);
+    }
+
+    #[test]
+    fn classify_503_is_needs_login() {
+        // This is the exact bug scenario: daemon is alive, returns 503
+        // because session token is expired. Must NOT be treated as unreachable.
+        assert_eq!(classify_http_status("503"), EndpointStatus::NeedsLogin);
+    }
+
+    #[test]
+    fn classify_401_is_needs_login() {
+        assert_eq!(classify_http_status("401"), EndpointStatus::NeedsLogin);
+    }
+
+    #[test]
+    fn classify_504_is_needs_login() {
+        assert_eq!(classify_http_status("504"), EndpointStatus::NeedsLogin);
+    }
+
+    #[test]
+    fn classify_404_is_needs_login() {
+        assert_eq!(classify_http_status("404"), EndpointStatus::NeedsLogin);
+    }
+
+    #[test]
+    fn classify_handles_whitespace() {
+        assert_eq!(classify_http_status("  200\n"), EndpointStatus::Ok);
+        assert_eq!(classify_http_status(" 503 "), EndpointStatus::NeedsLogin);
+    }
+
+    // ── Integration tests with real HTTP server ─────────────────────
+    // These verify that try_credential_fetch correctly interprets real
+    // HTTP responses end-to-end (no mocks).
+
+    /// Spin up a one-shot HTTP server that returns the given status code,
+    /// call try_credential_fetch against it, and return the result.
+    fn fetch_against_server(status_code: u16) -> EndpointStatus {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let url = format!("http://127.0.0.1:{port}/credentials/test-ctx");
+        let auth = "Bearer test-token";
+
+        // Spawn a thread to accept one connection and return the status
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let body = format!("{{\"status\":{status_code}}}");
+            let response = format!(
+                "HTTP/1.1 {status_code} X\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+            stream.flush().unwrap();
+        });
+
+        let result = try_credential_fetch(&url, auth);
+        handle.join().unwrap();
+        result
+    }
+
+    #[test]
+    fn fetch_200_server_returns_ok() {
+        assert_eq!(fetch_against_server(200), EndpointStatus::Ok);
+    }
+
+    #[test]
+    fn fetch_503_server_returns_needs_login() {
+        // THE BUG SCENARIO: daemon responds with 503 (expired session).
+        // Old code returned `false` (same as unreachable), triggering a
+        // pointless daemon restart. New code must return NeedsLogin.
+        assert_eq!(fetch_against_server(503), EndpointStatus::NeedsLogin);
+    }
+
+    #[test]
+    fn fetch_401_server_returns_needs_login() {
+        assert_eq!(fetch_against_server(401), EndpointStatus::NeedsLogin);
+    }
+
+    #[test]
+    fn fetch_connection_refused_returns_unreachable() {
+        // Connect to a port with nothing listening
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener); // close it immediately so connection is refused
+
+        let url = format!("http://127.0.0.1:{port}/credentials/test-ctx");
+        let result = try_credential_fetch(&url, "Bearer test-token");
+        assert_eq!(result, EndpointStatus::Unreachable);
     }
 }
 

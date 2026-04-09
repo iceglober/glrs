@@ -1,8 +1,11 @@
+use crate::core::daemon::DaemonRequirement;
 use crate::core::{audit, config, daemon, rpc};
 use crate::plugin::registry::PluginRegistry;
 use anyhow::Result;
 use clap::Args;
 use std::sync::Arc;
+
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
 use tokio::sync::RwLock;
 
 #[derive(Args, Debug)]

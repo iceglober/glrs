@@ -1,8 +1,11 @@
+use crate::core::daemon::DaemonRequirement;
 use crate::core::{audit, config, keychain};
 use crate::plugin::registry::PluginRegistry;
 use anyhow::{bail, Result};
 use clap::Args;
 use std::io::{self, BufRead, Write};
+
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
 
 #[derive(Args, Debug)]
 pub struct LoginArgs {

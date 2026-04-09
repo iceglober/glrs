@@ -1,7 +1,10 @@
+use crate::core::daemon::DaemonRequirement;
 use crate::core::{audit, cache, config, keychain};
 use crate::plugin::registry::PluginRegistry;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
+
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::Daemon;
 
 #[derive(Args, Debug)]
 pub struct AgentArgs {
@@ -170,9 +173,7 @@ async fn run_exec(
     let mut env_vars: Vec<(String, String)> = Vec::new();
 
     if context.provider_id == "aws" {
-        // Use daemon endpoint for auto-refreshing AWS credentials
-        crate::core::daemon::ensure_daemon_running();
-
+        // Daemon is already ensured by centralized pre-dispatch in main.rs.
         let port = cfg
             .providers
             .get("aws")

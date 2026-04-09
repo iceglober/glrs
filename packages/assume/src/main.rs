@@ -104,6 +104,30 @@ async fn main() -> anyhow::Result<()> {
         assume::core::update_check::check_for_update();
     }
 
+    // Centralized pre-dispatch: ensure daemon is running for commands that need it.
+    // This exhaustive match forces every new Commands variant to be classified —
+    // the compiler rejects unhandled variants, preventing accidental omissions.
+    use assume::core::daemon::DaemonRequirement;
+    let requirement = match &cli.command {
+        Commands::Use(_) => cli::use_cmd::REQUIREMENT,
+        Commands::Agent(_) => cli::agent::REQUIREMENT,
+        Commands::Exec(_) => cli::exec::REQUIREMENT,
+        Commands::CredentialProcess(_) => cli::credential_process::REQUIREMENT,
+        Commands::Serve(_) => cli::serve::REQUIREMENT,
+        Commands::Login(_) => cli::login::REQUIREMENT,
+        Commands::Logout(_) => cli::logout::REQUIREMENT,
+        Commands::Status(_) => cli::status::REQUIREMENT,
+        Commands::Profiles(_) => cli::profiles::REQUIREMENT,
+        Commands::Sync(_) => cli::sync::REQUIREMENT,
+        Commands::Config(_) => cli::config_cmd::REQUIREMENT,
+        Commands::Console(_) => cli::console::REQUIREMENT,
+        Commands::ShellInit(_) => cli::shell_init::REQUIREMENT,
+        Commands::Upgrade(_) => cli::upgrade::REQUIREMENT,
+    };
+    if requirement == DaemonRequirement::Daemon {
+        assume::core::daemon::ensure_daemon_running();
+    }
+
     match cli.command {
         Commands::Agent(args) => cli::agent::run(args, &registry, &cfg).await,
         Commands::Config(args) => cli::config_cmd::run(args).await,
