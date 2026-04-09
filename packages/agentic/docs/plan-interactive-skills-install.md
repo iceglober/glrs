@@ -128,7 +128,7 @@ The current handler is a single 100-line function mixing I/O, logic, and side ef
   **File:** `src/commands/install-skills.test.ts` — add tests
   **File:** `src/commands/install-skills.ts` — extract function, export it
 
-- [ ] **1.3 — Extract `executeInstall(plan)` and `formatInstallResult(result)`**
+- [x] **1.3 — Extract `executeInstall(plan)` and `formatInstallResult(result)`**
 
   **What:** `executeInstall` takes an `InstallPlan` and performs all filesystem writes. Returns a result summary. `formatInstallResult` takes the result and returns an array of log lines (no console.log calls — pure string output).
 

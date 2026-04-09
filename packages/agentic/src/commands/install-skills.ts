@@ -214,6 +214,87 @@ export function computeInstallPlan(opts: {
   };
 }
 
+export interface InstallResult {
+  created: number;
+  updated: number;
+  upToDate: number;
+  removed: number;
+  commandNames: string[];
+  skillNames: string[];
+  target: string;
+}
+
+/** Execute an install plan: write files, remove stale files, update manifest. */
+export function executeInstall(plan: InstallPlan): InstallResult {
+  const commandsDir = path.join(plan.claudeDir, "commands");
+  const skillsDir = path.join(plan.claudeDir, "skills");
+
+  // Remove stale files from previous install
+  const cmdRemoved = removeStaleFiles(plan.commands, plan.previousManifest.commands, commandsDir);
+  const skillRemoved = removeStaleFiles(plan.skills, plan.previousManifest.skills, skillsDir);
+
+  // Install files
+  const cmdResult = installFiles(plan.commands, commandsDir, plan.force);
+  const skillResult = installFiles(plan.skills, skillsDir, plan.force);
+
+  // Update manifest
+  writeManifest(plan.claudeDir, {
+    commands: Object.keys(plan.commands),
+    skills: Object.keys(plan.skills),
+  });
+
+  return {
+    created: cmdResult.created + skillResult.created,
+    updated: cmdResult.updated + skillResult.updated,
+    upToDate: cmdResult.upToDate + skillResult.upToDate,
+    removed: cmdRemoved + skillRemoved,
+    commandNames: Object.keys(plan.commands),
+    skillNames: Object.keys(plan.skills),
+    target: plan.claudeDir.startsWith(os.homedir()) &&
+      plan.claudeDir === path.join(os.homedir(), ".claude")
+      ? "~/.claude/"
+      : ".claude/",
+  };
+}
+
+/** Format install results as human-readable lines (no ANSI — callers add formatting). */
+export function formatInstallResult(result: InstallResult): string[] {
+  const lines: string[] = [];
+
+  if (result.created > 0) {
+    lines.push(`created ${result.created} new file${result.created === 1 ? "" : "s"} in ${result.target}`);
+  }
+  if (result.updated > 0) {
+    lines.push(`updated ${result.updated} file${result.updated === 1 ? "" : "s"} in ${result.target}`);
+  }
+  if (result.removed > 0) {
+    lines.push(`removed ${result.removed} stale file${result.removed === 1 ? "" : "s"} from ${result.target}`);
+  }
+  if (result.upToDate > 0 && result.created === 0 && result.updated === 0 && result.removed === 0) {
+    lines.push("all skills up to date");
+  }
+
+  if (result.commandNames.length > 0) {
+    lines.push("");
+    lines.push("commands:");
+    for (const name of result.commandNames) {
+      const slug = name.replace(".md", "").replace(/\//g, ":");
+      lines.push(`  /${slug}`);
+    }
+  }
+
+  if (result.skillNames.length > 0) {
+    lines.push("");
+    lines.push("skills:");
+    for (const name of result.skillNames) {
+      const slug = name.replace(".md", "").replace(/\//g, ":");
+      lines.push(`  /${slug}`);
+    }
+  }
+
+  return lines;
+}
+
 async function askYesNo(question: string): Promise<boolean> {
   if (!process.stdin.isTTY) return false;
   const rl = readline.createInterface({

@@ -1,7 +1,16 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach } from "bun:test";
+import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { resolveClaudeDir, computeInstallPlan, type Manifest } from "./install-skills.js";
+import {
+  resolveClaudeDir,
+  computeInstallPlan,
+  executeInstall,
+  formatInstallResult,
+  type Manifest,
+  type InstallPlan,
+  type InstallResult,
+} from "./install-skills.js";
 import { COMMANDS, SKILLS } from "../skills/index.js";
 
 describe("resolveClaudeDir", () => {
@@ -98,5 +107,127 @@ describe("computeInstallPlan", () => {
       readFileFn: () => "different content",
     });
     expect(plan.collisions).toEqual([]);
+  });
+});
+
+describe("executeInstall", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gs-skills-test-"));
+  });
+
+  function makePlan(overrides: Partial<InstallPlan> = {}): InstallPlan {
+    return {
+      claudeDir: tmpDir,
+      commands: { "test-cmd.md": "# test command" },
+      skills: { "test-skill.md": "# test skill" },
+      previousManifest: { commands: [], skills: [] },
+      usePrefix: false,
+      force: false,
+      collisions: [],
+      ...overrides,
+    };
+  }
+
+  test("creates new files in empty dir", () => {
+    const result = executeInstall(makePlan());
+    expect(result.created).toBe(2);
+    expect(fs.existsSync(path.join(tmpDir, "commands", "test-cmd.md"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, "skills", "test-skill.md"))).toBe(true);
+  });
+
+  test("updates changed files", () => {
+    const commandsDir = path.join(tmpDir, "commands");
+    fs.mkdirSync(commandsDir, { recursive: true });
+    fs.writeFileSync(path.join(commandsDir, "test-cmd.md"), "old content");
+
+    const result = executeInstall(makePlan({ skills: {} }));
+    expect(result.updated).toBe(1);
+    expect(fs.readFileSync(path.join(commandsDir, "test-cmd.md"), "utf-8")).toBe("# test command");
+  });
+
+  test("skips up-to-date files", () => {
+    const commandsDir = path.join(tmpDir, "commands");
+    fs.mkdirSync(commandsDir, { recursive: true });
+    fs.writeFileSync(path.join(commandsDir, "test-cmd.md"), "# test command");
+
+    const result = executeInstall(makePlan({ skills: {} }));
+    expect(result.upToDate).toBe(1);
+    expect(result.created).toBe(0);
+    expect(result.updated).toBe(0);
+  });
+
+  test("removes stale files from previous manifest", () => {
+    const commandsDir = path.join(tmpDir, "commands");
+    fs.mkdirSync(commandsDir, { recursive: true });
+    fs.writeFileSync(path.join(commandsDir, "old-cmd.md"), "stale");
+
+    const result = executeInstall(
+      makePlan({
+        previousManifest: { commands: ["old-cmd.md"], skills: [] },
+      }),
+    );
+    expect(result.removed).toBe(1);
+    expect(fs.existsSync(path.join(commandsDir, "old-cmd.md"))).toBe(false);
+  });
+
+  test("writes manifest file", () => {
+    executeInstall(makePlan());
+    const manifestPath = path.join(tmpDir, ".glorious-skills.json");
+    expect(fs.existsSync(manifestPath)).toBe(true);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    expect(manifest.commands).toEqual(["test-cmd.md"]);
+    expect(manifest.skills).toEqual(["test-skill.md"]);
+  });
+});
+
+describe("formatInstallResult", () => {
+  const base: InstallResult = {
+    created: 0,
+    updated: 0,
+    upToDate: 0,
+    removed: 0,
+    commandNames: [],
+    skillNames: [],
+    target: ".claude/",
+  };
+
+  test("shows created count", () => {
+    const lines = formatInstallResult({ ...base, created: 3 });
+    expect(lines.some((l) => l.includes("created 3 new files"))).toBe(true);
+  });
+
+  test("shows updated count", () => {
+    const lines = formatInstallResult({ ...base, updated: 2 });
+    expect(lines.some((l) => l.includes("updated 2 files"))).toBe(true);
+  });
+
+  test("shows removed count", () => {
+    const lines = formatInstallResult({ ...base, removed: 1 });
+    expect(lines.some((l) => l.includes("removed 1 stale file"))).toBe(true);
+  });
+
+  test("shows up-to-date message when nothing changed", () => {
+    const lines = formatInstallResult({ ...base, upToDate: 5 });
+    expect(lines.some((l) => l.includes("all skills up to date"))).toBe(true);
+  });
+
+  test("lists command slugs", () => {
+    const lines = formatInstallResult({
+      ...base,
+      created: 1,
+      commandNames: ["glorious/work.md"],
+    });
+    expect(lines.some((l) => l.includes("/glorious:work"))).toBe(true);
+  });
+
+  test("lists skill slugs", () => {
+    const lines = formatInstallResult({
+      ...base,
+      created: 1,
+      skillNames: ["browser.md"],
+    });
+    expect(lines.some((l) => l.includes("/browser"))).toBe(true);
   });
 });
