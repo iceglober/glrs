@@ -1,7 +1,10 @@
 use crate::core::config;
+use crate::core::daemon::DaemonRequirement;
 use crate::plugin::registry::PluginRegistry;
 use anyhow::{bail, Result};
 use clap::Args;
+
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
 
 #[derive(Args, Debug)]
 pub struct ShellInitArgs {

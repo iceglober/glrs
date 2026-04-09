@@ -1,7 +1,10 @@
 use crate::core::config;
+use crate::core::daemon::DaemonRequirement;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 use std::fs;
+
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
 
 #[derive(Args, Debug)]
 pub struct ConfigArgs {

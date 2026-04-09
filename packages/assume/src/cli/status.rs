@@ -1,8 +1,11 @@
+use crate::core::daemon::DaemonRequirement;
 use crate::core::{config, keychain};
 use crate::plugin::registry::PluginRegistry;
 use crate::shell::prompt;
 use anyhow::Result;
 use chrono::Utc;
+
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
 use clap::Args;
 
 #[derive(Args, Debug)]

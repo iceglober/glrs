@@ -201,3 +201,121 @@ mod gcp_conformance {
         );
     }
 }
+
+#[cfg(test)]
+mod command_conformance {
+    /// Every cli command module that accesses credential or daemon APIs
+    /// must declare `pub const REQUIREMENT: DaemonRequirement` with a non-None value.
+    ///
+    /// This test dynamically scans `src/cli/*.rs` — adding a new module that touches
+    /// credentials without declaring REQUIREMENT will fail this test automatically.
+    /// The exhaustive match in main.rs gives compile-time enforcement that every
+    /// Commands variant maps to a REQUIREMENT; this test verifies the values are correct.
+    #[test]
+    fn credential_modules_must_declare_daemon_requirement() {
+        // Source patterns that indicate a module depends on the credential daemon.
+        // These are daemon-specific APIs — NOT general token/credential access
+        // (many commands read tokens for display without needing the daemon).
+        let daemon_indicators = [
+            "ensure_daemon_running",
+            "validate_credential_endpoint",
+            "restart_daemon",
+        ];
+
+        // Modules that are exempt from this check because they manage the daemon
+        // lifecycle themselves (serve IS the daemon; login restarts it after auth).
+        let self_managed: &[&str] = &["serve", "login"];
+
+        let cli_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli");
+        let mut checked = 0;
+        let mut violations = Vec::new();
+
+        for entry in std::fs::read_dir(&cli_dir).expect("src/cli/ must exist") {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let module_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+            if module_name == "mod" {
+                continue;
+            }
+            if self_managed.contains(&module_name.as_str()) {
+                continue;
+            }
+
+            let source = std::fs::read_to_string(&path).unwrap();
+            let uses_daemon = daemon_indicators
+                .iter()
+                .any(|pattern| source.contains(pattern));
+
+            if uses_daemon {
+                checked += 1;
+
+                // Must declare a REQUIREMENT constant
+                if !source.contains("pub const REQUIREMENT: DaemonRequirement") {
+                    violations.push(format!(
+                        "cli/{module_name}.rs uses daemon APIs but does not declare \
+                         `pub const REQUIREMENT: DaemonRequirement`"
+                    ));
+                    continue;
+                }
+
+                // Must not be DaemonRequirement::None
+                if source.contains("DaemonRequirement::None") {
+                    violations.push(format!(
+                        "cli/{module_name}.rs uses daemon APIs but declares \
+                         DaemonRequirement::None — should be DaemonRequirement::Daemon"
+                    ));
+                }
+            }
+        }
+
+        assert!(
+            checked > 0,
+            "Sanity check failed: no daemon-using cli modules found. \
+             Did the daemon_indicators list become stale?"
+        );
+
+        if !violations.is_empty() {
+            panic!(
+                "Command daemon-requirement conformance failures:\n  - {}",
+                violations.join("\n  - ")
+            );
+        }
+    }
+
+    /// Every cli module in src/cli/ must declare `pub const REQUIREMENT: DaemonRequirement`.
+    /// This catches modules that don't use credentials but also forgot the constant —
+    /// without it, the exhaustive match in main.rs can't reference the module's requirement.
+    #[test]
+    fn all_command_modules_declare_requirement() {
+        let cli_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli");
+        let mut missing = Vec::new();
+
+        for entry in std::fs::read_dir(&cli_dir).expect("src/cli/ must exist") {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let module_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+            if module_name == "mod" {
+                continue;
+            }
+
+            let source = std::fs::read_to_string(&path).unwrap();
+            if !source.contains("pub const REQUIREMENT: DaemonRequirement") {
+                missing.push(module_name);
+            }
+        }
+
+        if !missing.is_empty() {
+            panic!(
+                "The following cli modules are missing \
+                 `pub const REQUIREMENT: DaemonRequirement`:\n  - {}\n\
+                 Every command module must declare this constant so that main.rs \
+                 can enforce daemon lifecycle at compile time.",
+                missing.join("\n  - ")
+            );
+        }
+    }
+}

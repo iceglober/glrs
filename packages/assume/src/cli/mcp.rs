@@ -1,7 +1,10 @@
+use crate::core::daemon::DaemonRequirement;
 use crate::core::{audit, cache, config};
 use anyhow::Result;
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
+
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::Daemon;
 
 const SERVER_NAME: &str = "gsa";
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -220,10 +223,9 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
         ));
     }
 
-    // 3. Ensure daemon is running
-    crate::core::daemon::ensure_daemon_running();
+    // Daemon is already ensured by centralized pre-dispatch in main.rs.
 
-    // 4. Build env vars — point at daemon endpoint for auto-refreshing credentials
+    // 3. Build env vars — point at daemon endpoint for auto-refreshing credentials
     let cfg = config::load_config().map_err(|e| (-32603, format!("Config error: {e}")))?;
     let port = cfg
         .providers

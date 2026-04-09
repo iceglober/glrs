@@ -1,3 +1,4 @@
+use crate::core::daemon::DaemonRequirement;
 use crate::core::{audit, config, fuzzy, keychain};
 use crate::plugin::registry::PluginRegistry;
 use crate::plugin::Context;
@@ -5,6 +6,8 @@ use crate::tui::picker::{self, PickerResult};
 use anyhow::{bail, Result};
 use chrono::Utc;
 use clap::Args;
+
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::Daemon;
 
 /// Escape a string for safe interpolation inside double-quoted shell values.
 /// Prevents injection when the output is `eval`'d by the shell wrapper.
@@ -317,9 +320,8 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
         tracing::warn!("Failed to save active context: {e}");
     }
 
-    // Ensure daemon is running and validate the credential endpoint works
-    crate::core::daemon::ensure_daemon_running();
-
+    // Daemon is already ensured by centralized pre-dispatch in main.rs.
+    // Validate the credential endpoint works for the specific context.
     if selected.provider_id == "aws" {
         let port = cfg
             .providers

@@ -618,6 +618,18 @@ pub fn restart_daemon() {
     start_daemon_background();
 }
 
+/// What a command needs from the daemon/auth system before it can run.
+/// Every cli command module must export `pub const REQUIREMENT: DaemonRequirement`.
+/// The exhaustive match in main.rs ensures new commands are classified at compile time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DaemonRequirement {
+    /// No credentials or daemon needed (status, config, upgrade, etc.)
+    None,
+    /// Needs the credential daemon running (agent, mcp, use, etc.)
+    /// Pre-dispatch will call ensure_daemon_running().
+    Daemon,
+}
+
 /// Result of a credential endpoint check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndpointStatus {
