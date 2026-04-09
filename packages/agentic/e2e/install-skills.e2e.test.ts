@@ -12,6 +12,7 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
+import { COMMANDS } from "../src/skills/index.js";
 
 const CLI = path.resolve(import.meta.dir, "../dist/index.js");
 
@@ -141,9 +142,9 @@ describe("e2e: gsag skills", () => {
     const out = run(env, "--project");
     expect(out).toContain("updated");
 
-    // File is repaired
+    // File is repaired to exact source content
     const content = fs.readFileSync(workPath, "utf-8");
-    expect(content).not.toBe("corrupted content");
+    expect(content).toBe(COMMANDS["work.md"]);
   });
 
   test("re-install after skill set change removes stale and adds new", () => {
