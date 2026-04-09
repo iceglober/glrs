@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import {
   resolveClaudeDir,
+  resolveScopeFromFlags,
   computeInstallPlan,
   executeInstall,
   formatInstallResult,
@@ -229,5 +230,25 @@ describe("formatInstallResult", () => {
       skillNames: ["browser.md"],
     });
     expect(lines.some((l) => l.includes("/browser"))).toBe(true);
+  });
+});
+
+describe("resolveScopeFromFlags", () => {
+  test("--project returns project", () => {
+    expect(resolveScopeFromFlags({ project: true, user: false })).toBe("project");
+  });
+
+  test("--user returns user", () => {
+    expect(resolveScopeFromFlags({ user: true, project: false })).toBe("user");
+  });
+
+  test("both flags throws", () => {
+    expect(() => resolveScopeFromFlags({ user: true, project: true })).toThrow(
+      "Cannot use --user and --project together",
+    );
+  });
+
+  test("neither flag returns null", () => {
+    expect(resolveScopeFromFlags({ user: false, project: false })).toBeNull();
   });
 });

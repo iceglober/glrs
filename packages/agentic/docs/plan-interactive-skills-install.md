@@ -181,7 +181,7 @@ The current handler is a single 100-line function mixing I/O, logic, and side ef
 
 ### Phase 2: Add `--project` flag
 
-- [ ] **2.1 — Add `--project` flag to command definition**
+- [x] **2.1 — Add `--project` flag to command definition**
 
   **What:** Add a new `project` flag alongside `user`. Both are boolean flags. They are mutually exclusive — if both are set, print an error and exit.
 

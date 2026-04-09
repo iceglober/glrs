@@ -269,6 +269,19 @@ export function formatInstallResult(result: InstallResult): string[] {
   return lines;
 }
 
+/** Resolve scope from CLI flags. Returns null when interactive picker is needed. */
+export function resolveScopeFromFlags(flags: {
+  user: boolean;
+  project: boolean;
+}): "project" | "user" | null {
+  if (flags.user && flags.project) {
+    throw new Error("Cannot use --user and --project together");
+  }
+  if (flags.user) return "user";
+  if (flags.project) return "project";
+  return null;
+}
+
 async function askYesNo(question: string): Promise<boolean> {
   if (!process.stdin.isTTY) return false;
   const rl = readline.createInterface({
@@ -296,15 +309,27 @@ export const installSkills = command({
       long: "user",
       description: "Install to ~/.claude/ (user-level) instead of the current project",
     }),
+    project: flag({
+      long: "project",
+      description: "Install to .claude/ (project-level) in the current repo",
+    }),
     prefix: flag({
       long: "prefix",
       description:
         "Install all skills under a glorious/ subdirectory (e.g. work → glorious/work)",
     }),
   },
-  handler: async ({ force, user, prefix }) => {
+  handler: async ({ force, user, project, prefix }) => {
     // 1. Resolve scope
-    const scope = user ? "user" : "project";
+    let scope: "project" | "user";
+    try {
+      const flagScope = resolveScopeFromFlags({ user, project });
+      scope = flagScope ?? "project"; // TODO: Phase 3 replaces fallback with interactive picker
+    } catch (e: any) {
+      console.error(e.message);
+      process.exit(1);
+    }
+
     let claudeDir: string;
     try {
       claudeDir = resolveClaudeDir(scope);
