@@ -295,7 +295,7 @@ The current handler is a single 100-line function mixing I/O, logic, and side ef
 
 ### Phase 4: Verify and clean up
 
-- [ ] **4.1 — Full test suite pass**
+- [x] **4.1 — Full test suite pass**
 
   ```bash
   cd packages/agentic
@@ -305,7 +305,7 @@ The current handler is a single 100-line function mixing I/O, logic, and side ef
 
   All tests green. No type errors.
 
-- [ ] **4.2 — Manual smoke tests**
+- [x] **4.2 — Manual smoke tests**
 
   Run each of these from the repo root and verify correct behavior:
 
@@ -319,7 +319,7 @@ The current handler is a single 100-line function mixing I/O, logic, and side ef
   | `node dist/index.js skills --user --force` | Force overwrites in `~/.claude/` |
   | `node dist/index.js skills --prefix` | Shows picker, installs under `glorious/` prefix |
 
-- [ ] **4.3 — Update help text**
+- [x] **4.3 — Update help text**
 
   Update `src/help.ts` if `gsag skills` is mentioned there to reflect the new interactive behavior and `--project` flag.
 
