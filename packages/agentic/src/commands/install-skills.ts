@@ -121,6 +121,7 @@ export interface InstallPlan {
   usePrefix: boolean;
   force: boolean;
   collisions: string[];
+  scope: "project" | "user";
 }
 
 /** Build a plan describing what to install, without performing any filesystem writes. */
@@ -128,6 +129,7 @@ export function computeInstallPlan(opts: {
   claudeDir: string;
   prefix: boolean;
   force: boolean;
+  scope?: "project" | "user";
   readManifestFn?: (dir: string) => Manifest;
   existsFn?: (path: string) => boolean;
   readFileFn?: (path: string) => string;
@@ -136,6 +138,7 @@ export function computeInstallPlan(opts: {
     claudeDir,
     prefix,
     force,
+    scope = "project",
     readManifestFn = readManifest,
     existsFn = fs.existsSync,
     readFileFn = (p: string) => fs.readFileSync(p, "utf-8"),
@@ -186,6 +189,7 @@ export function computeInstallPlan(opts: {
     usePrefix: prefix,
     force,
     collisions,
+    scope,
   };
 }
 
@@ -225,10 +229,7 @@ export function executeInstall(plan: InstallPlan): InstallResult {
     removed: cmdRemoved + skillRemoved,
     commandNames: Object.keys(plan.commands),
     skillNames: Object.keys(plan.skills),
-    target: plan.claudeDir.startsWith(os.homedir()) &&
-      plan.claudeDir === path.join(os.homedir(), ".claude")
-      ? "~/.claude/"
-      : ".claude/",
+    target: plan.scope === "user" ? "~/.claude/" : ".claude/",
   };
 }
 
@@ -367,7 +368,7 @@ export const installSkills = command({
     }
 
     // 2. Compute plan
-    let plan = computeInstallPlan({ claudeDir, prefix, force });
+    let plan = computeInstallPlan({ claudeDir, prefix, force, scope });
 
     // 3. Handle collisions
     if (plan.collisions.length > 0 && !force) {
@@ -383,7 +384,7 @@ export const installSkills = command({
         "Use --prefix to organize into subdirectories and avoid collisions? [y/N] ",
       );
       if (usePrefix) {
-        plan = computeInstallPlan({ claudeDir, prefix: true, force });
+        plan = computeInstallPlan({ claudeDir, prefix: true, force, scope });
       }
     }
 

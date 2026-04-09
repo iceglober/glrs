@@ -95,6 +95,17 @@ describe("computeInstallPlan", () => {
     expect(plan.collisions.length).toBeGreaterThan(0);
   });
 
+  test("scope field is set correctly in plan", () => {
+    const plan = computeInstallPlan({
+      claudeDir: "/tmp/repo/.claude",
+      prefix: false,
+      force: false,
+      scope: "user",
+      ...noopFs,
+    });
+    expect(plan.scope).toBe("user");
+  });
+
   test("no collision for previously-installed files", () => {
     const previousManifest: Manifest = {
       commands: Object.keys(COMMANDS),
@@ -128,6 +139,7 @@ describe("executeInstall", () => {
       usePrefix: false,
       force: false,
       collisions: [],
+      scope: "project",
       ...overrides,
     };
   }
@@ -172,6 +184,16 @@ describe("executeInstall", () => {
     );
     expect(result.removed).toBe(1);
     expect(fs.existsSync(path.join(commandsDir, "old-cmd.md"))).toBe(false);
+  });
+
+  test("user scope plan produces ~/.claude/ target", () => {
+    const result = executeInstall(makePlan({ scope: "user" }));
+    expect(result.target).toBe("~/.claude/");
+  });
+
+  test("project scope plan produces .claude/ target", () => {
+    const result = executeInstall(makePlan({ scope: "project" }));
+    expect(result.target).toBe(".claude/");
   });
 
   test("writes manifest file", () => {
