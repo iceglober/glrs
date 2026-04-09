@@ -216,32 +216,41 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
             .unwrap_or(true);
 
         if needs_cred_refresh {
-            match provider.get_credentials(&tokens, active_ctx).await {
-                Ok(creds) => {
+            let fetch_timeout = std::time::Duration::from_secs(15);
+            let fetch_result =
+                tokio::time::timeout(fetch_timeout, provider.get_credentials(&tokens, active_ctx))
+                    .await;
+            match fetch_result {
+                Err(_) => {
+                    tracing::warn!("Credential fetch timed out for {provider_id}");
+                    return Ok(()); // Retry next tick
+                }
+                Ok(Ok(creds)) => {
                     let mut s = state.write().await;
                     if let Some(ps) = s.plugin_states.get_mut(provider_id) {
                         ps.credential_cache.insert(active_ctx.id.clone(), creds);
                     }
                     tracing::debug!("Refreshed credentials for {provider_id}:{}", active_ctx.id);
                 }
-                Err(ProviderError::AccessTokenExpired) => {
-                    tracing::info!("Access token expired for {provider_id}, refreshing session");
+                Ok(Err(ProviderError::AccessTokenExpired)) => {
                     // Fall through to session refresh below
                 }
-                Err(ProviderError::RefreshTokenExpired) => {
-                    tracing::warn!("Refresh token expired for {provider_id}");
-                    let mut s = state.write().await;
-                    if let Some(ps) = s.plugin_states.get_mut(provider_id) {
-                        ps.status = PluginStatus::NeedsLogin;
-                    }
-                    notify_session_expired(provider.display_name());
+                Ok(Err(ProviderError::RefreshTokenExpired)) => {
+                    let display_name = provider.display_name().to_string();
+                    {
+                        let mut s = state.write().await;
+                        if let Some(ps) = s.plugin_states.get_mut(provider_id) {
+                            ps.status = PluginStatus::NeedsLogin;
+                        }
+                    } // write lock dropped BEFORE notification
+                    notify_session_expired(&display_name);
                     return Ok(());
                 }
-                Err(ProviderError::NetworkError(msg)) => {
+                Ok(Err(ProviderError::NetworkError(msg))) => {
                     tracing::warn!("Network error refreshing {provider_id}: {msg}");
                     return Ok(()); // Retry next tick
                 }
-                Err(ProviderError::ContextNotFound(msg)) => {
+                Ok(Err(ProviderError::ContextNotFound(msg))) => {
                     tracing::warn!("Context no longer valid for {provider_id}: {msg}");
                     let mut s = state.write().await;
                     if let Some(ps) = s.plugin_states.get_mut(provider_id) {
@@ -249,7 +258,7 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
                     }
                     return Ok(());
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     tracing::error!("Error refreshing credentials for {provider_id}: {e}");
                     return Ok(());
                 }
@@ -259,9 +268,14 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
 
     // 2. Check if session token needs refresh
     if tokens.session_expires_at - buffer < now {
-        tracing::info!("Refreshing session token for {provider_id}");
-        match provider.refresh(&tokens).await {
-            Ok(new_tokens) => {
+        let refresh_timeout = std::time::Duration::from_secs(15);
+        let session_result = tokio::time::timeout(refresh_timeout, provider.refresh(&tokens)).await;
+        match session_result {
+            Err(_) => {
+                tracing::warn!("Session refresh timed out for {provider_id}");
+                // Retry next tick
+            }
+            Ok(Ok(new_tokens)) => {
                 keychain::store_tokens(provider_id, &new_tokens)?;
                 let mut s = state.write().await;
                 if let Some(ps) = s.plugin_states.get_mut(provider_id) {
@@ -269,19 +283,22 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
                 }
                 tracing::info!("Session refreshed for {provider_id}");
             }
-            Err(ProviderError::RefreshTokenExpired) => {
+            Ok(Err(ProviderError::RefreshTokenExpired)) => {
                 tracing::warn!("Refresh token expired for {provider_id}");
-                let mut s = state.write().await;
-                if let Some(ps) = s.plugin_states.get_mut(provider_id) {
-                    ps.status = PluginStatus::NeedsLogin;
-                }
-                notify_session_expired(provider.display_name());
+                let display_name = provider.display_name().to_string();
+                {
+                    let mut s = state.write().await;
+                    if let Some(ps) = s.plugin_states.get_mut(provider_id) {
+                        ps.status = PluginStatus::NeedsLogin;
+                    }
+                } // write lock dropped BEFORE notification
+                notify_session_expired(&display_name);
             }
-            Err(ProviderError::NetworkError(msg)) => {
+            Ok(Err(ProviderError::NetworkError(msg))) => {
                 tracing::warn!("Network error during session refresh for {provider_id}: {msg}");
                 // Retry next tick -- credentials may still be valid
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 tracing::error!("Error refreshing session for {provider_id}: {e}");
             }
         }
@@ -424,15 +441,22 @@ async fn serve_credential_endpoint(
                         let s = state.read().await;
                         let ps = s.plugin_states.get(&provider_id);
 
-                        let resolved_id = context_id
-                            .or_else(|| {
-                                ps.and_then(|p| p.active_context.as_ref().map(|c| c.id.clone()))
-                            })
-                            .or_else(|| {
-                                // Fallback: re-read active context from cache in case
-                                // gsa use was run after daemon startup
+                        let resolved_id = context_id.or_else(|| {
+                            ps.and_then(|p| p.active_context.as_ref().map(|c| c.id.clone()))
+                        });
+
+                        // Fallback: re-read active context from cache file in case
+                        // gsa use was run after daemon startup. Use spawn_blocking to
+                        // avoid blocking the tokio runtime with sync file I/O.
+                        let resolved_id = if resolved_id.is_some() {
+                            resolved_id
+                        } else {
+                            tokio::task::spawn_blocking(|| {
                                 crate::core::cache::load_active_context().map(|c| c.id)
-                            });
+                            })
+                            .await
+                            .unwrap_or(None)
+                        };
 
                         let cached = match (&resolved_id, ps) {
                             (Some(ctx_id), Some(ps)) => {
@@ -475,8 +499,10 @@ async fn serve_credential_endpoint(
 
                         match fetch_result {
                             (Some(ctx), Some(tokens), Some(provider)) => {
-                                match provider.get_credentials(&tokens, &ctx).await {
-                                    Ok(creds) => {
+                                let fetch_timeout = std::time::Duration::from_secs(15);
+                                let fetch_future = provider.get_credentials(&tokens, &ctx);
+                                match tokio::time::timeout(fetch_timeout, fetch_future).await {
+                                    Ok(Ok(creds)) => {
                                         let payload = creds.payload.clone();
                                         let mut s = state.write().await;
                                         if let Some(ps) = s.plugin_states.get_mut(&provider_id) {
@@ -488,11 +514,17 @@ async fn serve_credential_endpoint(
                                             .body(Full::new(Bytes::from(payload)))
                                             .unwrap()
                                     }
-                                    Err(e) => Response::builder()
+                                    Ok(Err(e)) => Response::builder()
                                         .status(StatusCode::SERVICE_UNAVAILABLE)
                                         .body(Full::new(Bytes::from(format!(
                                             "Failed to fetch credentials: {e}"
                                         ))))
+                                        .unwrap(),
+                                    Err(_) => Response::builder()
+                                        .status(StatusCode::GATEWAY_TIMEOUT)
+                                        .body(Full::new(Bytes::from(
+                                            "Credential fetch timed out (15s)",
+                                        )))
                                         .unwrap(),
                                 }
                             }
@@ -514,26 +546,39 @@ async fn serve_credential_endpoint(
                 }
             });
 
-            if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
-                tracing::debug!("Connection error on credential endpoint: {e}");
+            let conn = http1::Builder::new().serve_connection(io, service);
+            let timeout = tokio::time::timeout(std::time::Duration::from_secs(30), conn);
+            match timeout.await {
+                Ok(Err(e)) => {
+                    tracing::debug!("Connection error on credential endpoint: {e}");
+                }
+                Err(_) => {
+                    tracing::warn!("Credential endpoint request timed out after 30s");
+                }
+                Ok(Ok(())) => {}
             }
         });
     }
 }
 
-/// Send a desktop notification when a session has expired
+/// Send a desktop notification when a session has expired.
+/// Spawns on the blocking thread pool to avoid blocking the async runtime —
+/// notify_rust interacts with the macOS notification framework which can block.
 fn notify_session_expired(provider_display_name: &str) {
-    if let Err(e) = notify_rust::Notification::new()
-        .summary("gs-assume: Session Expired")
-        .body(&format!(
-            "{provider_display_name} session has expired. Run `gs-assume login` to re-authenticate."
-        ))
-        .icon("dialog-warning")
-        .timeout(notify_rust::Timeout::Milliseconds(10_000))
-        .show()
-    {
-        tracing::debug!("Failed to send desktop notification: {e}");
-    }
+    let msg = format!(
+        "{provider_display_name} session has expired. Run `gs-assume login` to re-authenticate."
+    );
+    tokio::task::spawn_blocking(move || {
+        if let Err(e) = notify_rust::Notification::new()
+            .summary("gs-assume: Session Expired")
+            .body(&msg)
+            .icon("dialog-warning")
+            .timeout(notify_rust::Timeout::Milliseconds(10_000))
+            .show()
+        {
+            tracing::debug!("Failed to send desktop notification: {e}");
+        }
+    });
 }
 
 /// Ensure the daemon is running and healthy. If not, restart it.
@@ -580,8 +625,8 @@ pub fn validate_credential_endpoint(port: u16, context_id: &str, session_token: 
     // Restart daemon and retry
     eprintln!("Credential endpoint not responding, restarting daemon...");
     restart_daemon();
-    // Give the daemon a moment to start serving
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    // Give the daemon time to start serving — needs to init tokens and bind port
+    std::thread::sleep(std::time::Duration::from_secs(3));
 
     if try_credential_fetch(&url, &auth) {
         return true;
@@ -596,7 +641,7 @@ fn try_credential_fetch(url: &str, auth: &str) -> bool {
         .args([
             "-sf",
             "--max-time",
-            "3",
+            "10",
             "-H",
             &format!("Authorization: {auth}"),
             "-o",
