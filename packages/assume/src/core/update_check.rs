@@ -197,11 +197,16 @@ fn try_auto_upgrade(tag: &str) -> bool {
         use std::os::unix::fs::PermissionsExt;
         let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755));
     }
-    // Clear quarantine xattrs so macOS doesn't kill the binary
+    // Clear quarantine xattrs and ad-hoc sign so macOS doesn't block the binary.
+    // Directories under ~/.local/ inherit com.apple.provenance which causes unsigned
+    // binaries to hang on launch.
     #[cfg(target_os = "macos")]
     {
         let _ = std::process::Command::new("xattr")
             .args(["-cr", &tmp])
+            .status();
+        let _ = std::process::Command::new("codesign")
+            .args(["-s", "-", &tmp])
             .status();
     }
     if fs::rename(&tmp, &exe_path).is_ok() {
