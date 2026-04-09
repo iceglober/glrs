@@ -36,7 +36,7 @@ src/
 │   ├── cleanup.ts        # gs-agentic wt cleanup
 │   ├── root.ts           # gs-agentic wt root
 │   ├── install-skills.ts      # gs-agentic skills (interactive scope picker, --user/--project)
-│   ├── install-skills.test.ts # Unit tests for install-skills (82 tests)
+│   ├── install-skills.test.ts # Unit tests for install-skills
 │   ├── init-hooks.ts     # gs-agentic wt hooks
 │   └── upgrade.ts        # gs-agentic upgrade
 ├── lib/
@@ -63,7 +63,7 @@ src/
     ├── work.ts           # /work — implement a task
     ├── fix.ts            # /fix — bug fixes
     ├── qa.ts             # /qa — QA against acceptance criteria
-    ├── ship.ts           # /ship — typecheck, review, version bump, release notes, CLAUDE.md sync, PR
+    ├── ship.ts           # /ship — typecheck, review, version bump, release notes, CLAUDE.md sync, PR, CI monitoring
     │
     │  # Research & spec skills
     ├── research.ts       # /research — master research orchestrator (routes to local/web/auto)
