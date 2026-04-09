@@ -9,6 +9,18 @@ import { gitRoot } from "../lib/git.js";
 
 const MANIFEST_FILE = ".glorious-skills.json";
 
+/** Resolve the .claude directory for a given scope. */
+export function resolveClaudeDir(
+  scope: "project" | "user",
+  gitRootFn?: () => string,
+): string {
+  if (scope === "user") {
+    return path.join(os.homedir(), ".claude");
+  }
+  const rootFn = gitRootFn ?? gitRoot;
+  return path.join(rootFn(), ".claude");
+}
+
 interface Manifest {
   commands: string[];
   skills: string[];
