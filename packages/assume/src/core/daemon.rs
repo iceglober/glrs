@@ -431,7 +431,6 @@ async fn serve_credential_endpoint(
                             .unwrap());
                     }
 
-
                     // Serve credentials for the requested context.
                     // If cached, return immediately. If not cached but context is
                     // known, fetch on-demand so per-shell switching works without
@@ -442,10 +441,9 @@ async fn serve_credential_endpoint(
                         let s = state.read().await;
                         let ps = s.plugin_states.get(&provider_id);
 
-                        let resolved_id = context_id
-                            .or_else(|| {
-                                ps.and_then(|p| p.active_context.as_ref().map(|c| c.id.clone()))
-                            });
+                        let resolved_id = context_id.or_else(|| {
+                            ps.and_then(|p| p.active_context.as_ref().map(|c| c.id.clone()))
+                        });
 
                         // Fallback: re-read active context from cache file in case
                         // gsa use was run after daemon startup. Use spawn_blocking to
@@ -476,7 +474,6 @@ async fn serve_credential_endpoint(
                         (resolved_id, cached)
                     };
 
-
                     let response = if let Some(resp) = cached_response {
                         // Cache hit — fast path
                         resp
@@ -499,7 +496,6 @@ async fn serve_credential_endpoint(
                                 (None, None, None)
                             }
                         };
-
 
                         match fetch_result {
                             (Some(ctx), Some(tokens), Some(provider)) => {
@@ -527,7 +523,7 @@ async fn serve_credential_endpoint(
                                     Err(_) => Response::builder()
                                         .status(StatusCode::GATEWAY_TIMEOUT)
                                         .body(Full::new(Bytes::from(
-                                            "Credential fetch timed out (15s)"
+                                            "Credential fetch timed out (15s)",
                                         )))
                                         .unwrap(),
                                 }
