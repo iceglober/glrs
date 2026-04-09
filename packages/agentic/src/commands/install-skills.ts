@@ -111,32 +111,6 @@ function addGloriousPrefix(files: Record<string, string>): Record<string, string
   return result;
 }
 
-/**
- * Find files that would be overwritten and whose content doesn't match
- * what glorious would install — these are potential collisions with
- * user-created or third-party skill files.
- */
-function findCollisions(
-  files: Record<string, string>,
-  previousFiles: string[],
-  baseDir: string,
-): string[] {
-  const previousSet = new Set(previousFiles);
-  const collisions: string[] = [];
-  for (const [name, content] of Object.entries(files)) {
-    // Skip files we previously installed — those are updates, not collisions
-    if (previousSet.has(name)) continue;
-    const dest = path.join(baseDir, name);
-    if (fs.existsSync(dest)) {
-      const existing = fs.readFileSync(dest, "utf-8");
-      if (existing !== content) {
-        collisions.push(name);
-      }
-    }
-  }
-  return collisions;
-}
-
 
 export interface InstallPlan {
   claudeDir: string;
@@ -329,107 +303,53 @@ export const installSkills = command({
     }),
   },
   handler: async ({ force, user, prefix }) => {
+    // 1. Resolve scope
+    const scope = user ? "user" : "project";
     let claudeDir: string;
+    try {
+      claudeDir = resolveClaudeDir(scope);
+    } catch {
+      console.error("Not in a git repository (use --user to install globally)");
+      process.exit(1);
+    }
 
-    if (user) {
-      claudeDir = path.join(os.homedir(), ".claude");
-    } else {
-      let root: string;
-      try {
-        root = gitRoot();
-      } catch {
-        console.error("Not in a git repository (use --user to install globally)");
-        process.exit(1);
+    // 2. Compute plan
+    let plan = computeInstallPlan({ claudeDir, prefix, force });
+
+    // 3. Handle collisions
+    if (plan.collisions.length > 0 && !force) {
+      warn(`${plan.collisions.length} file${plan.collisions.length === 1 ? "" : "s"} would collide with existing files:`);
+      for (const c of plan.collisions.slice(0, 5)) {
+        console.log(`  ${yellow(c)}`);
       }
-      claudeDir = path.join(root, ".claude");
-    }
-
-    const commandsDir = path.join(claudeDir, "commands");
-    const skillsDir = path.join(claudeDir, "skills");
-    const manifest = readManifest(claudeDir);
-
-    // Check for collisions if --prefix wasn't specified
-    let usePrefix = prefix;
-    if (!usePrefix && !force) {
-      const cmdCollisions = findCollisions(COMMANDS, manifest.commands, commandsDir);
-      const skillCollisions = findCollisions(SKILLS, manifest.skills, skillsDir);
-      const allCollisions = [
-        ...cmdCollisions.map((n) => `commands/${n}`),
-        ...skillCollisions.map((n) => `skills/${n}`),
-      ];
-
-      if (allCollisions.length > 0) {
-        warn(`${allCollisions.length} file${allCollisions.length === 1 ? "" : "s"} would collide with existing files:`);
-        for (const c of allCollisions.slice(0, 5)) {
-          console.log(`  ${yellow(c)}`);
-        }
-        if (allCollisions.length > 5) {
-          console.log(`  ... and ${allCollisions.length - 5} more`);
-        }
-        console.log("");
-        usePrefix = await askYesNo(
-          "Use --prefix to organize into subdirectories and avoid collisions? [y/N] ",
-        );
+      if (plan.collisions.length > 5) {
+        console.log(`  ... and ${plan.collisions.length - 5} more`);
       }
-    }
-
-    const commands = usePrefix ? addGloriousPrefix(COMMANDS) : COMMANDS;
-    const skills = usePrefix ? addGloriousPrefix(SKILLS) : SKILLS;
-
-    // Remove stale files from previous install
-    const cmdRemoved = removeStaleFiles(commands, manifest.commands, commandsDir);
-    const skillRemoved = removeStaleFiles(skills, manifest.skills, skillsDir);
-    const totalRemoved = cmdRemoved + skillRemoved;
-
-    // Install commands
-    const cmdResult = installFiles(commands, commandsDir, force);
-    // Install skills
-    const skillResult = installFiles(skills, skillsDir, force);
-
-    // Update manifest
-    writeManifest(claudeDir, {
-      commands: Object.keys(commands),
-      skills: Object.keys(skills),
-    });
-
-    const totalCreated = cmdResult.created + skillResult.created;
-    const totalUpdated = cmdResult.updated + skillResult.updated;
-    const totalUpToDate = cmdResult.upToDate + skillResult.upToDate;
-
-    const target = user ? "~/.claude/" : ".claude/";
-
-    if (totalCreated > 0) {
-      ok(`created ${totalCreated} new file${totalCreated === 1 ? "" : "s"} in ${target}`);
-    }
-    if (totalUpdated > 0) {
-      ok(`updated ${totalUpdated} file${totalUpdated === 1 ? "" : "s"} in ${target}`);
-    }
-    if (totalRemoved > 0) {
-      ok(`removed ${totalRemoved} stale file${totalRemoved === 1 ? "" : "s"} from ${target}`);
-    }
-    if (totalUpToDate > 0 && totalCreated === 0 && totalUpdated === 0 && totalRemoved === 0) {
-      ok("all skills up to date");
-    }
-
-    // List commands
-    const commandNames = Object.keys(commands);
-    console.log("");
-    info("commands:");
-    for (const name of commandNames) {
-      const slug = name.replace(".md", "").replace(/\//g, ":");
-      console.log(`  /${slug}`);
-    }
-
-    // List skills
-    const skillNames = Object.keys(skills);
-    if (skillNames.length > 0) {
       console.log("");
-      info("skills:");
-      for (const name of skillNames) {
-        const slug = name.replace(".md", "").replace(/\//g, ":");
-        console.log(`  /${slug}`);
+      const usePrefix = await askYesNo(
+        "Use --prefix to organize into subdirectories and avoid collisions? [y/N] ",
+      );
+      if (usePrefix) {
+        plan = computeInstallPlan({ claudeDir, prefix: true, force });
       }
     }
 
+    // 4. Execute
+    const result = executeInstall(plan);
+
+    // 5. Print
+    const lines = formatInstallResult(result);
+    for (const line of lines) {
+      // Re-apply formatting: status lines get ok/info prefixes
+      if (line.startsWith("created") || line.startsWith("updated") || line.startsWith("removed") || line === "all skills up to date") {
+        ok(line);
+      } else if (line === "commands:" || line === "skills:") {
+        info(line);
+      } else if (line === "") {
+        console.log("");
+      } else {
+        console.log(line);
+      }
+    }
   },
 });

@@ -171,7 +171,7 @@ The current handler is a single 100-line function mixing I/O, logic, and side ef
   **File:** `src/commands/install-skills.test.ts` — add tests
   **File:** `src/commands/install-skills.ts` — extract functions, export them
 
-- [ ] **1.4 — Rewrite handler to compose extracted functions**
+- [x] **1.4 — Rewrite handler to compose extracted functions**
 
   **What:** The handler becomes a thin orchestrator: resolve scope → compute plan → handle collisions → execute → format → print. Existing behavior is preserved exactly. No new features yet.
 
