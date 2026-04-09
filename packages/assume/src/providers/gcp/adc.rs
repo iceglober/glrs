@@ -16,6 +16,11 @@ fn adc_path() -> PathBuf {
 /// Write ADC file with the given tokens' refresh credentials.
 /// This is the same format `gcloud auth application-default login` produces.
 pub fn write_adc(tokens: &AuthTokens) {
+    write_adc_to_path(tokens, &adc_path());
+}
+
+/// Write ADC file to a specific path. Extracted for testability.
+pub fn write_adc_to_path(tokens: &AuthTokens, path: &std::path::Path) {
     let client_id = match tokens.secrets.get("client_id") {
         Some(id) => id,
         None => return,
@@ -36,16 +41,20 @@ pub fn write_adc(tokens: &AuthTokens) {
         "refresh_token": refresh_token
     });
 
-    let path = adc_path();
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
 
-    match std::fs::write(
-        &path,
-        serde_json::to_string_pretty(&adc).unwrap_or_default(),
-    ) {
-        Ok(()) => eprintln!("ADC written to {}", path.display()),
+    match std::fs::write(path, serde_json::to_string_pretty(&adc).unwrap_or_default()) {
+        Ok(()) => {
+            // Restrict permissions to owner only — this file contains credentials
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+            }
+            eprintln!("ADC written to {}", path.display());
+        }
         Err(e) => tracing::warn!("Failed to write ADC: {e}"),
     }
 }

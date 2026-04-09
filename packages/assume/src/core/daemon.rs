@@ -459,15 +459,17 @@ async fn serve_credential_endpoint(
                         };
 
                         let cached = match (&resolved_id, ps) {
-                            (Some(ctx_id), Some(ps)) => {
-                                ps.credential_cache.get(ctx_id).map(|creds| {
+                            (Some(ctx_id), Some(ps)) => ps
+                                .credential_cache
+                                .get(ctx_id)
+                                .filter(|creds| creds.expires_at > Utc::now())
+                                .map(|creds| {
                                     Response::builder()
                                         .status(StatusCode::OK)
                                         .header("content-type", "application/json")
                                         .body(Full::new(Bytes::from(creds.payload.clone())))
                                         .unwrap()
-                                })
-                            }
+                                }),
                             _ => None,
                         };
 
@@ -497,6 +499,12 @@ async fn serve_credential_endpoint(
                             }
                         };
 
+                        // Note: tokens/ctx are cloned from a read lock. If the refresh
+                        // loop updates tokens between lock release and get_credentials,
+                        // the provider will return AccessTokenExpired and we'll get a
+                        // retry on next request. This is acceptable because holding the
+                        // lock across the network call would block all other credential
+                        // requests.
                         match fetch_result {
                             (Some(ctx), Some(tokens), Some(provider)) => {
                                 let fetch_timeout = std::time::Duration::from_secs(15);
