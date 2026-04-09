@@ -646,7 +646,11 @@ pub fn classify_http_status(code: &str) -> EndpointStatus {
 ///   - `Ok` → credentials are flowing, nothing to do
 ///   - `Unreachable` → daemon is down, was restarted (and may still be unreachable)
 ///   - `NeedsLogin` → daemon is alive but session is expired, caller should launch login
-pub fn validate_credential_endpoint(port: u16, context_id: &str, session_token: &str) -> EndpointStatus {
+pub fn validate_credential_endpoint(
+    port: u16,
+    context_id: &str,
+    session_token: &str,
+) -> EndpointStatus {
     let url = format!("http://localhost:{port}/credentials/{context_id}");
     let auth = format!("Bearer {session_token}");
 
