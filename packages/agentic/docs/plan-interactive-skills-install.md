@@ -240,7 +240,7 @@ The current handler is a single 100-line function mixing I/O, logic, and side ef
   **File:** `src/commands/install-skills.test.ts` — add tests
   **File:** `src/commands/install-skills.ts` — add function, export it
 
-- [ ] **3.2 — Wire picker into handler**
+- [x] **3.2 — Wire picker into handler**
 
   **What:** When no scope flag is provided (`--user` or `--project`), call `promptScope()`. Pass the result into the existing `resolveClaudeDir` → `computeInstallPlan` → `executeInstall` pipeline.
 

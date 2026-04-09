@@ -352,7 +352,7 @@ export const installSkills = command({
     let scope: "project" | "user";
     try {
       const flagScope = resolveScopeFromFlags({ user, project });
-      scope = flagScope ?? "project"; // TODO: Phase 3 replaces fallback with interactive picker
+      scope = flagScope ?? await promptScope();
     } catch (e: any) {
       console.error(e.message);
       process.exit(1);
