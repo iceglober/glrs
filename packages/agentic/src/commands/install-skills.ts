@@ -37,10 +37,10 @@ function readManifest(claudeDir: string): Manifest {
 }
 
 function writeManifest(claudeDir: string, manifest: Manifest): void {
-  fs.writeFileSync(
-    path.join(claudeDir, MANIFEST_FILE),
-    JSON.stringify(manifest, null, 2) + "\n",
-  );
+  const finalPath = path.join(claudeDir, MANIFEST_FILE);
+  const tmpPath = finalPath + ".tmp";
+  fs.writeFileSync(tmpPath, JSON.stringify(manifest, null, 2) + "\n");
+  fs.renameSync(tmpPath, finalPath);
 }
 
 function installFiles(

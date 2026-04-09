@@ -204,6 +204,12 @@ describe("executeInstall", () => {
     expect(manifest.commands).toEqual(["test-cmd.md"]);
     expect(manifest.skills).toEqual(["test-skill.md"]);
   });
+
+  test("no .tmp file remains after manifest write", () => {
+    executeInstall(makePlan());
+    const tmpPath = path.join(tmpDir, ".glorious-skills.json.tmp");
+    expect(fs.existsSync(tmpPath)).toBe(false);
+  });
 });
 
 describe("formatInstallResult", () => {
