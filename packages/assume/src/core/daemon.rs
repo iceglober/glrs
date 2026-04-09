@@ -499,6 +499,12 @@ async fn serve_credential_endpoint(
                             }
                         };
 
+                        // Note: tokens/ctx are cloned from a read lock. If the refresh
+                        // loop updates tokens between lock release and get_credentials,
+                        // the provider will return AccessTokenExpired and we'll get a
+                        // retry on next request. This is acceptable because holding the
+                        // lock across the network call would block all other credential
+                        // requests.
                         match fetch_result {
                             (Some(ctx), Some(tokens), Some(provider)) => {
                                 let fetch_timeout = std::time::Duration::from_secs(15);
