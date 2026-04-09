@@ -459,17 +459,17 @@ async fn serve_credential_endpoint(
                         };
 
                         let cached = match (&resolved_id, ps) {
-                            (Some(ctx_id), Some(ps)) => {
-                                ps.credential_cache.get(ctx_id)
-                                    .filter(|creds| creds.expires_at > Utc::now())
-                                    .map(|creds| {
+                            (Some(ctx_id), Some(ps)) => ps
+                                .credential_cache
+                                .get(ctx_id)
+                                .filter(|creds| creds.expires_at > Utc::now())
+                                .map(|creds| {
                                     Response::builder()
                                         .status(StatusCode::OK)
                                         .header("content-type", "application/json")
                                         .body(Full::new(Bytes::from(creds.payload.clone())))
                                         .unwrap()
-                                })
-                            }
+                                }),
                             _ => None,
                         };
 

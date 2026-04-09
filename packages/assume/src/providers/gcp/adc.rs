@@ -45,10 +45,7 @@ pub fn write_adc_to_path(tokens: &AuthTokens, path: &std::path::Path) {
         let _ = std::fs::create_dir_all(dir);
     }
 
-    match std::fs::write(
-        path,
-        serde_json::to_string_pretty(&adc).unwrap_or_default(),
-    ) {
+    match std::fs::write(path, serde_json::to_string_pretty(&adc).unwrap_or_default()) {
         Ok(()) => {
             // Restrict permissions to owner only — this file contains credentials
             #[cfg(unix)]
