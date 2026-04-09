@@ -165,4 +165,42 @@ mod gcp_conformance {
         assert!(!sched.check_interval.is_zero());
         assert!(sched.refresh_buffer < sched.credential_ttl);
     }
+
+    #[test]
+    fn test_adc_file_permissions() {
+        use std::collections::HashMap;
+        use std::os::unix::fs::PermissionsExt;
+
+        // Set up a temp dir to act as config_dir so we don't clobber the real ADC
+        let tmp = tempfile::tempdir().unwrap();
+        let gcloud_dir = tmp.path().join("gcloud");
+        std::fs::create_dir_all(&gcloud_dir).unwrap();
+        let adc_path = gcloud_dir.join("application_default_credentials.json");
+
+        // Build tokens with the required secrets
+        let mut secrets = HashMap::new();
+        secrets.insert("client_id".into(), "test-client-id".into());
+        secrets.insert("client_secret".into(), "test-client-secret".into());
+        secrets.insert("refresh_token".into(), "test-refresh-token".into());
+
+        let tokens = assume::plugin::AuthTokens {
+            provider_id: "gcp".into(),
+            secrets,
+            session_expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            refresh_expires_at: chrono::Utc::now() + chrono::Duration::days(30),
+        };
+
+        // Call write_adc_to_path which writes to a specific path
+        assume::providers::gcp::adc::write_adc_to_path(&tokens, &adc_path);
+
+        // Verify file exists and has 0o600 permissions
+        assert!(adc_path.exists(), "ADC file must be created");
+        let metadata = std::fs::metadata(&adc_path).unwrap();
+        let mode = metadata.permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "ADC file must have 0600 permissions, got {:o}",
+            mode
+        );
+    }
 }
