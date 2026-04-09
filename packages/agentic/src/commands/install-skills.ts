@@ -6,6 +6,7 @@ import readline from "node:readline";
 import { COMMANDS, SKILLS } from "../skills/index.js";
 import { ok, info, warn, yellow } from "../lib/fmt.js";
 import { gitRoot } from "../lib/git.js";
+import { select } from "../lib/select.js";
 
 const MANIFEST_FILE = ".glorious-skills.json";
 
@@ -267,6 +268,33 @@ export function formatInstallResult(result: InstallResult): string[] {
   }
 
   return lines;
+}
+
+type Scope = "project" | "user";
+
+/** Interactive scope picker. Falls back to "project" when not a TTY or on cancel. */
+export async function promptScope(opts?: {
+  isTTY?: boolean;
+  selectFn?: (o: any) => Promise<Scope | null>;
+}): Promise<Scope> {
+  const isTTY = opts?.isTTY ?? process.stdin.isTTY;
+  if (!isTTY) return "project";
+
+  const selectFn = opts?.selectFn ?? (select as (o: any) => Promise<Scope | null>);
+  const result = await selectFn({
+    message: "Where should skills be installed?",
+    groups: [
+      {
+        title: "Scope",
+        choices: [
+          { label: "~/.claude/", value: "user" as Scope, hint: "available in all projects" },
+          { label: ".claude/", value: "project" as Scope, hint: "committed to this repo" },
+        ],
+      },
+    ],
+  });
+
+  return result ?? "project";
 }
 
 /** Resolve scope from CLI flags. Returns null when interactive picker is needed. */

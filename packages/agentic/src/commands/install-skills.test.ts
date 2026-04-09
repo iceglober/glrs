@@ -5,6 +5,7 @@ import os from "node:os";
 import {
   resolveClaudeDir,
   resolveScopeFromFlags,
+  promptScope,
   computeInstallPlan,
   executeInstall,
   formatInstallResult,
@@ -250,5 +251,44 @@ describe("resolveScopeFromFlags", () => {
 
   test("neither flag returns null", () => {
     expect(resolveScopeFromFlags({ user: false, project: false })).toBeNull();
+  });
+});
+
+describe("promptScope", () => {
+  test("returns user when selected", async () => {
+    const result = await promptScope({
+      isTTY: true,
+      selectFn: async () => "user" as const,
+    });
+    expect(result).toBe("user");
+  });
+
+  test("returns project when selected", async () => {
+    const result = await promptScope({
+      isTTY: true,
+      selectFn: async () => "project" as const,
+    });
+    expect(result).toBe("project");
+  });
+
+  test("falls back to project when not TTY", async () => {
+    let selectCalled = false;
+    const result = await promptScope({
+      isTTY: false,
+      selectFn: async () => {
+        selectCalled = true;
+        return "user" as const;
+      },
+    });
+    expect(result).toBe("project");
+    expect(selectCalled).toBe(false);
+  });
+
+  test("falls back to project on cancel (null)", async () => {
+    const result = await promptScope({
+      isTTY: true,
+      selectFn: async () => null,
+    });
+    expect(result).toBe("project");
   });
 });

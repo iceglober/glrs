@@ -208,7 +208,7 @@ The current handler is a single 100-line function mixing I/O, logic, and side ef
 
 ### Phase 3: Add interactive scope picker
 
-- [ ] **3.1 — Create `promptScope()` function**
+- [x] **3.1 — Create `promptScope()` function**
 
   **What:** An async function that shows the `select()` picker and returns `"project" | "user"`. Returns `"project"` if stdin is not a TTY (backwards-compatible fallback).
 
