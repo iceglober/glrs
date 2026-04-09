@@ -1,8 +1,6 @@
 //! Plugin conformance test suite.
 //! Tests that built-in providers satisfy the Provider trait contract.
 
-use std::sync::Arc;
-use std::time::Duration;
 
 // Note: These tests validate the trait contract statically.
 // Full lifecycle tests against mock servers go in integration.rs.
