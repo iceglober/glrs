@@ -1,6 +1,6 @@
 {
   "name": "@glorious/agentic",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Structured AI workflows for product and engineering",
   "license": "MIT",
   "repository": "https://github.com/iceglober/glorious",
@@ -13,7 +13,8 @@
     "build": "bun run build.ts",
     "dev": "bun --watch run build.ts",
     "typecheck": "bun x tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test src/",
+    "test:e2e": "bash e2e/run.sh"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.86",

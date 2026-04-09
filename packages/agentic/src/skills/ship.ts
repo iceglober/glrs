@@ -179,13 +179,32 @@ EOF
 )"
 \`\`\`
 
-## Step 12: Update task
+## Step 12: Monitor PR checks
+
+After PR creation, monitor CI checks until they all pass or one fails:
+
+\`\`\`bash
+gh pr checks <pr_number> --watch --fail-fast
+\`\`\`
+
+**If all checks pass:** Report success and continue to Step 13.
+
+**If a check fails:**
+1. Run \`gh pr checks <pr_number>\` to see which check failed
+2. Run \`gh api repos/{owner}/{repo}/actions/runs/{run_id}/jobs\` or \`gh run view <run_id> --log-failed\` to get the failure logs
+3. Read the failure output and diagnose the issue
+4. Fix the code, commit, and push — the checks will re-run automatically
+5. Return to the top of this step and watch again
+
+Repeat until all checks are green. Do NOT leave a PR with failing checks.
+
+## Step 13: Update task
 
 - Transition the task to shipped: \`gs-agentic state task update --id <id> --status shipped\`
 - Set the task's PR field: \`gs-agentic state task update --id <id> --pr '<url>'\`
 - Set shippedAt: \`gs-agentic state task update --id <id> --shippedAt '<ISO timestamp>'\`
 
-## Step 13: Report
+## Step 14: Report
 
 \`\`\`
 ## Shipped
@@ -193,6 +212,7 @@ EOF
 **Task:** {id}: {title}
 **Branch:** {branch}
 **PR:** {url}
+**Checks:** all green
 **Version:** {old} → {new} (or "unversioned")
 **Items completed:** {done}/{total}
 \`\`\`

@@ -30,11 +30,13 @@ ${bold("COMMANDS")}
   status [--json]
       Show all tasks in a tree view with phases, branches, and progress.
 
-  skills [--force] [--user]
+  skills [--user | --project] [--force] [--prefix]
       Install glorious workflow skills as Claude Code slash commands.
 
-      By default, installs to .claude/commands/ in the current repo.
-      With --user, installs to ~/.claude/commands/ (available globally).
+      With no flags, shows an interactive picker to choose scope.
+      --user     Install to ~/.claude/ (available in all projects)
+      --project  Install to .claude/ (committed to this repo)
+      Falls back to project scope when stdin is not a TTY.
 
       Engineering skills:
         /think          Product strategy session before building
