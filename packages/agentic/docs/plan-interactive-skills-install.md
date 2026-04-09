@@ -89,7 +89,7 @@ The current handler is a single 100-line function mixing I/O, logic, and side ef
   **File:** `src/commands/install-skills.test.ts` — create file, import `resolveClaudeDir`
   **File:** `src/commands/install-skills.ts` — extract function, export it
 
-- [ ] **1.2 — Extract `computeInstallPlan(opts)`**
+- [x] **1.2 — Extract `computeInstallPlan(opts)`**
 
   **What:** A pure function that takes the full set of inputs and returns a plan object describing what to do, without performing any I/O.
 

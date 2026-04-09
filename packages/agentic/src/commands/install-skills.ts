@@ -21,7 +21,7 @@ export function resolveClaudeDir(
   return path.join(rootFn(), ".claude");
 }
 
-interface Manifest {
+export interface Manifest {
   commands: string[];
   skills: string[];
 }
@@ -137,6 +137,82 @@ function findCollisions(
   return collisions;
 }
 
+
+export interface InstallPlan {
+  claudeDir: string;
+  commands: Record<string, string>;
+  skills: Record<string, string>;
+  previousManifest: Manifest;
+  usePrefix: boolean;
+  force: boolean;
+  collisions: string[];
+}
+
+/** Build a plan describing what to install, without performing any filesystem writes. */
+export function computeInstallPlan(opts: {
+  claudeDir: string;
+  prefix: boolean;
+  force: boolean;
+  readManifestFn?: (dir: string) => Manifest;
+  existsFn?: (path: string) => boolean;
+  readFileFn?: (path: string) => string;
+}): InstallPlan {
+  const {
+    claudeDir,
+    prefix,
+    force,
+    readManifestFn = readManifest,
+    existsFn = fs.existsSync,
+    readFileFn = (p: string) => fs.readFileSync(p, "utf-8"),
+  } = opts;
+
+  const previousManifest = readManifestFn(claudeDir);
+  const commands = prefix ? addGloriousPrefix(COMMANDS) : COMMANDS;
+  const skills = prefix ? addGloriousPrefix(SKILLS) : SKILLS;
+
+  let collisions: string[] = [];
+  if (!force) {
+    const commandsDir = path.join(claudeDir, "commands");
+    const skillsDir = path.join(claudeDir, "skills");
+
+    const findCollisionsPure = (
+      files: Record<string, string>,
+      previousFiles: string[],
+      baseDir: string,
+    ): string[] => {
+      const previousSet = new Set(previousFiles);
+      const result: string[] = [];
+      for (const [name, content] of Object.entries(files)) {
+        if (previousSet.has(name)) continue;
+        const dest = path.join(baseDir, name);
+        if (existsFn(dest)) {
+          const existing = readFileFn(dest);
+          if (existing !== content) {
+            result.push(name);
+          }
+        }
+      }
+      return result;
+    };
+
+    const cmdCollisions = findCollisionsPure(commands, previousManifest.commands, commandsDir);
+    const skillCollisions = findCollisionsPure(skills, previousManifest.skills, skillsDir);
+    collisions = [
+      ...cmdCollisions.map((n) => `commands/${n}`),
+      ...skillCollisions.map((n) => `skills/${n}`),
+    ];
+  }
+
+  return {
+    claudeDir,
+    commands,
+    skills,
+    previousManifest,
+    usePrefix: prefix,
+    force,
+    collisions,
+  };
+}
 
 async function askYesNo(question: string): Promise<boolean> {
   if (!process.stdin.isTTY) return false;
