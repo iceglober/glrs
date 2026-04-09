@@ -12,6 +12,8 @@ import { work } from "./work.js";
 import { fix } from "./fix.js";
 import { qa } from "./qa.js";
 import { ship } from "./ship.js";
+import { research } from "./research.js";
+import { researchLocal } from "./research-local.js";
 import { researchWeb } from "./research-web.js";
 import { specMake } from "./spec-make.js";
 import { specRefine } from "./spec-refine.js";
@@ -43,6 +45,8 @@ export const COMMANDS: Record<string, string> = {
   "fix.md": fix(),
   "qa.md": qa(),
   "ship.md": ship(),
+  "research.md": research(),
+  "research-local.md": researchLocal(),
   "research-auto.md": researchAuto(),
 
   // Design pipeline

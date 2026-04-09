@@ -65,6 +65,8 @@ src/
     ├── ship.ts           # /ship — typecheck, review, version bump, release notes, CLAUDE.md sync, PR
     │
     │  # Research & spec skills
+    ├── research.ts       # /research — master research orchestrator (routes to local/web/auto)
+    ├── research-local.ts # /research-local — deep codebase research with parallel Explore subagents
     ├── research-auto.ts  # /research-auto — autonomous experimentation
     ├── research-web.ts   # /research-web — multi-agent web research
     ├── spec-make.ts      # /spec-make — create product spec
