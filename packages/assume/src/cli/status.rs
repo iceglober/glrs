@@ -31,7 +31,7 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
             None => {
                 println!("{}", provider.display_name());
                 println!("  Status: not authenticated");
-                println!("  Run: gs-assume login {provider_id}");
+                println!("  Run: gsa login {provider_id}");
                 println!();
                 continue;
             }
@@ -56,7 +56,7 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
             println!("  Refresh token: {}", format_duration(refresh_remaining));
         } else {
             println!("  Refresh token: expired");
-            println!("  Run: gs-assume login {provider_id}");
+            println!("  Run: gsa login {provider_id}");
         }
 
         // Show active context
@@ -73,7 +73,7 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
     }
 
     if !any_active {
-        println!("No active sessions. Run: gs-assume login <provider>");
+        println!("No active sessions. Run: gsa login <provider>");
     }
 
     // Daemon status

@@ -117,9 +117,7 @@ fn decrypt_from_file(path: &PathBuf) -> Result<Option<Vec<u8>>> {
 
     let nonce = Nonce::from_slice(&raw[..12]);
     let plaintext = cipher.decrypt(nonce, &raw[12..]).map_err(|_| {
-        anyhow::anyhow!(
-            "Decryption failed — vault key may have changed. Run: gs-assume login <provider>"
-        )
+        anyhow::anyhow!("Decryption failed — vault key may have changed. Run: gsa login <provider>")
     })?;
 
     Ok(Some(plaintext))

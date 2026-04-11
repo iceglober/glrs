@@ -9,8 +9,8 @@ pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
 
 #[derive(Args, Debug)]
 pub struct ExecArgs {
-    /// Context pattern (e.g., "prod/admin", "novelist-app"). Defaults to the active context.
-    #[arg(long = "profile")]
+    /// Context pattern (e.g., "prod/admin", "gcp:my-project"). Omit to use active context.
+    #[arg(long = "profile", short = 'p')]
     pub profile: Option<String>,
 
     /// Provider to search in (e.g., "aws", "gcp"). Narrows context matching.
@@ -24,7 +24,7 @@ pub struct ExecArgs {
 
 pub async fn run(args: ExecArgs, registry: &PluginRegistry, _cfg: &config::Config) -> Result<()> {
     if args.command.is_empty() {
-        bail!("No command specified. Usage: gs-assume exec [--profile <pattern>] -- <command>");
+        bail!("No command specified. Usage: gsa exec [-p <pattern>] -- <command>");
     }
 
     // Resolve context: use --profile if given, otherwise fall back to active context
@@ -76,7 +76,7 @@ pub async fn run(args: ExecArgs, registry: &PluginRegistry, _cfg: &config::Confi
     } else {
         // Use the active context
         crate::core::cache::load_active_context().ok_or_else(|| {
-            anyhow::anyhow!("No active context. Run: gs-assume use <provider> <profile>")
+            anyhow::anyhow!("No active context. Run: gsa use <provider> <profile>")
         })?
     };
     let context = &context;

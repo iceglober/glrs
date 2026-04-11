@@ -44,7 +44,7 @@ pub async fn run(args: ConfigArgs) -> Result<()> {
                 println!("{content}");
             } else {
                 eprintln!("No config file found at {}", path.display());
-                eprintln!("Create one with: gs-assume config set providers.aws.start_url <url>");
+                eprintln!("Create one with: gsa config set providers.aws.start_url <url>");
             }
         }
         ConfigCommand::Get { key } => {

@@ -49,7 +49,7 @@ pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config)
 
     // Check if daemon is already running
     if daemon::is_daemon_running() {
-        anyhow::bail!("Daemon is already running. Use 'gs-assume logout' or stop it first.");
+        anyhow::bail!("Daemon is already running. Use 'gsa logout' or stop it first.");
     }
 
     config::ensure_config_dir()?;
