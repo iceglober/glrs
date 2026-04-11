@@ -90,7 +90,7 @@ const show = command({
     if (task.branch) console.log(`  branch: ${task.branch}`);
     if (task.worktree) console.log(`  worktree: ${task.worktree}`);
     if (task.pr) console.log(`  pr: ${task.pr}`);
-    if (task.spec) console.log(`  spec: ${task.spec}`);
+    if (task.plan) console.log(`  plan: ${task.plan}`);
     if (task.epic) console.log(`  epic: ${task.epic}`);
     if (task.dependencies.length > 0) console.log(`  depends: ${task.dependencies.join(", ")}`);
     if (task.qaResult) {
@@ -345,7 +345,7 @@ const epicShow = command({
     console.log(`${bold(epic.id)}: ${epic.title}`);
     console.log(`  phase: ${phaseColor(derivedPhase)}`);
     if (epic.description) console.log(`  desc:  ${epic.description}`);
-    if (epic.spec) console.log(`  spec: ${epic.spec}`);
+    if (epic.plan) console.log(`  plan: ${epic.plan}`);
     if (tasks.length > 0) {
       console.log(`  tasks: ${tasks.length}`);
       for (const t of tasks) {

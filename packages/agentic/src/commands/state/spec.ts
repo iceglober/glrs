@@ -1,5 +1,5 @@
 import { command, subcommands, option, optional, string } from "cmd-ts";
-import { loadTask, loadSpec, saveSpec, saveSpecFromFile, createTask, saveTask } from "../../lib/state.js";
+import { loadTask, loadPlan, savePlan, savePlanFromFile, createTask, saveTask } from "../../lib/state.js";
 import { ok, bold } from "../../lib/fmt.js";
 
 // ── gs-agentic state spec show ───────────────────────────────────────────────
@@ -11,12 +11,12 @@ const show = command({
     id: option({ type: string, long: "id", short: "i", description: "Task ID" }),
   },
   handler: (args) => {
-    const spec = loadSpec(args.id);
-    if (!spec) {
-      console.error(`No spec found for task "${args.id}".`);
+    const plan = loadPlan(args.id);
+    if (!plan) {
+      console.error(`No plan found for "${args.id}".`);
       process.exit(1);
     }
-    console.log(spec);
+    console.log(plan);
   },
 });
 
@@ -39,13 +39,13 @@ const set = command({
 
     if (args.file) {
       try {
-        saveSpecFromFile(args.id, args.file);
+        savePlanFromFile(args.id, args.file);
       } catch (e: any) {
         console.error(e.message);
         process.exit(1);
       }
     } else if (args.content) {
-      saveSpec(args.id, args.content);
+      savePlan(args.id, args.content);
     } else {
       console.error("Provide --file or --content.");
       process.exit(1);

@@ -19,9 +19,10 @@ import {
   createEpic,
   loadEpic,
   listEpics,
-  loadSpec,
-  saveSpec,
-  saveSpecFromFile,
+  loadPlan,
+  savePlan,
+  savePlanFromFile,
+  setPlansDir,
   findTaskByWorktree,
   findTaskByBranch,
   ensureSetup,
@@ -43,31 +44,33 @@ import { resetDb, getDbSync, DB_PATH } from "./db.js";
 
 const TEST_DIR = path.join(os.tmpdir(), "glorious-state-test-" + process.pid);
 const TEST_DB_PATH = path.join(TEST_DIR, "state.db");
+const TEST_PLANS_DIR = path.join(TEST_DIR, "plans");
 
 beforeEach(async () => {
   cleanupState();
   if (fs.existsSync(TEST_DIR)) fs.rmSync(TEST_DIR, { recursive: true });
   await initState(TEST_DB_PATH);
+  setPlansDir(TEST_PLANS_DIR);
 });
 
 afterEach(() => {
+  setPlansDir(null);
   cleanupState();
   if (fs.existsSync(TEST_DIR)) fs.rmSync(TEST_DIR, { recursive: true });
 });
 
 afterAll(() => {
-  // Clean up specs dir created by tests
-  const sp = path.join(gitRoot(), ".glorious", "specs");
+  // Clean up test dir
+  const sp = path.join(TEST_DIR);
   if (fs.existsSync(sp)) fs.rmSync(sp, { recursive: true });
 });
 
 // ── Auto-setup ───────────────────────────────────────────────────────
 
 describe("ensureSetup", () => {
-  test("creates .glorious/specs/ directory", () => {
+  test("creates plans directory", () => {
     ensureSetup();
-    const sp = path.join(gitRoot(), ".glorious", "specs");
-    expect(fs.existsSync(sp)).toBe(true);
+    expect(fs.existsSync(TEST_PLANS_DIR)).toBe(true);
   });
 
   test("adds .glorious/state/ to .gitignore", () => {
@@ -507,44 +510,54 @@ describe("dependenciesMet", () => {
   });
 });
 
-// ── Spec management ──────────────────────────────────────────────────
+// ── Plan management (versioned) ─────────────────────────────────────
 
-describe("spec management", () => {
-  test("loadSpec returns null when no spec exists", () => {
-    expect(loadSpec("t99")).toBeNull();
+describe("plan management", () => {
+  test("loadPlan returns null when no plan exists", () => {
+    expect(loadPlan("t99")).toBeNull();
   });
 
-  test("saveSpec writes and loadSpec reads", () => {
+  test("savePlan writes v1 and loadPlan reads it", () => {
     createTask({ title: "Test" });
-    saveSpec("t1", "# My Spec\n\nContent here.");
-    const content = loadSpec("t1");
-    expect(content).toBe("# My Spec\n\nContent here.");
+    const ver = savePlan("t1", "# My Plan\n\nContent here.");
+    expect(ver).toBe(1);
+    const content = loadPlan("t1");
+    expect(content).toBe("# My Plan\n\nContent here.");
   });
 
-  test("saveSpec updates task.spec field", () => {
+  test("savePlan updates task.plan field", () => {
     createTask({ title: "Test" });
-    saveSpec("t1", "# Spec");
+    savePlan("t1", "# Plan");
     const task = loadTask("t1")!;
-    expect(task.spec).toBe(".glorious/specs/t1.md");
+    expect(task.plan).toBeTruthy();
+    expect(task.planVersion).toBe(1);
   });
 
-  test("saveSpecFromFile reads from disk", () => {
+  test("savePlan auto-increments version", () => {
     createTask({ title: "Test" });
-    const tmp = path.join(gitRoot(), ".glorious", "test-spec-tmp.md");
-    const dir = path.dirname(tmp);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const v1 = savePlan("t1", "version one");
+    const v2 = savePlan("t1", "version two");
+    expect(v1).toBe(1);
+    expect(v2).toBe(2);
+    expect(loadPlan("t1")).toBe("version two");
+  });
+
+  test("savePlanFromFile reads from disk", () => {
+    createTask({ title: "Test" });
+    const tmp = path.join(os.tmpdir(), "test-plan-tmp.md");
     fs.writeFileSync(tmp, "# From file");
     try {
-      saveSpecFromFile("t1", tmp);
-      expect(loadSpec("t1")).toBe("# From file");
+      const ver = savePlanFromFile("t1", tmp);
+      expect(ver).toBe(1);
+      expect(loadPlan("t1")).toBe("# From file");
     } finally {
       fs.unlinkSync(tmp);
     }
   });
 
-  test("saveSpecFromFile throws for missing file", () => {
+  test("savePlanFromFile throws for missing file", () => {
     createTask({ title: "Test" });
-    expect(() => saveSpecFromFile("t1", "/nonexistent/path.md")).toThrow("File not found");
+    expect(() => savePlanFromFile("t1", "/nonexistent/path.md")).toThrow("File not found");
   });
 });
 
@@ -756,22 +769,22 @@ describe("findReadyTasks", () => {
 // ── loadTaskFull ────────────────────────────────────────────────────
 
 describe("loadTaskFull", () => {
-  test("with withSpec inlines spec content", () => {
+  test("with withSpec inlines plan content", () => {
     createTask({ title: "Test" });
-    saveSpec("t1", "# Spec content\nDetails here.");
+    savePlan("t1", "# Plan content\nDetails here.");
 
     const full = loadTaskFull("t1", { withSpec: true });
     expect(full).not.toBeNull();
-    expect((full as any).specContent).toBe("# Spec content\nDetails here.");
+    expect((full as any).planContent).toBe("# Plan content\nDetails here.");
   });
 
-  test("without withSpec does not include specContent", () => {
+  test("without withSpec does not include planContent", () => {
     createTask({ title: "Test" });
-    saveSpec("t1", "# Spec content");
+    savePlan("t1", "# Plan content");
 
     const full = loadTaskFull("t1");
     expect(full).not.toBeNull();
-    expect((full as any).specContent).toBeUndefined();
+    expect((full as any).planContent).toBeUndefined();
   });
 
   test("with fields returns only requested fields", () => {

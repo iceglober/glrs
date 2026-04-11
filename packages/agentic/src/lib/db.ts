@@ -67,7 +67,7 @@ export function closeDb(): void {
 /** Clear all data from all tables (for test isolation). */
 export function resetDb(): void {
   if (!db) return;
-  const tables = ["review_items", "reviews", "transitions", "tasks", "epics", "migrations"];
+  const tables = ["review_items", "reviews", "transitions", "steps", "tasks", "epics", "migrations"];
   for (const table of tables) {
     db.run(`DELETE FROM ${table}`);
   }
@@ -80,14 +80,15 @@ function runSchema(database: Database): void {
 
   database.run(`
     CREATE TABLE IF NOT EXISTS epics (
-      repo        TEXT NOT NULL,
-      id          TEXT NOT NULL,
-      title       TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      phase       TEXT NOT NULL DEFAULT 'understand',
-      spec        TEXT,
-      created_at  TEXT NOT NULL,
-      updated_at  TEXT NOT NULL,
+      repo         TEXT NOT NULL,
+      id           TEXT NOT NULL,
+      title        TEXT NOT NULL,
+      description  TEXT NOT NULL DEFAULT '',
+      phase        TEXT NOT NULL DEFAULT 'understand',
+      plan         TEXT,
+      plan_version INTEGER,
+      created_at   TEXT NOT NULL,
+      updated_at   TEXT NOT NULL,
       PRIMARY KEY (repo, id)
     )
   `);
@@ -105,7 +106,8 @@ function runSchema(database: Database): void {
       worktree     TEXT,
       pr           TEXT,
       external_id  TEXT,
-      spec         TEXT,
+      plan         TEXT,
+      plan_version INTEGER,
       qa_status    TEXT,
       qa_summary   TEXT,
       qa_timestamp TEXT,
@@ -113,6 +115,24 @@ function runSchema(database: Database): void {
       updated_at   TEXT NOT NULL,
       PRIMARY KEY (repo, id),
       FOREIGN KEY (repo, epic) REFERENCES epics(repo, id) ON DELETE SET NULL
+    )
+  `);
+
+  database.run(`
+    CREATE TABLE IF NOT EXISTS steps (
+      repo        TEXT NOT NULL,
+      id          TEXT NOT NULL,
+      task        TEXT NOT NULL,
+      title       TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      phase       TEXT NOT NULL DEFAULT 'understand',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      plan        TEXT,
+      plan_version INTEGER,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL,
+      PRIMARY KEY (repo, id),
+      FOREIGN KEY (repo, task) REFERENCES tasks(repo, id) ON DELETE CASCADE
     )
   `);
 
@@ -174,6 +194,7 @@ function runSchema(database: Database): void {
   `);
 
   // Indexes (CREATE INDEX IF NOT EXISTS is safe to run repeatedly)
+  database.run("CREATE INDEX IF NOT EXISTS idx_steps_task     ON steps(repo, task)");
   database.run("CREATE INDEX IF NOT EXISTS idx_tasks_branch   ON tasks(repo, branch)");
   database.run("CREATE INDEX IF NOT EXISTS idx_tasks_worktree ON tasks(repo, worktree)");
   database.run("CREATE INDEX IF NOT EXISTS idx_tasks_epic     ON tasks(repo, epic)");
@@ -184,6 +205,23 @@ function runSchema(database: Database): void {
   database.run("CREATE INDEX IF NOT EXISTS idx_review_items_review  ON review_items(repo, review_id)");
   database.run("CREATE INDEX IF NOT EXISTS idx_review_items_status  ON review_items(repo, status)");
   database.run("CREATE INDEX IF NOT EXISTS idx_review_items_severity ON review_items(repo, severity)");
+
+  // ── Migration: rename spec → plan columns on existing databases ────
+  migrateSpecToPlan(database, "epics");
+  migrateSpecToPlan(database, "tasks");
+}
+
+/** Rename `spec` column to `plan` and add `plan_version` if needed (for existing DBs). */
+function migrateSpecToPlan(database: Database, table: string): void {
+  const cols = database.exec(`PRAGMA table_info(${table})`);
+  if (!cols[0]?.values.length) return;
+  const colNames = cols[0].values.map((row: any[]) => row[1] as string);
+  if (colNames.includes("spec") && !colNames.includes("plan")) {
+    database.run(`ALTER TABLE ${table} RENAME COLUMN spec TO plan`);
+    if (!colNames.includes("plan_version")) {
+      database.run(`ALTER TABLE ${table} ADD COLUMN plan_version INTEGER`);
+    }
+  }
 }
 
 // ── Repo identification ─────────────────────────────────────────────
