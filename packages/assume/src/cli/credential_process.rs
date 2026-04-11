@@ -32,7 +32,7 @@ pub async fn run(
         .ok_or_else(|| anyhow::anyhow!("AWS provider not registered"))?;
 
     let tokens = keychain::load_tokens(&args.provider)?
-        .ok_or_else(|| anyhow::anyhow!("Not authenticated. Run: gs-assume login aws"))?;
+        .ok_or_else(|| anyhow::anyhow!("Not authenticated. Run: gsa login aws"))?;
 
     // Find the context
     let all_contexts = provider
@@ -43,10 +43,7 @@ pub async fn run(
     let matches = fuzzy::match_contexts(&args.context, &all_contexts);
     let context = match matches.first() {
         Some(m) => &m.context,
-        None => bail!(
-            "No context matching '{}'. Run: gs-assume sync aws",
-            args.context
-        ),
+        None => bail!("No context matching '{}'. Run: gsa sync aws", args.context),
     };
 
     // Get credentials

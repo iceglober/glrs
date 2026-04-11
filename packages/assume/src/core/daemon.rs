@@ -573,9 +573,8 @@ async fn serve_credential_endpoint(
 /// Spawns on the blocking thread pool to avoid blocking the async runtime —
 /// notify_rust interacts with the macOS notification framework which can block.
 fn notify_session_expired(provider_display_name: &str) {
-    let msg = format!(
-        "{provider_display_name} session has expired. Run `gs-assume login` to re-authenticate."
-    );
+    let msg =
+        format!("{provider_display_name} session has expired. Run `gsa login` to re-authenticate.");
     tokio::task::spawn_blocking(move || {
         if let Err(e) = notify_rust::Notification::new()
             .summary("gs-assume: Session Expired")

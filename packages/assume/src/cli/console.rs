@@ -31,7 +31,7 @@ pub async fn run(
     }
 
     if all_contexts.is_empty() {
-        bail!("No contexts available. Run: gs-assume login <provider>");
+        bail!("No contexts available. Run: gsa login <provider>");
     }
 
     let context = match args.pattern {
@@ -42,7 +42,7 @@ pub async fn run(
                 None => bail!("No context matching '{pattern}'"),
             }
         }
-        None => bail!("Specify a context: gs-assume console <pattern>"),
+        None => bail!("Specify a context: gsa console <pattern>"),
     };
 
     let provider = registry

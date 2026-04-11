@@ -126,7 +126,7 @@ pub async fn run(
     }
 
     if !found_any {
-        println!("No profiles available. Run: gs-assume login <provider>");
+        println!("No profiles available. Run: gsa login <provider>");
     }
 
     Ok(())

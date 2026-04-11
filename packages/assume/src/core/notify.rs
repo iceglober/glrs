@@ -3,7 +3,7 @@
 pub fn notify_session_expired(provider_display_name: &str) {
     let title = "gs-assume: Session Expired";
     let body = format!(
-        "{} session expired. Run: gs-assume login {}",
+        "{} session expired. Run: gsa login {}",
         provider_display_name,
         provider_display_name.to_lowercase().replace(' ', "-")
     );

@@ -30,7 +30,7 @@ pub async fn run(args: SyncArgs, registry: &PluginRegistry, _cfg: &config::Confi
             Some(t) => t,
             None => {
                 eprintln!(
-                    "{}: not authenticated. Run: gs-assume login {provider_id}",
+                    "{}: not authenticated. Run: gsa login {provider_id}",
                     provider.display_name()
                 );
                 continue;
@@ -91,7 +91,7 @@ pub async fn run(args: SyncArgs, registry: &PluginRegistry, _cfg: &config::Confi
                     }
                     Err(e) => {
                         eprintln!(
-                            "{}: refresh failed: {e}. Run: gs-assume login {provider_id}",
+                            "{}: refresh failed: {e}. Run: gsa login {provider_id}",
                             provider.display_name()
                         );
                     }

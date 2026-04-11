@@ -144,7 +144,7 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
                 ids[0].clone()
             } else {
                 eprintln!("Available providers: {}", ids.join(", "));
-                bail!("Specify a provider: gs-assume login <provider>");
+                bail!("Specify a provider: gsa login <provider>");
             }
         }
     };
@@ -277,7 +277,7 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
                 }
             }
 
-            eprintln!("You can try: gs-assume sync {provider_id}");
+            eprintln!("You can try: gsa sync {provider_id}");
             // Still set the provider prompt even without contexts
             print_provider_prompt(&provider_id);
         }

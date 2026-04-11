@@ -98,7 +98,7 @@ pub async fn refresh(tokens: &AuthTokens, region: &str) -> Result<AuthTokens, Pr
                 Err(ProviderError::RefreshTokenExpired)
             } else if service_err.is_invalid_client_exception() {
                 Err(ProviderError::Other(
-                    "OIDC client registration expired. Run: gs-assume login aws".into(),
+                    "OIDC client registration expired. Run: gsa login aws".into(),
                 ))
             } else {
                 let err_str = format!("{service_err}");

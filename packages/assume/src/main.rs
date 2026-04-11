@@ -14,18 +14,19 @@ use std::sync::Arc;
     after_help = "\x1b[1mQuick start:\x1b[0m
   gsa login aws                              # Authenticate with AWS (browser SSO)
   gsa login gcp                              # Authenticate with GCP (browser OAuth)
-  gsa use aws <profile>                      # Switch AWS context (shell only)
-  gsa use gcp <project>                      # Switch GCP context (shell only)
+  gsa use aws <profile>                      # Switch AWS context (interactive shell)
+  gsa use gcp <project>                      # Switch GCP context (interactive shell)
 
 \x1b[1mFor scripts and AI agents (non-interactive):\x1b[0m
-  gsa exec --profile <name> -- <command>     # Run with active provider credentials
-  gsa exec --provider gcp -- <command>       # Run with GCP credentials (active context)
-  gsa exec --profile gcp:<project> -- <cmd>  # Run with specific GCP project credentials
+  gsa exec -- <command>                      # Run with active context credentials
+  gsa exec -p prod/admin -- <command>        # Run with a specific profile
+  gsa exec -p gcp:my-project -- <command>    # Shorthand for --provider gcp --profile
 
 \x1b[1mExamples:\x1b[0m
-  gsa exec --profile gcp:my-project -- gcloud projects list
-  gsa exec --profile prod/admin -- aws sts get-caller-identity
-  gsa exec -- terraform apply                # Uses active context"
+  gsa exec -- terraform apply                # Uses active context
+  gsa exec -p prod/admin -- aws sts get-caller-identity
+  gsa exec -p gcp:my-project -- gcloud projects list
+  gsa exec --provider aws -- aws s3 ls       # Active context, narrowed to AWS"
 )]
 struct Cli {
     #[command(subcommand)]
