@@ -102,9 +102,9 @@ describe("e2e: gsag skills", () => {
 
     // Files actually on disk
     const cmds = installedFiles(env.projectClaude, "commands");
-    expect(cmds).toContain("work.md");
-    expect(cmds).toContain("think.md");
-    expect(cmds).toContain("ship.md");
+    expect(cmds).toContain("gs-work.md");
+    expect(cmds).toContain("gs-think.md");
+    expect(cmds).toContain("gs-ship.md");
 
     const skills = installedFiles(env.projectClaude, "skills");
     expect(skills).toContain("browser.md");
@@ -119,7 +119,7 @@ describe("e2e: gsag skills", () => {
     expect(m.commands.length).toBeGreaterThan(0);
 
     const cmds = installedFiles(env.userClaude, "commands");
-    expect(cmds).toContain("work.md");
+    expect(cmds).toContain("gs-work.md");
   });
 
   // --- Re-install (idempotent) ---
@@ -136,7 +136,7 @@ describe("e2e: gsag skills", () => {
     run(env, "--project");
 
     // Tamper with a file
-    const workPath = path.join(env.projectClaude, "commands", "work.md");
+    const workPath = path.join(env.projectClaude, "commands", "gs-work.md");
     fs.writeFileSync(workPath, "corrupted content");
 
     const out = run(env, "--project");
@@ -144,7 +144,7 @@ describe("e2e: gsag skills", () => {
 
     // File is repaired to exact source content
     const content = fs.readFileSync(workPath, "utf-8");
-    expect(content).toBe(COMMANDS["work.md"]);
+    expect(content).toBe(COMMANDS["gs-work.md"]);
   });
 
   test("re-install after skill set change removes stale and adds new", () => {
@@ -232,7 +232,7 @@ describe("e2e: gsag skills", () => {
     // Manually create just one command file, no manifest
     const cmdDir = path.join(env.projectClaude, "commands");
     fs.mkdirSync(cmdDir, { recursive: true });
-    fs.writeFileSync(path.join(cmdDir, "work.md"), "partial content");
+    fs.writeFileSync(path.join(cmdDir, "gs-work.md"), "partial content");
 
     const out = run(env, "--project");
     // work.md had wrong content → updated; rest → created
@@ -257,8 +257,8 @@ describe("e2e: gsag skills", () => {
     expect(um.commands.length).toBeGreaterThan(0);
 
     // Modifying one doesn't affect the other
-    const projectWork = path.join(env.projectClaude, "commands", "work.md");
-    const userWork = path.join(env.userClaude, "commands", "work.md");
+    const projectWork = path.join(env.projectClaude, "commands", "gs-work.md");
+    const userWork = path.join(env.userClaude, "commands", "gs-work.md");
     fs.writeFileSync(projectWork, "tampered");
 
     run(env, "--project");
@@ -275,7 +275,7 @@ describe("e2e: gsag skills", () => {
   test("--force overwrites even when content matches", () => {
     run(env, "--project");
     // Get mtime of a file
-    const workPath = path.join(env.projectClaude, "commands", "work.md");
+    const workPath = path.join(env.projectClaude, "commands", "gs-work.md");
     const mtime1 = fs.statSync(workPath).mtimeMs;
 
     // Small delay to ensure mtime changes
