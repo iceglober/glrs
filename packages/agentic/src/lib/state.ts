@@ -48,8 +48,6 @@ export interface Task {
   qaResult: QAResult | null;
   createdAt: string;
   updatedAt: string;
-  // Backward compat (computed from DB, not stored as-is)
-  parent: string | null;
   children: string[];
   transitions: Transition[];
 }
@@ -230,8 +228,6 @@ function rowToTask(row: any[], transitions: Transition[], children: string[]): T
     createdAt: row[11] as string,
     updatedAt: row[15] as string,
     qaResult: qaStatus ? { status: qaStatus as "pass" | "fail", summary: qaSummary!, timestamp: qaTimestamp! } : null,
-    // Backward compat
-    parent: row[1] as string | null, // epic
     children,
     transitions,
   };
@@ -336,7 +332,6 @@ export function createTask(opts: {
   title: string;
   description?: string;
   epic?: string;
-  parent?: string; // backward compat alias for epic
   phase?: Phase;
   actor?: string;
 }): Task {
@@ -344,7 +339,7 @@ export function createTask(opts: {
   const id = nextTaskId();
   const now = new Date().toISOString();
   const phase = opts.phase ?? "understand";
-  const epic = opts.epic ?? opts.parent ?? null;
+  const epic = opts.epic ?? null;
 
   db.run(
     `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, spec, created_at, updated_at)
@@ -376,8 +371,6 @@ export function createTask(opts: {
     qaResult: null,
     createdAt: now,
     updatedAt: now,
-    // Backward compat
-    parent: epic,
     children: [],
     transitions: [{ phase, timestamp: now, actor: opts.actor ?? "cli" }],
   };

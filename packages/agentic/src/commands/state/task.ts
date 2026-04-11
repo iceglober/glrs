@@ -28,7 +28,6 @@ const create = command({
     title: option({ type: string, long: "title", short: "t", description: "Task title" }),
     description: option({ type: optional(string), long: "description", short: "d", description: "Task description" }),
     epic: option({ type: optional(string), long: "epic", short: "e", description: "Epic ID (links task to epic)" }),
-    parent: option({ type: optional(string), long: "parent", short: "p", description: "Parent ID (deprecated, use --epic)" }),
     phase: option({ type: optional(string), long: "phase", description: "Initial phase (default: understand)" }),
     actor: option({ type: optional(string), long: "actor", description: "Actor name for transition log" }),
   },
@@ -41,7 +40,7 @@ const create = command({
     const task = createTask({
       title: args.title,
       description: args.description ?? "",
-      epic: args.epic ?? args.parent ?? undefined,
+      epic: args.epic ?? undefined,
       phase,
       actor: args.actor ?? undefined,
     });
@@ -254,12 +253,11 @@ const list = command({
   args: {
     phase: option({ type: optional(string), long: "phase", description: "Filter by phase" }),
     epic: option({ type: optional(string), long: "epic", description: "Filter by epic ID" }),
-    parent: option({ type: optional(string), long: "parent", description: "Filter by parent (deprecated, use --epic)" }),
     all: flag({ long: "all", description: "Show tasks across all repos" }),
     json: flag({ long: "json", description: "Output as JSON" }),
   },
   handler: (args) => {
-    const epicFilter = args.epic ?? args.parent;
+    const epicFilter = args.epic;
     let tasks = listTasks({ epic: epicFilter ?? undefined, all: args.all });
 
     if (args.phase) {

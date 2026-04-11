@@ -175,20 +175,11 @@ describe("createTask", () => {
     const epic = createEpic({ title: "Epic" });
     const task = createTask({ title: "Task", epic: epic.id });
     expect(task.epic).toBe("e1");
-    expect(task.parent).toBe("e1"); // backward compat
-  });
-
-  test("creates task linked to epic via deprecated parent param", () => {
-    const epic = createEpic({ title: "Epic" });
-    const task = createTask({ title: "Task", parent: epic.id });
-    expect(task.epic).toBe("e1");
-    expect(task.parent).toBe("e1");
   });
 
   test("creates standalone task without epic", () => {
     const task = createTask({ title: "Standalone" });
     expect(task.epic).toBeNull();
-    expect(task.parent).toBeNull();
   });
 
   test("records actor in transition", () => {
