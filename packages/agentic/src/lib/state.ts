@@ -805,7 +805,8 @@ export function resolveReviewItem(
     [repo(), itemId],
   );
   const row = result[0]?.values[0];
-  return rowToReviewItem(row!);
+  if (!row) throw new Error(`Review item "${itemId}" not found.`);
+  return rowToReviewItem(row);
 }
 
 function rowToReviewItem(row: any[]): ReviewItem {

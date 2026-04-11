@@ -878,6 +878,18 @@ describe("resolveReviewItem", () => {
     expect(resolved.resolvedAt).toBeTruthy();
   });
 
+  test("throws for nonexistent item", () => {
+    expect(() => {
+      resolveReviewItem("ri999", { status: "fixed", resolution: "done" });
+    }).toThrow('Review item "ri999" not found.');
+  });
+
+  test("throws for empty string ID", () => {
+    expect(() => {
+      resolveReviewItem("", { status: "fixed", resolution: "done" });
+    }).toThrow('Review item "" not found.');
+  });
+
   test("supports pushed_back status", () => {
     createReview({ taskId: "t1", source: "deep_review", commitSha: "abc" });
     addReviewItem({ reviewId: "r1", body: "Nitpick" });
