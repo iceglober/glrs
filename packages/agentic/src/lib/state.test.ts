@@ -23,6 +23,11 @@ import {
   savePlan,
   savePlanFromFile,
   setPlansDir,
+  nextStepId,
+  createStep,
+  loadStep,
+  listSteps,
+  saveStep,
   findTaskByWorktree,
   findTaskByBranch,
   ensureSetup,
@@ -561,6 +566,90 @@ describe("plan management", () => {
   });
 });
 
+// ── Step CRUD ───────────────────────────────────────────────────────
+
+describe("nextStepId", () => {
+  test("returns s1 when no steps exist", () => {
+    expect(nextStepId()).toBe("s1");
+  });
+
+  test("increments from existing steps", () => {
+    createTask({ title: "Task" });
+    createStep({ title: "Step 1", task: "t1" });
+    createStep({ title: "Step 2", task: "t1" });
+    expect(nextStepId()).toBe("s3");
+  });
+});
+
+describe("createStep", () => {
+  test("creates a step with all default fields", () => {
+    createTask({ title: "Task" });
+    const step = createStep({ title: "Do thing", task: "t1" });
+    expect(step.id).toBe("s1");
+    expect(step.task).toBe("t1");
+    expect(step.title).toBe("Do thing");
+    expect(step.phase).toBe("understand");
+    expect(step.sortOrder).toBe(0);
+    expect(step.plan).toBeNull();
+    expect(step.planVersion).toBeNull();
+  });
+
+  test("creates with custom sortOrder and phase", () => {
+    createTask({ title: "Task" });
+    const step = createStep({ title: "Step", task: "t1", sortOrder: 3, phase: "implement" });
+    expect(step.sortOrder).toBe(3);
+    expect(step.phase).toBe("implement");
+  });
+});
+
+describe("loadStep", () => {
+  test("returns null for nonexistent step", () => {
+    expect(loadStep("s99")).toBeNull();
+  });
+
+  test("retrieves created step", () => {
+    createTask({ title: "Task" });
+    createStep({ title: "My Step", task: "t1" });
+    const loaded = loadStep("s1");
+    expect(loaded).not.toBeNull();
+    expect(loaded!.title).toBe("My Step");
+    expect(loaded!.task).toBe("t1");
+  });
+});
+
+describe("listSteps", () => {
+  test("returns empty array when no steps", () => {
+    expect(listSteps()).toEqual([]);
+  });
+
+  test("filters by task", () => {
+    createTask({ title: "T1" });
+    createTask({ title: "T2" });
+    createStep({ title: "S1 under T1", task: "t1" });
+    createStep({ title: "S2 under T1", task: "t1" });
+    createStep({ title: "S3 under T2", task: "t2" });
+
+    const t1Steps = listSteps({ task: "t1" });
+    expect(t1Steps).toHaveLength(2);
+    expect(t1Steps[0].title).toBe("S1 under T1");
+    expect(t1Steps[1].title).toBe("S2 under T1");
+  });
+
+  test("returns empty for task with no steps", () => {
+    expect(listSteps({ task: "t99" })).toEqual([]);
+  });
+});
+
+describe("saveStep", () => {
+  test("updates existing step", () => {
+    createTask({ title: "Task" });
+    const step = createStep({ title: "Original", task: "t1" });
+    step.title = "Updated";
+    saveStep(step);
+    const loaded = loadStep("s1")!;
+    expect(loaded.title).toBe("Updated");
+  });
+});
 
 // ── Task lookup ──────────────────────────────────────────────────────
 

@@ -55,6 +55,19 @@ export interface Task {
   transitions: Transition[];
 }
 
+export interface Step {
+  id: string;
+  task: string;
+  title: string;
+  description: string;
+  phase: Phase;
+  sortOrder: number;
+  plan: string | null;
+  planVersion: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 
 // ── Initialization ──────────────────────────────────────────────────
 
@@ -141,6 +154,127 @@ export function nextTaskId(): string {
   );
   const max = result[0]?.values[0]?.[0] ?? 0;
   return `t${(max || 0) + 1}`;
+}
+
+/** Generate next step ID (s1, s2, ...) */
+export function nextStepId(): string {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) FROM steps WHERE repo = ?",
+    [repo()],
+  );
+  const max = result[0]?.values[0]?.[0] ?? 0;
+  return `s${(max || 0) + 1}`;
+}
+
+// ── Step CRUD ──────────────────────────────────────────────────────
+
+const STEP_SELECT = `SELECT id, task, title, description, phase, sort_order, plan, plan_version, created_at, updated_at FROM steps`;
+
+function rowToStep(row: any[]): Step {
+  return {
+    id: row[0] as string,
+    task: row[1] as string,
+    title: row[2] as string,
+    description: row[3] as string,
+    phase: row[4] as Phase,
+    sortOrder: row[5] as number,
+    plan: row[6] as string | null,
+    planVersion: row[7] as number | null,
+    createdAt: row[8] as string,
+    updatedAt: row[9] as string,
+  };
+}
+
+export function createStep(opts: {
+  title: string;
+  task: string;
+  description?: string;
+  phase?: Phase;
+  sortOrder?: number;
+  actor?: string;
+}): Step {
+  const db = getDbSync();
+  const id = nextStepId();
+  const now = new Date().toISOString();
+  const phase = opts.phase ?? "understand";
+  const sortOrder = opts.sortOrder ?? 0;
+
+  db.run(
+    `INSERT INTO steps (repo, id, task, title, description, phase, sort_order, plan, plan_version, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
+    [repo(), id, opts.task, opts.title, opts.description ?? "", phase, sortOrder, now, now],
+  );
+
+  // Record transition
+  db.run(
+    `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
+     VALUES (?, ?, 'step', ?, ?, ?)`,
+    [repo(), id, phase, opts.actor ?? "cli", now],
+  );
+
+  persistDb();
+
+  return {
+    id,
+    task: opts.task,
+    title: opts.title,
+    description: opts.description ?? "",
+    phase,
+    sortOrder,
+    plan: null,
+    planVersion: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function loadStep(id: string): Step | null {
+  const db = getDbSync();
+  const result = db.exec(`${STEP_SELECT} WHERE repo = ? AND id = ?`, [repo(), id]);
+  if (!result[0]?.values.length) return null;
+  return rowToStep(result[0].values[0]);
+}
+
+export function listSteps(opts?: { task?: string }): Step[] {
+  const db = getDbSync();
+  let query = `${STEP_SELECT} WHERE repo = ?`;
+  const params: any[] = [repo()];
+
+  if (opts?.task) {
+    query += " AND task = ?";
+    params.push(opts.task);
+  }
+
+  query += " ORDER BY sort_order, id";
+
+  const result = db.exec(query, params);
+  if (!result[0]?.values.length) return [];
+  return result[0].values.map((row: any[]) => rowToStep(row));
+}
+
+export function saveStep(step: Step): void {
+  const db = getDbSync();
+  const now = new Date().toISOString();
+  db.run(
+    `INSERT OR REPLACE INTO steps (repo, id, task, title, description, phase, sort_order, plan, plan_version, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      repo(),
+      step.id,
+      step.task,
+      step.title,
+      step.description,
+      step.phase,
+      step.sortOrder,
+      step.plan,
+      step.planVersion,
+      step.createdAt,
+      now,
+    ],
+  );
+  persistDb();
+  step.updatedAt = now;
 }
 
 // ── Epic CRUD ───────────────────────────────────────────────────────
