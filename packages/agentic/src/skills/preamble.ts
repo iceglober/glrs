@@ -37,7 +37,7 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 - \`gs-agentic state review create --task <id> --source <source> --commit-sha <sha>\` — create review
 - \`gs-agentic state review add-item --review <id> --body "..." --severity <sev> --agents <agents>\` — add finding
 - \`gs-agentic state review list --task <id> --status open --json\` — list open items
-- \`gs-agentic state review resolve --id <id> --resolution "..." --sha <sha>\` — resolve item
+- \`gs-agentic state review resolve --item <id> --status <status> --resolution "..." --commit-sha <sha>\` — resolve item
 - \`gs-agentic state review summary --task <id> --json\` — review summary counts`;
 
 /**

@@ -246,6 +246,67 @@ describe("listTasks", () => {
     expect(e1Tasks[1].title).toBe("Also E1");
   });
 
+  test("lean returns only id, title, phase for basic task", () => {
+    createTask({ title: "T" });
+    const tasks = listTasks({ lean: true });
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("t1");
+    expect(tasks[0].title).toBe("T");
+    expect(tasks[0].phase).toBe("understand");
+    expect(Object.keys(tasks[0])).toEqual(["id", "title", "phase"]);
+  });
+
+  test("lean includes epic when present", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T", epic: "e1" });
+    const tasks = listTasks({ lean: true });
+    expect(tasks[0].epic).toBe("e1");
+  });
+
+  test("lean includes branch when set", () => {
+    createTask({ title: "T" });
+    saveTask({ ...loadTask("t1")!, branch: "feat/x" });
+    const tasks = listTasks({ lean: true });
+    expect(tasks[0].branch).toBe("feat/x");
+  });
+
+  test("lean includes dependencies when non-empty", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "A", epic: "e1" });
+    createTask({ title: "B", epic: "e1" });
+    saveTask({ ...loadTask("t2")!, dependencies: ["t1"] });
+    const tasks = listTasks({ lean: true, epic: "e1" });
+    const t2 = tasks.find((t) => t.id === "t2")!;
+    expect(t2.dependencies).toEqual(["t1"]);
+  });
+
+  test("lean omits null/empty fields", () => {
+    createTask({ title: "T" });
+    const tasks = listTasks({ lean: true });
+    const task = tasks[0];
+    const keys = Object.keys(task);
+    expect(keys).toEqual(["id", "title", "phase"]);
+    expect(task).not.toHaveProperty("epic");
+    expect(task).not.toHaveProperty("branch");
+    expect(task).not.toHaveProperty("dependencies");
+    expect(task).not.toHaveProperty("qaResult");
+    expect(task).not.toHaveProperty("description");
+    expect(task).not.toHaveProperty("worktree");
+    expect(task).not.toHaveProperty("pr");
+    expect(task).not.toHaveProperty("children");
+    expect(task).not.toHaveProperty("transitions");
+  });
+
+  test("lean includes qaResult when present", () => {
+    createTask({ title: "T" });
+    const task = loadTask("t1")!;
+    task.qaResult = { status: "pass", summary: "ok", timestamp: new Date().toISOString() };
+    saveTask(task);
+    const tasks = listTasks({ lean: true });
+    expect(tasks[0].qaResult?.status).toBe("pass");
+    expect(tasks[0].qaResult?.summary).toBe("ok");
+  });
+
 });
 
 describe("saveTask", () => {
