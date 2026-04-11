@@ -712,6 +712,36 @@ describe("findReadyTasks", () => {
     expect(ready).toHaveLength(1);
     expect(ready[0].id).toBe("t2");
   });
+
+  test("all option includes cross-repo tasks", () => {
+    createTask({ title: "Local task" });
+
+    // Insert a task with a different repo directly via SQL
+    const db = getDbSync();
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO tasks (repo, id, title, description, phase, dependencies, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ["other/repo", "t1", "Cross-repo task", "", "implement", "[]", now, now],
+    );
+
+    // Default (no all) — only local
+    const local = findReadyTasks();
+    expect(local).toHaveLength(1);
+    expect(local[0].title).toBe("Local task");
+
+    // With all — includes cross-repo
+    const all = findReadyTasks({ all: true });
+    expect(all).toHaveLength(2);
+  });
+
+  test("all: false behaves same as default", () => {
+    createTask({ title: "A task" });
+
+    const defaultResult = findReadyTasks();
+    const explicitFalse = findReadyTasks({ all: false });
+    expect(defaultResult).toHaveLength(explicitFalse.length);
+  });
 });
 
 // ── loadTaskFull ────────────────────────────────────────────────────

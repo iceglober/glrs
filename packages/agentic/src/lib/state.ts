@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { gitRoot } from "./git.js";
+import { getDb, getDbSync, persistDb, getRepo, closeDb, resetDb, resetRepoCache, DB_PATH } from "./db.js";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -22,13 +23,22 @@ export interface QAResult {
   timestamp: string;
 }
 
-export interface Task {
+export interface Epic {
   id: string;
   title: string;
   description: string;
   phase: Phase;
-  parent: string | null;
-  children: string[];
+  spec: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Task {
+  id: string;
+  epic: string | null;
+  title: string;
+  description: string;
+  phase: Phase;
   dependencies: string[];
   branch: string | null;
   worktree: string | null;
@@ -36,8 +46,12 @@ export interface Task {
   externalId: string | null;
   spec: string | null;
   qaResult: QAResult | null;
-  transitions: Transition[];
   createdAt: string;
+  updatedAt: string;
+  // Backward compat (computed from DB, not stored as-is)
+  parent: string | null;
+  children: string[];
+  transitions: Transition[];
 }
 
 export interface PipelineState {
@@ -49,134 +63,318 @@ export interface PipelineState {
   startedAt: string;
 }
 
-// ── Paths ────────────────────────────────────────────────────────────
+// ── Initialization ──────────────────────────────────────────────────
 
-function stateDir(): string {
-  return path.join(gitRoot(), ".glorious", "state");
+/** Initialize the state module. Must be called before any other state functions. */
+export async function initState(dbPath: string = DB_PATH): Promise<void> {
+  await getDb(dbPath);
 }
+
+/** Clean up state module (for tests). */
+export function cleanupState(): void {
+  closeDb();
+  resetRepoCache();
+}
+
+// ── Paths (specs remain in filesystem) ──────────────────────────────
 
 function specsDir(): string {
   return path.join(gitRoot(), ".glorious", "specs");
-}
-
-function taskPath(id: string): string {
-  return path.join(stateDir(), `${id}.json`);
-}
-
-function pipelinePath(id: string): string {
-  return path.join(stateDir(), `${id}.pipeline.json`);
 }
 
 function specPath(id: string): string {
   return path.join(specsDir(), `${id}.md`);
 }
 
-// ── Auto-setup (R-25, R-26) ─────────────────────────────────────────
+// ── Auto-setup ──────────────────────────────────────────────────────
 
-function ensureDirs(): void {
-  const sd = stateDir();
+/** Ensure specs directory and gitignore are configured. */
+export function ensureSetup(): void {
   const sp = specsDir();
-  if (!fs.existsSync(sd)) fs.mkdirSync(sd, { recursive: true });
   if (!fs.existsSync(sp)) fs.mkdirSync(sp, { recursive: true });
-}
 
-/** Add .glorious/state/ to .gitignore if not already present. */
-function ensureGitignore(): void {
+  // Also ensure the old state dir entry is in gitignore (harmless)
   const root = gitRoot();
   const gi = path.join(root, ".gitignore");
   const entry = ".glorious/state/";
 
   if (fs.existsSync(gi)) {
     const content = fs.readFileSync(gi, "utf-8");
-    if (content.includes(entry)) return;
-    fs.appendFileSync(gi, `\n# glorious local state (per-engineer, not shared)\n${entry}\n`);
+    if (!content.includes(entry)) {
+      fs.appendFileSync(gi, `\n# glorious local state (per-engineer, not shared)\n${entry}\n`);
+    }
   } else {
     fs.writeFileSync(gi, `# glorious local state (per-engineer, not shared)\n${entry}\n`);
   }
 }
 
-/** Ensure .glorious/state/ and .glorious/specs/ exist, and .gitignore is set. */
-export function ensureSetup(): void {
-  ensureDirs();
-  ensureGitignore();
+// ── Repo helper ─────────────────────────────────────────────────────
+
+function repo(): string {
+  const r = getRepo();
+  if (!r) throw new Error("Not in a git repository.");
+  return r;
 }
 
-// ── ID generation ────────────────────────────────────────────────────
+// ── ID generation ───────────────────────────────────────────────────
 
-/** Generate next top-level task ID (t1, t2, ...) */
+/** Generate next epic ID (e1, e2, ...) */
+export function nextEpicId(): string {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) FROM epics WHERE repo = ?",
+    [repo()],
+  );
+  const max = result[0]?.values[0]?.[0] ?? 0;
+  return `e${(max || 0) + 1}`;
+}
+
+/** Generate next task ID (t1, t2, ...) */
 export function nextTaskId(): string {
-  const dir = stateDir();
-  if (!fs.existsSync(dir)) return "t1";
-
-  let max = 0;
-  for (const f of fs.readdirSync(dir)) {
-    const m = f.match(/^t(\d+)\.json$/);
-    if (m) {
-      const n = parseInt(m[1], 10);
-      if (n > max) max = n;
-    }
-  }
-  return `t${max + 1}`;
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) FROM tasks WHERE repo = ?",
+    [repo()],
+  );
+  const max = result[0]?.values[0]?.[0] ?? 0;
+  return `t${(max || 0) + 1}`;
 }
 
-/** Generate next workstream ID under a parent (t1-1, t1-2, ...) */
-export function nextWorkstreamId(parentId: string): string {
-  const dir = stateDir();
-  let max = 0;
-  if (fs.existsSync(dir)) {
-    for (const f of fs.readdirSync(dir)) {
-      const m = f.match(new RegExp(`^${parentId}-(\\d+)\\.json$`));
-      if (m) {
-        const n = parseInt(m[1], 10);
-        if (n > max) max = n;
-      }
-    }
-  }
-  return `${parentId}-${max + 1}`;
+// ── Epic CRUD ───────────────────────────────────────────────────────
+
+export function createEpic(opts: {
+  title: string;
+  description?: string;
+  phase?: Phase;
+  spec?: string;
+}): Epic {
+  const db = getDbSync();
+  const id = nextEpicId();
+  const now = new Date().toISOString();
+  const phase = opts.phase ?? "understand";
+
+  db.run(
+    `INSERT INTO epics (repo, id, title, description, phase, spec, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [repo(), id, opts.title, opts.description ?? "", phase, opts.spec ?? null, now, now],
+  );
+
+  // Record initial transition
+  db.run(
+    `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
+     VALUES (?, ?, 'epic', ?, 'cli', ?)`,
+    [repo(), id, phase, now],
+  );
+
+  persistDb();
+
+  return {
+    id,
+    title: opts.title,
+    description: opts.description ?? "",
+    phase,
+    spec: opts.spec ?? null,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
-// ── CRUD ─────────────────────────────────────────────────────────────
+export function loadEpic(id: string): Epic | null {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT id, title, description, phase, spec, created_at, updated_at FROM epics WHERE repo = ? AND id = ?",
+    [repo(), id],
+  );
+  if (!result[0]?.values.length) return null;
+  const row = result[0].values[0];
+  return {
+    id: row[0] as string,
+    title: row[1] as string,
+    description: row[2] as string,
+    phase: row[3] as Phase,
+    spec: row[4] as string | null,
+    createdAt: row[5] as string,
+    updatedAt: row[6] as string,
+  };
+}
+
+export function listEpics(): Epic[] {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT id, title, description, phase, spec, created_at, updated_at FROM epics WHERE repo = ? ORDER BY id",
+    [repo()],
+  );
+  if (!result[0]?.values.length) return [];
+  return result[0].values.map((row: any[]) => ({
+    id: row[0] as string,
+    title: row[1] as string,
+    description: row[2] as string,
+    phase: row[3] as Phase,
+    spec: row[4] as string | null,
+    createdAt: row[5] as string,
+    updatedAt: row[6] as string,
+  }));
+}
+
+// ── Task CRUD ───────────────────────────────────────────────────────
+
+function rowToTask(row: any[], transitions: Transition[], children: string[]): Task {
+  const qaStatus = row[12] as string | null;
+  const qaSummary = row[13] as string | null;
+  const qaTimestamp = row[14] as string | null;
+
+  return {
+    id: row[0] as string,
+    epic: row[1] as string | null,
+    title: row[2] as string,
+    description: row[3] as string,
+    phase: row[4] as Phase,
+    dependencies: JSON.parse((row[5] as string) || "[]"),
+    branch: row[6] as string | null,
+    worktree: row[7] as string | null,
+    pr: row[8] as string | null,
+    externalId: row[9] as string | null,
+    spec: row[10] as string | null,
+    createdAt: row[11] as string,
+    updatedAt: row[15] as string,
+    qaResult: qaStatus ? { status: qaStatus as "pass" | "fail", summary: qaSummary!, timestamp: qaTimestamp! } : null,
+    // Backward compat
+    parent: row[1] as string | null, // epic
+    children,
+    transitions,
+  };
+}
+
+function loadTransitions(taskId: string, entity: string = "task"): Transition[] {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT phase, timestamp, actor FROM transitions WHERE repo = ? AND task_id = ? AND entity = ? ORDER BY timestamp",
+    [repo(), taskId, entity],
+  );
+  if (!result[0]?.values.length) return [];
+  return result[0].values.map((row: any[]) => ({
+    phase: row[0] as Phase,
+    timestamp: row[1] as string,
+    actor: row[2] as string,
+  }));
+}
+
+function loadChildren(taskId: string): string[] {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT id FROM tasks WHERE repo = ? AND epic = ? ORDER BY id",
+    [repo(), taskId],
+  );
+  if (!result[0]?.values.length) return [];
+  return result[0].values.map((row: any[]) => row[0] as string);
+}
+
+const TASK_SELECT = `SELECT id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, spec, created_at, qa_status, qa_summary, qa_timestamp, updated_at FROM tasks`;
 
 export function loadTask(id: string): Task | null {
-  const p = taskPath(id);
-  if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, "utf-8"));
+  const db = getDbSync();
+  const result = db.exec(`${TASK_SELECT} WHERE repo = ? AND id = ?`, [repo(), id]);
+  if (!result[0]?.values.length) return null;
+  const transitions = loadTransitions(id, "task");
+  const children = loadChildren(id);
+  return rowToTask(result[0].values[0], transitions, children);
 }
 
 export function saveTask(task: Task): void {
-  ensureSetup();
-  fs.writeFileSync(taskPath(task.id), JSON.stringify(task, null, 2) + "\n");
+  const db = getDbSync();
+  const now = new Date().toISOString();
+  db.run(
+    `INSERT OR REPLACE INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, spec, qa_status, qa_summary, qa_timestamp, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      repo(),
+      task.id,
+      task.epic,
+      task.title,
+      task.description,
+      task.phase,
+      JSON.stringify(task.dependencies),
+      task.branch,
+      task.worktree,
+      task.pr,
+      task.externalId,
+      task.spec,
+      task.qaResult?.status ?? null,
+      task.qaResult?.summary ?? null,
+      task.qaResult?.timestamp ?? null,
+      task.createdAt,
+      now,
+    ],
+  );
+  persistDb();
+  task.updatedAt = now;
 }
 
-export function listTasks(): Task[] {
-  const dir = stateDir();
-  if (!fs.existsSync(dir)) return [];
+export function listTasks(opts?: { epic?: string; all?: boolean }): Task[] {
+  const db = getDbSync();
+  let query: string;
+  const params: any[] = [];
 
-  const tasks: Task[] = [];
-  for (const f of fs.readdirSync(dir)) {
-    if (f.endsWith(".json") && !f.includes(".pipeline.")) {
-      tasks.push(JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8")));
-    }
+  if (opts?.all) {
+    query = `${TASK_SELECT} WHERE 1=1`;
+  } else {
+    query = `${TASK_SELECT} WHERE repo = ?`;
+    params.push(repo());
   }
-  return tasks;
+
+  if (opts?.epic) {
+    query += " AND epic = ?";
+    params.push(opts.epic);
+  }
+
+  query += " ORDER BY id";
+
+  const result = db.exec(query, params);
+  if (!result[0]?.values.length) return [];
+
+  return result[0].values.map((row: any[]) => {
+    const id = row[0] as string;
+    const transitions = loadTransitions(id, "task");
+    const children = loadChildren(id);
+    return rowToTask(row, transitions, children);
+  });
 }
 
 export function createTask(opts: {
   title: string;
   description?: string;
-  parent?: string;
+  epic?: string;
+  parent?: string; // backward compat alias for epic
   phase?: Phase;
   actor?: string;
 }): Task {
-  const id = opts.parent ? nextWorkstreamId(opts.parent) : nextTaskId();
+  const db = getDbSync();
+  const id = nextTaskId();
+  const now = new Date().toISOString();
   const phase = opts.phase ?? "understand";
-  const task: Task = {
+  const epic = opts.epic ?? opts.parent ?? null;
+
+  db.run(
+    `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, spec, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, '[]', NULL, NULL, NULL, NULL, NULL, ?, ?)`,
+    [repo(), id, epic, opts.title, opts.description ?? "", phase, now, now],
+  );
+
+  // Record initial transition
+  db.run(
+    `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
+     VALUES (?, ?, 'task', ?, ?, ?)`,
+    [repo(), id, phase, opts.actor ?? "cli", now],
+  );
+
+  persistDb();
+
+  return {
     id,
+    epic,
     title: opts.title,
     description: opts.description ?? "",
     phase,
-    parent: opts.parent ?? null,
-    children: [],
     dependencies: [],
     branch: null,
     worktree: null,
@@ -184,24 +382,16 @@ export function createTask(opts: {
     externalId: null,
     spec: null,
     qaResult: null,
-    transitions: [{ phase, timestamp: new Date().toISOString(), actor: opts.actor ?? "cli" }],
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
+    // Backward compat
+    parent: epic,
+    children: [],
+    transitions: [{ phase, timestamp: now, actor: opts.actor ?? "cli" }],
   };
-  saveTask(task);
-
-  // If this is a workstream, add it to the parent's children array
-  if (opts.parent) {
-    const parent = loadTask(opts.parent);
-    if (parent) {
-      parent.children.push(id);
-      saveTask(parent);
-    }
-  }
-
-  return task;
 }
 
-// ── Phase transitions (R-02, R-06) ──────────────────────────────────
+// ── Phase transitions ───────────────────────────────────────────────
 
 function phaseIndex(p: Phase): number {
   return ORDERED_PHASES.indexOf(p);
@@ -237,41 +427,51 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
   const task = loadTask(id);
   if (!task) throw new Error(`Task "${id}" not found.`);
 
-  if (task.children.length > 0) {
-    throw new Error(`Task "${id}" is an epic. Transition its children instead.`);
-  }
-
   const err = validateTransition(task.phase, target, opts.force ?? false);
   if (err) throw new Error(err);
 
-  task.phase = target;
-  task.transitions.push({
-    phase: target,
-    timestamp: new Date().toISOString(),
-    actor: opts.actor ?? "cli",
-  });
-  saveTask(task);
-  return task;
+  const db = getDbSync();
+  const now = new Date().toISOString();
+
+  db.run(
+    "UPDATE tasks SET phase = ?, updated_at = ? WHERE repo = ? AND id = ?",
+    [target, now, repo(), id],
+  );
+
+  db.run(
+    `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
+     VALUES (?, ?, 'task', ?, ?, ?)`,
+    [repo(), id, target, opts.actor ?? "cli", now],
+  );
+
+  persistDb();
+
+  // Return updated task
+  return loadTask(id)!;
 }
 
-// ── Epic phase derivation (R-08) ────────────────────────────────────
+// ── Epic phase derivation ───────────────────────────────────────────
 
 export function deriveEpicPhase(epicId: string): Phase {
-  const epic = loadTask(epicId);
-  if (!epic || epic.children.length === 0) return epic?.phase ?? "understand";
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT phase FROM tasks WHERE repo = ? AND epic = ?",
+    [repo(), epicId],
+  );
 
-  const childPhases = epic.children.map((cid) => {
-    const child = loadTask(cid);
-    return child?.phase ?? "understand";
-  });
-
-  const nonTerminal = childPhases.filter((p) => !isTerminal(p));
-  if (nonTerminal.length === 0) {
-    // All children terminal
-    return childPhases.every((p) => p === "cancelled") ? "cancelled" : "done";
+  if (!result[0]?.values.length) {
+    // No children — check if epic exists and return its stored phase
+    const epic = loadEpic(epicId);
+    return epic?.phase ?? "understand";
   }
 
-  // Minimum phase among non-terminal children
+  const childPhases: Phase[] = result[0].values.map((row: any[]) => row[0] as Phase);
+  const nonTerminal = childPhases.filter((p: Phase) => !isTerminal(p));
+
+  if (nonTerminal.length === 0) {
+    return childPhases.every((p: Phase) => p === "cancelled") ? "cancelled" : "done";
+  }
+
   let min = ORDERED_PHASES.length;
   for (const p of nonTerminal) {
     const i = phaseIndex(p);
@@ -280,14 +480,20 @@ export function deriveEpicPhase(epicId: string): Phase {
   return ORDERED_PHASES[min];
 }
 
-// ── Dependency checking (BR-02) ─────────────────────────────────────
+// ── Dependency checking ─────────────────────────────────────────────
 
 export function dependenciesMet(task: Task): boolean {
   if (task.dependencies.length === 0) return true;
-  return task.dependencies.every((depId) => {
-    const dep = loadTask(depId);
-    return dep && dep.phase === "done";
-  });
+  const db = getDbSync();
+  for (const depId of task.dependencies) {
+    const result = db.exec(
+      "SELECT phase FROM tasks WHERE repo = ? AND id = ?",
+      [repo(), depId],
+    );
+    if (!result[0]?.values.length) return false;
+    if (result[0].values[0][0] !== "done") return false;
+  }
+  return true;
 }
 
 // ── Spec management ─────────────────────────────────────────────────
@@ -299,7 +505,8 @@ export function loadSpec(taskId: string): string | null {
 }
 
 export function saveSpec(taskId: string, content: string): void {
-  ensureSetup();
+  const sp = specsDir();
+  if (!fs.existsSync(sp)) fs.mkdirSync(sp, { recursive: true });
   const p = specPath(taskId);
   fs.writeFileSync(p, content);
 
@@ -323,30 +530,383 @@ export function saveSpecFromFile(taskId: string, filePath: string): void {
 // ── Pipeline state ──────────────────────────────────────────────────
 
 export function loadPipeline(taskId: string): PipelineState | null {
-  const p = pipelinePath(taskId);
-  if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, "utf-8"));
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT task_id, current_phase, completed_skills, skipped_skills, next_skill, started_at FROM pipelines WHERE repo = ? AND task_id = ?",
+    [repo(), taskId],
+  );
+  if (!result[0]?.values.length) return null;
+  const row = result[0].values[0];
+  return {
+    taskId: row[0] as string,
+    currentPhase: row[1] as Phase,
+    completedSkills: JSON.parse((row[2] as string) || "[]"),
+    skippedSkills: JSON.parse((row[3] as string) || "[]"),
+    nextSkill: row[4] as string | null,
+    startedAt: row[5] as string,
+  };
 }
 
 export function savePipeline(state: PipelineState): void {
-  ensureSetup();
-  fs.writeFileSync(pipelinePath(state.taskId), JSON.stringify(state, null, 2) + "\n");
+  const db = getDbSync();
+  db.run(
+    `INSERT OR REPLACE INTO pipelines (repo, task_id, current_phase, completed_skills, skipped_skills, next_skill, started_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      repo(),
+      state.taskId,
+      state.currentPhase,
+      JSON.stringify(state.completedSkills),
+      JSON.stringify(state.skippedSkills),
+      state.nextSkill,
+      state.startedAt,
+    ],
+  );
+  persistDb();
 }
 
 // ── Task lookup helpers ─────────────────────────────────────────────
 
-/** Find the task associated with the current worktree path. */
 export function findTaskByWorktree(wtPath: string): Task | null {
-  for (const task of listTasks()) {
-    if (task.worktree === wtPath) return task;
+  const db = getDbSync();
+  const result = db.exec(`${TASK_SELECT} WHERE repo = ? AND worktree = ?`, [repo(), wtPath]);
+  if (!result[0]?.values.length) return null;
+  const row = result[0].values[0];
+  const id = row[0] as string;
+  return rowToTask(row, loadTransitions(id), loadChildren(id));
+}
+
+export function findTaskByBranch(branch: string): Task | null {
+  const db = getDbSync();
+  const result = db.exec(`${TASK_SELECT} WHERE repo = ? AND branch = ?`, [repo(), branch]);
+  if (!result[0]?.values.length) return null;
+  const row = result[0].values[0];
+  const id = row[0] as string;
+  return rowToTask(row, loadTransitions(id), loadChildren(id));
+}
+
+// ── Advanced queries ────────────────────────────────────────────────
+
+/** Find the current task by worktree path first, then by branch name. */
+export function findCurrentTask(worktreePath: string, branch: string): Task | null {
+  return findTaskByWorktree(worktreePath) ?? findTaskByBranch(branch) ?? null;
+}
+
+/** Find the next ready task under an epic (non-terminal, deps met). */
+export function findNextTask(epicId: string): Task | null {
+  const tasks = listTasks({ epic: epicId });
+  for (const task of tasks) {
+    if (isTerminal(task.phase)) continue;
+    if (dependenciesMet(task)) return task;
   }
   return null;
 }
 
-/** Find the task associated with the current git branch. */
-export function findTaskByBranch(branch: string): Task | null {
-  for (const task of listTasks()) {
-    if (task.branch === branch) return task;
+/** Find all ready tasks (non-terminal, deps met) across all epics and standalone. */
+export function findReadyTasks(opts?: { all?: boolean }): Task[] {
+  const tasks = listTasks({ all: opts?.all });
+  return tasks.filter((t) => !isTerminal(t.phase) && dependenciesMet(t));
+}
+
+/** Load a task with optional spec content inlining and field projection. */
+export function loadTaskFull(
+  id: string,
+  opts?: { withSpec?: boolean; fields?: string[] },
+): Record<string, unknown> | null {
+  const task = loadTask(id);
+  if (!task) return null;
+
+  let result: Record<string, unknown> = { ...task };
+
+  if (opts?.withSpec && task.spec) {
+    const content = loadSpec(id);
+    if (content) result.specContent = content;
   }
-  return null;
+
+  if (opts?.fields) {
+    const projected: Record<string, unknown> = {};
+    for (const field of opts.fields) {
+      if (field in result) projected[field] = result[field];
+    }
+    return projected;
+  }
+
+  return result;
+}
+
+// ── Review types ────────────────────────────────────────────────────
+
+export interface Review {
+  id: string;
+  taskId: string | null;
+  epicId: string | null;
+  source: string;
+  commitSha: string;
+  prNumber: number | null;
+  summary: string | null;
+  createdAt: string;
+}
+
+export interface ReviewItem {
+  id: string;
+  reviewId: string;
+  severity: string | null;
+  agents: string[];
+  filePath: string | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  body: string;
+  impact: string | null;
+  suggestedFix: string | null;
+  status: string;
+  resolution: string | null;
+  resolutionSha: string | null;
+  prCommentId: number | null;
+  resolvedAt: string | null;
+}
+
+export interface ReviewSummaryResult {
+  total: number;
+  open: number;
+  fixed: number;
+  pushedBack: number;
+  wontFix: number;
+  acknowledged: number;
+  bySeverity: Record<string, Record<string, number>>;
+}
+
+// ── Review CRUD ─────────────────────────────────────────────────────
+
+function nextReviewId(): string {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) FROM reviews WHERE repo = ?",
+    [repo()],
+  );
+  const max = result[0]?.values[0]?.[0] ?? 0;
+  return `r${(max || 0) + 1}`;
+}
+
+function nextReviewItemId(): string {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT MAX(CAST(SUBSTR(id, 3) AS INTEGER)) FROM review_items WHERE repo = ?",
+    [repo()],
+  );
+  const max = result[0]?.values[0]?.[0] ?? 0;
+  return `ri${(max || 0) + 1}`;
+}
+
+export function createReview(opts: {
+  taskId?: string;
+  epicId?: string;
+  source: string;
+  commitSha: string;
+  prNumber?: number;
+  summary?: string;
+}): Review {
+  const db = getDbSync();
+  const id = nextReviewId();
+  const now = new Date().toISOString();
+
+  db.run(
+    `INSERT INTO reviews (repo, id, task_id, epic_id, source, commit_sha, pr_number, summary, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      repo(), id,
+      opts.taskId ?? null, opts.epicId ?? null,
+      opts.source, opts.commitSha,
+      opts.prNumber ?? null, opts.summary ?? null,
+      now,
+    ],
+  );
+  persistDb();
+
+  return {
+    id,
+    taskId: opts.taskId ?? null,
+    epicId: opts.epicId ?? null,
+    source: opts.source,
+    commitSha: opts.commitSha,
+    prNumber: opts.prNumber ?? null,
+    summary: opts.summary ?? null,
+    createdAt: now,
+  };
+}
+
+export function addReviewItem(opts: {
+  reviewId: string;
+  body: string;
+  severity?: string;
+  agents?: string[];
+  filePath?: string;
+  lineStart?: number;
+  lineEnd?: number;
+  impact?: string;
+  suggestedFix?: string;
+  prCommentId?: number;
+}): ReviewItem {
+  const db = getDbSync();
+  const id = nextReviewItemId();
+
+  db.run(
+    `INSERT INTO review_items (repo, id, review_id, severity, agents, file_path, line_start, line_end, body, impact, suggested_fix, status, pr_comment_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`,
+    [
+      repo(), id, opts.reviewId,
+      opts.severity ?? null,
+      JSON.stringify(opts.agents ?? []),
+      opts.filePath ?? null,
+      opts.lineStart ?? null, opts.lineEnd ?? null,
+      opts.body,
+      opts.impact ?? null, opts.suggestedFix ?? null,
+      opts.prCommentId ?? null,
+    ],
+  );
+  persistDb();
+
+  return {
+    id,
+    reviewId: opts.reviewId,
+    severity: opts.severity ?? null,
+    agents: opts.agents ?? [],
+    filePath: opts.filePath ?? null,
+    lineStart: opts.lineStart ?? null,
+    lineEnd: opts.lineEnd ?? null,
+    body: opts.body,
+    impact: opts.impact ?? null,
+    suggestedFix: opts.suggestedFix ?? null,
+    status: "open",
+    resolution: null,
+    resolutionSha: null,
+    prCommentId: opts.prCommentId ?? null,
+    resolvedAt: null,
+  };
+}
+
+export function resolveReviewItem(
+  itemId: string,
+  opts: { status: string; resolution: string; commitSha?: string },
+): ReviewItem {
+  const db = getDbSync();
+  const now = new Date().toISOString();
+
+  db.run(
+    `UPDATE review_items SET status = ?, resolution = ?, resolution_sha = ?, resolved_at = ?
+     WHERE repo = ? AND id = ?`,
+    [opts.status, opts.resolution, opts.commitSha ?? null, now, repo(), itemId],
+  );
+  persistDb();
+
+  // Reload and return
+  const result = db.exec(
+    `SELECT id, review_id, severity, agents, file_path, line_start, line_end, body, impact, suggested_fix, status, resolution, resolution_sha, pr_comment_id, resolved_at
+     FROM review_items WHERE repo = ? AND id = ?`,
+    [repo(), itemId],
+  );
+  const row = result[0]?.values[0];
+  return rowToReviewItem(row!);
+}
+
+function rowToReviewItem(row: any[]): ReviewItem {
+  return {
+    id: row[0] as string,
+    reviewId: row[1] as string,
+    severity: row[2] as string | null,
+    agents: JSON.parse((row[3] as string) || "[]"),
+    filePath: row[4] as string | null,
+    lineStart: row[5] as number | null,
+    lineEnd: row[6] as number | null,
+    body: row[7] as string,
+    impact: row[8] as string | null,
+    suggestedFix: row[9] as string | null,
+    status: row[10] as string,
+    resolution: row[11] as string | null,
+    resolutionSha: row[12] as string | null,
+    prCommentId: row[13] as number | null,
+    resolvedAt: row[14] as string | null,
+  };
+}
+
+export function listReviewItems(opts?: {
+  taskId?: string;
+  status?: string;
+  severity?: string;
+  reviewId?: string;
+}): ReviewItem[] {
+  const db = getDbSync();
+  let query = `SELECT ri.id, ri.review_id, ri.severity, ri.agents, ri.file_path, ri.line_start, ri.line_end, ri.body, ri.impact, ri.suggested_fix, ri.status, ri.resolution, ri.resolution_sha, ri.pr_comment_id, ri.resolved_at
+    FROM review_items ri`;
+  const params: any[] = [];
+  const conditions: string[] = ["ri.repo = ?"];
+  params.push(repo());
+
+  if (opts?.taskId) {
+    query += " JOIN reviews r ON ri.repo = r.repo AND ri.review_id = r.id";
+    conditions.push("r.task_id = ?");
+    params.push(opts.taskId);
+  }
+
+  if (opts?.status) {
+    conditions.push("ri.status = ?");
+    params.push(opts.status);
+  }
+
+  if (opts?.severity) {
+    conditions.push("ri.severity = ?");
+    params.push(opts.severity);
+  }
+
+  if (opts?.reviewId) {
+    conditions.push("ri.review_id = ?");
+    params.push(opts.reviewId);
+  }
+
+  query += " WHERE " + conditions.join(" AND ");
+  query += " ORDER BY ri.id";
+
+  const result = db.exec(query, params);
+  if (!result[0]?.values.length) return [];
+  return result[0].values.map((row: any[]) => rowToReviewItem(row));
+}
+
+export function reviewSummary(opts?: { taskId?: string }): ReviewSummaryResult {
+  const items = listReviewItems(opts?.taskId ? { taskId: opts.taskId } : undefined);
+
+  const summary: ReviewSummaryResult = {
+    total: items.length,
+    open: 0,
+    fixed: 0,
+    pushedBack: 0,
+    wontFix: 0,
+    acknowledged: 0,
+    bySeverity: {},
+  };
+
+  for (const item of items) {
+    const sev = item.severity ?? "UNSET";
+    if (!summary.bySeverity[sev]) {
+      summary.bySeverity[sev] = {};
+    }
+
+    const status = item.status;
+    summary.bySeverity[sev][status] = (summary.bySeverity[sev][status] || 0) + 1;
+
+    switch (status) {
+      case "open": summary.open++; break;
+      case "fixed": summary.fixed++; break;
+      case "pushed_back": summary.pushedBack++; break;
+      case "wont_fix": summary.wontFix++; break;
+      case "acknowledged": summary.acknowledged++; break;
+    }
+  }
+
+  return summary;
+}
+
+// ── Backward compat exports ─────────────────────────────────────────
+
+/** @deprecated Use createTask with epic param instead */
+export function nextWorkstreamId(parentId: string): string {
+  return nextTaskId();
 }
