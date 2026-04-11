@@ -54,14 +54,6 @@ export interface Task {
   transitions: Transition[];
 }
 
-export interface PipelineState {
-  taskId: string;
-  currentPhase: Phase;
-  completedSkills: string[];
-  skippedSkills: string[];
-  nextSkill: string | null;
-  startedAt: string;
-}
 
 // ── Initialization ──────────────────────────────────────────────────
 
@@ -527,44 +519,6 @@ export function saveSpecFromFile(taskId: string, filePath: string): void {
   saveSpec(taskId, content);
 }
 
-// ── Pipeline state ──────────────────────────────────────────────────
-
-export function loadPipeline(taskId: string): PipelineState | null {
-  const db = getDbSync();
-  const result = db.exec(
-    "SELECT task_id, current_phase, completed_skills, skipped_skills, next_skill, started_at FROM pipelines WHERE repo = ? AND task_id = ?",
-    [repo(), taskId],
-  );
-  if (!result[0]?.values.length) return null;
-  const row = result[0].values[0];
-  return {
-    taskId: row[0] as string,
-    currentPhase: row[1] as Phase,
-    completedSkills: JSON.parse((row[2] as string) || "[]"),
-    skippedSkills: JSON.parse((row[3] as string) || "[]"),
-    nextSkill: row[4] as string | null,
-    startedAt: row[5] as string,
-  };
-}
-
-export function savePipeline(state: PipelineState): void {
-  const db = getDbSync();
-  db.run(
-    `INSERT OR REPLACE INTO pipelines (repo, task_id, current_phase, completed_skills, skipped_skills, next_skill, started_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      repo(),
-      state.taskId,
-      state.currentPhase,
-      JSON.stringify(state.completedSkills),
-      JSON.stringify(state.skippedSkills),
-      state.nextSkill,
-      state.startedAt,
-    ],
-  );
-  persistDb();
-}
-
 // ── Task lookup helpers ─────────────────────────────────────────────
 
 export function findTaskByWorktree(wtPath: string): Task | null {
@@ -905,9 +859,3 @@ export function reviewSummary(opts?: { taskId?: string }): ReviewSummaryResult {
   return summary;
 }
 
-// ── Backward compat exports ─────────────────────────────────────────
-
-/** @deprecated Use createTask with epic param instead */
-export function nextWorkstreamId(parentId: string): string {
-  return nextTaskId();
-}

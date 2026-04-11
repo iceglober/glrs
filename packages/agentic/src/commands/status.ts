@@ -1,5 +1,5 @@
 import { command, flag } from "cmd-ts";
-import { listTasks, listEpics, deriveEpicPhase, dependenciesMet, isTerminal, loadPipeline, type Task, type Phase, type Epic } from "../lib/state.js";
+import { listTasks, listEpics, deriveEpicPhase, dependenciesMet, isTerminal, type Task, type Phase, type Epic } from "../lib/state.js";
 import { bold, dim, cyan, green, yellow, red } from "../lib/fmt.js";
 
 const phaseColor: Record<Phase, (s: string) => string> = {
@@ -34,27 +34,8 @@ function formatTask(task: Task, indent: number): void {
   line += blocked;
   console.log(line);
 
-  // Show pipeline progress for non-terminal tasks
-  if (!isTerminal(task.phase)) {
-    const pipeline = loadPipeline(task.id);
-    if (pipeline) {
-      const completed = pipeline.completedSkills;
-      const next = pipeline.nextSkill;
-      if (completed.length > 0 || next) {
-        let detail = `${prefix}  `;
-        if (completed.length > 0) {
-          detail += dim(`done: ${completed.join(", ")}`);
-        }
-        if (next) {
-          detail += (completed.length > 0 ? dim("  ") : "") + yellow(`next: /${next}`);
-        }
-        console.log(detail);
-      }
-    }
-
-    if (task.worktree) {
-      console.log(`${prefix}  ${dim(`resume: cd ${task.worktree} && gs-agentic start`)}`);
-    }
+  if (!isTerminal(task.phase) && task.worktree) {
+    console.log(`${prefix}  ${dim(`worktree: ${task.worktree}`)}`);
   }
 }
 

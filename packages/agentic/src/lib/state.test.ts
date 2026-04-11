@@ -22,12 +22,9 @@ import {
   loadSpec,
   saveSpec,
   saveSpecFromFile,
-  loadPipeline,
-  savePipeline,
   findTaskByWorktree,
   findTaskByBranch,
   ensureSetup,
-  nextWorkstreamId,
   findCurrentTask,
   findNextTask,
   findReadyTasks,
@@ -106,12 +103,6 @@ describe("nextEpicId", () => {
   });
 });
 
-describe("nextWorkstreamId (deprecated)", () => {
-  test("returns a task ID", () => {
-    const id = nextWorkstreamId("t1");
-    expect(id).toMatch(/^t\d+$/);
-  });
-});
 
 // ── Epic CRUD ────────────────────────────────────────────────────────
 
@@ -264,19 +255,6 @@ describe("listTasks", () => {
     expect(e1Tasks[1].title).toBe("Also E1");
   });
 
-  test("excludes pipeline data (no pipeline contamination)", () => {
-    createTask({ title: "A" });
-    savePipeline({
-      taskId: "t1",
-      currentPhase: "understand",
-      completedSkills: [],
-      skippedSkills: [],
-      nextSkill: "think",
-      startedAt: new Date().toISOString(),
-    });
-    const tasks = listTasks();
-    expect(tasks).toHaveLength(1);
-  });
 });
 
 describe("saveTask", () => {
@@ -518,27 +496,6 @@ describe("spec management", () => {
   });
 });
 
-// ── Pipeline state ───────────────────────────────────────────────────
-
-describe("pipeline state", () => {
-  test("loadPipeline returns null when no pipeline exists", () => {
-    expect(loadPipeline("t99")).toBeNull();
-  });
-
-  test("savePipeline writes and loadPipeline reads", () => {
-    const state = {
-      taskId: "t1",
-      currentPhase: "design" as Phase,
-      completedSkills: ["think", "spec-make"],
-      skippedSkills: [],
-      nextSkill: "spec-enrich",
-      startedAt: "2026-03-30T10:00:00Z",
-    };
-    savePipeline(state);
-    const loaded = loadPipeline("t1");
-    expect(loaded).toEqual(state);
-  });
-});
 
 // ── Task lookup ──────────────────────────────────────────────────────
 

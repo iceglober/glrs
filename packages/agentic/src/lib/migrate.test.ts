@@ -13,9 +13,6 @@ function writeStateFile(id: string, data: Record<string, unknown>): void {
   fs.writeFileSync(path.join(TEST_STATE_DIR, `${id}.json`), JSON.stringify(data, null, 2));
 }
 
-function writePipelineFile(id: string, data: Record<string, unknown>): void {
-  fs.writeFileSync(path.join(TEST_STATE_DIR, `${id}.pipeline.json`), JSON.stringify(data, null, 2));
-}
 
 function makeTask(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -265,65 +262,6 @@ describe("migrateJsonToSqlite", () => {
     expect(taskTransitions[0]?.values.length).toBe(1);
     expect(taskTransitions[0].values[0][0]).toBe("t1");
     expect(taskTransitions[0].values[0][2]).toBe("implement");
-  });
-
-  test("migrates pipeline state files", async () => {
-    writeStateFile("t1", makeTask({
-      id: "t1",
-      title: "Standalone with pipeline",
-      parent: null,
-      children: [],
-    }));
-    writePipelineFile("t1", {
-      taskId: "t1",
-      currentPhase: "implement",
-      completedSkills: ["think", "work"],
-      skippedSkills: ["qa"],
-      nextSkill: "ship",
-      startedAt: "2026-01-01T00:00:00.000Z",
-    });
-
-    const db = await getDb(TEST_DB_PATH);
-    await migrateJsonToSqlite(db, "test/repo", TEST_STATE_DIR);
-
-    const pipelines = db.exec(
-      "SELECT task_id, current_phase, completed_skills, skipped_skills, next_skill, started_at FROM pipelines WHERE repo = 'test/repo'"
-    );
-    expect(pipelines[0]?.values.length).toBe(1);
-    expect(pipelines[0].values[0][0]).toBe("t1"); // task_id
-    expect(pipelines[0].values[0][1]).toBe("implement"); // current_phase
-    expect(JSON.parse(pipelines[0].values[0][2] as string)).toEqual(["think", "work"]);
-    expect(JSON.parse(pipelines[0].values[0][3] as string)).toEqual(["qa"]);
-    expect(pipelines[0].values[0][4]).toBe("ship");
-    expect(pipelines[0].values[0][5]).toBe("2026-01-01T00:00:00.000Z");
-  });
-
-  test("pipeline task IDs are remapped for workstreams", async () => {
-    writeStateFile("t1", makeTask({
-      id: "t1",
-      title: "Parent",
-      children: ["t1-1"],
-    }));
-    writeStateFile("t1-1", makeTask({
-      id: "t1-1",
-      title: "Workstream",
-      parent: "t1",
-      children: [],
-    }));
-    writePipelineFile("t1-1", {
-      taskId: "t1-1",
-      currentPhase: "implement",
-      completedSkills: [],
-      skippedSkills: [],
-      nextSkill: null,
-      startedAt: "2026-01-01T00:00:00.000Z",
-    });
-
-    const db = await getDb(TEST_DB_PATH);
-    await migrateJsonToSqlite(db, "test/repo", TEST_STATE_DIR);
-
-    const pipelines = db.exec("SELECT task_id FROM pipelines WHERE repo = 'test/repo'");
-    expect(pipelines[0]?.values[0]?.[0]).toBe("t1"); // t1-1 → t1
   });
 
   test("records migration in migrations table", async () => {

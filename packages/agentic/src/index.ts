@@ -7,7 +7,7 @@ import { cleanup } from "./commands/cleanup.js";
 import { go } from "./commands/go.js";
 import { initHooks } from "./commands/init-hooks.js";
 import { root } from "./commands/root.js";
-import { start } from "./commands/start.js";
+
 import { upgrade } from "./commands/upgrade.js";
 import { installSkills } from "./commands/install-skills.js";
 import { state } from "./commands/state/index.js";
@@ -60,7 +60,6 @@ const cli = subcommands({
   description: "glorious — AI-native development workflow",
   cmds: {
     wt,
-    start,
     status,
     ready,
     skills: installSkills,
