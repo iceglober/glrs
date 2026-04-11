@@ -189,8 +189,8 @@ const summary = command({
     console.log(`Total: ${result.total} | Open: ${result.open} | Fixed: ${result.fixed} | Pushed back: ${result.pushedBack}`);
 
     if (result.open > 0) {
-      const openItems = listReviewItems({ status: "open", severity: "CRITICAL" });
-      const highOpen = listReviewItems({ status: "open", severity: "HIGH" });
+      const openItems = listReviewItems({ taskId: args.task ?? undefined, status: "open", severity: "CRITICAL" });
+      const highOpen = listReviewItems({ taskId: args.task ?? undefined, status: "open", severity: "HIGH" });
       const blocking = [...openItems, ...highOpen];
       if (blocking.length > 0) {
         console.log("");

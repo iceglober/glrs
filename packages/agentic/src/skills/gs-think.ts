@@ -82,6 +82,6 @@ If the current task exists and this planning session refines it:
 - Update the task description: \`gs-agentic state task update --id <id> --description '<updated description>'\`
 - Save detailed spec content: \`gs-agentic state spec set --id <id> --content '<spec content>'\`
 
-If this is a new feature not yet tracked, tell the user to add it via \`gs-agentic start\`.
+If this is a new feature not yet tracked, tell the user to add it via \`gs-agentic state task create --title '...'\`.
 `;
 }

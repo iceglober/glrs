@@ -20,7 +20,7 @@ export const ready = command({
         if (!grouped[key]) grouped[key] = { epic: t.epic, tasks: [] };
         grouped[key].tasks.push(t);
       }
-      console.log(JSON.stringify(Object.values(grouped), null, 2));
+      console.log(JSON.stringify(Object.values(grouped)));
       return;
     }
 

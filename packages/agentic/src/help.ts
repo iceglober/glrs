@@ -138,7 +138,7 @@ ${bold("COMMANDS")}
   state review resolve --item <id> --status <status> --resolution "..."
       Resolve a review item.
 
-  state review list [--task <id>] [--status <s>] [--severity <sev>] [--json]
+  state review list [--task <id>] [--status <s>] [--severity <sev>] [--json] [--summary]
       List review items.
 
   state review summary [--task <id>] [--json]
