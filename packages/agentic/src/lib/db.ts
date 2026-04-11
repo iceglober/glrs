@@ -1,5 +1,6 @@
 // @ts-ignore -- sql.js has no type declarations
 import initSqlJs from "sql.js";
+declare const __SQL_WASM_BASE64__: string | undefined;
 type Database = any;
 import fs from "node:fs";
 import path from "node:path";
@@ -18,7 +19,10 @@ export const DB_PATH = path.join(os.homedir(), ".glorious", "state.db");
 export async function getDb(dbPath: string = DB_PATH): Promise<Database> {
   if (db) return db;
 
-  const SQL = await initSqlJs();
+  const opts = typeof __SQL_WASM_BASE64__ !== "undefined"
+    ? { wasmBinary: Buffer.from(__SQL_WASM_BASE64__, "base64") }
+    : undefined;
+  const SQL = await initSqlJs(opts);
 
   const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

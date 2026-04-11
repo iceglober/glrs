@@ -1,6 +1,11 @@
 import type { BunPlugin } from "bun";
 import pkg from "./package.json";
 
+// Embed sql.js WASM binary as base64 so the CLI is fully self-contained
+// and doesn't depend on node_modules paths at runtime.
+const wasmPath = require.resolve("sql.js/dist/sql-wasm.wasm");
+const wasmBase64 = Buffer.from(await Bun.file(wasmPath).arrayBuffer()).toString("base64");
+
 // Shim out react-devtools-core (ink imports it but it's not needed in CLI)
 const shimDevtools: BunPlugin = {
   name: "shim-devtools",
@@ -25,6 +30,7 @@ const result = await Bun.build({
   minify: false,
   define: {
     __GLORIOUS_VERSION__: JSON.stringify(pkg.version),
+    __SQL_WASM_BASE64__: JSON.stringify(wasmBase64),
   },
   packages: "bundle",
   plugins: [shimDevtools],
