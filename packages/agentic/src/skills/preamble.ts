@@ -10,7 +10,7 @@
  */
 export const TASK_PREAMBLE = `## Context: Current task
 
-Run \`gs-agentic state task current --json --fields id,title,phase,branch,spec,epic,pr\` to get your current task.
+Run \`gs-agentic state task current --json --fields id,title,phase,branch,plan,epic,pr\` to get your current task.
 If exit code 1 (no task found), operate in ad-hoc mode without state tracking.
 
 Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
@@ -18,7 +18,7 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 **State mutations:**
 - \`gs-agentic state task update --id <id> --field value\` — update metadata
 - \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase
-- \`gs-agentic state spec set --id <id> --file <path>\` — save spec content
+- \`gs-agentic state plan set --id <id> --file <path>\` — save plan content
 - \`gs-agentic state qa --id <id> --status pass|fail --summary "..."\` — record QA result
 - \`gs-agentic state task next --epic <id>\` — find next ready task in an epic`;
 
@@ -42,11 +42,11 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 
 /**
  * Build preamble — for gs-build, gs-build-loop.
- * Fetches full task with spec for implementation context.
+ * Fetches full task with plan for implementation context.
  */
 export const BUILD_PREAMBLE = `## Context: Current task
 
-Run \`gs-agentic state task current --json --with-spec\` to get your current task with spec.
+Run \`gs-agentic state task current --json --with-spec\` to get your current task with plan.
 If exit code 1 (no task found), operate in ad-hoc mode without state tracking.
 
 Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
