@@ -20,7 +20,6 @@ src/
 ├── index.ts              # CLI entry point (cmd-ts router)
 ├── help.ts               # Manual text
 ├── commands/
-│   ├── start.ts          # gsag start — pipeline orchestrator
 │   ├── status.ts         # gsag status — epic > task hierarchy view
 │   ├── ready.ts          # gsag ready — show tasks ready to work on
 │   ├── state/            # gsag state — task state management (internal)
@@ -48,8 +47,6 @@ src/
 │   ├── migrate.test.ts   # Migration tests
 │   ├── state.ts          # Epic/Task/Review model, CRUD, phase validation, queries
 │   ├── state.test.ts     # State module tests
-│   ├── pipeline.ts       # Orchestrator logic (skill sequencing, resume, epic task runner)
-│   ├── session-runner.ts # Spawn Claude sessions as subprocesses
 │   ├── git.ts            # Git wrappers (git, gitRoot, listWorktrees)
 │   ├── worktree.ts       # createWorktree, ensureWorktree (auto-registers)
 │   ├── registry.ts       # Global worktree registry (~/.glorious/worktrees.json)
@@ -62,14 +59,7 @@ src/
 │   └── update-check.ts   # Update checker
 └── skills/
     ├── index.ts          # COMMANDS & SKILLS registry
-    ├── preamble.ts       # Shared task context for skills (uses gsag state task current)
-    │
-    │  # Engineering skills
-    ├── think.ts          # /think — product strategy session
-    ├── work.ts           # /work — implement a task
-    ├── fix.ts            # /fix — bug fixes
-    ├── qa.ts             # /qa — QA against acceptance criteria
-    ├── ship.ts           # /ship — typecheck, review, version bump, release notes, CLAUDE.md sync, PR, CI monitoring
+    ├── preamble.ts       # Role-specific preambles (TASK/REVIEW/BUILD) for skills
     │
     │  # gs- engineering skills (SQLite state)
     ├── gs-think.ts       # /gs-think — product strategy (SQLite state)

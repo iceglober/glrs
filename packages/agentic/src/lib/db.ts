@@ -67,7 +67,7 @@ export function closeDb(): void {
 /** Clear all data from all tables (for test isolation). */
 export function resetDb(): void {
   if (!db) return;
-  const tables = ["review_items", "reviews", "transitions", "pipelines", "tasks", "epics", "migrations"];
+  const tables = ["review_items", "reviews", "transitions", "tasks", "epics", "migrations"];
   for (const table of tables) {
     db.run(`DELETE FROM ${table}`);
   }
@@ -124,19 +124,6 @@ function runSchema(database: Database): void {
       phase     TEXT NOT NULL,
       actor     TEXT NOT NULL DEFAULT 'cli',
       timestamp TEXT NOT NULL
-    )
-  `);
-
-  database.run(`
-    CREATE TABLE IF NOT EXISTS pipelines (
-      repo             TEXT NOT NULL,
-      task_id          TEXT NOT NULL,
-      current_phase    TEXT NOT NULL,
-      completed_skills TEXT NOT NULL DEFAULT '[]',
-      skipped_skills   TEXT NOT NULL DEFAULT '[]',
-      next_skill       TEXT,
-      started_at       TEXT NOT NULL,
-      PRIMARY KEY (repo, task_id)
     )
   `);
 

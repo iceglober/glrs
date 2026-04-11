@@ -1,3 +1,5 @@
+import { REVIEW_PREAMBLE } from "./preamble.js";
+
 export function gsDeepReview(): string {
   return `---
 description: Conduct a thorough multi-agent parallel code review of the current branch's changes. Six specialized agents (Security, Data Integrity, Frontend/UX, API Contracts, Test Coverage, Logical Integrity) analyze changes simultaneously and produce a consolidated severity-grouped report. Stores findings in gs-agentic review state. Use when you want a comprehensive review before shipping.
@@ -9,20 +11,9 @@ Conduct an extremely thorough code review of the current branch's changes using 
 
 **Optional arguments:** $ARGUMENTS
 
-## Context: Current task
-
-Run \`gs-agentic state task current --json --with-spec\` to get your current task.
-If exit code 1 (no task found), proceed without task context.
+${REVIEW_PREAMBLE}
 
 If a task is found, store its context (title, description, spec summary, acceptance criteria) as \`TASK_CONTEXT\` — this will be included in each agent's prompt so they can review against the task's intent, not just code correctness.
-
-Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
-
-**State mutations:**
-- \`gs-agentic state task update --id <id> --field value\` — update metadata
-- \`gs-agentic state review create --task <id> --source deep_review --commit-sha <sha>\` — create review
-- \`gs-agentic state review add-item --review <id> --body "..." --severity <sev> --agents <agents>\` — add finding
-- \`gs-agentic state review list --task <id> --status open\` — list open items
 
 ## Phase 1: Gather Context and Determine Diff Strategy
 

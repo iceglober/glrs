@@ -1,3 +1,5 @@
+import { REVIEW_PREAMBLE } from "./preamble.js";
+
 export function gsAddressFeedback(): string {
   return `---
 description: Address PR review feedback — gather all unresolved comments and review items, classify each (fix/pushback/acknowledge/wont-fix), implement fixes, respond on GitHub with evidence. Use when user says 'address feedback', 'handle PR comments', 'resolve review items', 'respond to reviewer'. Reads from both GitHub PR comments and gs-agentic review state.
@@ -18,19 +20,7 @@ You are resolving all outstanding review feedback for the current PR. Every resp
 
 Optional context: \`$ARGUMENTS\`
 
-## Context: Current task
-
-Run \`gs-agentic state task current --json --with-spec\` to get your current task.
-If exit code 1 (no task found), operate in ad-hoc mode — use \`gh pr view\` to find the PR.
-
-Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
-
-**State mutations:**
-- \`gs-agentic state review create --task <id> --source pr_comment --commit-sha <sha> --pr-number <n>\` — create review
-- \`gs-agentic state review add-item --review <id> --body "..." --severity <sev> --pr-comment-id <gid>\` — add item
-- \`gs-agentic state review resolve --item <id> --status <status> --resolution "..." [--commit-sha <sha>]\` — resolve item
-- \`gs-agentic state review list --task <id> --status open\` — list open items
-- \`gs-agentic state review summary --task <id>\` — summary counts
+${REVIEW_PREAMBLE}
 
 ## Step 1: Confirm PR
 

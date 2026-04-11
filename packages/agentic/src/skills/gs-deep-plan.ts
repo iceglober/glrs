@@ -1,3 +1,5 @@
+import { TASK_PREAMBLE } from "./preamble.js";
+
 export function gsDeepPlan(): string {
   return `---
 description: Create a zero-ambiguity implementation plan with strict TDD methodology. Use when user says 'deep plan', 'plan this', 'create a plan', 'implementation plan', 'break this down', 'plan the work', 'how should we build this'. Outputs a .md file with checkboxes, sequenced work, exact test cases, and dependency order. Creates gs-agentic epics and tasks for every plan step. Do NOT use for implementation (use /gs-work or /gs-build) or strategy evaluation (use /gs-think).
@@ -21,21 +23,7 @@ Write "wherever X lives" or "identify which Y"? That's ambiguity. Eliminate it.
 
 The user describes what to build: \`$ARGUMENTS\`
 
-## Context: Current task
-
-Run \`gs-agentic state task current --json --with-spec\` to get your current task.
-If exit code 1 (no task found), you will create an epic in Step 8.
-
-Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
-
-**State mutations:**
-- \`gs-agentic state task update --id <id> --field value\` — update metadata
-- \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase
-- \`gs-agentic state spec set --id <id> --file <path>\` — save spec content
-- \`gs-agentic state epic create --title "..." [--description "..."]\` — create epic
-- \`gs-agentic state task create --title "..." [--epic <id>] [--depends-on <ids>]\` — create task under epic
-- \`gs-agentic state spec add-task --id <epic-id> --title "..." [--depends-on <ids>]\` — add task to epic
-- \`gs-agentic state task next --epic <id>\` — find next ready task in an epic
+${TASK_PREAMBLE}
 
 ## Critical Rules
 

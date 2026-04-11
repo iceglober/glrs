@@ -49,7 +49,6 @@ describe("db", () => {
     expect(tables).toContain("epics");
     expect(tables).toContain("tasks");
     expect(tables).toContain("transitions");
-    expect(tables).toContain("pipelines");
     expect(tables).toContain("reviews");
     expect(tables).toContain("review_items");
     expect(tables).toContain("migrations");

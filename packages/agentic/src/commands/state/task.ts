@@ -28,7 +28,6 @@ const create = command({
     title: option({ type: string, long: "title", short: "t", description: "Task title" }),
     description: option({ type: optional(string), long: "description", short: "d", description: "Task description" }),
     epic: option({ type: optional(string), long: "epic", short: "e", description: "Epic ID (links task to epic)" }),
-    parent: option({ type: optional(string), long: "parent", short: "p", description: "Parent ID (deprecated, use --epic)" }),
     phase: option({ type: optional(string), long: "phase", description: "Initial phase (default: understand)" }),
     actor: option({ type: optional(string), long: "actor", description: "Actor name for transition log" }),
   },
@@ -41,7 +40,7 @@ const create = command({
     const task = createTask({
       title: args.title,
       description: args.description ?? "",
-      epic: args.epic ?? args.parent ?? undefined,
+      epic: args.epic ?? undefined,
       phase,
       actor: args.actor ?? undefined,
     });
@@ -70,7 +69,7 @@ const show = command({
     }
 
     if (args.json) {
-      console.log(JSON.stringify(full, null, 2));
+      console.log(JSON.stringify(full));
       return;
     }
 
@@ -125,7 +124,7 @@ const current = command({
     const full = loadTaskFull(task.id, { withSpec: args.withSpec, fields: fieldList });
 
     if (args.json) {
-      console.log(JSON.stringify(full, null, 2));
+      console.log(JSON.stringify(full));
       return;
     }
 
@@ -157,7 +156,7 @@ const next = command({
     const full = loadTaskFull(task.id, { withSpec: args.withSpec, fields: fieldList });
 
     if (args.json) {
-      console.log(JSON.stringify(full, null, 2));
+      console.log(JSON.stringify(full));
       return;
     }
 
@@ -254,20 +253,19 @@ const list = command({
   args: {
     phase: option({ type: optional(string), long: "phase", description: "Filter by phase" }),
     epic: option({ type: optional(string), long: "epic", description: "Filter by epic ID" }),
-    parent: option({ type: optional(string), long: "parent", description: "Filter by parent (deprecated, use --epic)" }),
     all: flag({ long: "all", description: "Show tasks across all repos" }),
     json: flag({ long: "json", description: "Output as JSON" }),
   },
   handler: (args) => {
-    const epicFilter = args.epic ?? args.parent;
-    let tasks = listTasks({ epic: epicFilter ?? undefined, all: args.all });
+    const epicFilter = args.epic;
+    let tasks = listTasks({ epic: epicFilter ?? undefined, all: args.all, lean: args.json });
 
     if (args.phase) {
       tasks = tasks.filter((t) => t.phase === args.phase);
     }
 
     if (args.json) {
-      console.log(JSON.stringify(tasks, null, 2));
+      console.log(JSON.stringify(tasks));
       return;
     }
 
@@ -327,10 +325,10 @@ const epicShow = command({
 
     // Derive phase from children
     const derivedPhase = deriveEpicPhase(args.id);
-    const tasks = listTasks({ epic: args.id });
+    const tasks = listTasks({ epic: args.id, lean: args.json });
 
     if (args.json) {
-      console.log(JSON.stringify({ ...epic, phase: derivedPhase, tasks }, null, 2));
+      console.log(JSON.stringify({ id: epic.id, title: epic.title, phase: derivedPhase, tasks }));
       return;
     }
 
@@ -371,11 +369,12 @@ const epicList = command({
 
     if (args.json) {
       const enriched = epics.map((e) => ({
-        ...e,
+        id: e.id,
+        title: e.title,
         phase: deriveEpicPhase(e.id),
-        taskCount: listTasks({ epic: e.id }).length,
+        taskCount: listTasks({ epic: e.id, lean: true }).length,
       }));
-      console.log(JSON.stringify(enriched, null, 2));
+      console.log(JSON.stringify(enriched));
       return;
     }
 

@@ -1,3 +1,5 @@
+import { REVIEW_PREAMBLE } from "./preamble.js";
+
 export function gsQuickReview(): string {
   return `---
 description: Fast single-pass code review for small changesets. Reviews the current diff for correctness, security, and style in one shot — no subagents, no parallelism. Stores findings in gs-agentic review state. Use for quick sanity checks before committing or when a full deep-review would be overkill.
@@ -9,19 +11,9 @@ Fast, single-pass code review of the current branch's changes.
 
 **Optional arguments:** $ARGUMENTS
 
-## Context: Current task
-
-Run \`gs-agentic state task current --json --with-spec\` to get your current task.
-If exit code 1 (no task found), proceed without task context.
+${REVIEW_PREAMBLE}
 
 If a task is found, note its title, description, and acceptance criteria — use these to judge whether the changes actually address what was intended.
-
-Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
-
-**State mutations:**
-- \`gs-agentic state review create --task <id> --source quick_review --commit-sha <sha>\` — create review
-- \`gs-agentic state review add-item --review <id> --body "..." --severity <sev>\` — add finding
-- \`gs-agentic state review list --task <id> --status open\` — list open items
 
 ## Phase 1: Gather Context
 

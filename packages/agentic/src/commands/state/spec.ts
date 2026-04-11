@@ -93,6 +93,5 @@ export const stateSpec = subcommands({
     show,
     set,
     "add-task": addTask,
-    "add-workstream": addTask, // backward compat alias
   },
 });

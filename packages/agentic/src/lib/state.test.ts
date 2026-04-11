@@ -22,12 +22,9 @@ import {
   loadSpec,
   saveSpec,
   saveSpecFromFile,
-  loadPipeline,
-  savePipeline,
   findTaskByWorktree,
   findTaskByBranch,
   ensureSetup,
-  nextWorkstreamId,
   findCurrentTask,
   findNextTask,
   findReadyTasks,
@@ -106,12 +103,6 @@ describe("nextEpicId", () => {
   });
 });
 
-describe("nextWorkstreamId (deprecated)", () => {
-  test("returns a task ID", () => {
-    const id = nextWorkstreamId("t1");
-    expect(id).toMatch(/^t\d+$/);
-  });
-});
 
 // ── Epic CRUD ────────────────────────────────────────────────────────
 
@@ -184,20 +175,11 @@ describe("createTask", () => {
     const epic = createEpic({ title: "Epic" });
     const task = createTask({ title: "Task", epic: epic.id });
     expect(task.epic).toBe("e1");
-    expect(task.parent).toBe("e1"); // backward compat
-  });
-
-  test("creates task linked to epic via deprecated parent param", () => {
-    const epic = createEpic({ title: "Epic" });
-    const task = createTask({ title: "Task", parent: epic.id });
-    expect(task.epic).toBe("e1");
-    expect(task.parent).toBe("e1");
   });
 
   test("creates standalone task without epic", () => {
     const task = createTask({ title: "Standalone" });
     expect(task.epic).toBeNull();
-    expect(task.parent).toBeNull();
   });
 
   test("records actor in transition", () => {
@@ -264,19 +246,67 @@ describe("listTasks", () => {
     expect(e1Tasks[1].title).toBe("Also E1");
   });
 
-  test("excludes pipeline data (no pipeline contamination)", () => {
-    createTask({ title: "A" });
-    savePipeline({
-      taskId: "t1",
-      currentPhase: "understand",
-      completedSkills: [],
-      skippedSkills: [],
-      nextSkill: "think",
-      startedAt: new Date().toISOString(),
-    });
-    const tasks = listTasks();
+  test("lean returns only id, title, phase for basic task", () => {
+    createTask({ title: "T" });
+    const tasks = listTasks({ lean: true });
     expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("t1");
+    expect(tasks[0].title).toBe("T");
+    expect(tasks[0].phase).toBe("understand");
+    expect(Object.keys(tasks[0])).toEqual(["id", "title", "phase"]);
   });
+
+  test("lean includes epic when present", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T", epic: "e1" });
+    const tasks = listTasks({ lean: true });
+    expect(tasks[0].epic).toBe("e1");
+  });
+
+  test("lean includes branch when set", () => {
+    createTask({ title: "T" });
+    saveTask({ ...loadTask("t1")!, branch: "feat/x" });
+    const tasks = listTasks({ lean: true });
+    expect(tasks[0].branch).toBe("feat/x");
+  });
+
+  test("lean includes dependencies when non-empty", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "A", epic: "e1" });
+    createTask({ title: "B", epic: "e1" });
+    saveTask({ ...loadTask("t2")!, dependencies: ["t1"] });
+    const tasks = listTasks({ lean: true, epic: "e1" });
+    const t2 = tasks.find((t) => t.id === "t2")!;
+    expect(t2.dependencies).toEqual(["t1"]);
+  });
+
+  test("lean omits null/empty fields", () => {
+    createTask({ title: "T" });
+    const tasks = listTasks({ lean: true });
+    const task = tasks[0];
+    const keys = Object.keys(task);
+    expect(keys).toEqual(["id", "title", "phase"]);
+    expect(task).not.toHaveProperty("epic");
+    expect(task).not.toHaveProperty("branch");
+    expect(task).not.toHaveProperty("dependencies");
+    expect(task).not.toHaveProperty("qaResult");
+    expect(task).not.toHaveProperty("description");
+    expect(task).not.toHaveProperty("worktree");
+    expect(task).not.toHaveProperty("pr");
+    expect(task).not.toHaveProperty("children");
+    expect(task).not.toHaveProperty("transitions");
+  });
+
+  test("lean includes qaResult when present", () => {
+    createTask({ title: "T" });
+    const task = loadTask("t1")!;
+    task.qaResult = { status: "pass", summary: "ok", timestamp: new Date().toISOString() };
+    saveTask(task);
+    const tasks = listTasks({ lean: true });
+    expect(tasks[0].qaResult?.status).toBe("pass");
+    expect(tasks[0].qaResult?.summary).toBe("ok");
+  });
+
 });
 
 describe("saveTask", () => {
@@ -518,27 +548,6 @@ describe("spec management", () => {
   });
 });
 
-// ── Pipeline state ───────────────────────────────────────────────────
-
-describe("pipeline state", () => {
-  test("loadPipeline returns null when no pipeline exists", () => {
-    expect(loadPipeline("t99")).toBeNull();
-  });
-
-  test("savePipeline writes and loadPipeline reads", () => {
-    const state = {
-      taskId: "t1",
-      currentPhase: "design" as Phase,
-      completedSkills: ["think", "spec-make"],
-      skippedSkills: [],
-      nextSkill: "spec-enrich",
-      startedAt: "2026-03-30T10:00:00Z",
-    };
-    savePipeline(state);
-    const loaded = loadPipeline("t1");
-    expect(loaded).toEqual(state);
-  });
-});
 
 // ── Task lookup ──────────────────────────────────────────────────────
 

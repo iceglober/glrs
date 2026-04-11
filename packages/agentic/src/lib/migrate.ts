@@ -23,21 +23,11 @@ interface OldTask {
   createdAt: string;
 }
 
-interface OldPipeline {
-  taskId: string;
-  currentPhase: string;
-  completedSkills: string[];
-  skippedSkills: string[];
-  nextSkill: string | null;
-  startedAt: string;
-}
-
 export interface MigrationResult {
   migrated: boolean;
   reason?: "already_migrated" | "no_state_dir";
   epicCount?: number;
   taskCount?: number;
-  pipelineCount?: number;
   idMapping?: Record<string, string>;
 }
 
@@ -66,12 +56,6 @@ export async function migrateJsonToSqlite(
   // Read all task JSON files
   const files = fs.readdirSync(stateDir).filter((f: string) => f.endsWith(".json") && !f.includes(".pipeline."));
   const tasks: OldTask[] = files.map((f: string) =>
-    JSON.parse(fs.readFileSync(path.join(stateDir, f), "utf-8"))
-  );
-
-  // Read pipeline files
-  const pipelineFiles = fs.readdirSync(stateDir).filter((f: string) => f.endsWith(".pipeline.json"));
-  const pipelines: OldPipeline[] = pipelineFiles.map((f: string) =>
     JSON.parse(fs.readFileSync(path.join(stateDir, f), "utf-8"))
   );
 
@@ -178,27 +162,6 @@ export async function migrateJsonToSqlite(
       insertTask(db, repo, ws, idMapping[ws.id], epicId, remapDeps(ws.dependencies), now);
     }
 
-    // Insert pipelines
-    let pipelineCount = 0;
-    for (const pipeline of pipelines) {
-      const newTaskId = idMapping[pipeline.taskId] ?? pipeline.taskId;
-      // Only insert if the task was actually migrated
-      db.run(
-        `INSERT INTO pipelines (repo, task_id, current_phase, completed_skills, skipped_skills, next_skill, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          repo,
-          newTaskId,
-          pipeline.currentPhase,
-          JSON.stringify(pipeline.completedSkills),
-          JSON.stringify(pipeline.skippedSkills),
-          pipeline.nextSkill || null,
-          pipeline.startedAt,
-        ],
-      );
-      pipelineCount++;
-    }
-
     // Record migration
     db.run(
       "INSERT INTO migrations (repo, migrated_at, file_count) VALUES (?, ?, ?)",
@@ -211,7 +174,6 @@ export async function migrateJsonToSqlite(
       migrated: true,
       epicCount: sortedParents.length,
       taskCount: sortedStandalone.length + sortedWorkstreams.length,
-      pipelineCount,
       idMapping,
     };
   } catch (err) {

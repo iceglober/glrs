@@ -48,20 +48,10 @@ export interface Task {
   qaResult: QAResult | null;
   createdAt: string;
   updatedAt: string;
-  // Backward compat (computed from DB, not stored as-is)
-  parent: string | null;
   children: string[];
   transitions: Transition[];
 }
 
-export interface PipelineState {
-  taskId: string;
-  currentPhase: Phase;
-  completedSkills: string[];
-  skippedSkills: string[];
-  nextSkill: string | null;
-  startedAt: string;
-}
 
 // ── Initialization ──────────────────────────────────────────────────
 
@@ -238,8 +228,6 @@ function rowToTask(row: any[], transitions: Transition[], children: string[]): T
     createdAt: row[11] as string,
     updatedAt: row[15] as string,
     qaResult: qaStatus ? { status: qaStatus as "pass" | "fail", summary: qaSummary!, timestamp: qaTimestamp! } : null,
-    // Backward compat
-    parent: row[1] as string | null, // epic
     children,
     transitions,
   };
@@ -310,7 +298,7 @@ export function saveTask(task: Task): void {
   task.updatedAt = now;
 }
 
-export function listTasks(opts?: { epic?: string; all?: boolean }): Task[] {
+export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean }): Task[] {
   const db = getDbSync();
   let query: string;
   const params: any[] = [];
@@ -334,6 +322,19 @@ export function listTasks(opts?: { epic?: string; all?: boolean }): Task[] {
 
   return result[0].values.map((row: any[]) => {
     const id = row[0] as string;
+    if (opts?.lean) {
+      // Compact object: only non-null, non-empty fields. Skip transitions/children queries.
+      const compact: Record<string, any> = { id, title: row[2] as string, phase: row[4] as Phase };
+      const epic = row[1] as string | null;
+      if (epic) compact.epic = epic;
+      const branch = row[6] as string | null;
+      if (branch) compact.branch = branch;
+      const deps = JSON.parse((row[5] as string) || "[]");
+      if (deps.length > 0) compact.dependencies = deps;
+      const qaStatus = row[12] as string | null;
+      if (qaStatus) compact.qaResult = { status: qaStatus, summary: row[13] as string };
+      return compact as Task;
+    }
     const transitions = loadTransitions(id, "task");
     const children = loadChildren(id);
     return rowToTask(row, transitions, children);
@@ -344,7 +345,6 @@ export function createTask(opts: {
   title: string;
   description?: string;
   epic?: string;
-  parent?: string; // backward compat alias for epic
   phase?: Phase;
   actor?: string;
 }): Task {
@@ -352,7 +352,7 @@ export function createTask(opts: {
   const id = nextTaskId();
   const now = new Date().toISOString();
   const phase = opts.phase ?? "understand";
-  const epic = opts.epic ?? opts.parent ?? null;
+  const epic = opts.epic ?? null;
 
   db.run(
     `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, spec, created_at, updated_at)
@@ -384,8 +384,6 @@ export function createTask(opts: {
     qaResult: null,
     createdAt: now,
     updatedAt: now,
-    // Backward compat
-    parent: epic,
     children: [],
     transitions: [{ phase, timestamp: now, actor: opts.actor ?? "cli" }],
   };
@@ -525,44 +523,6 @@ export function saveSpecFromFile(taskId: string, filePath: string): void {
   if (!fs.existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
   const content = fs.readFileSync(filePath, "utf-8");
   saveSpec(taskId, content);
-}
-
-// ── Pipeline state ──────────────────────────────────────────────────
-
-export function loadPipeline(taskId: string): PipelineState | null {
-  const db = getDbSync();
-  const result = db.exec(
-    "SELECT task_id, current_phase, completed_skills, skipped_skills, next_skill, started_at FROM pipelines WHERE repo = ? AND task_id = ?",
-    [repo(), taskId],
-  );
-  if (!result[0]?.values.length) return null;
-  const row = result[0].values[0];
-  return {
-    taskId: row[0] as string,
-    currentPhase: row[1] as Phase,
-    completedSkills: JSON.parse((row[2] as string) || "[]"),
-    skippedSkills: JSON.parse((row[3] as string) || "[]"),
-    nextSkill: row[4] as string | null,
-    startedAt: row[5] as string,
-  };
-}
-
-export function savePipeline(state: PipelineState): void {
-  const db = getDbSync();
-  db.run(
-    `INSERT OR REPLACE INTO pipelines (repo, task_id, current_phase, completed_skills, skipped_skills, next_skill, started_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      repo(),
-      state.taskId,
-      state.currentPhase,
-      JSON.stringify(state.completedSkills),
-      JSON.stringify(state.skippedSkills),
-      state.nextSkill,
-      state.startedAt,
-    ],
-  );
-  persistDb();
 }
 
 // ── Task lookup helpers ─────────────────────────────────────────────
@@ -872,10 +832,27 @@ export function listReviewItems(opts?: {
 }
 
 export function reviewSummary(opts?: { taskId?: string }): ReviewSummaryResult {
-  const items = listReviewItems(opts?.taskId ? { taskId: opts.taskId } : undefined);
+  const db = getDbSync();
+
+  // SQL GROUP BY for counts — avoids loading full review item payloads
+  let query = `
+    SELECT ri.severity, ri.status, COUNT(*) as cnt
+    FROM review_items ri
+    JOIN reviews r ON ri.repo = r.repo AND ri.review_id = r.id
+    WHERE ri.repo = ?`;
+  const params: any[] = [repo()];
+
+  if (opts?.taskId) {
+    query += " AND r.task_id = ?";
+    params.push(opts.taskId);
+  }
+
+  query += " GROUP BY ri.severity, ri.status";
+
+  const result = db.exec(query, params);
 
   const summary: ReviewSummaryResult = {
-    total: items.length,
+    total: 0,
     open: 0,
     fixed: 0,
     pushedBack: 0,
@@ -884,30 +861,27 @@ export function reviewSummary(opts?: { taskId?: string }): ReviewSummaryResult {
     bySeverity: {},
   };
 
-  for (const item of items) {
-    const sev = item.severity ?? "UNSET";
-    if (!summary.bySeverity[sev]) {
-      summary.bySeverity[sev] = {};
-    }
+  if (!result[0]?.values.length) return summary;
 
-    const status = item.status;
-    summary.bySeverity[sev][status] = (summary.bySeverity[sev][status] || 0) + 1;
+  for (const row of result[0].values) {
+    const sev = (row[0] as string) ?? "UNSET";
+    const status = row[1] as string;
+    const cnt = row[2] as number;
+
+    summary.total += cnt;
+
+    if (!summary.bySeverity[sev]) summary.bySeverity[sev] = {};
+    summary.bySeverity[sev][status] = cnt;
 
     switch (status) {
-      case "open": summary.open++; break;
-      case "fixed": summary.fixed++; break;
-      case "pushed_back": summary.pushedBack++; break;
-      case "wont_fix": summary.wontFix++; break;
-      case "acknowledged": summary.acknowledged++; break;
+      case "open": summary.open += cnt; break;
+      case "fixed": summary.fixed += cnt; break;
+      case "pushed_back": summary.pushedBack += cnt; break;
+      case "wont_fix": summary.wontFix += cnt; break;
+      case "acknowledged": summary.acknowledged += cnt; break;
     }
   }
 
   return summary;
 }
 
-// ── Backward compat exports ─────────────────────────────────────────
-
-/** @deprecated Use createTask with epic param instead */
-export function nextWorkstreamId(parentId: string): string {
-  return nextTaskId();
-}

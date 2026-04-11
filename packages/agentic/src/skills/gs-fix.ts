@@ -1,3 +1,5 @@
+import { TASK_PREAMBLE } from "./preamble.js";
+
 export function gsFix(): string {
   return `---
 description: Fix bugs or implement changes for the current glorious task. Use when user says 'fix this bug', 'this is broken', 'something's wrong with', 'patch this', or reports specific errors. Classifies issues as bug/scope-change/new-work, fixes code, updates task state if behavior changes.
@@ -18,19 +20,7 @@ You are fixing issues or making changes within the scope of the current glorious
 
 The user provides issues to address: \`$ARGUMENTS\`
 
-## Context: Current task
-
-Run \`gs-agentic state task current --json --with-spec\` to get your current task.
-If exit code 1 (no task found), operate in ad-hoc mode without state tracking.
-
-Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
-
-**State mutations:**
-- \`gs-agentic state task update --id <id> --field value\` — update metadata
-- \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase
-- \`gs-agentic state spec set --id <id> --file <path>\` — save spec content
-- \`gs-agentic state qa --id <id> --status pass|fail --summary "..."\` — record QA result
-- \`gs-agentic state task next --epic <id>\` — find next ready task in an epic
+${TASK_PREAMBLE}
 
 ## Process
 

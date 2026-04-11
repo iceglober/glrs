@@ -7,11 +7,6 @@
  * Skills are capabilities that activate automatically when relevant (/browser, etc.)
  */
 
-import { think } from "./think.js";
-import { work } from "./work.js";
-import { fix } from "./fix.js";
-import { qa } from "./qa.js";
-import { ship } from "./ship.js";
 import { research } from "./research.js";
 import { researchLocal } from "./research-local.js";
 import { researchWeb } from "./research-web.js";
@@ -51,11 +46,6 @@ import { gsAddressFeedback } from "./gs-address-feedback.js";
 /** Slash commands — invoked explicitly via /name */
 export const COMMANDS: Record<string, string> = {
   // Engineering
-  "think.md": think(),
-  "work.md": work(),
-  "fix.md": fix(),
-  "qa.md": qa(),
-  "ship.md": ship(),
   "research.md": research(),
   "research-local.md": researchLocal(),
   "research-auto.md": researchAuto(),

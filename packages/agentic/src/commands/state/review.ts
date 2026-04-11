@@ -108,6 +108,7 @@ const list = command({
     status: option({ type: optional(string), long: "status", description: "Filter by status" }),
     severity: option({ type: optional(string), long: "severity", description: "Filter by severity" }),
     json: flag({ long: "json", description: "Output as JSON" }),
+    summary: flag({ long: "summary", description: "Return only id, severity, status, filePath (compact)" }),
   },
   handler: (args) => {
     const items = listReviewItems({
@@ -116,8 +117,14 @@ const list = command({
       severity: args.severity ?? undefined,
     });
 
+    if (args.json && args.summary) {
+      const compact = items.map((i) => ({ id: i.id, severity: i.severity, status: i.status, filePath: i.filePath, lineStart: i.lineStart }));
+      console.log(JSON.stringify(compact));
+      return;
+    }
+
     if (args.json) {
-      console.log(JSON.stringify(items, null, 2));
+      console.log(JSON.stringify(items));
       return;
     }
 
@@ -156,7 +163,7 @@ const summary = command({
     const result = reviewSummary({ taskId: args.task ?? undefined });
 
     if (args.json) {
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify(result));
       return;
     }
 
@@ -182,8 +189,8 @@ const summary = command({
     console.log(`Total: ${result.total} | Open: ${result.open} | Fixed: ${result.fixed} | Pushed back: ${result.pushedBack}`);
 
     if (result.open > 0) {
-      const openItems = listReviewItems({ status: "open", severity: "CRITICAL" });
-      const highOpen = listReviewItems({ status: "open", severity: "HIGH" });
+      const openItems = listReviewItems({ taskId: args.task ?? undefined, status: "open", severity: "CRITICAL" });
+      const highOpen = listReviewItems({ taskId: args.task ?? undefined, status: "open", severity: "HIGH" });
       const blocking = [...openItems, ...highOpen];
       if (blocking.length > 0) {
         console.log("");

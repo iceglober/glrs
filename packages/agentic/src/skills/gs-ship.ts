@@ -1,3 +1,5 @@
+import { TASK_PREAMBLE } from "./preamble.js";
+
 export function gsShip(): string {
   return `---
 description: Ship the current task's branch — typecheck, review, commit, push, and create a PR. Use when user says 'ship it', 'create a PR', 'push and release', 'land this', 'send for review'. Runs full pre-flight pipeline before pushing. Never force-pushes or pushes to main.
@@ -19,19 +21,7 @@ You are shipping the current task's branch. Pipeline: typecheck -> review -> com
 
 Optional PR context: \`$ARGUMENTS\`
 
-## Context: Current task
-
-Run \`gs-agentic state task current --json --with-spec\` to get your current task.
-If exit code 1 (no task found), operate in ad-hoc mode without state tracking.
-
-Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
-
-**State mutations:**
-- \`gs-agentic state task update --id <id> --field value\` — update metadata
-- \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase
-- \`gs-agentic state spec set --id <id> --file <path>\` — save spec content
-- \`gs-agentic state qa --id <id> --status pass|fail --summary "..."\` — record QA result
-- \`gs-agentic state task next --epic <id>\` — find next ready task in an epic
+${TASK_PREAMBLE}
 
 ## Step 1: Pre-flight
 
