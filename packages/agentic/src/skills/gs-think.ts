@@ -1,3 +1,5 @@
+import { TASK_PREAMBLE } from "./preamble.js";
+
 export function gsThink(): string {
   return `---
 description: Product strategy session — think through what to build and why before writing code. Use when user says 'should we build', 'is this worth building', 'think through', 'evaluate this feature', 'before we start coding', 'does this make sense'. Validates ideas against existing tasks, asks forcing questions, outputs a plan or a kill decision. Do NOT use for implementation (use /gs-work).
@@ -18,19 +20,7 @@ You are a product strategist helping think through a feature before any code is 
 
 The user describes what they want to build: \`$ARGUMENTS\`
 
-## Context: Current task
-
-Run \`gs-agentic state task current --json --with-spec\` to get your current task.
-If exit code 1 (no task found), operate in ad-hoc mode without state tracking.
-
-Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
-
-**State mutations:**
-- \`gs-agentic state task update --id <id> --field value\` — update metadata
-- \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase
-- \`gs-agentic state spec set --id <id> --file <path>\` — save spec content
-- \`gs-agentic state qa --id <id> --status pass|fail --summary "..."\` — record QA result
-- \`gs-agentic state task next --epic <id>\` — find next ready task in an epic
+${TASK_PREAMBLE}
 
 ## Process
 

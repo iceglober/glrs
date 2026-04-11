@@ -1,3 +1,5 @@
+import { TASK_PREAMBLE } from "./preamble.js";
+
 export function gsWork(): string {
   return `---
 description: Implement a given task using existing codebase patterns. Use when user says 'implement', 'build this', 'make this change', 'add this feature', 'code this up', or provides ad-hoc task instructions. Reads CLAUDE.md, follows dependency order, typechecks after changes.
@@ -26,19 +28,7 @@ Thinking "skip TDD just this once"? Stop. That's rationalization.
 
 The user describes what to implement: \`$ARGUMENTS\`
 
-## Context: Current task
-
-Run \`gs-agentic state task current --json --with-spec\` to get your current task.
-If exit code 1 (no task found), operate in ad-hoc mode without state tracking.
-
-Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
-
-**State mutations:**
-- \`gs-agentic state task update --id <id> --field value\` — update metadata
-- \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase
-- \`gs-agentic state spec set --id <id> --file <path>\` — save spec content
-- \`gs-agentic state qa --id <id> --status pass|fail --summary "..."\` — record QA result
-- \`gs-agentic state task next --epic <id>\` — find next ready task in an epic
+${TASK_PREAMBLE}
 
 ## Setup
 
