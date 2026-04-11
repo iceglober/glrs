@@ -23,9 +23,9 @@ src/
 │   ├── status.ts         # gsag status — epic > task hierarchy view
 │   ├── ready.ts          # gsag ready — show tasks ready to work on
 │   ├── state/            # gsag state — task state management (internal)
-│   │   ├── index.ts      # Subcommand group (task, epic, spec, review, qa, log)
+│   │   ├── index.ts      # Subcommand group (task, epic, plan, review, qa, log)
 │   │   ├── task.ts       # create, show, current, next, transition, update, cancel, list
-│   │   ├── spec.ts       # show, set, add-task
+│   │   ├── plan.ts       # show, set, add-task, history
 │   │   ├── review.ts     # create, add-item, resolve, list, summary
 │   │   ├── qa.ts         # QA report
 │   │   └── log.ts        # Transition history
@@ -108,9 +108,9 @@ src/
 ## Key concepts
 
 - **Global state** lives in `~/.glorious/state.db` (SQLite via sql.js WASM, shared across repos/worktrees)
-- **Specs** live in `.glorious/specs/` (committed, shared, per-repo)
+- **Plans** live in `~/.glorious/plans/<repo-slug>/` (global, versioned, immutable v1/v2/vN files)
 - **`gsag state`** is the sole interface for reading/writing state — skills call it via Bash, never edit DB directly
-- **Hierarchy**: Epic (`e1`) > Task (`t1`) > Step (plan text, not tracked in DB)
+- **Hierarchy**: Epic (`e1`) > Task (`t1`) > Step (`s1`) — all tracked in DB, all can have plans attached
 - **Pipeline phases**: understand → design → implement → verify → ship → done
 - **Repo-scoped by default** — each task is keyed by `(repo, id)`. Use `--all` for cross-repo views.
 - **Reviews** are stored in DB with commit SHA anchoring for persistence across context compaction
