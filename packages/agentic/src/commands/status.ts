@@ -61,7 +61,7 @@ export const status = command({
     }
 
     if (epics.length === 0 && allTasks.length === 0) {
-      console.log(dim("No tasks. Run `gs-agentic start` to begin."));
+      console.log(dim("No tasks. Use /gs-deep-plan to create an epic with tasks."));
       return;
     }
 

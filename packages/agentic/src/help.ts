@@ -13,20 +13,6 @@ ${bold("COMMANDS")}
 
   ${bold("Workflow")}
 
-  start ["description"] [--quick] [--id <task-id>]
-      Start a new task pipeline or resume an existing one. Claude guides you
-      through: understand → design → implement → verify → ship.
-
-      With no args, detects stalled tasks and offers to resume them.
-      With --id, resumes a specific task from any directory.
-      With --quick, skips design phases for small bugs and features.
-
-      Examples:
-        gs-agentic start                           (find stalled tasks or prompt)
-        gs-agentic start "add user auth"           (starts full pipeline)
-        gs-agentic start --quick "fix login bug"   (skips design, straight to implement)
-        gs-agentic start --id t1                   (resume task t1 from anywhere)
-
   status [--json]
       Show all tasks in a tree view with phases, branches, and progress.
 
@@ -51,12 +37,7 @@ ${bold("COMMANDS")}
         /gs-quick-review   Fast single-pass code review
         /gs-address-feedback  Resolve PR review feedback
 
-      Classic skills (JSON state):
-        /think          Product strategy session before building
-        /work           Implement a task (from spec or ad-hoc)
-        /fix            Fix bugs, update task if needed
-        /qa             QA the diff against acceptance criteria
-        /ship           Typecheck, review, commit, push, PR
+      Utility skills:
         /research-auto  Autonomous experimentation (think-test-reflect)
         /browser        Browse and interact with web pages
 
