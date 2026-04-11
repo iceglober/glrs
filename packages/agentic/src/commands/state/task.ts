@@ -69,7 +69,7 @@ const show = command({
     }
 
     if (args.json) {
-      console.log(JSON.stringify(full, null, 2));
+      console.log(JSON.stringify(full));
       return;
     }
 
@@ -124,7 +124,7 @@ const current = command({
     const full = loadTaskFull(task.id, { withSpec: args.withSpec, fields: fieldList });
 
     if (args.json) {
-      console.log(JSON.stringify(full, null, 2));
+      console.log(JSON.stringify(full));
       return;
     }
 
@@ -156,7 +156,7 @@ const next = command({
     const full = loadTaskFull(task.id, { withSpec: args.withSpec, fields: fieldList });
 
     if (args.json) {
-      console.log(JSON.stringify(full, null, 2));
+      console.log(JSON.stringify(full));
       return;
     }
 
@@ -265,7 +265,7 @@ const list = command({
     }
 
     if (args.json) {
-      console.log(JSON.stringify(tasks, null, 2));
+      console.log(JSON.stringify(tasks));
       return;
     }
 
@@ -328,7 +328,7 @@ const epicShow = command({
     const tasks = listTasks({ epic: args.id });
 
     if (args.json) {
-      console.log(JSON.stringify({ ...epic, phase: derivedPhase, tasks }, null, 2));
+      console.log(JSON.stringify({ ...epic, phase: derivedPhase, tasks }));
       return;
     }
 
@@ -373,7 +373,7 @@ const epicList = command({
         phase: deriveEpicPhase(e.id),
         taskCount: listTasks({ epic: e.id }).length,
       }));
-      console.log(JSON.stringify(enriched, null, 2));
+      console.log(JSON.stringify(enriched));
       return;
     }
 

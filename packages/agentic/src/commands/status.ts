@@ -56,7 +56,7 @@ export const status = command({
         tasks: allTasks.filter((t) => t.epic === e.id),
       }));
       const standalone = allTasks.filter((t) => !t.epic);
-      console.log(JSON.stringify({ epics: data, standalone }, null, 2));
+      console.log(JSON.stringify({ epics: data, standalone }));
       return;
     }
 

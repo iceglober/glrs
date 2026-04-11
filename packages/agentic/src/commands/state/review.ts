@@ -117,7 +117,7 @@ const list = command({
     });
 
     if (args.json) {
-      console.log(JSON.stringify(items, null, 2));
+      console.log(JSON.stringify(items));
       return;
     }
 
@@ -156,7 +156,7 @@ const summary = command({
     const result = reviewSummary({ taskId: args.task ?? undefined });
 
     if (args.json) {
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify(result));
       return;
     }
 
