@@ -108,6 +108,7 @@ const list = command({
     status: option({ type: optional(string), long: "status", description: "Filter by status" }),
     severity: option({ type: optional(string), long: "severity", description: "Filter by severity" }),
     json: flag({ long: "json", description: "Output as JSON" }),
+    summary: flag({ long: "summary", description: "Return only id, severity, status, filePath (compact)" }),
   },
   handler: (args) => {
     const items = listReviewItems({
@@ -115,6 +116,12 @@ const list = command({
       status: args.status ?? undefined,
       severity: args.severity ?? undefined,
     });
+
+    if (args.json && args.summary) {
+      const compact = items.map((i) => ({ id: i.id, severity: i.severity, status: i.status, filePath: i.filePath, lineStart: i.lineStart }));
+      console.log(JSON.stringify(compact));
+      return;
+    }
 
     if (args.json) {
       console.log(JSON.stringify(items));

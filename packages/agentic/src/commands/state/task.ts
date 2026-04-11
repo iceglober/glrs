@@ -258,7 +258,7 @@ const list = command({
   },
   handler: (args) => {
     const epicFilter = args.epic;
-    let tasks = listTasks({ epic: epicFilter ?? undefined, all: args.all });
+    let tasks = listTasks({ epic: epicFilter ?? undefined, all: args.all, lean: args.json });
 
     if (args.phase) {
       tasks = tasks.filter((t) => t.phase === args.phase);
@@ -325,10 +325,10 @@ const epicShow = command({
 
     // Derive phase from children
     const derivedPhase = deriveEpicPhase(args.id);
-    const tasks = listTasks({ epic: args.id });
+    const tasks = listTasks({ epic: args.id, lean: args.json });
 
     if (args.json) {
-      console.log(JSON.stringify({ ...epic, phase: derivedPhase, tasks }));
+      console.log(JSON.stringify({ id: epic.id, title: epic.title, phase: derivedPhase, tasks }));
       return;
     }
 
@@ -369,9 +369,10 @@ const epicList = command({
 
     if (args.json) {
       const enriched = epics.map((e) => ({
-        ...e,
+        id: e.id,
+        title: e.title,
         phase: deriveEpicPhase(e.id),
-        taskCount: listTasks({ epic: e.id }).length,
+        taskCount: listTasks({ epic: e.id, lean: true }).length,
       }));
       console.log(JSON.stringify(enriched));
       return;

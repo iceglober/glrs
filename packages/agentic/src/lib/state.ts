@@ -298,7 +298,7 @@ export function saveTask(task: Task): void {
   task.updatedAt = now;
 }
 
-export function listTasks(opts?: { epic?: string; all?: boolean }): Task[] {
+export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean }): Task[] {
   const db = getDbSync();
   let query: string;
   const params: any[] = [];
@@ -322,6 +322,19 @@ export function listTasks(opts?: { epic?: string; all?: boolean }): Task[] {
 
   return result[0].values.map((row: any[]) => {
     const id = row[0] as string;
+    if (opts?.lean) {
+      // Compact object: only non-null, non-empty fields. Skip transitions/children queries.
+      const compact: Record<string, any> = { id, title: row[2] as string, phase: row[4] as Phase };
+      const epic = row[1] as string | null;
+      if (epic) compact.epic = epic;
+      const branch = row[6] as string | null;
+      if (branch) compact.branch = branch;
+      const deps = JSON.parse((row[5] as string) || "[]");
+      if (deps.length > 0) compact.dependencies = deps;
+      const qaStatus = row[12] as string | null;
+      if (qaStatus) compact.qaResult = { status: qaStatus, summary: row[13] as string };
+      return compact as Task;
+    }
     const transitions = loadTransitions(id, "task");
     const children = loadChildren(id);
     return rowToTask(row, transitions, children);
