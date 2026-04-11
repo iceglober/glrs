@@ -832,10 +832,27 @@ export function listReviewItems(opts?: {
 }
 
 export function reviewSummary(opts?: { taskId?: string }): ReviewSummaryResult {
-  const items = listReviewItems(opts?.taskId ? { taskId: opts.taskId } : undefined);
+  const db = getDbSync();
+
+  // SQL GROUP BY for counts — avoids loading full review item payloads
+  let query = `
+    SELECT ri.severity, ri.status, COUNT(*) as cnt
+    FROM review_items ri
+    JOIN reviews r ON ri.repo = r.repo AND ri.review_id = r.id
+    WHERE ri.repo = ?`;
+  const params: any[] = [repo()];
+
+  if (opts?.taskId) {
+    query += " AND r.task_id = ?";
+    params.push(opts.taskId);
+  }
+
+  query += " GROUP BY ri.severity, ri.status";
+
+  const result = db.exec(query, params);
 
   const summary: ReviewSummaryResult = {
-    total: items.length,
+    total: 0,
     open: 0,
     fixed: 0,
     pushedBack: 0,
@@ -844,21 +861,24 @@ export function reviewSummary(opts?: { taskId?: string }): ReviewSummaryResult {
     bySeverity: {},
   };
 
-  for (const item of items) {
-    const sev = item.severity ?? "UNSET";
-    if (!summary.bySeverity[sev]) {
-      summary.bySeverity[sev] = {};
-    }
+  if (!result[0]?.values.length) return summary;
 
-    const status = item.status;
-    summary.bySeverity[sev][status] = (summary.bySeverity[sev][status] || 0) + 1;
+  for (const row of result[0].values) {
+    const sev = (row[0] as string) ?? "UNSET";
+    const status = row[1] as string;
+    const cnt = row[2] as number;
+
+    summary.total += cnt;
+
+    if (!summary.bySeverity[sev]) summary.bySeverity[sev] = {};
+    summary.bySeverity[sev][status] = cnt;
 
     switch (status) {
-      case "open": summary.open++; break;
-      case "fixed": summary.fixed++; break;
-      case "pushed_back": summary.pushedBack++; break;
-      case "wont_fix": summary.wontFix++; break;
-      case "acknowledged": summary.acknowledged++; break;
+      case "open": summary.open += cnt; break;
+      case "fixed": summary.fixed += cnt; break;
+      case "pushed_back": summary.pushedBack += cnt; break;
+      case "wont_fix": summary.wontFix += cnt; break;
+      case "acknowledged": summary.acknowledged += cnt; break;
     }
   }
 
