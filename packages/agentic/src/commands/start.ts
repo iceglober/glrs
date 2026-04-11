@@ -1,5 +1,5 @@
 import { command, positional, flag, optional, string, option } from "cmd-ts";
-import { createTask, findTaskByWorktree, findTaskByBranch, loadTask, listTasks, isTerminal, loadPipeline, type Task } from "../lib/state.js";
+import { createTask, findTaskByWorktree, findTaskByBranch, loadTask, listTasks, isTerminal, loadPipeline, saveTask, type Task } from "../lib/state.js";
 import { runPipeline } from "../lib/pipeline.js";
 import { gitSafe } from "../lib/git.js";
 import { bold, dim, info, warn, yellow } from "../lib/fmt.js";
@@ -19,7 +19,7 @@ function ask(question: string): Promise<string> {
 
 /** Find stalled tasks (non-terminal, with a worktree assigned). */
 function findStalledTasks(): Task[] {
-  return listTasks().filter((t) => !isTerminal(t.phase) && t.worktree && t.children.length === 0);
+  return listTasks().filter((t) => !isTerminal(t.phase) && t.worktree);
 }
 
 export const start = command({
@@ -131,7 +131,6 @@ export const start = command({
       const wtPath = ensureWorktree(slug, currentBranch);
       task.branch = slug;
       task.worktree = wtPath;
-      const { saveTask } = await import("../lib/state.js");
       saveTask(task);
     }
 

@@ -36,6 +36,17 @@ import { productResearchDomain } from "./product-research-domain.js";
 import { productResearchMarket } from "./product-research-market.js";
 import { productResearchTechnical } from "./product-research-technical.js";
 import { writingSkills } from "./writing-skills.js";
+import { gsThink } from "./gs-think.js";
+import { gsFix } from "./gs-fix.js";
+import { gsQa } from "./gs-qa.js";
+import { gsWork } from "./gs-work.js";
+import { gsShip } from "./gs-ship.js";
+import { gsDeepPlan } from "./gs-deep-plan.js";
+import { gsBuild } from "./gs-build.js";
+import { gsBuildLoop } from "./gs-build-loop.js";
+import { gsDeepReview } from "./gs-deep-review.js";
+import { gsQuickReview } from "./gs-quick-review.js";
+import { gsAddressFeedback } from "./gs-address-feedback.js";
 
 /** Slash commands — invoked explicitly via /name */
 export const COMMANDS: Record<string, string> = {
@@ -56,6 +67,19 @@ export const COMMANDS: Record<string, string> = {
   "spec-enrich.md": specEnrich(),
   "spec-review.md": specReview(),
   "spec-lab.md": specLab(),
+
+  // gs- engineering skills (SQLite state)
+  "gs-think.md": gsThink(),
+  "gs-fix.md": gsFix(),
+  "gs-qa.md": gsQa(),
+  "gs-work.md": gsWork(),
+  "gs-ship.md": gsShip(),
+  "gs-deep-plan.md": gsDeepPlan(),
+  "gs-build.md": gsBuild(),
+  "gs-build-loop.md": gsBuildLoop(),
+  "gs-deep-review.md": gsDeepReview(),
+  "gs-quick-review.md": gsQuickReview(),
+  "gs-address-feedback.md": gsAddressFeedback(),
 
   // Product management suite
   "product-manager.md": productManager(),

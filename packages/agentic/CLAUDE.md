@@ -20,29 +20,35 @@ src/
 ├── index.ts              # CLI entry point (cmd-ts router)
 ├── help.ts               # Manual text
 ├── commands/
-│   ├── start.ts          # gs-agentic start — pipeline orchestrator
-│   ├── status.ts         # gs-agentic status — task tree view
-│   ├── state/            # gs-agentic state — task state management (internal)
-│   │   ├── index.ts      # Subcommand group
-│   │   ├── task.ts       # create, show, transition, update, cancel, list
-│   │   ├── spec.ts       # show, set, add-workstream
+│   ├── start.ts          # gsag start — pipeline orchestrator
+│   ├── status.ts         # gsag status — epic > task hierarchy view
+│   ├── ready.ts          # gsag ready — show tasks ready to work on
+│   ├── state/            # gsag state — task state management (internal)
+│   │   ├── index.ts      # Subcommand group (task, epic, spec, review, qa, log)
+│   │   ├── task.ts       # create, show, current, next, transition, update, cancel, list
+│   │   ├── spec.ts       # show, set, add-task
+│   │   ├── review.ts     # create, add-item, resolve, list, summary
 │   │   ├── qa.ts         # QA report
 │   │   └── log.ts        # Transition history
-│   ├── go.ts             # gs-agentic wt (bare) — interactive worktree picker
-│   ├── create.ts         # gs-agentic wt create
-│   ├── checkout.ts       # gs-agentic wt checkout
-│   ├── list.ts           # gs-agentic wt list (global, registry-based)
-│   ├── delete.ts         # gs-agentic wt delete (interactive multi-select or by name)
-│   ├── cleanup.ts        # gs-agentic wt cleanup
-│   ├── root.ts           # gs-agentic wt root
-│   ├── install-skills.ts      # gs-agentic skills (interactive scope picker, --user/--project)
+│   ├── go.ts             # gsag wt (bare) — interactive worktree picker
+│   ├── create.ts         # gsag wt create
+│   ├── checkout.ts       # gsag wt checkout
+│   ├── list.ts           # gsag wt list (global, registry-based)
+│   ├── delete.ts         # gsag wt delete (interactive multi-select or by name)
+│   ├── cleanup.ts        # gsag wt cleanup
+│   ├── root.ts           # gsag wt root
+│   ├── install-skills.ts      # gsag skills (interactive scope picker, --user/--project)
 │   ├── install-skills.test.ts # Unit tests for install-skills
-│   ├── init-hooks.ts     # gs-agentic wt hooks
-│   └── upgrade.ts        # gs-agentic upgrade
+│   ├── init-hooks.ts     # gsag wt hooks
+│   └── upgrade.ts        # gsag upgrade
 ├── lib/
-│   ├── state.ts          # Task model, CRUD, phase validation, auto-setup
+│   ├── db.ts             # SQLite singleton (sql.js WASM), schema, getRepo()
+│   ├── db.test.ts        # Database module tests
+│   ├── migrate.ts        # JSON-to-SQLite one-time migration
+│   ├── migrate.test.ts   # Migration tests
+│   ├── state.ts          # Epic/Task/Review model, CRUD, phase validation, queries
 │   ├── state.test.ts     # State module tests
-│   ├── pipeline.ts       # Orchestrator logic (skill sequencing, resume)
+│   ├── pipeline.ts       # Orchestrator logic (skill sequencing, resume, epic task runner)
 │   ├── session-runner.ts # Spawn Claude sessions as subprocesses
 │   ├── git.ts            # Git wrappers (git, gitRoot, listWorktrees)
 │   ├── worktree.ts       # createWorktree, ensureWorktree (auto-registers)
@@ -56,7 +62,7 @@ src/
 │   └── update-check.ts   # Update checker
 └── skills/
     ├── index.ts          # COMMANDS & SKILLS registry
-    ├── preamble.ts       # Shared task context for skills (uses gs-agentic state)
+    ├── preamble.ts       # Shared task context for skills (uses gsag state task current)
     │
     │  # Engineering skills
     ├── think.ts          # /think — product strategy session
@@ -64,6 +70,19 @@ src/
     ├── fix.ts            # /fix — bug fixes
     ├── qa.ts             # /qa — QA against acceptance criteria
     ├── ship.ts           # /ship — typecheck, review, version bump, release notes, CLAUDE.md sync, PR, CI monitoring
+    │
+    │  # gs- engineering skills (SQLite state)
+    ├── gs-think.ts       # /gs-think — product strategy (SQLite state)
+    ├── gs-work.ts        # /gs-work — implement a task (SQLite state)
+    ├── gs-fix.ts         # /gs-fix — bug fixes (SQLite state)
+    ├── gs-qa.ts          # /gs-qa — QA (SQLite state)
+    ├── gs-ship.ts        # /gs-ship — ship with review state check
+    ├── gs-build.ts       # /gs-build — implement a specific task
+    ├── gs-build-loop.ts  # /gs-build-loop — loop through epic tasks
+    ├── gs-deep-plan.ts   # /gs-deep-plan — zero-ambiguity planning
+    ├── gs-deep-review.ts # /gs-deep-review — 6-agent parallel review
+    ├── gs-quick-review.ts # /gs-quick-review — fast single-pass review
+    ├── gs-address-feedback.ts # /gs-address-feedback — resolve PR feedback
     │
     │  # Research & spec skills
     ├── research.ts       # /research — master research orchestrator (routes to local/web/auto)
@@ -98,12 +117,14 @@ src/
 
 ## Key concepts
 
-- **Task state** lives in `.glorious/state/` (gitignored, per-engineer)
-- **Specs** live in `.glorious/specs/` (committed, shared)
-- **`gs-agentic state`** is the sole interface for reading/writing state — skills call it via Bash, never edit files directly
+- **Global state** lives in `~/.glorious/state.db` (SQLite via sql.js WASM, shared across repos/worktrees)
+- **Specs** live in `.glorious/specs/` (committed, shared, per-repo)
+- **`gsag state`** is the sole interface for reading/writing state — skills call it via Bash, never edit DB directly
+- **Hierarchy**: Epic (`e1`) > Task (`t1`) > Step (plan text, not tracked in DB)
 - **Pipeline phases**: understand → design → implement → verify → ship → done
-- **Each skill runs as a separate Claude session** to avoid context window bloat
-- Skills use `TASK_PREAMBLE` from `preamble.ts` to find the current task via `gs-agentic state`
+- **Repo-scoped by default** — each task is keyed by `(repo, id)`. Use `--all` for cross-repo views.
+- **Reviews** are stored in DB with commit SHA anchoring for persistence across context compaction
+- Skills use `TASK_PREAMBLE` from `preamble.ts` to find the current task via `gsag state task current`
 
 ## Stack
 
@@ -111,6 +132,7 @@ src/
 - **CLI framework**: cmd-ts
 - **Language**: TypeScript (ESM)
 - **Build**: Bun bundler (build.ts)
+- **Database**: sql.js (SQLite compiled to WASM, pure JS, fully bundled)
 - **Claude integration**: @anthropic-ai/claude-agent-sdk
 
 ## Conventions
@@ -119,7 +141,8 @@ src/
 - Use `--id` options (not positional args) for task IDs in state commands
 - Use `src/lib/fmt.ts` for terminal output (bold, dim, colors, ok, info, warn)
 - `gitRoot()` resolves to the main repo root from any worktree
-- State auto-creates directories and `.gitignore` entries on first write
+- `getRepo()` normalizes git remote URL for stable repo identification
+- `initState()` must be called before any state operations (done in index.ts)
 
 ## Recent changes
 

@@ -12,9 +12,11 @@ import { upgrade } from "./commands/upgrade.js";
 import { installSkills } from "./commands/install-skills.js";
 import { state } from "./commands/state/index.js";
 import { status } from "./commands/status.js";
+import { ready } from "./commands/ready.js";
 import { HELP_TEXT } from "./help.js";
 import { VERSION } from "./lib/version.js";
 import { checkForUpdate } from "./lib/update-check.js";
+import { initState } from "./lib/state.js";
 
 // Intercept --help / -h / no-args before cmd-ts to show our full manual
 const args = process.argv.slice(2);
@@ -34,6 +36,9 @@ if (args[0] === "wt" && args.length === 1) {
 }
 
 checkForUpdate();
+
+// Initialize SQLite state (safe even outside git — getRepo returns null)
+try { await initState(); } catch {}
 
 const wt = subcommands({
   name: "wt",
@@ -57,6 +62,7 @@ const cli = subcommands({
     wt,
     start,
     status,
+    ready,
     skills: installSkills,
     state,
     upgrade,

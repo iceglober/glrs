@@ -38,7 +38,20 @@ ${bold("COMMANDS")}
       --project  Install to .claude/ (committed to this repo)
       Falls back to project scope when stdin is not a TTY.
 
-      Engineering skills:
+      Engineering skills (gs- versions use SQLite state):
+        /gs-think          Product strategy session before building
+        /gs-work           Implement a task (from spec or ad-hoc)
+        /gs-fix            Fix bugs, update task if needed
+        /gs-qa             QA the diff against acceptance criteria
+        /gs-ship           Typecheck, review, commit, push, PR
+        /gs-build          Implement a specific gs-agentic task
+        /gs-build-loop     Loop through an epic's tasks automatically
+        /gs-deep-plan      Zero-ambiguity implementation plan
+        /gs-deep-review    6-agent parallel code review
+        /gs-quick-review   Fast single-pass code review
+        /gs-address-feedback  Resolve PR review feedback
+
+      Classic skills (JSON state):
         /think          Product strategy session before building
         /work           Implement a task (from spec or ad-hoc)
         /fix            Fix bugs, update task if needed
@@ -78,45 +91,82 @@ ${bold("COMMANDS")}
   wt cleanup [--base <branch>] [--dry-run] [--yes]
       Delete worktrees whose branches are merged or whose remote is deleted.
 
+  wt root
+      Print the main repo root path (useful from inside a worktree).
+
   wt hooks
       Create .glorious/hooks/ with a post_create template.
 
   upgrade
       Check for a newer version and self-update.
 
+  ready [--all] [--json]
+      Show tasks that are ready to work on (dependencies met, non-terminal).
+      --all shows tasks across all repos.
+
   ${bold("Advanced")} ${dim("(internal — used by skills and orchestrator)")}
 
-  state task create --title "..."
-      Create a new task (returns task ID).
+  state task create --title "..." [--epic <id>]
+      Create a new task (returns task ID). Optionally link to an epic.
 
-  state task <id> show [--json]
-      Display task details.
+  state task show --id <id> [--json] [--with-spec] [--fields ...]
+      Display task details. --with-spec inlines the spec content.
 
-  state task <id> transition <phase> [--force]
+  state task current [--json] [--with-spec] [--fields ...]
+      Show the task for the current worktree/branch.
+
+  state task next --epic <id> [--json] [--with-spec] [--fields ...]
+      Find the next ready task in an epic.
+
+  state task transition --id <id> --phase <phase> [--force] [--actor <name>]
       Move task to a new phase.
 
-  state task <id> update --<field> <value>
+  state task update --id <id> [--title "..."] [--description "..."] [--branch <b>] [--worktree <path>] [--pr <url>]
       Update task metadata.
 
-  state task <id> cancel
+  state task cancel --id <id>
       Cancel a task.
 
-  state task list [--phase <p>] [--parent <id>] [--json]
+  state task list [--phase <p>] [--epic <id>] [--all] [--json]
       List tasks with optional filters.
 
-  state spec <id> show
+  state epic create --title "..." [--description "..."]
+      Create a new epic (returns epic ID).
+
+  state epic show --id <id> [--json]
+      Display epic details with derived phase and task list.
+
+  state epic list [--json]
+      List all epics.
+
+  state spec show --id <id>
       Display a task's spec.
 
-  state spec <id> set --file <path> | --content "..."
+  state spec set --id <id> --file <path> | --content "..."
       Write a task's spec.
 
-  state spec <id> add-workstream --title "..." [--depends-on <ids>]
-      Add a workstream to an epic.
+  state spec add-task --id <epic-id> --title "..." [--depends-on <ids>]
+      Add a task to an epic.
 
-  state qa <id> report --status pass|fail --summary "..."
+  state review create --task <id> --source <source> --commit-sha <sha> [--epic <id>] [--pr-number <n>] [--summary "..."]
+      Create a review record (returns review ID).
+
+  state review add-item --review <id> --body "..." [--severity <sev>] [--agents <names>] [--file <path>] [--line <n>] [--impact "..."] [--suggested-fix "..."] [--pr-comment-id <id>]
+      Add a finding to a review.
+
+  state review resolve --item <id> --status <status> --resolution "..."
+      Resolve a review item.
+
+  state review list [--task <id>] [--status <s>] [--severity <sev>] [--json]
+      List review items.
+
+  state review summary [--task <id>] [--json]
+      Show review summary counts.
+
+  state qa --id <id> --status pass|fail --summary "..."
       Record a QA result.
 
-  state log <id>
+  state log --id <id>
       Show phase transition history.
 
 ${bold("FLAGS")}

@@ -1,5 +1,5 @@
 import { command, flag } from "cmd-ts";
-import { listTasks, deriveEpicPhase, dependenciesMet, isTerminal, loadPipeline, type Task, type Phase } from "../lib/state.js";
+import { listTasks, listEpics, deriveEpicPhase, dependenciesMet, isTerminal, loadPipeline, type Task, type Phase, type Epic } from "../lib/state.js";
 import { bold, dim, cyan, green, yellow, red } from "../lib/fmt.js";
 
 const phaseColor: Record<Phase, (s: string) => string> = {
@@ -22,7 +22,7 @@ const phaseIcon: Record<Phase, string> = {
   cancelled: "✗",
 };
 
-function formatTask(task: Task, indent: number, allTasks: Task[]): void {
+function formatTask(task: Task, indent: number): void {
   const prefix = "  ".repeat(indent);
   const color = phaseColor[task.phase] ?? dim;
   const icon = phaseIcon[task.phase] ?? "●";
@@ -34,8 +34,8 @@ function formatTask(task: Task, indent: number, allTasks: Task[]): void {
   line += blocked;
   console.log(line);
 
-  // Show pipeline progress for non-terminal, non-epic tasks
-  if (!isTerminal(task.phase) && task.children.length === 0) {
+  // Show pipeline progress for non-terminal tasks
+  if (!isTerminal(task.phase)) {
     const pipeline = loadPipeline(task.id);
     if (pipeline) {
       const completed = pipeline.completedSkills;
@@ -52,17 +52,8 @@ function formatTask(task: Task, indent: number, allTasks: Task[]): void {
       }
     }
 
-    // Show resume hint for stalled tasks
     if (task.worktree) {
       console.log(`${prefix}  ${dim(`resume: cd ${task.worktree} && gs-agentic start`)}`);
-    }
-  }
-
-  // Print children indented
-  if (task.children.length > 0) {
-    for (const childId of task.children) {
-      const child = allTasks.find((t) => t.id === childId);
-      if (child) formatTask(child, indent + 1, allTasks);
     }
   }
 }
@@ -74,29 +65,45 @@ export const status = command({
     json: flag({ long: "json", description: "Output as JSON" }),
   },
   handler: (args) => {
-    let tasks = listTasks();
-
-    // Derive epic phases
-    for (const t of tasks) {
-      if (t.children.length > 0) {
-        t.phase = deriveEpicPhase(t.id);
-      }
-    }
+    const epics = listEpics();
+    const allTasks = listTasks();
 
     if (args.json) {
-      console.log(JSON.stringify(tasks, null, 2));
+      const data = epics.map((e) => ({
+        ...e,
+        phase: deriveEpicPhase(e.id),
+        tasks: allTasks.filter((t) => t.epic === e.id),
+      }));
+      const standalone = allTasks.filter((t) => !t.epic);
+      console.log(JSON.stringify({ epics: data, standalone }, null, 2));
       return;
     }
 
-    if (tasks.length === 0) {
+    if (epics.length === 0 && allTasks.length === 0) {
       console.log(dim("No tasks. Run `gs-agentic start` to begin."));
       return;
     }
 
-    // Show top-level tasks (no parent), with children nested
-    const topLevel = tasks.filter((t) => !t.parent);
-    for (const task of topLevel) {
-      formatTask(task, 0, tasks);
+    // Show epics with their tasks
+    for (const epic of epics) {
+      const derivedPhase = deriveEpicPhase(epic.id);
+      const color = phaseColor[derivedPhase] ?? dim;
+      const icon = phaseIcon[derivedPhase] ?? "●";
+      const tasks = allTasks.filter((t) => t.epic === epic.id);
+
+      console.log(`${color(icon)} ${bold(epic.id)} ${epic.title} ${dim(`[${derivedPhase}]`)} ${dim(`(${tasks.length} tasks)`)}`);
+      for (const task of tasks) {
+        formatTask(task, 1);
+      }
+    }
+
+    // Show standalone tasks
+    const standalone = allTasks.filter((t) => !t.epic);
+    if (standalone.length > 0) {
+      if (epics.length > 0) console.log(""); // separator
+      for (const task of standalone) {
+        formatTask(task, 0);
+      }
     }
   },
 });

@@ -55,27 +55,21 @@ const set = command({
   },
 });
 
-// ── gs-agentic state spec add-workstream ─────────────────────────────────────
+// ── gs-agentic state spec add-task ──────────────────────────────────────────
 
-const addWorkstream = command({
-  name: "add-workstream",
-  description: "Add a workstream (child task) to an epic",
+const addTask = command({
+  name: "add-task",
+  description: "Add a task to an epic",
   args: {
-    id: option({ type: string, long: "id", short: "i", description: "Parent task ID" }),
-    title: option({ type: string, long: "title", short: "t", description: "Workstream title" }),
-    dependsOn: option({ type: optional(string), long: "depends-on", description: "Comma-separated dependency IDs" }),
+    id: option({ type: string, long: "id", short: "i", description: "Epic ID" }),
+    title: option({ type: string, long: "title", short: "t", description: "Task title" }),
+    dependsOn: option({ type: optional(string), long: "depends-on", description: "Comma-separated dependency task IDs" }),
     actor: option({ type: optional(string), long: "actor", description: "Actor name" }),
   },
   handler: (args) => {
-    const parent = loadTask(args.id);
-    if (!parent) {
-      console.error(`Task "${args.id}" not found.`);
-      process.exit(1);
-    }
-
     const child = createTask({
       title: args.title,
-      parent: args.id,
+      epic: args.id,
       phase: "implement",
       actor: args.actor ?? "cli",
     });
@@ -85,7 +79,7 @@ const addWorkstream = command({
       saveTask(child);
     }
 
-    ok(`workstream ${bold(child.id)}: ${child.title} (under ${args.id})`);
+    ok(`task ${bold(child.id)}: ${child.title} (under ${args.id})`);
     console.log(child.id);
   },
 });
@@ -98,6 +92,7 @@ export const stateSpec = subcommands({
   cmds: {
     show,
     set,
-    "add-workstream": addWorkstream,
+    "add-task": addTask,
+    "add-workstream": addTask, // backward compat alias
   },
 });
