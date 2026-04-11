@@ -1,8 +1,14 @@
 import {
   loadTask,
+  loadEpic,
+  listTasks,
   loadPipeline,
   savePipeline,
+  saveTask,
   transitionTask,
+  dependenciesMet,
+  isTerminal,
+  findNextTask,
   type Task,
   type Phase,
   type PipelineState,
@@ -155,9 +161,13 @@ async function _runPipeline(task: Task): Promise<void> {
       return;
     }
 
-    // If epic with children, run children sequentially
-    if (current.children.length > 0) {
-      await runEpicChildren(current);
+    // If this entity IS an epic (its ID exists in the epics table),
+    // run the epic's child tasks sequentially.
+    // Note: we check loadEpic(current.id), NOT current.epic —
+    // current.epic means the task BELONGS to an epic (true for all children),
+    // loadEpic(current.id) means the entity itself IS an epic.
+    if (loadEpic(current.id)) {
+      await runEpicTasks(current.id);
       return;
     }
 
@@ -188,7 +198,6 @@ async function _runPipeline(task: Task): Promise<void> {
       const slug = slugify(`${current.id}-${current.title}`);
       const currentBranch = gitSafe("rev-parse", "--abbrev-ref", "HEAD") ?? undefined;
       const wtPath = ensureWorktree(slug, currentBranch);
-      const { saveTask } = await import("./state.js");
       const t = loadTask(current.id)!;
       t.branch = slug;
       t.worktree = wtPath;
@@ -303,7 +312,6 @@ async function _runPipeline(task: Task): Promise<void> {
           const prUrl = ghResult.stdout.trim();
           if (prUrl) {
             updated.pr = prUrl;
-            const { saveTask } = await import("./state.js");
             saveTask(updated);
             ok(`PR detected: ${prUrl}`);
           }
@@ -383,29 +391,25 @@ function advancePhase(task: Task): void {
   }
 }
 
-async function runEpicChildren(epic: Task): Promise<void> {
-  info(`epic ${bold(epic.id)} has ${epic.children.length} workstreams`);
+async function runEpicTasks(epicId: string): Promise<void> {
+  const epic = loadEpic(epicId);
+  const tasks = listTasks({ epic: epicId });
+  info(`epic ${bold(epicId)}${epic ? `: ${epic.title}` : ""} has ${tasks.length} tasks`);
 
-  for (const childId of epic.children) {
-    const child = loadTask(childId);
-    if (!child) {
-      warn(`workstream ${childId} not found, skipping.`);
-      continue;
-    }
-    if (child.phase === "done" || child.phase === "cancelled") {
-      info(`${childId} already ${child.phase}, skipping.`);
-      continue;
-    }
-
-    const { dependenciesMet } = await import("./state.js");
-    if (!dependenciesMet(child)) {
-      warn(`${childId} blocked by dependencies, skipping.`);
-      continue;
+  while (true) {
+    const next = findNextTask(epicId);
+    if (!next) {
+      // Check if all done or all blocked
+      const remaining = tasks.filter((t) => !isTerminal(loadTask(t.id)?.phase ?? "done"));
+      if (remaining.length === 0) {
+        ok(`epic ${bold(epicId)} pipeline complete — all tasks done.`);
+      } else {
+        warn(`epic ${bold(epicId)} — no ready tasks (${remaining.length} remaining, blocked by deps).`);
+      }
+      return;
     }
 
-    info(`starting workstream ${bold(childId)}: ${child.title}`);
-    await runPipeline(child);
+    info(`starting task ${bold(next.id)}: ${next.title}`);
+    await runPipeline(next);
   }
-
-  ok(`epic ${bold(epic.id)} pipeline complete.`);
 }
