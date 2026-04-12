@@ -1040,6 +1040,64 @@ describe("claimed_by", () => {
   });
 });
 
+// ── auto-set branch/worktree on implement ──────────────────────────
+
+describe("auto-set branch on implement", () => {
+  test("implement sets branch from git", () => {
+    createTask({ title: "T1" });
+    const task = transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    expect(task.branch).toBeTruthy();
+    expect(typeof task.branch).toBe("string");
+  });
+
+  test("implement sets worktree from git", () => {
+    createTask({ title: "T1" });
+    const task = transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    expect(task.worktree).toBeTruthy();
+    expect(typeof task.worktree).toBe("string");
+  });
+
+  test("implement does not overwrite existing branch", () => {
+    const task = createTask({ title: "T1" });
+    task.branch = "my-custom-branch";
+    saveTask(task);
+    const updated = transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    expect(updated.branch).toBe("my-custom-branch");
+  });
+
+  test("implement does not overwrite existing worktree", () => {
+    const task = createTask({ title: "T1" });
+    task.worktree = "/my/custom/worktree";
+    saveTask(task);
+    const updated = transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    expect(updated.worktree).toBe("/my/custom/worktree");
+  });
+
+  test("task current works after implement transition", () => {
+    createTask({ title: "T1" });
+    const task = transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    // findCurrentTask should find it by the auto-set worktree or branch
+    const found = findCurrentTask(task.worktree ?? "", task.branch ?? "");
+    expect(found).not.toBeNull();
+    expect(found!.id).toBe("t1");
+  });
+
+  test("findNextTask --claim also sets branch", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "design" as any });
+    const task = findNextTask("e1", { claim: "agent-1" });
+    expect(task).not.toBeNull();
+    expect(task!.branch).toBeTruthy();
+    expect(task!.worktree).toBeTruthy();
+  });
+
+  test("non-implement transitions don't set branch", () => {
+    createTask({ title: "T1" });
+    const task = transitionTask("t1", "design", { force: true });
+    expect(task.branch).toBeNull();
+  });
+});
+
 // ── loadTaskFull ────────────────────────────────────────────────────
 
 describe("loadTaskFull", () => {

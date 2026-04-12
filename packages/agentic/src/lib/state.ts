@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { gitRoot } from "./git.js";
+import { gitRoot, gitSafe } from "./git.js";
 import { getDb, getDbSync, persistDb, withDbLock, getRepo, closeDb, resetDb, resetRepoCache, DB_PATH } from "./db.js";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -606,8 +606,13 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
   );
 
   if (target === "implement") {
-    db.run("UPDATE tasks SET claimed_by = ?, claimed_at = ? WHERE repo = ? AND id = ?",
-      [opts.actor ?? "cli", now, repo(), id]);
+    const branch = gitSafe("rev-parse", "--abbrev-ref", "HEAD");
+    const worktree = gitSafe("rev-parse", "--show-toplevel");
+    db.run(
+      `UPDATE tasks SET claimed_by = ?, claimed_at = ?,
+       branch = COALESCE(branch, ?), worktree = COALESCE(worktree, ?)
+       WHERE repo = ? AND id = ?`,
+      [opts.actor ?? "cli", now, branch, worktree, repo(), id]);
   } else if (isTerminal(target)) {
     db.run("UPDATE tasks SET claimed_by = NULL, claimed_at = NULL WHERE repo = ? AND id = ?",
       [repo(), id]);
