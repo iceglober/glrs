@@ -339,12 +339,18 @@ export function loadEpic(id: string): Epic | null {
   };
 }
 
-export function listEpics(): Epic[] {
+export function listEpics(opts?: { all?: boolean }): Epic[] {
   const db = getDbSync();
-  const result = db.exec(
-    "SELECT id, title, description, phase, plan, plan_version, created_at, updated_at FROM epics WHERE repo = ? ORDER BY id",
-    [repo()],
-  );
+  let query = "SELECT id, title, description, phase, plan, plan_version, created_at, updated_at FROM epics";
+  const params: any[] = [];
+  if (opts?.all) {
+    query += " WHERE 1=1";
+  } else {
+    query += " WHERE repo = ?";
+    params.push(repo());
+  }
+  query += " ORDER BY id";
+  const result = db.exec(query, params);
   if (!result[0]?.values.length) return [];
   return result[0].values.map((row: any[]) => ({
     id: row[0] as string,
@@ -356,6 +362,15 @@ export function listEpics(): Epic[] {
     createdAt: row[6] as string,
     updatedAt: row[7] as string,
   }));
+}
+
+export function listAllRepos(): string[] {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT DISTINCT repo FROM epics UNION SELECT DISTINCT repo FROM tasks ORDER BY repo",
+  );
+  if (!result[0]?.values.length) return [];
+  return result[0].values.map((row: any[]) => row[0] as string);
 }
 
 // ── Task CRUD ───────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { renderStatePage } from "./state-html.js";
 import {
   listEpics,
   listTasks,
+  listAllRepos,
   deriveEpicPhase,
   reviewSummary,
   loadPlan,
@@ -18,6 +19,7 @@ export interface StateServer {
 
 export function startStateServer(opts?: {
   port?: number;
+  all?: boolean;
 }): Promise<StateServer> {
   return new Promise((resolve, reject) => {
     const port = opts?.port ?? 0;
@@ -27,15 +29,17 @@ export function startStateServer(opts?: {
       if (req.method === "GET" && req.url === "/") {
         if (!cachedHtml) {
           const addr = server.address() as { port: number };
-          cachedHtml = renderStatePage(addr.port);
+          cachedHtml = renderStatePage(addr.port, { all: opts?.all });
         }
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(cachedHtml);
         return;
       }
 
-      if (req.method === "GET" && req.url === "/api/state") {
-        const data = buildStatePayload();
+      if (req.method === "GET" && (req.url === "/api/state" || req.url?.startsWith("/api/state?"))) {
+        const url = new URL(req.url, `http://localhost`);
+        const all = url.searchParams.get("all") === "true";
+        const data = buildStatePayload({ all });
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(data));
         return;
@@ -73,9 +77,9 @@ export function startStateServer(opts?: {
   });
 }
 
-function buildStatePayload() {
-  const epics = listEpics();
-  const allTasks = listTasks();
+function buildStatePayload(opts?: { all?: boolean }) {
+  const epics = listEpics({ all: opts?.all });
+  const allTasks = listTasks({ all: opts?.all });
 
   const epicData = epics.map((epic) => {
     const tasks = allTasks.filter((t) => t.epic === epic.id);

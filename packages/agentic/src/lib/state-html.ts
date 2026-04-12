@@ -1,5 +1,6 @@
 /** Render a self-contained HTML dashboard for the state viewer. */
-export function renderStatePage(serverPort: number): string {
+export function renderStatePage(serverPort: number, opts?: { all?: boolean }): string {
+  const apiUrl = opts?.all ? `/api/state?all=true` : `/api/state`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -140,7 +141,7 @@ let planCache = {};
 
 async function fetchState() {
   try {
-    const res = await fetch(API + "/api/state");
+    const res = await fetch(API + "${apiUrl}");
     state = await res.json();
     renderSidebar();
     renderMain();

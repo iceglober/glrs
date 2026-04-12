@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { initState, cleanupState, setPlansDir, createEpic, createTask, savePlan, createReview, addReviewItem } from "./state.js";
+import { getDbSync } from "./db.js";
 import { startStateServer, type StateServer } from "./state-server.js";
 
 const TEST_DIR = path.join(os.tmpdir(), "glorious-state-server-test-" + process.pid);
@@ -160,5 +161,44 @@ describe("state server", () => {
     server = await startStateServer({ port: 19876 });
     expect(server.port).toBe(19876);
     expect(server.url).toContain("19876");
+  });
+
+  test("GET /api/state?all=true returns cross-repo data", async () => {
+    createEpic({ title: "Local Epic" });
+    // Insert a foreign-repo epic directly
+    const db = getDbSync();
+    db.run(
+      "INSERT INTO epics (id, repo, title, description, phase, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["e1", "other-repo", "Foreign Epic", "", "understand", new Date().toISOString(), new Date().toISOString()],
+    );
+    const s = await start();
+
+    // Default: only local
+    const localRes = await fetch(s.url + "/api/state");
+    const localJson = await localRes.json() as any;
+    expect(localJson.epics).toHaveLength(1);
+    expect(localJson.epics[0].title).toBe("Local Epic");
+
+    // all=true: both repos
+    const allRes = await fetch(s.url + "/api/state?all=true");
+    const allJson = await allRes.json() as any;
+    expect(allJson.epics).toHaveLength(2);
+    const titles = allJson.epics.map((e: any) => e.title);
+    expect(titles).toContain("Local Epic");
+    expect(titles).toContain("Foreign Epic");
+  });
+
+  test("GET /api/state?all=false returns local only", async () => {
+    createEpic({ title: "Mine" });
+    const db = getDbSync();
+    db.run(
+      "INSERT INTO epics (id, repo, title, description, phase, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["e1", "other-repo", "Theirs", "", "understand", new Date().toISOString(), new Date().toISOString()],
+    );
+    const s = await start();
+    const res = await fetch(s.url + "/api/state?all=false");
+    const json = await res.json() as any;
+    expect(json.epics).toHaveLength(1);
+    expect(json.epics[0].title).toBe("Mine");
   });
 });

@@ -1,4 +1,4 @@
-import { command, option, optional, number as cmdNumber } from "cmd-ts";
+import { command, option, optional, number as cmdNumber, flag } from "cmd-ts";
 import { startStateServer } from "../../lib/state-server.js";
 import { getSetting } from "../../lib/settings.js";
 import { info, bold, dim } from "../../lib/fmt.js";
@@ -14,10 +14,16 @@ export const web = command({
       short: "p",
       description: "Server port (default: random)",
     }),
+    all: flag({
+      long: "all",
+      short: "a",
+      description: "Show all repos (not just current)",
+    }),
   },
   handler: async (args) => {
     const server = await startStateServer({
       port: args.port ?? undefined,
+      all: args.all,
     });
 
     if (getSetting("plan.auto-open") !== "false") {
