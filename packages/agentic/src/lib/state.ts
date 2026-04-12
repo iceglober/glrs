@@ -91,7 +91,7 @@ export function setPlansDir(dir: string | null): void {
   _testPlansDir = dir;
 }
 
-function plansDir(): string {
+export function plansDir(): string {
   if (_testPlansDir) return _testPlansDir;
   const repoId = getRepo();
   const slug = repoId ? repoId.replace(/\//g, "-") : "local";
