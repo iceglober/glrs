@@ -44,9 +44,136 @@ import { gsQuickReview } from "./gs-quick-review.js";
 import { gsAddressFeedback } from "./gs-address-feedback.js";
 import { gs } from "./gs.js";
 
-/** Slash commands — invoked explicitly via /name */
-export const COMMANDS: Record<string, string> = {
-  // Engineering
+/**
+ * Mapping of gs-* skill internal keys to their canonical short filenames
+ * and generator functions. The canonical name is what gets installed by default
+ * (no prefix). With a prefix like "gs-", the installed name becomes "gs-think.md" etc.
+ */
+export const GS_SKILL_NAMES: Record<
+  string,
+  { canonical: string; generator: () => string }
+> = {
+  gs: { canonical: "gs.md", generator: gs },
+  "gs-think": { canonical: "think.md", generator: gsThink },
+  "gs-work": { canonical: "work.md", generator: gsWork },
+  "gs-fix": { canonical: "fix.md", generator: gsFix },
+  "gs-qa": { canonical: "qa.md", generator: gsQa },
+  "gs-ship": { canonical: "ship.md", generator: gsShip },
+  "gs-build": { canonical: "build.md", generator: gsBuild },
+  "gs-build-loop": { canonical: "build-loop.md", generator: gsBuildLoop },
+  "gs-deep-plan": { canonical: "deep-plan.md", generator: gsDeepPlan },
+  "gs-deep-review": { canonical: "deep-review.md", generator: gsDeepReview },
+  "gs-quick-review": {
+    canonical: "quick-review.md",
+    generator: gsQuickReview,
+  },
+  "gs-address-feedback": {
+    canonical: "address-feedback.md",
+    generator: gsAddressFeedback,
+  },
+};
+
+/**
+ * Claude Code built-in command names that must NOT be used as skill filenames.
+ * Source: https://code.claude.com/docs/en/commands
+ */
+export const BUILTIN_COLLISIONS = new Set([
+  "add-dir.md",
+  "agents.md",
+  "autofix-pr.md",
+  "btw.md",
+  "branch.md",
+  "chrome.md",
+  "clear.md",
+  "color.md",
+  "compact.md",
+  "config.md",
+  "context.md",
+  "copy.md",
+  "cost.md",
+  "desktop.md",
+  "diff.md",
+  "doctor.md",
+  "effort.md",
+  "exit.md",
+  "export.md",
+  "extra-usage.md",
+  "fast.md",
+  "feedback.md",
+  "help.md",
+  "hooks.md",
+  "ide.md",
+  "init.md",
+  "insights.md",
+  "install-github-app.md",
+  "install-slack-app.md",
+  "keybindings.md",
+  "login.md",
+  "logout.md",
+  "mcp.md",
+  "memory.md",
+  "mobile.md",
+  "model.md",
+  "passes.md",
+  "permissions.md",
+  "plan.md",
+  "plugin.md",
+  "powerup.md",
+  "privacy-settings.md",
+  "release-notes.md",
+  "reload-plugins.md",
+  "remote-control.md",
+  "remote-env.md",
+  "rename.md",
+  "resume.md",
+  "review.md",
+  "rewind.md",
+  "sandbox.md",
+  "schedule.md",
+  "security-review.md",
+  "setup-bedrock.md",
+  "setup-vertex.md",
+  "skills.md",
+  "stats.md",
+  "status.md",
+  "statusline.md",
+  "stickers.md",
+  "tasks.md",
+  "teleport.md",
+  "terminal-setup.md",
+  "theme.md",
+  "ultraplan.md",
+  "upgrade.md",
+  "usage.md",
+  "voice.md",
+  "web-setup.md",
+  // Aliases
+  "settings.md",
+  "reset.md",
+  "new.md",
+  "fork.md",
+  "quit.md",
+  "bug.md",
+  "app.md",
+  "checkpoint.md",
+  "rc.md",
+  "tp.md",
+  "continue.md",
+  "allowed-tools.md",
+  "bashes.md",
+  "ios.md",
+  "android.md",
+  // Bundled skills
+  "batch.md",
+  "claude-api.md",
+  "debug.md",
+  "loop.md",
+  "simplify.md",
+]);
+
+/** Non-gs commands that are always installed with their original names. */
+const STATIC_COMMANDS: Record<string, string> = {
+  // Research
   "research.md": research(),
   "research-local.md": researchLocal(),
   "research-auto.md": researchAuto(),
@@ -58,20 +185,6 @@ export const COMMANDS: Record<string, string> = {
   "spec-enrich.md": specEnrich(),
   "spec-review.md": specReview(),
   "spec-lab.md": specLab(),
-
-  // gs- engineering skills (SQLite state)
-  "gs.md": gs(),
-  "gs-think.md": gsThink(),
-  "gs-fix.md": gsFix(),
-  "gs-qa.md": gsQa(),
-  "gs-work.md": gsWork(),
-  "gs-ship.md": gsShip(),
-  "gs-deep-plan.md": gsDeepPlan(),
-  "gs-build.md": gsBuild(),
-  "gs-build-loop.md": gsBuildLoop(),
-  "gs-deep-review.md": gsDeepReview(),
-  "gs-quick-review.md": gsQuickReview(),
-  "gs-address-feedback.md": gsAddressFeedback(),
 
   // Product management suite
   "product-manager.md": productManager(),
@@ -88,6 +201,33 @@ export const COMMANDS: Record<string, string> = {
   "product-research-market.md": productResearchMarket(),
   "product-research-technical.md": productResearchTechnical(),
 };
+
+/**
+ * Build the COMMANDS map with an optional prefix for gs-* skill names.
+ *
+ * - No prefix (default): canonical short names (think.md, work.md, deep-plan.md)
+ * - With prefix "gs-": legacy names (gs-think.md, gs-work.md, gs-deep-plan.md)
+ * - With custom prefix: custom names (my-think.md, my-work.md, my-deep-plan.md)
+ *
+ * Non-gs skills (research-*, spec-*, product-*) are always installed unchanged.
+ */
+export function buildCommands(prefix?: string): Record<string, string> {
+  const p = prefix || "";
+  const gsCommands: Record<string, string> = {};
+
+  for (const entry of Object.values(GS_SKILL_NAMES)) {
+    const filename = p + entry.canonical;
+    gsCommands[filename] = entry.generator();
+  }
+
+  return { ...STATIC_COMMANDS, ...gsCommands };
+}
+
+/**
+ * Default COMMANDS export for backward compatibility.
+ * Uses canonical short names (no prefix).
+ */
+export const COMMANDS: Record<string, string> = buildCommands();
 
 /** Skills — activate automatically when relevant */
 export const SKILLS: Record<string, string> = {

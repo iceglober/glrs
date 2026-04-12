@@ -28,7 +28,7 @@ ${REVIEW_PREAMBLE}
 gh pr view --json number,url,title,state,headRefName
 \`\`\`
 
-If no PR exists, stop: "No PR found. Run \`/gs-ship\` first."
+If no PR exists, stop: "No PR found. Run \`/ship\` first."
 If PR is closed/merged, stop: "PR is already {state}."
 
 Store the PR number, URL, and head branch.
@@ -61,7 +61,7 @@ gs-agentic state review list --task <task-id> --status open --json
 
 ### Deduplication
 
-PR comments may already be stored from a prior \`/gs-deep-review\` or \`/gs-quick-review\`. Before storing new items, check if an existing review item covers the same file+line+issue. If so, merge (add \`pr_reviewer\` to agents, keep the higher severity) rather than creating a duplicate.
+PR comments may already be stored from a prior \`/deep-review\` or \`/quick-review\`. Before storing new items, check if an existing review item covers the same file+line+issue. If so, merge (add \`pr_reviewer\` to agents, keep the higher severity) rather than creating a duplicate.
 
 ## Step 3: Store new items
 

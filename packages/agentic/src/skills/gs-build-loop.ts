@@ -21,7 +21,7 @@ If \`$ARGUMENTS\` contains an epic ID (e.g. \`e1\`, \`e2\`):
 If \`$ARGUMENTS\` contains a task ID (e.g. \`t1\`, \`t2\`):
 - Look up the task: \`gs-agentic state task show --id <id> --json\`
 - If it has an \`epic\` field, use that epic ID and go to Step 2.
-- If standalone, execute it directly using \`/gs-build <id>\` and stop.
+- If standalone, execute it directly using \`/build <id>\` and stop.
 
 If \`$ARGUMENTS\` contains a file path:
 - Use that plan file and go to Step 3 (plan-file mode).
@@ -34,7 +34,7 @@ If \`$ARGUMENTS\` contains a file path:
    - If standalone with a plan file → read it and go to Step 3 (plan-file mode).
 3. If no task found:
    - Run \`gs-agentic state epic list --json\` — if exactly one active epic exists, use it.
-   - If no epic found → report "No tasks or plans found. Run \`/gs-deep-plan\` first." and stop.
+   - If no epic found → report "No tasks or plans found. Run \`/deep-plan\` first." and stop.
 
 ## Step 2: Epic task loop mode
 

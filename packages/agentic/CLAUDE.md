@@ -37,8 +37,9 @@ src/
 │   ├── cleanup.ts        # gsag wt cleanup
 │   ├── root.ts           # gsag wt root
 │   ├── plan-review.ts    # gsag plan review — open plan in browser with feedback
-│   ├── install-skills.ts      # gsag skills (interactive scope picker, --user/--project)
+│   ├── install-skills.ts      # gsag skills (interactive scope picker, --user/--project/--prefix)
 │   ├── install-skills.test.ts # Unit tests for install-skills
+│   ├── config.ts         # gsag config (get/set/list/unset settings)
 │   ├── init-hooks.ts     # gsag wt hooks
 │   └── upgrade.ts        # gsag upgrade
 ├── lib/
@@ -67,22 +68,27 @@ src/
 │   ├── version.ts        # VERSION constant
 │   └── update-check.ts   # Update checker
 └── skills/
-    ├── index.ts          # COMMANDS & SKILLS registry
+    ├── index.ts          # GS_SKILL_NAMES, buildCommands(), BUILTIN_COLLISIONS, SKILLS
+    ├── index.test.ts     # Unit tests for skill registry and buildCommands
     ├── preamble.ts       # Role-specific preambles (TASK/REVIEW/BUILD) for skills
     │
-    │  # gs- engineering skills (SQLite state)
+    │  # Engineering skills (default: /think, /work, etc. — configurable via --prefix)
     ├── gs.ts             # /gs — general workflow assistant
-    ├── gs-think.ts       # /gs-think — product strategy (SQLite state)
-    ├── gs-work.ts        # /gs-work — implement a task (SQLite state)
-    ├── gs-fix.ts         # /gs-fix — bug fixes (SQLite state)
-    ├── gs-qa.ts          # /gs-qa — QA (SQLite state)
-    ├── gs-ship.ts        # /gs-ship — ship with review state check
-    ├── gs-build.ts       # /gs-build — implement a specific task
-    ├── gs-build-loop.ts  # /gs-build-loop — loop through epic tasks
-    ├── gs-deep-plan.ts   # /gs-deep-plan — zero-ambiguity planning
-    ├── gs-deep-review.ts # /gs-deep-review — 6-agent parallel review
-    ├── gs-quick-review.ts # /gs-quick-review — fast single-pass review
-    ├── gs-address-feedback.ts # /gs-address-feedback — resolve PR feedback
+    ├── gs.test.ts        # Unit tests for gs skill
+    ├── gs-think.ts       # /think — product strategy
+    ├── gs-work.ts        # /work — implement a task
+    ├── gs-fix.ts         # /fix — TDD bug resolution
+    ├── gs-fix.test.ts    # Unit tests for fix skill
+    ├── gs-qa.ts          # /qa — QA with review DB storage
+    ├── gs-qa.test.ts     # Unit tests for qa skill
+    ├── gs-ship.ts        # /ship — ship with review state check
+    ├── gs-build.ts       # /build — implement a specific task
+    ├── gs-build-loop.ts  # /build-loop — loop through epic tasks
+    ├── gs-deep-plan.ts   # /deep-plan — zero-ambiguity planning
+    ├── gs-deep-review.ts # /deep-review — 6-agent parallel review
+    ├── gs-quick-review.ts # /quick-review — fast single-pass review
+    ├── gs-address-feedback.ts # /address-feedback — resolve PR feedback
+    ├── cross-refs.test.ts # Verifies no skill uses /gs- prefixed cross-references
     │
     │  # Research & spec skills
     ├── research.ts       # /research — master research orchestrator (routes to local/web/auto)
