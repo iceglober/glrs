@@ -62,6 +62,7 @@ src/
     ├── preamble.ts       # Role-specific preambles (TASK/REVIEW/BUILD) for skills
     │
     │  # gs- engineering skills (SQLite state)
+    ├── gs.ts             # /gs — general workflow assistant
     ├── gs-think.ts       # /gs-think — product strategy (SQLite state)
     ├── gs-work.ts        # /gs-work — implement a task (SQLite state)
     ├── gs-fix.ts         # /gs-fix — bug fixes (SQLite state)

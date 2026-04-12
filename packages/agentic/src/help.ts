@@ -25,6 +25,7 @@ ${bold("COMMANDS")}
       Falls back to project scope when stdin is not a TTY.
 
       Engineering skills (gs- versions use SQLite state):
+        /gs                General workflow assistant
         /gs-think          Product strategy session before building
         /gs-work           Implement a task (from spec or ad-hoc)
         /gs-fix            Fix bugs, update task if needed
