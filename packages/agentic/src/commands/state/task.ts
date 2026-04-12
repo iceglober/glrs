@@ -91,6 +91,7 @@ const show = command({
     if (task.worktree) console.log(`  worktree: ${task.worktree}`);
     if (task.pr) console.log(`  pr: ${task.pr}`);
     if (task.plan) console.log(`  plan: ${task.plan}`);
+    if (task.claimedBy) console.log(`  claimed: ${yellow(task.claimedBy)} ${dim(`since ${task.claimedAt}`)}`);
     if (task.epic) console.log(`  epic: ${task.epic}`);
     if (task.dependencies.length > 0) console.log(`  depends: ${task.dependencies.join(", ")}`);
     if (task.qaResult) {
@@ -206,6 +207,7 @@ const update = command({
     branch: option({ type: optional(string), long: "branch", description: "Branch name" }),
     worktree: option({ type: optional(string), long: "worktree", description: "Worktree path" }),
     pr: option({ type: optional(string), long: "pr", description: "PR URL" }),
+    unclaim: flag({ long: "unclaim", description: "Clear the claimed_by field" }),
   },
   handler: (args) => {
     const task = loadTask(args.id);
@@ -218,6 +220,7 @@ const update = command({
     if (args.branch !== undefined) task.branch = args.branch;
     if (args.worktree !== undefined) task.worktree = args.worktree;
     if (args.pr !== undefined) task.pr = args.pr;
+    if (args.unclaim) { task.claimedBy = null; task.claimedAt = null; }
     saveTask(task);
     ok(`updated ${bold(task.id)}`);
   },
@@ -277,7 +280,7 @@ const list = command({
 
     for (const t of tasks) {
       const icon = isTerminal(t.phase) ? (t.phase === "done" ? "✓" : "✗") : "●";
-      console.log(`  ${icon} ${bold(t.id)} ${t.title} ${dim(`[${t.phase}]`)}${t.branch ? dim(` ${t.branch}`) : ""}`);
+      console.log(`  ${icon} ${bold(t.id)} ${t.title} ${dim(`[${t.phase}]`)}${t.branch ? dim(` ${t.branch}`) : ""}${t.claimedBy ? yellow(` ← ${t.claimedBy}`) : ""}`);
     }
   },
 });

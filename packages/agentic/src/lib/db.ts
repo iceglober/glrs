@@ -198,6 +198,8 @@ function runSchema(database: Database): void {
       qa_status    TEXT,
       qa_summary   TEXT,
       qa_timestamp TEXT,
+      claimed_by   TEXT,
+      claimed_at   TEXT,
       created_at   TEXT NOT NULL,
       updated_at   TEXT NOT NULL,
       PRIMARY KEY (repo, id),
@@ -296,6 +298,9 @@ function runSchema(database: Database): void {
   // ── Migration: rename spec → plan columns on existing databases ────
   migrateSpecToPlan(database, "epics");
   migrateSpecToPlan(database, "tasks");
+
+  // ── Migration: add claimed_by/claimed_at columns ────
+  migrateAddClaimedBy(database);
 }
 
 /** Rename `spec` column to `plan` and add `plan_version` if needed (for existing DBs). */
@@ -308,6 +313,17 @@ function migrateSpecToPlan(database: Database, table: string): void {
     if (!colNames.includes("plan_version")) {
       database.run(`ALTER TABLE ${table} ADD COLUMN plan_version INTEGER`);
     }
+  }
+}
+
+/** Add claimed_by and claimed_at columns to tasks table (for existing DBs). */
+function migrateAddClaimedBy(database: Database): void {
+  const cols = database.exec("PRAGMA table_info(tasks)");
+  if (!cols[0]?.values.length) return;
+  const colNames = cols[0].values.map((row: any[]) => row[1] as string);
+  if (!colNames.includes("claimed_by")) {
+    database.run("ALTER TABLE tasks ADD COLUMN claimed_by TEXT");
+    database.run("ALTER TABLE tasks ADD COLUMN claimed_at TEXT");
   }
 }
 

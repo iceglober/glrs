@@ -955,6 +955,149 @@ describe("findReadyTasks", () => {
   });
 });
 
+// ── claimed_by ─────────────────────────────────────────────────────
+
+describe("claimed_by", () => {
+  test("new task has null claimedBy", () => {
+    const task = createTask({ title: "T1" });
+    expect(task.claimedBy).toBeNull();
+    expect(task.claimedAt).toBeNull();
+  });
+
+  test("transition to implement sets claimedBy to actor", () => {
+    createTask({ title: "T1" });
+    const task = transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    expect(task.claimedBy).toBe("agent-1");
+    expect(task.claimedAt).toBeTruthy();
+    // claimedAt should be a valid ISO date
+    expect(new Date(task.claimedAt!).toISOString()).toBe(task.claimedAt!);
+  });
+
+  test("transition to done clears claimedBy", () => {
+    createTask({ title: "T1" });
+    transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    const task = transitionTask("t1", "done", { force: true });
+    expect(task.claimedBy).toBeNull();
+    expect(task.claimedAt).toBeNull();
+  });
+
+  test("transition to cancelled clears claimedBy", () => {
+    createTask({ title: "T1" });
+    transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    const task = transitionTask("t1", "cancelled");
+    expect(task.claimedBy).toBeNull();
+    expect(task.claimedAt).toBeNull();
+  });
+
+  test("claimedBy survives saveTask round-trip", () => {
+    const task = createTask({ title: "T1" });
+    transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    const loaded = loadTask("t1")!;
+    expect(loaded.claimedBy).toBe("agent-1");
+    // Modify and save
+    loaded.title = "Updated";
+    saveTask(loaded);
+    const reloaded = loadTask("t1")!;
+    expect(reloaded.claimedBy).toBe("agent-1");
+    expect(reloaded.title).toBe("Updated");
+  });
+
+  test("claimedBy appears in loadTaskFull JSON output", () => {
+    createTask({ title: "T1" });
+    transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    const full = loadTaskFull("t1");
+    expect((full as any).claimedBy).toBe("agent-1");
+  });
+
+  test("lean listTasks includes claimedBy when set", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1" });
+    transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    const tasks = listTasks({ epic: "e1", lean: true });
+    expect((tasks[0] as any).claimedBy).toBe("agent-1");
+  });
+
+  test("findNextTask claim sets claimedBy", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "design" });
+    const next = findNextTask("e1", { claim: "build-loop" });
+    expect(next!.claimedBy).toBe("build-loop");
+  });
+
+  test("transition to verify preserves claimedBy", () => {
+    createTask({ title: "T1" });
+    transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    const task = transitionTask("t1", "verify", { force: true });
+    expect(task.claimedBy).toBe("agent-1");
+  });
+
+  test("transition to ship preserves claimedBy", () => {
+    createTask({ title: "T1" });
+    transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    transitionTask("t1", "verify", { force: true });
+    const task = transitionTask("t1", "ship", { force: true });
+    expect(task.claimedBy).toBe("agent-1");
+  });
+});
+
+// ── auto-set branch/worktree on implement ──────────────────────────
+
+describe("auto-set branch on implement", () => {
+  test("implement sets branch from git", () => {
+    createTask({ title: "T1" });
+    const task = transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    expect(task.branch).toBeTruthy();
+    expect(typeof task.branch).toBe("string");
+  });
+
+  test("implement sets worktree from git", () => {
+    createTask({ title: "T1" });
+    const task = transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    expect(task.worktree).toBeTruthy();
+    expect(typeof task.worktree).toBe("string");
+  });
+
+  test("implement does not overwrite existing branch", () => {
+    const task = createTask({ title: "T1" });
+    task.branch = "my-custom-branch";
+    saveTask(task);
+    const updated = transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    expect(updated.branch).toBe("my-custom-branch");
+  });
+
+  test("implement does not overwrite existing worktree", () => {
+    const task = createTask({ title: "T1" });
+    task.worktree = "/my/custom/worktree";
+    saveTask(task);
+    const updated = transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    expect(updated.worktree).toBe("/my/custom/worktree");
+  });
+
+  test("task current works after implement transition", () => {
+    createTask({ title: "T1" });
+    const task = transitionTask("t1", "implement", { actor: "agent-1", force: true });
+    // findCurrentTask should find it by the auto-set worktree or branch
+    const found = findCurrentTask(task.worktree ?? "", task.branch ?? "");
+    expect(found).not.toBeNull();
+    expect(found!.id).toBe("t1");
+  });
+
+  test("findNextTask --claim also sets branch", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "design" as any });
+    const task = findNextTask("e1", { claim: "agent-1" });
+    expect(task).not.toBeNull();
+    expect(task!.branch).toBeTruthy();
+    expect(task!.worktree).toBeTruthy();
+  });
+
+  test("non-implement transitions don't set branch", () => {
+    createTask({ title: "T1" });
+    const task = transitionTask("t1", "design", { force: true });
+    expect(task.branch).toBeNull();
+  });
+});
+
 // ── loadTaskFull ────────────────────────────────────────────────────
 
 describe("loadTaskFull", () => {
