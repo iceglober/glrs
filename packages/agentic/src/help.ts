@@ -110,7 +110,8 @@ ${bold("COMMANDS")}
       Reset a config value to its default.
 
       Available settings:
-        plan.auto-open   Open browser automatically in plan review (default: true)
+        plan.auto-open    Open browser automatically in plan review (default: true)
+        state.auto-open   Open browser automatically in state web (default: true)
 
   ${bold("Advanced")} ${dim("(internal — used by skills and orchestrator)")}
 
@@ -177,6 +178,11 @@ ${bold("COMMANDS")}
 
   state log --id <id>
       Show phase transition history.
+
+  state web [--port <n>] [--all]
+      Open a read-only dashboard in the browser showing all epics, tasks,
+      plans, and reviews. Auto-refreshes every 5 seconds.
+      --all shows data across all repos/worktrees.
 
 ${bold("FLAGS")}
 

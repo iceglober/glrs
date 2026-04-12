@@ -77,4 +77,15 @@ describe("settingsHelp", () => {
     expect(help[0].key).toBe("plan.auto-open");
     expect(help[0].description).toBeTruthy();
   });
+
+  test("includes state.auto-open setting", () => {
+    const help = settingsHelp();
+    const stateOpen = help.find(h => h.key === "state.auto-open");
+    expect(stateOpen).toBeDefined();
+    expect(stateOpen!.default).toBe("true");
+  });
+
+  test("state.auto-open has default value", () => {
+    expect(getSetting("state.auto-open")).toBe("true");
+  });
 });

@@ -4,6 +4,7 @@ import { statePlan } from "./plan.js";
 import { stateReview } from "./review.js";
 import { qaReport } from "./qa.js";
 import { stateLog } from "./log.js";
+import { web } from "./web.js";
 
 export const state = subcommands({
   name: "state",
@@ -15,5 +16,6 @@ export const state = subcommands({
     review: stateReview,
     qa: qaReport,
     log: stateLog,
+    web,
   },
 });

@@ -19,6 +19,7 @@ import {
   createEpic,
   loadEpic,
   listEpics,
+  listAllRepos,
   loadPlan,
   savePlan,
   savePlanFromFile,
@@ -156,6 +157,53 @@ describe("listEpics", () => {
     expect(epics).toHaveLength(2);
     expect(epics[0].id).toBe("e1");
     expect(epics[1].id).toBe("e2");
+  });
+
+  test("all: true returns epics across repos", () => {
+    createEpic({ title: "Local Epic" });
+    // Insert a foreign-repo epic directly
+    const db = getDbSync();
+    db.run(
+      "INSERT INTO epics (id, repo, title, description, phase, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["e1", "other-repo", "Foreign Epic", "", "understand", new Date().toISOString(), new Date().toISOString()],
+    );
+    const local = listEpics();
+    expect(local).toHaveLength(1);
+    expect(local[0].title).toBe("Local Epic");
+
+    const all = listEpics({ all: true });
+    expect(all).toHaveLength(2);
+    const titles = all.map((e) => e.title);
+    expect(titles).toContain("Local Epic");
+    expect(titles).toContain("Foreign Epic");
+  });
+});
+
+describe("listAllRepos", () => {
+  test("returns empty array when no data", () => {
+    expect(listAllRepos()).toEqual([]);
+  });
+
+  test("returns distinct repos from epics", () => {
+    createEpic({ title: "Local" });
+    const db = getDbSync();
+    db.run(
+      "INSERT INTO epics (id, repo, title, description, phase, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["e1", "other-repo", "Other", "", "understand", new Date().toISOString(), new Date().toISOString()],
+    );
+    const repos = listAllRepos();
+    expect(repos.length).toBeGreaterThanOrEqual(2);
+    expect(repos).toContain("other-repo");
+  });
+
+  test("includes repos that only have tasks, not epics", () => {
+    const db = getDbSync();
+    db.run(
+      "INSERT INTO tasks (id, repo, title, description, phase, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["t1", "task-only-repo", "Orphan", "", "understand", new Date().toISOString(), new Date().toISOString()],
+    );
+    const repos = listAllRepos();
+    expect(repos).toContain("task-only-repo");
   });
 });
 
