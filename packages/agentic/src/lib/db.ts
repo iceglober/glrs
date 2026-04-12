@@ -11,6 +11,7 @@ import { gitSafe } from "./git.js";
 
 let db: Database | null = null;
 let activePath: string | null = null;
+let sqlModule: any = null;
 
 /** Default path for the global state database. */
 export const DB_PATH = path.join(os.homedir(), ".glorious", "state.db");
@@ -19,10 +20,13 @@ export const DB_PATH = path.join(os.homedir(), ".glorious", "state.db");
 export async function getDb(dbPath: string = DB_PATH): Promise<Database> {
   if (db) return db;
 
-  const opts = typeof __SQL_WASM_BASE64__ !== "undefined"
-    ? { wasmBinary: Buffer.from(__SQL_WASM_BASE64__, "base64") }
-    : undefined;
-  const SQL = await initSqlJs(opts);
+  if (!sqlModule) {
+    const opts = typeof __SQL_WASM_BASE64__ !== "undefined"
+      ? { wasmBinary: Buffer.from(__SQL_WASM_BASE64__, "base64") }
+      : undefined;
+    sqlModule = await initSqlJs(opts);
+  }
+  const SQL = sqlModule;
 
   const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -47,6 +51,89 @@ export function persistDb(dbPath: string = activePath ?? DB_PATH): void {
   const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(dbPath, buffer);
+}
+
+/** Re-read the database from disk, replacing the in-memory singleton.
+ *  Used by withDbLock() to ensure the latest on-disk state is loaded
+ *  before performing atomic claim operations. No-op if DB not initialized. */
+export function reloadDb(): void {
+  if (!activePath || !sqlModule) return;
+  if (db) db.close();
+  if (fs.existsSync(activePath)) {
+    const buffer = fs.readFileSync(activePath);
+    db = new sqlModule.Database(buffer);
+  } else {
+    db = new sqlModule.Database();
+  }
+  runSchema(db);
+}
+
+// ── File locking ───────────────────────────────────────────────────
+
+const LOCK_STALE_MS = 10_000;
+const sleepBuffer = new SharedArrayBuffer(4);
+const sleepArray = new Int32Array(sleepBuffer);
+
+function sleepSync(ms: number): void {
+  Atomics.wait(sleepArray, 0, 0, ms);
+}
+
+function isLockStale(lockPath: string): boolean {
+  try {
+    const content = fs.readFileSync(lockPath, "utf-8");
+    const [pidStr, timestampStr] = content.split("\n");
+    const pid = parseInt(pidStr, 10);
+    const timestamp = parseInt(timestampStr, 10);
+
+    // Check if timestamp is too old
+    if (Date.now() - timestamp > LOCK_STALE_MS) return true;
+
+    // Check if PID is still alive (signal 0 = existence check)
+    try { process.kill(pid, 0); return false; } catch { return true; }
+  } catch {
+    return true; // Can't read lock file — consider stale
+  }
+}
+
+function acquireLock(lockPath: string, timeoutMs: number = 5000): void {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    try {
+      const fd = fs.openSync(lockPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY);
+      fs.writeSync(fd, `${process.pid}\n${Date.now()}`);
+      fs.closeSync(fd);
+      return;
+    } catch (e: any) {
+      if (e.code !== "EEXIST") throw e;
+      if (isLockStale(lockPath)) {
+        try { fs.unlinkSync(lockPath); } catch {}
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for database lock: ${lockPath}`);
+      }
+      sleepSync(50);
+    }
+  }
+}
+
+function releaseLock(lockPath: string): void {
+  try { fs.unlinkSync(lockPath); } catch {}
+}
+
+/** Run a function with an exclusive file lock on the database.
+ *  Acquires a lockfile, reloads the DB from disk to get fresh state,
+ *  runs the callback, then releases the lock. Used by findNextTask
+ *  with --claim to prevent concurrent processes from claiming the same task. */
+export function withDbLock<T>(fn: () => T, timeoutMs?: number): T {
+  const lockPath = (activePath ?? DB_PATH) + ".lock";
+  acquireLock(lockPath, timeoutMs);
+  try {
+    reloadDb();
+    return fn();
+  } finally {
+    releaseLock(lockPath);
+  }
 }
 
 /** Get the database synchronously. Throws if not initialized via getDb() first. */

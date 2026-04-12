@@ -121,8 +121,9 @@ ${bold("COMMANDS")}
   state task current [--json] [--with-spec] [--fields ...]
       Show the task for the current worktree/branch.
 
-  state task next --epic <id> [--json] [--with-spec] [--fields ...]
+  state task next --epic <id> [--claim <actor>] [--json] [--with-spec] [--fields ...]
       Find the next ready task in an epic.
+      --claim atomically transitions the task to implement, preventing races.
 
   state task transition --id <id> --phase <phase> [--force] [--actor <name>]
       Move task to a new phase.

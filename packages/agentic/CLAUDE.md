@@ -117,7 +117,7 @@ src/
 
 ## Key concepts
 
-- **Global state** lives in `~/.glorious/state.db` (SQLite via sql.js WASM, shared across repos/worktrees)
+- **Global state** lives in `~/.glorious/state.db` (SQLite via sql.js WASM, shared across repos/worktrees, file-locked for concurrent access)
 - **Plans** live in `~/.glorious/plans/<repo-slug>/` (global, versioned, immutable v1/v2/vN files)
 - **`gsag state`** is the sole interface for reading/writing state — skills call it via Bash, never edit DB directly
 - **Hierarchy**: Epic (`e1`) > Task (`t1`) > Step (`s1`) — all tracked in DB, all can have plans attached

@@ -1,10 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import {
   getDb,
+  getDbSync,
   persistDb,
   getRepo,
   closeDb,
   resetDb,
+  reloadDb,
+  withDbLock,
   normalizeRemoteUrl,
   DB_PATH,
 } from "./db.js";
@@ -175,6 +178,178 @@ describe("db", () => {
     closeDb();
     const db2 = await getDb(TEST_DB_PATH);
     expect(db2).toBeTruthy();
+  });
+
+  // ── reloadDb ─────────────────────────────────────────────────────
+
+  test("reloadDb picks up external disk changes", async () => {
+    // Write data via the normal path
+    const db = await getDb(TEST_DB_PATH);
+    const now = new Date().toISOString();
+    db.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ["test/repo", "e1", "Original", now, now]);
+    persistDb(TEST_DB_PATH);
+
+    // Simulate another process writing to the DB file directly
+    // @ts-ignore -- sql.js has no type declarations
+    const initSqlJs = (await import("sql.js")).default;
+    const SQL = await initSqlJs();
+    const buffer = fs.readFileSync(TEST_DB_PATH);
+    const extDb = new SQL.Database(buffer);
+    extDb.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ["test/repo", "e2", "External", now, now]);
+    const extData = extDb.export();
+    fs.writeFileSync(TEST_DB_PATH, Buffer.from(extData));
+    extDb.close();
+
+    // Before reload, the in-memory DB doesn't see e2
+    const beforeReload = db.exec("SELECT id FROM epics WHERE repo = 'test/repo' ORDER BY id");
+    expect(beforeReload[0]?.values.length).toBe(1);
+
+    // After reload, e2 should be visible
+    reloadDb();
+    const afterReload = getDb(TEST_DB_PATH);
+    const db2 = await afterReload;
+    const result = db2.exec("SELECT id FROM epics WHERE repo = 'test/repo' ORDER BY id");
+    expect(result[0]?.values.length).toBe(2);
+    expect(result[0]?.values[1]?.[0]).toBe("e2");
+  });
+
+  test("reloadDb is no-op when DB not initialized", () => {
+    closeDb();
+    expect(() => reloadDb()).not.toThrow();
+  });
+
+  test("reloadDb preserves activePath after reload", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    persistDb(TEST_DB_PATH); // ensure file exists on disk
+    reloadDb();
+    // After reload, persistDb should still write to TEST_DB_PATH (not DB_PATH)
+    const now = new Date().toISOString();
+    const db2 = await getDb(TEST_DB_PATH);
+    // Verify DB is empty (clean reload)
+    const before = db2.exec("SELECT COUNT(*) FROM epics");
+    expect(before[0]?.values[0]?.[0]).toBe(0);
+
+    db2.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ["test/repo", "e99", "After reload", now, now]);
+    persistDb(); // no explicit path — should use activePath
+    expect(fs.existsSync(TEST_DB_PATH)).toBe(true);
+
+    // Verify data persisted correctly by reopening
+    closeDb();
+    const db3 = await getDb(TEST_DB_PATH);
+    const result = db3.exec("SELECT title FROM epics WHERE repo = 'test/repo' AND id = 'e99'");
+    expect(result[0]?.values[0]?.[0]).toBe("After reload");
+  });
+
+  // ── withDbLock ────────────────────────────────────────────────────
+
+  test("withDbLock acquires and releases lock file", async () => {
+    await getDb(TEST_DB_PATH);
+    persistDb(TEST_DB_PATH);
+    const lockPath = TEST_DB_PATH + ".lock";
+
+    withDbLock(() => {
+      // Lock should exist during callback
+      expect(fs.existsSync(lockPath)).toBe(true);
+    });
+
+    // Lock should be released after callback
+    expect(fs.existsSync(lockPath)).toBe(false);
+  });
+
+  test("withDbLock reloads DB before running callback", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const now = new Date().toISOString();
+    db.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ["test/repo", "e1", "Original", now, now]);
+    persistDb(TEST_DB_PATH);
+
+    // Simulate external write
+    // @ts-ignore -- sql.js has no type declarations
+    const initSqlJs = (await import("sql.js")).default;
+    const SQL = await initSqlJs();
+    const buffer = fs.readFileSync(TEST_DB_PATH);
+    const extDb = new SQL.Database(buffer);
+    extDb.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ["test/repo", "e2", "External", now, now]);
+    fs.writeFileSync(TEST_DB_PATH, Buffer.from(extDb.export()));
+    extDb.close();
+
+    // In-memory DB only sees e1
+    const before = db.exec("SELECT COUNT(*) FROM epics WHERE repo = 'test/repo'");
+    expect(before[0]?.values[0]?.[0]).toBe(1);
+
+    // withDbLock reloads from disk — callback should see both epics
+    const count = withDbLock(() => {
+      const reloadedDb = getDbSync();
+      const result = reloadedDb.exec("SELECT COUNT(*) FROM epics WHERE repo = 'test/repo'");
+      return result[0]?.values[0]?.[0] as number;
+    });
+    expect(count).toBe(2);
+  });
+
+  test("withDbLock releases lock even on callback error", async () => {
+    await getDb(TEST_DB_PATH);
+    persistDb(TEST_DB_PATH);
+    const lockPath = TEST_DB_PATH + ".lock";
+
+    expect(() => {
+      withDbLock(() => { throw new Error("boom"); });
+    }).toThrow("boom");
+
+    expect(fs.existsSync(lockPath)).toBe(false);
+  });
+
+  test("withDbLock times out when lock is held by current process", async () => {
+    await getDb(TEST_DB_PATH);
+    persistDb(TEST_DB_PATH);
+    const lockPath = TEST_DB_PATH + ".lock";
+
+    // Manually create a lock with current PID (so it won't be detected as stale)
+    fs.writeFileSync(lockPath, `${process.pid}\n${Date.now()}`);
+
+    try {
+      expect(() => {
+        withDbLock(() => {}, 200); // 200ms timeout
+      }).toThrow(/lock/i);
+    } finally {
+      // Cleanup
+      if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
+    }
+  });
+
+  test("withDbLock cleans up stale lock (dead PID)", async () => {
+    await getDb(TEST_DB_PATH);
+    persistDb(TEST_DB_PATH);
+    const lockPath = TEST_DB_PATH + ".lock";
+
+    // Create lock with a PID that doesn't exist
+    fs.writeFileSync(lockPath, `999999999\n${Date.now()}`);
+
+    // withDbLock should clean up the stale lock and succeed
+    let ran = false;
+    withDbLock(() => { ran = true; });
+    expect(ran).toBe(true);
+    expect(fs.existsSync(lockPath)).toBe(false);
+  });
+
+  test("withDbLock returns callback result", async () => {
+    await getDb(TEST_DB_PATH);
+    persistDb(TEST_DB_PATH);
+    const result = withDbLock(() => 42);
+    expect(result).toBe(42);
+  });
+
+  test("getDb works after closeDb (sqlModule cached)", async () => {
+    await getDb(TEST_DB_PATH);
+    closeDb();
+    // Second getDb should succeed using cached sqlModule
+    const db2 = await getDb(TEST_DB_PATH);
+    expect(db2).toBeTruthy();
+    const tables = db2.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+    expect(tables[0]?.values.length).toBeGreaterThan(0);
   });
 });
 

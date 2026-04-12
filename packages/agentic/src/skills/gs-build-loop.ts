@@ -5,7 +5,7 @@ description: Loop through an epic's tasks, completing one step per iteration. Us
 
 # Build Loop — Automated Plan Executor
 
-Execute plan steps one at a time. Uses \`gs-agentic state task next --epic <id>\` to find the next ready task automatically.
+Execute plan steps one at a time. Uses \`gs-agentic state task next --epic <id> --claim build-loop\` to find and atomically claim the next ready task.
 
 ## Input
 
@@ -53,10 +53,12 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 
 ### Find and execute the next task
 
-Use \`gs-agentic state task next --epic <epic-id> --json --with-spec\` to find the next ready task.
+Use \`gs-agentic state task next --epic <epic-id> --claim build-loop --json --with-spec\` to find and claim the next ready task.
+
+The \`--claim\` flag atomically transitions the task from \`design\` to \`implement\`, preventing other parallel agents from picking up the same task. If another agent already claimed it, the command skips to the next available task.
 
 - If exit code 1 (no ready tasks): check if all tasks are done → report "All tasks complete." and stop. If some are blocked, report which tasks are blocked and by what.
-- If a task is returned: execute it.
+- If a task is returned: it is already claimed (in \`implement\` phase). Execute it.
 
 ### Execute the task
 
@@ -73,7 +75,7 @@ RULES:
 2. If the task has a plan, read it: \`gs-agentic state plan show --id <task-id>\`
 3. Read the epic plan for overall context: \`gs-agentic state plan show --id <epic-id>\`
 4. Find the matching step in the plan — read ALL files listed in that step.
-5. Transition the task to implement: \`gs-agentic state task transition --id <task-id> --phase implement --actor build-loop\`
+5. The task is already in implement phase (claimed by --claim). No need to transition.
 6. Read CLAUDE.md for build/test commands.
 7. If the step has test cases: write tests FIRST, run them, confirm they fail.
 8. Write the implementation.
@@ -82,7 +84,7 @@ RULES:
 11. Transition task to done: \`gs-agentic state task transition --id <task-id> --phase done --actor build-loop\`
 12. Commit all changes with message: \`<task title>\`
 13. Report: Completed task, verification result, remaining count.
-14. Run \`gs-agentic state task next --epic <epic-id> --json\` to find the NEXT ready task and repeat from step 1.
+14. Run \`gs-agentic state task next --epic <epic-id> --claim build-loop --json\` to find the NEXT ready task and repeat from step 1.
 15. If no tasks remain: report "All tasks complete." and stop.
 \`\`\`
 
