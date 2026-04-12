@@ -50,6 +50,13 @@ ${bold("COMMANDS")}
         /spec-review    Spec gap analysis after refinement
         /spec-lab       Validation experiments against spec unknowns
 
+  ${bold("Plan review")} ${dim("(gs-agentic plan ...)")}
+
+  plan review --id <id> [--port <n>]
+      Open a plan in the browser for review with inline feedback buttons.
+      Starts a local server, opens the rendered plan page, and saves
+      per-step feedback that skills can read via state plan feedback.
+
   ${bold("Worktree management")} ${dim("(gs-agentic wt ...)")}
 
   wt
