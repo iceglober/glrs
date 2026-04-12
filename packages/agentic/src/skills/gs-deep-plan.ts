@@ -2,7 +2,7 @@ import { TASK_PREAMBLE } from "./preamble.js";
 
 export function gsDeepPlan(): string {
   return `---
-description: Create a zero-ambiguity implementation plan with strict TDD methodology. Use when user says 'deep plan', 'plan this', 'create a plan', 'implementation plan', 'break this down', 'plan the work', 'how should we build this'. Outputs a .md file with checkboxes, sequenced work, exact test cases, and dependency order. Creates gs-agentic epics and tasks for every plan step. Do NOT use for implementation (use /gs-work or /gs-build) or strategy evaluation (use /gs-think).
+description: Create a zero-ambiguity implementation plan with strict TDD methodology. Use when user says 'deep plan', 'plan this', 'create a plan', 'implementation plan', 'break this down', 'plan the work', 'how should we build this'. Saves plan to global store via gs-agentic state, with checkboxes, sequenced work, exact test cases, and dependency order. Creates gs-agentic epics and tasks for every plan step. Do NOT use for implementation (use /gs-work or /gs-build) or strategy evaluation (use /gs-think).
 ---
 
 # Plan — Zero-Ambiguity Implementation Planning
@@ -31,7 +31,7 @@ ${TASK_PREAMBLE}
 - **Every function signature MUST be derived from existing patterns** in the codebase. Read a similar function first, then model the new one after it.
 - **Every test case MUST have an inputs/expected table.** Not just a test name. Not just "happy path." An actual table with concrete values.
 - **Zero ambiguity means zero.** Grep your plan for: "if needed", "as appropriate", "wherever", "identify", "figure out", "TBD", "probably", "might", "should be", "consider". If any appear, replace with a concrete decision.
-- **The plan MUST be saved to a .md file.** Always. No exceptions. Save to \`.claude/plans/plan-<slug>.md\` relative to the repo root. This directory MUST be gitignored — if \`.claude/plans/\` is not in \`.gitignore\`, add it before saving.
+- **The plan MUST be saved directly to the global store** via \`gs-agentic state plan set --stdin\`. Never write plans to \`.claude/plans/\` or any repo-local directory — the global store at \`~/.glorious/plans/\` is the single source of truth.
 - **Never produce code in this skill.** Plans only. The plan will be executed by /gs-build or /gs-build-loop.
 - **Every plan step becomes a gs-agentic task under an epic.** After saving the plan file, you MUST create tasks in gs-agentic state.
 
@@ -171,29 +171,33 @@ Explicitly list what the plan does NOT include:
 - {edge case Y} — out of scope because {reason}
 \`\`\`
 
-### Step 7: Save the plan
+### Step 7: Save the plan and sync to gs-agentic state
 
-Save to: \`.claude/plans/plan-<descriptive-slug>.md\`
+Write the plan to the global store and create tasks. This is **mandatory** — every plan must be trackable. Do NOT write plans to \`.claude/plans/\` or any repo-local directory — the global store at \`~/.glorious/plans/\` is the single source of truth.
 
-Ensure \`.claude/plans/\` is listed in the repo's \`.gitignore\`. If it isn't, add it before saving the plan file.
+#### 7a. Determine the epic ID
 
-### Step 8: Sync to gs-agentic state
+If no current task exists, create an epic:
+\`\`\`bash
+gs-agentic state epic create --title "<plan title>" --description "<1-2 sentence summary>"
+\`\`\`
+Record the returned epic ID (e.g. \`e1\`).
 
-After saving the plan file, synchronize the plan into gs-agentic task state. This is **mandatory** — every plan must be trackable.
+If a current task already exists and belongs to an epic, use its epic ID. If the current task IS a standalone task that should become an epic, create a new epic and link it.
 
-#### If no current task exists:
+#### 7b. Save the plan to the global store
 
-1. **Create an epic:**
-   \`\`\`bash
-   gs-agentic state epic create --title "<plan title>" --description "<1-2 sentence summary>"
-   \`\`\`
-   Record the returned epic ID (e.g. \`e1\`).
+Pipe the plan content directly into the global store via stdin:
 
-#### If a current task already exists and belongs to an epic:
+\`\`\`bash
+cat <<'PLAN_EOF' | gs-agentic state plan set --id <epic-id> --stdin
+# Plan content here...
+PLAN_EOF
+\`\`\`
 
-Use its epic ID. If the current task IS a standalone task that should become an epic, create a new epic and link it.
+This saves the plan as a versioned file under \`~/.glorious/plans/<repo>/\`. No temp files — the heredoc pipes content directly. The quoted delimiter (\`'PLAN_EOF'\`) prevents shell variable expansion.
 
-#### Create tasks for every plan step:
+#### 7c. Create tasks for every plan step
 
 For each numbered step (N.M) in the plan, create a task under the epic:
 
@@ -210,17 +214,11 @@ gs-agentic state plan add-task --id <epic-id> --title "Step 2.1: <verb phrase fr
 
 Use the dependency graph from Step 5 to set \`--depends-on\` for each task. If a step depends on multiple prior steps, comma-separate the IDs: \`--depends-on t2,t3\`.
 
-#### Save the plan file as the epic's plan:
-
-\`\`\`bash
-gs-agentic state plan set --id <epic-id> --file .claude/plans/plan-<slug>.md
-\`\`\`
-
-#### Report the task tree:
+#### 7d. Report the task tree
 
 After creating all tasks, run \`gs-agentic status\` and display the result so the user can see the full epic > task tree.
 
-### Step 9: Handle plan updates
+### Step 8: Handle plan updates
 
 If the user requests changes to an existing plan:
 
@@ -236,10 +234,12 @@ If the user requests changes to an existing plan:
    \`\`\`
 3. **Identify which tasks are affected** by the requested changes (and feedback).
 4. **Update gs-agentic state to match** — cancel removed steps, create new tasks, update titles/dependencies for modified steps.
-5. **Then update the plan file** to reflect the changes.
-6. **Re-save the plan:**
+5. **Then update the plan content** to reflect the changes.
+6. **Re-save the plan** (pipe updated content via stdin):
    \`\`\`bash
-   gs-agentic state plan set --id <epic-id> --file .claude/plans/plan-<slug>.md
+cat <<'PLAN_EOF' | gs-agentic state plan set --id <epic-id> --stdin
+<updated plan content>
+PLAN_EOF
    \`\`\`
 7. **Clear incorporated feedback:**
    \`\`\`bash
@@ -260,7 +260,7 @@ The state is the source of truth. Plan file updates follow state changes, not th
 | "I'll figure out the exact path later" | No. Figure it out now. That's what zero ambiguity means. |
 | "The user wants this fast" | A wrong plan is slower than a precise one. Read first. |
 | "I can invent a reasonable signature" | Reasonable != correct. Derive from existing code. |
-| "I'll sync to gs-agentic later" | No. The task tree is created immediately. No plan without tracked tasks. |
+| "I'll sync to gs-agentic later" | No. The task tree is created immediately in Step 7. No plan without tracked tasks. |
 
 ## Red Flags — STOP if you catch yourself doing any of these
 
@@ -269,10 +269,10 @@ The state is the source of truth. Plan file updates follow state changes, not th
 - Writing "TBD", "TODO", "figure out", or any hedge word in the plan
 - Producing a test case with no concrete input/output values
 - Skipping the file change table
-- Not saving to a .md file
+- Not saving the plan to the global store via \`gs-agentic state plan set --stdin\`
 - A step has tests at only one layer with no justification for why other layers don't apply
 - A step has fewer than 5 test case rows
 - No negative/adversarial tests in a step that touches input validation, data access, or endpoints
-- Skipping Step 8 — every plan MUST have gs-agentic tasks under an epic
+- Skipping Step 7c/7d — every plan MUST have gs-agentic tasks under an epic
 `;
 }

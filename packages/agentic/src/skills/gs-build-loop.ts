@@ -34,9 +34,7 @@ If \`$ARGUMENTS\` contains a file path:
    - If standalone with a plan file → read it and go to Step 3 (plan-file mode).
 3. If no task found:
    - Run \`gs-agentic state epic list --json\` — if exactly one active epic exists, use it.
-   - Otherwise, look for the most recently modified \`.claude/plans/plan-*.md\` in the repo.
-   - If found → go to Step 3 (plan-file mode).
-   - If not found → report "No tasks or plans found. Run \`/gs-deep-plan\` first." and stop.
+   - If no epic found → report "No tasks or plans found. Run \`/gs-deep-plan\` first." and stop.
 
 ## Step 2: Epic task loop mode
 
