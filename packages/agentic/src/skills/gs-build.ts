@@ -29,7 +29,7 @@ Run \`gs-agentic state task show --id <id> --json --with-spec\` to get full deta
 
 1. Run \`gs-agentic state task current --json --with-spec\` to find the current task.
 2. If the task belongs to an epic (\`epic\` field is set):
-   - Run \`gs-agentic state task next --epic <epic-id> --json --with-spec\` to find the next ready task.
+   - Run \`gs-agentic state task next --epic <epic-id> --claim build --json --with-spec\` to find and claim the next ready task.
    - Use that task as the target.
 3. If no epic, use the current task itself.
 4. If no task found (exit code 1), report "No task found. Provide a task ID (e.g. \`/build t3\`) or run \`/deep-plan\` first." and stop.
@@ -61,7 +61,7 @@ The target task has:
 2. **If this belongs to an epic, read the epic's plan too**: \`gs-agentic state plan show --id <epic-id>\` — this is the full plan with file paths, test cases, and signatures.
 3. **Read \`CLAUDE.md\`** for project-specific commands (typecheck, build, lint, test).
 4. **Read all source files** listed in the task's plan step — every file path mentioned in the plan.
-5. **Transition to implement**: \`gs-agentic state task transition --id <id> --phase implement --actor build\`
+5. **Transition to implement** (if not already): If the task was found via \`--claim\`, it is already in \`implement\` phase. Otherwise: \`gs-agentic state task transition --id <id> --phase implement --actor build\`
 
 ## Step 3: Plan the increment
 

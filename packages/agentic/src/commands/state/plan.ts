@@ -30,8 +30,9 @@ const set = command({
     id: option({ type: string, long: "id", short: "i", description: "Task or Epic ID" }),
     file: option({ type: optional(string), long: "file", short: "f", description: "Read content from file" }),
     content: option({ type: optional(string), long: "content", short: "c", description: "Plan content string" }),
+    stdin: flag({ long: "stdin", description: "Read content from stdin" }),
   },
-  handler: (args) => {
+  handler: async (args) => {
     // Verify entity exists (task or epic)
     const task = loadTask(args.id);
     const epic = !task ? loadEpic(args.id) : null;
@@ -47,12 +48,41 @@ const set = command({
       } catch (e: any) {
         console.error(e.message);
         process.exit(1);
-        return; // unreachable, but satisfies TS
+        return;
       }
     } else if (args.content) {
       ver = savePlan(args.id, args.content);
+    } else if (args.stdin) {
+      if (process.stdin.isTTY) {
+        console.error("--stdin requires piped input. Use: cat plan.md | gs-agentic state plan set --id <id> --stdin");
+        process.exit(1);
+        return;
+      }
+      const sourceCount = [args.file, args.content].filter(Boolean).length;
+      if (sourceCount > 0) {
+        console.error("Provide only one of --file, --content, or --stdin.");
+        process.exit(1);
+        return;
+      }
+      try {
+        const chunks: Buffer[] = [];
+        for await (const chunk of process.stdin) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string, "utf-8"));
+        }
+        const text = Buffer.concat(chunks).toString("utf-8");
+        if (!text.trim()) {
+          console.error("No content received on stdin.");
+          process.exit(1);
+          return;
+        }
+        ver = savePlan(args.id, text);
+      } catch (e: any) {
+        console.error(`Failed to read stdin: ${e.message}`);
+        process.exit(1);
+        return;
+      }
     } else {
-      console.error("Provide --file or --content.");
+      console.error("Provide --file, --content, or --stdin.");
       process.exit(1);
       return;
     }
@@ -76,7 +106,7 @@ const addTask = command({
     const child = createTask({
       title: args.title,
       epic: args.id,
-      phase: "implement",
+      phase: "design",
       actor: args.actor ?? "cli",
     });
 

@@ -123,8 +123,9 @@ ${bold("COMMANDS")}
   state task current [--json] [--with-spec] [--fields ...]
       Show the task for the current worktree/branch.
 
-  state task next --epic <id> [--json] [--with-spec] [--fields ...]
+  state task next --epic <id> [--claim <actor>] [--json] [--with-spec] [--fields ...]
       Find the next ready task in an epic.
+      --claim atomically transitions the task to implement, preventing races.
 
   state task transition --id <id> --phase <phase> [--force] [--actor <name>]
       Move task to a new phase.
@@ -147,13 +148,13 @@ ${bold("COMMANDS")}
   state epic list [--json]
       List all epics.
 
-  state spec show --id <id>
-      Display a task's spec.
+  state plan show --id <id>
+      Display plan content for a task or epic.
 
-  state spec set --id <id> --file <path> | --content "..."
-      Write a task's spec.
+  state plan set --id <id> --file <path> | --content "..." | --stdin
+      Write plan content for a task or epic.
 
-  state spec add-task --id <epic-id> --title "..." [--depends-on <ids>]
+  state plan add-task --id <epic-id> --title "..." [--depends-on <ids>]
       Add a task to an epic.
 
   state review create --task <id> --source <source> --commit-sha <sha> [--epic <id>] [--pr-number <n>] [--summary "..."]

@@ -25,7 +25,7 @@ src/
 │   ├── state/            # gsag state — task state management (internal)
 │   │   ├── index.ts      # Subcommand group (task, epic, plan, review, qa, log)
 │   │   ├── task.ts       # create, show, current, next, transition, update, cancel, list
-│   │   ├── plan.ts       # show, set, add-task, history
+│   │   ├── plan.ts       # show, set (--file/--content/--stdin), add-task, history, feedback, clear-feedback
 │   │   ├── review.ts     # create, add-item, resolve, list, summary
 │   │   ├── qa.ts         # QA report
 │   │   └── log.ts        # Transition history
@@ -62,8 +62,8 @@ src/
 │   ├── plan-html.test.ts     # Plan HTML tests
 │   ├── plan-server.ts        # Local HTTP server for plan review sessions
 │   ├── plan-server.test.ts   # Plan server tests
-│   ├── settings.ts       # User settings (plan.auto-open, etc.)
-│   ├── settings.test.ts  # Settings tests
+│   ├── settings.ts           # User settings (~/.glorious/settings.json)
+│   ├── settings.test.ts      # Settings tests
 │   ├── fmt.ts            # Terminal formatting (bold, dim, colors)
 │   ├── version.ts        # VERSION constant
 │   └── update-check.ts   # Update checker
@@ -123,7 +123,7 @@ src/
 
 ## Key concepts
 
-- **Global state** lives in `~/.glorious/state.db` (SQLite via sql.js WASM, shared across repos/worktrees)
+- **Global state** lives in `~/.glorious/state.db` (SQLite via sql.js WASM, shared across repos/worktrees, file-locked for concurrent access)
 - **Plans** live in `~/.glorious/plans/<repo-slug>/` (global, versioned, immutable v1/v2/vN files)
 - **`gsag state`** is the sole interface for reading/writing state — skills call it via Bash, never edit DB directly
 - **Hierarchy**: Epic (`e1`) > Task (`t1`) > Step (`s1`) — all tracked in DB, all can have plans attached

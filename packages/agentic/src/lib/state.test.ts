@@ -777,6 +777,106 @@ describe("findNextTask", () => {
     // All remaining are either terminal or blocked
     expect(findNextTask("e1")).toBeNull();
   });
+
+  test("claim transitions task to implement and returns it", () => {
+    createEpic({ title: "Epic" });
+    createTask({ title: "T1", epic: "e1" }); // understand phase
+
+    const next = findNextTask("e1", { claim: "agent-1" });
+    expect(next).not.toBeNull();
+    expect(next!.id).toBe("t1");
+    expect(next!.phase).toBe("implement");
+  });
+
+  test("claim skips already-claimed tasks", () => {
+    createEpic({ title: "Epic" });
+    createTask({ title: "T1", epic: "e1" }); // understand
+    createTask({ title: "T2", epic: "e1" }); // understand
+
+    // Agent 1 claims t1
+    const first = findNextTask("e1", { claim: "agent-1" });
+    expect(first!.id).toBe("t1");
+    expect(first!.phase).toBe("implement");
+
+    // Agent 2 calls claim — should skip t1 (in implement) and get t2
+    const second = findNextTask("e1", { claim: "agent-2" });
+    expect(second).not.toBeNull();
+    expect(second!.id).toBe("t2");
+    expect(second!.phase).toBe("implement");
+  });
+
+  test("claim returns null when all tasks already claimed", () => {
+    createEpic({ title: "Epic" });
+    createTask({ title: "T1", epic: "e1" });
+
+    findNextTask("e1", { claim: "agent-1" }); // claims t1
+    const second = findNextTask("e1", { claim: "agent-2" });
+    expect(second).toBeNull();
+  });
+
+  test("claim skips tasks in design with unmet deps", () => {
+    createEpic({ title: "Epic" });
+    createTask({ title: "T1", epic: "e1", phase: "design" });
+    const t2 = createTask({ title: "T2", epic: "e1", phase: "design" });
+    t2.dependencies = ["t1"];
+    saveTask(t2);
+
+    // Claim should get t1 (deps met), not t2 (deps unmet)
+    const next = findNextTask("e1", { claim: "agent-1" });
+    expect(next!.id).toBe("t1");
+
+    // T2 still blocked (t1 is now in implement, not done)
+    const second = findNextTask("e1", { claim: "agent-2" });
+    expect(second).toBeNull();
+  });
+
+  test("claim skips tasks in verify/ship phase (cannot go backward to implement)", () => {
+    createEpic({ title: "Epic" });
+    createTask({ title: "T1", epic: "e1" });
+    transitionTask("t1", "implement", { force: true });
+    transitionTask("t1", "verify", { force: true });
+
+    // Claiming should skip t1 (verify -> implement would be backward)
+    const next = findNextTask("e1", { claim: "agent-1" });
+    expect(next).toBeNull();
+  });
+
+  test("non-claim path returns task without transitioning it", () => {
+    createEpic({ title: "Epic" });
+    createTask({ title: "T1", epic: "e1", phase: "design" });
+
+    const next = findNextTask("e1");
+    expect(next).not.toBeNull();
+    expect(next!.id).toBe("t1");
+    expect(next!.phase).toBe("design"); // NOT transitioned to implement
+  });
+
+  test("claim after external DB modification sees fresh state", async () => {
+    createEpic({ title: "Epic" });
+    createTask({ title: "T1", epic: "e1", phase: "design" });
+    createTask({ title: "T2", epic: "e1", phase: "design" });
+
+    // Simulate another process claiming t1 by modifying the DB file directly
+    const { persistDb } = await import("./db.js");
+    persistDb(); // ensure current state is on disk
+
+    // @ts-ignore -- sql.js has no type declarations
+    const initSqlJs = (await import("sql.js")).default;
+    const SQL = await initSqlJs();
+    const buffer = fs.readFileSync(TEST_DB_PATH);
+    const extDb = new SQL.Database(buffer);
+    // Externally transition t1 to implement (simulating another process claiming it)
+    const repo = extDb.exec("SELECT repo FROM tasks LIMIT 1")[0]?.values[0]?.[0];
+    extDb.run("UPDATE tasks SET phase = 'implement' WHERE id = 't1' AND repo = ?", [repo]);
+    fs.writeFileSync(TEST_DB_PATH, Buffer.from(extDb.export()));
+    extDb.close();
+
+    // Claim should reload from disk, see t1 as implement, skip to t2
+    const next = findNextTask("e1", { claim: "agent-1" });
+    expect(next).not.toBeNull();
+    expect(next!.id).toBe("t2");
+    expect(next!.phase).toBe("implement");
+  });
 });
 
 // ── findReadyTasks ──────────────────────────────────────────────────
