@@ -110,7 +110,8 @@ ${bold("COMMANDS")}
       Reset a config value to its default.
 
       Available settings:
-        plan.auto-open   Open browser automatically in plan review (default: true)
+        plan.auto-open    Open browser automatically in plan review (default: true)
+        state.auto-open   Open browser automatically in state web (default: true)
 
   ${bold("Advanced")} ${dim("(internal — used by skills and orchestrator)")}
 

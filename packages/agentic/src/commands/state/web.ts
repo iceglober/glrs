@@ -26,7 +26,7 @@ export const web = command({
       all: args.all,
     });
 
-    if (getSetting("plan.auto-open") !== "false") {
+    if (getSetting("state.auto-open") !== "false") {
       const openCmd = process.platform === "darwin" ? "open" : "xdg-open";
       execFile(openCmd, [server.url]);
     }
