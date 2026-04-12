@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { gs } from "./gs.js";
-import { COMMANDS } from "./index.js";
+import { COMMANDS, GS_SKILL_NAMES } from "./index.js";
 import { TASK_PREAMBLE } from "./preamble.js";
 
 describe("gs", () => {
@@ -23,12 +23,13 @@ describe("gs", () => {
     expect(result).toContain(TASK_PREAMBLE);
   });
 
-  test("lists all registered gs-* skills", () => {
-    const gsSkills = Object.keys(COMMANDS)
-      .filter((k) => k.startsWith("gs-"))
-      .map((k) => "/" + k.replace(".md", ""));
-    for (const skill of gsSkills) {
-      expect(result).toContain(skill);
+  test("lists all registered gs skills by canonical name", () => {
+    const gsSkillSlugs = Object.values(GS_SKILL_NAMES)
+      .map((entry) => "/" + entry.canonical.replace(".md", ""))
+      .filter((s) => s !== "/gs"); // gs.md doesn't list itself
+    expect(gsSkillSlugs.length).toBeGreaterThan(0);
+    for (const slug of gsSkillSlugs) {
+      expect(result).toContain(slug);
     }
   });
 

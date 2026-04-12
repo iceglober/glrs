@@ -16,27 +16,29 @@ ${bold("COMMANDS")}
   status [--json]
       Show all tasks in a tree view with phases, branches, and progress.
 
-  skills [--user | --project] [--force] [--prefix]
+  skills [--user | --project] [--force] [--prefix <string>]
       Install glorious workflow skills as Claude Code slash commands.
 
       With no flags, shows an interactive picker to choose scope.
       --user     Install to ~/.claude/ (available in all projects)
       --project  Install to .claude/ (committed to this repo)
+      --prefix   Prefix for skill names (e.g. --prefix gs- for legacy names).
+                 Default: no prefix (short canonical names).
       Falls back to project scope when stdin is not a TTY.
 
-      Engineering skills (gs- versions use SQLite state):
+      Engineering skills (default names shown; use --prefix gs- for gs-* names):
         /gs                General workflow assistant
-        /gs-think          Product strategy session before building
-        /gs-work           Implement a task (from spec or ad-hoc)
-        /gs-fix            Fix bugs, update task if needed
-        /gs-qa             QA the diff against acceptance criteria
-        /gs-ship           Typecheck, review, commit, push, PR
-        /gs-build          Implement a specific gs-agentic task
-        /gs-build-loop     Loop through an epic's tasks automatically
-        /gs-deep-plan      Zero-ambiguity implementation plan
-        /gs-deep-review    6-agent parallel code review
-        /gs-quick-review   Fast single-pass code review
-        /gs-address-feedback  Resolve PR review feedback
+        /think             Product strategy session before building
+        /work              Implement a task (from spec or ad-hoc)
+        /fix               Fix bugs, update task if needed
+        /qa                QA the diff against acceptance criteria
+        /ship              Typecheck, review, commit, push, PR
+        /build             Implement a specific gs-agentic task
+        /build-loop        Loop through an epic's tasks automatically
+        /deep-plan         Zero-ambiguity implementation plan
+        /deep-review       6-agent parallel code review
+        /quick-review      Fast single-pass code review
+        /address-feedback  Resolve PR review feedback
 
       Utility skills:
         /research-auto  Autonomous experimentation (think-test-reflect)

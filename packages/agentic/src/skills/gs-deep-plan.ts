@@ -2,7 +2,7 @@ import { TASK_PREAMBLE } from "./preamble.js";
 
 export function gsDeepPlan(): string {
   return `---
-description: Create a zero-ambiguity implementation plan with strict TDD methodology. Use when user says 'deep plan', 'plan this', 'create a plan', 'implementation plan', 'break this down', 'plan the work', 'how should we build this'. Outputs a .md file with checkboxes, sequenced work, exact test cases, and dependency order. Creates gs-agentic epics and tasks for every plan step. Do NOT use for implementation (use /gs-work or /gs-build) or strategy evaluation (use /gs-think).
+description: Create a zero-ambiguity implementation plan with strict TDD methodology. Use when user says 'deep plan', 'plan this', 'create a plan', 'implementation plan', 'break this down', 'plan the work', 'how should we build this'. Outputs a .md file with checkboxes, sequenced work, exact test cases, and dependency order. Creates gs-agentic epics and tasks for every plan step. Do NOT use for implementation (use /work or /build) or strategy evaluation (use /think).
 ---
 
 # Plan — Zero-Ambiguity Implementation Planning
@@ -32,7 +32,7 @@ ${TASK_PREAMBLE}
 - **Every test case MUST have an inputs/expected table.** Not just a test name. Not just "happy path." An actual table with concrete values.
 - **Zero ambiguity means zero.** Grep your plan for: "if needed", "as appropriate", "wherever", "identify", "figure out", "TBD", "probably", "might", "should be", "consider". If any appear, replace with a concrete decision.
 - **The plan MUST be saved to a .md file.** Always. No exceptions. Save to \`.claude/plans/plan-<slug>.md\` relative to the repo root. This directory MUST be gitignored — if \`.claude/plans/\` is not in \`.gitignore\`, add it before saving.
-- **Never produce code in this skill.** Plans only. The plan will be executed by /gs-build or /gs-build-loop.
+- **Never produce code in this skill.** Plans only. The plan will be executed by /build or /build-loop.
 - **Every plan step becomes a gs-agentic task under an epic.** After saving the plan file, you MUST create tasks in gs-agentic state.
 
 ## Process

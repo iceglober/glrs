@@ -2,7 +2,7 @@ import { TASK_PREAMBLE } from "./preamble.js";
 
 export function gsThink(): string {
   return `---
-description: Product strategy session — think through what to build and why before writing code. Use when user says 'should we build', 'is this worth building', 'think through', 'evaluate this feature', 'before we start coding', 'does this make sense'. Validates ideas against existing tasks, asks forcing questions, outputs a plan or a kill decision. Do NOT use for implementation (use /gs-work).
+description: Product strategy session — think through what to build and why before writing code. Use when user says 'should we build', 'is this worth building', 'think through', 'evaluate this feature', 'before we start coding', 'does this make sense'. Validates ideas against existing tasks, asks forcing questions, outputs a plan or a kill decision. Do NOT use for implementation (use /work).
 ---
 
 # Think

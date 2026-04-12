@@ -32,7 +32,7 @@ Run \`gs-agentic state task show --id <id> --json --with-spec\` to get full deta
    - Run \`gs-agentic state task next --epic <epic-id> --json --with-spec\` to find the next ready task.
    - Use that task as the target.
 3. If no epic, use the current task itself.
-4. If no task found (exit code 1), report "No task found. Provide a task ID (e.g. \`/gs-build t3\`) or run \`/gs-deep-plan\` first." and stop.
+4. If no task found (exit code 1), report "No task found. Provide a task ID (e.g. \`/build t3\`) or run \`/deep-plan\` first." and stop.
 
 ### If \`$ARGUMENTS\` is a free-text description (not a task ID):
 

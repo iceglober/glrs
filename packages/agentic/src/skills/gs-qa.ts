@@ -1,8 +1,8 @@
-import { TASK_PREAMBLE } from "./preamble.js";
+import { REVIEW_PREAMBLE } from "./preamble.js";
 
 export function gsQa(): string {
   return `---
-description: QA the current diff against the task's acceptance criteria. Use when user says 'test this', 'QA the changes', 'check the diff', 'does this meet the criteria', 'verify the implementation'. Builds a test matrix, traces code paths per scenario, reports PASS/FAIL with file references.
+description: QA the current diff against the task's acceptance criteria. Use when user says 'test this', 'QA the changes', 'check the diff', 'does this meet the criteria', 'verify the implementation'. Builds a test matrix, traces code paths per scenario, reports findings with file references, stores results in review DB.
 ---
 
 # QA — Verification Before Completion
@@ -14,7 +14,7 @@ Before claiming anything passes, you MUST run the command and cite the output. "
 ## Critical Rules
 
 - **Run all verification commands fresh** — never rely on prior output.
-- **Read the actual diff** — do not trust the /gs-work session's summary.
+- **Read the actual diff** — do not trust the /work session's summary.
 - **Do not trust the implementer** — they finished suspiciously quickly. Verify everything independently.
 - **Duplicate code is a CRITICAL bug** — if the same block appears twice in the diff, that is a failure.
 
@@ -22,30 +22,37 @@ Before claiming anything passes, you MUST run the command and cite the output. "
 
 Optional focus area: \`$ARGUMENTS\`
 
-${TASK_PREAMBLE}
+${REVIEW_PREAMBLE}
 
-## Step 1: Fresh build verification
+If a task is found, note its title, description, and acceptance criteria — use these to judge whether the changes actually address what was intended.
+
+## Step 1: Determine the diff
+
+\`\`\`bash
+git diff --cached --stat
+git diff --stat
+git branch --show-current
+git merge-base main HEAD
+\`\`\`
+
+**Diff strategy (in order of precedence):**
+1. If there are staged changes: \`git diff --cached\`
+2. If there are unstaged changes: \`git diff\`
+3. If the working tree is clean: \`git diff $(git merge-base main HEAD)...HEAD\`
+
+Store the chosen diff command. Run it to get the full diff. For each changed file, read the FULL file for surrounding context.
+
+## Step 2: Fresh build verification
 
 Run these commands RIGHT NOW and paste their output:
 
 \`\`\`bash
 bun run typecheck
 bun test
+bun run build
 \`\`\`
 
-Record the results. If either fails, that is an immediate QA failure.
-
-## Step 2: Read the full diff
-
-\`\`\`bash
-git diff main...HEAD
-\`\`\`
-
-Read EVERY line of the diff. Look specifically for:
-- **Duplicate code blocks** — same logic appearing in multiple places (CRITICAL)
-- **Unused imports** — imports that nothing references
-- **Debug code** — console.log, TODO comments left in
-- **Unrelated changes** — modifications outside the task scope
+Record the results. If ANY fails, that is an immediate QA failure — report it and stop.
 
 ## Step 3: Pass 1 — Spec compliance
 
@@ -57,6 +64,8 @@ For each requirement (from task title, description, or acceptance criteria):
 
 ## Step 4: Pass 2 — Code quality
 
+Read EVERY line of the diff. Check for:
+
 | Check | What to look for |
 |-------|-----------------|
 | Duplication | Same code block appearing 2+ times — CRITICAL |
@@ -64,21 +73,53 @@ For each requirement (from task title, description, or acceptance criteria):
 | Type safety | Proper types, no \`any\`? |
 | Edge cases | Empty arrays, null values, missing data? |
 | Style | Matches existing codebase patterns? |
+| Debug artifacts | console.log, TODO comments left in |
+| Unused imports | Imports that nothing references |
+| Unrelated changes | Modifications outside the task scope |
 
 Severity:
 - **CRITICAL** — Must fix before shipping (bugs, duplicate code, security holes)
-- **IMPORTANT** — Should fix (real problems, not dangerous)
-- **MINOR** — Note for later (style, could be better)
+- **HIGH** — Should fix before shipping (real problems)
+- **MEDIUM** — Should fix (not dangerous but incorrect)
+- **LOW** — Note for later (style, could be better)
 
-## Step 5: Report
+## Step 5: Store findings in DB
+
+If a task was found and there are findings:
+
+\`\`\`bash
+# Create the review record
+REVIEW_ID=$(gs-agentic state review create --task <task-id> --source qa \\
+  --commit-sha $(git rev-parse HEAD) --summary "QA verification")
+
+# For each finding:
+gs-agentic state review add-item --review $REVIEW_ID \\
+  --body "<finding description>" \\
+  --file "<path>" --line <line> \\
+  --severity <CRITICAL|HIGH|MEDIUM|LOW> \\
+  --agents "qa" \\
+  --impact "<why it matters>" \\
+  --suggested-fix "<how to resolve>"
+\`\`\`
+
+Also record the pass/fail result:
+
+\`\`\`bash
+gs-agentic state qa --id <task-id> --status pass|fail --summary "<one-line summary>"
+\`\`\`
+
+## Step 6: Report
 
 \`\`\`
 ## QA Report
 
-**Task:** {id}: {title}
+**Branch:** {branch name}
+**Base:** {base reference}
+**Task:** {task id}: {task title} (or "No task" if ad-hoc)
 **Diff:** {N} files changed
 **Typecheck:** PASS/FAIL (cite command output)
 **Tests:** {pass}/{total} (cite command output)
+**Build:** PASS/FAIL
 
 ### Pass 1: Spec Compliance
 
@@ -88,29 +129,39 @@ Severity:
 
 ### Pass 2: Code Quality
 
-| # | Issue | Severity | File |
-|---|-------|----------|------|
-| 1 | {issue} | CRITICAL/IMPORTANT/MINOR | {file:line} |
+| # | Severity | Finding | File |
+|---|----------|---------|------|
+| 1 | CRITICAL | Description | path:line |
+| 2 | HIGH     | Description | path:line |
 
-### Failures
+### Details
 
-| # | Scenario | Gap | Severity | File |
-|---|----------|-----|----------|------|
-| 1 | {scenario} | {what's missing} | {severity} | {file:line} |
+{For each CRITICAL or HIGH finding:}
+
+1. **[SEVERITY]** Finding description
+   - File: \`path/to/file.ts:123\`
+   - Fix: Suggested resolution
 \`\`\`
 
-## Step 6: Record result
+### Verdict
 
-\`\`\`bash
-gs-agentic state qa --id <id> --status pass|fail --summary "<one-line summary>"
-\`\`\`
+End with one of:
+- **SHIP IT** — No critical or high findings. All spec requirements pass. Code is ready.
+- **NEEDS FIXES** — Has findings that must be addressed before shipping.
 
 ## Step 7: Fix CRITICAL issues
 
 If there are CRITICAL issues, fix them now:
-- Fix each one
-- Run typecheck + tests after each fix
-- Re-verify the fix didn't introduce new problems
-- Update the QA report
+1. Fix each one
+2. Run typecheck + tests + build after each fix
+3. Re-verify the fix didn't introduce new problems
+4. Update the findings in the DB:
+   \`\`\`bash
+   gs-agentic state review resolve --item <item-id> --status fixed \\
+     --resolution "Fixed: <what changed>" --commit-sha $(git rev-parse HEAD)
+   \`\`\`
+5. Update the QA report
+
+If **NEEDS FIXES** with only HIGH/MEDIUM findings, ask the user how to proceed.
 `;
 }

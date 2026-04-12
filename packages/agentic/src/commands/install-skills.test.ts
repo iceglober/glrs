@@ -13,7 +13,7 @@ import {
   type InstallPlan,
   type InstallResult,
 } from "./install-skills.js";
-import { COMMANDS, SKILLS } from "../skills/index.js";
+import { buildCommands, SKILLS } from "../skills/index.js";
 
 describe("resolveClaudeDir", () => {
   test("user scope returns ~/.claude", () => {
@@ -43,38 +43,58 @@ describe("computeInstallPlan", () => {
     readFileFn: () => "",
   };
 
-  test("default plan with project scope", () => {
+  test("default plan with no prefix uses canonical short names", () => {
     const plan = computeInstallPlan({
       claudeDir: "/tmp/repo/.claude",
-      prefix: false,
+      prefix: undefined,
       force: false,
       ...noopFs,
     });
     expect(plan.claudeDir).toBe("/tmp/repo/.claude");
-    expect(plan.commands).toEqual(COMMANDS);
-    expect(plan.skills).toEqual(SKILLS);
+    // Should have canonical short names
+    expect(plan.commands["think.md"]).toBeDefined();
+    expect(plan.commands["work.md"]).toBeDefined();
+    expect(plan.commands["deep-plan.md"]).toBeDefined();
+    // Should NOT have gs- prefixed names
+    expect(plan.commands["gs-think.md"]).toBeUndefined();
+    expect(plan.commands["gs-work.md"]).toBeUndefined();
+    // Non-gs skills unchanged
+    expect(plan.commands["research.md"]).toBeDefined();
+    expect(plan.commands["spec-make.md"]).toBeDefined();
     expect(plan.collisions).toEqual([]);
   });
 
-  test("prefix wraps files under glorious/", () => {
+  test("prefix gs- produces legacy names", () => {
     const plan = computeInstallPlan({
       claudeDir: "/tmp/repo/.claude",
-      prefix: true,
+      prefix: "gs-",
       force: false,
       ...noopFs,
     });
-    for (const key of Object.keys(plan.commands)) {
-      expect(key).toStartWith("glorious/");
-    }
-    for (const key of Object.keys(plan.skills)) {
-      expect(key).toStartWith("glorious/");
-    }
+    expect(plan.commands["gs-think.md"]).toBeDefined();
+    expect(plan.commands["gs-work.md"]).toBeDefined();
+    expect(plan.commands["gs-deep-plan.md"]).toBeDefined();
+    // Non-gs skills still unchanged
+    expect(plan.commands["research.md"]).toBeDefined();
+  });
+
+  test("custom prefix applies to gs skills only", () => {
+    const plan = computeInstallPlan({
+      claudeDir: "/tmp/repo/.claude",
+      prefix: "my-",
+      force: false,
+      ...noopFs,
+    });
+    expect(plan.commands["my-think.md"]).toBeDefined();
+    expect(plan.commands["my-work.md"]).toBeDefined();
+    // Non-gs unchanged
+    expect(plan.commands["research.md"]).toBeDefined();
   });
 
   test("force skips collision detection", () => {
     const plan = computeInstallPlan({
       claudeDir: "/tmp/repo/.claude",
-      prefix: false,
+      prefix: undefined,
       force: true,
       readManifestFn: () => emptyManifest,
       existsFn: () => true,
@@ -86,7 +106,7 @@ describe("computeInstallPlan", () => {
   test("detects collisions for new files", () => {
     const plan = computeInstallPlan({
       claudeDir: "/tmp/repo/.claude",
-      prefix: false,
+      prefix: undefined,
       force: false,
       readManifestFn: () => emptyManifest,
       existsFn: () => true,
@@ -98,7 +118,7 @@ describe("computeInstallPlan", () => {
   test("scope field is set correctly in plan", () => {
     const plan = computeInstallPlan({
       claudeDir: "/tmp/repo/.claude",
-      prefix: false,
+      prefix: undefined,
       force: false,
       scope: "user",
       ...noopFs,
@@ -107,13 +127,14 @@ describe("computeInstallPlan", () => {
   });
 
   test("no collision for previously-installed files", () => {
+    const defaultCommands = buildCommands();
     const previousManifest: Manifest = {
-      commands: Object.keys(COMMANDS),
+      commands: Object.keys(defaultCommands),
       skills: Object.keys(SKILLS),
     };
     const plan = computeInstallPlan({
       claudeDir: "/tmp/repo/.claude",
-      prefix: false,
+      prefix: undefined,
       force: false,
       readManifestFn: () => previousManifest,
       existsFn: () => true,
@@ -136,7 +157,7 @@ describe("executeInstall", () => {
       commands: { "test-cmd.md": "# test command" },
       skills: { "test-skill.md": "# test skill" },
       previousManifest: { commands: [], skills: [] },
-      usePrefix: false,
+      prefix: undefined,
       force: false,
       collisions: [],
       scope: "project",
@@ -243,13 +264,14 @@ describe("formatInstallResult", () => {
     expect(lines.some((l) => l.includes("all skills up to date"))).toBe(true);
   });
 
-  test("lists command slugs", () => {
+  test("lists command slugs with canonical names", () => {
     const lines = formatInstallResult({
       ...base,
       created: 1,
-      commandNames: ["glorious/work.md"],
+      commandNames: ["think.md", "deep-plan.md"],
     });
-    expect(lines.some((l) => l.includes("/glorious:work"))).toBe(true);
+    expect(lines.some((l) => l.includes("/think"))).toBe(true);
+    expect(lines.some((l) => l.includes("/deep-plan"))).toBe(true);
   });
 
   test("lists skill slugs", () => {
