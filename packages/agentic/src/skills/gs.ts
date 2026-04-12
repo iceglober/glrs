@@ -23,23 +23,23 @@ ${TASK_PREAMBLE}
 
 \`$ARGUMENTS\`
 
-## Available /gs-* skills
+## Available skills
 
 If the user's request maps to a specific workflow, suggest the right skill:
 
 | Skill | When to use |
 |-------|------------|
-| \`/gs-think\` | Think through what to build before coding |
-| \`/gs-deep-plan\` | Create a zero-ambiguity implementation plan |
-| \`/gs-work\` | Implement a task (ad-hoc or from spec) |
-| \`/gs-build\` | Implement a specific tracked task by ID |
-| \`/gs-build-loop\` | Loop through an epic's tasks automatically |
-| \`/gs-fix\` | Fix bugs or address issues in current task |
-| \`/gs-qa\` | QA the diff against acceptance criteria |
-| \`/gs-deep-review\` | 6-agent parallel code review |
-| \`/gs-quick-review\` | Fast single-pass code review |
-| \`/gs-ship\` | Typecheck, review, commit, push, create PR |
-| \`/gs-address-feedback\` | Resolve PR review feedback |
+| \`/think\` | Think through what to build before coding |
+| \`/deep-plan\` | Create a zero-ambiguity implementation plan |
+| \`/work\` | Implement a task (ad-hoc or from spec) |
+| \`/build\` | Implement a specific tracked task by ID |
+| \`/build-loop\` | Loop through an epic's tasks automatically |
+| \`/fix\` | Fix bugs or address issues in current task |
+| \`/qa\` | QA the diff against acceptance criteria |
+| \`/deep-review\` | 6-agent parallel code review |
+| \`/quick-review\` | Fast single-pass code review |
+| \`/ship\` | Typecheck, review, commit, push, create PR |
+| \`/address-feedback\` | Resolve PR review feedback |
 
 ## How to respond
 

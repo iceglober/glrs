@@ -291,8 +291,8 @@ If **NEEDS FIXES** or **STOP**, ask the user:
 
 > How would you like to proceed?
 > 1. **Fix now** — I'll address the CRITICAL/HIGH findings immediately
-> 2. **Plan fixes** — Run \`/gs-deep-plan\` to create a structured fix plan
-> 3. **Address later** — Run \`/gs-address-feedback\` when ready to work through findings
+> 2. **Plan fixes** — Run \`/deep-plan\` to create a structured fix plan
+> 3. **Address later** — Run \`/address-feedback\` when ready to work through findings
 
 Do NOT auto-fix. Wait for the user's choice.
 `;

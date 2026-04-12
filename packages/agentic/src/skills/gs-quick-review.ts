@@ -143,6 +143,6 @@ End with one of:
 - **SHIP IT** — No critical or high findings.
 - **NEEDS FIXES** — Has findings that should be addressed before merging.
 
-If **NEEDS FIXES**, ask the user how to proceed (same as /gs-deep-review).
+If **NEEDS FIXES**, ask the user how to proceed (same as /deep-review).
 `;
 }

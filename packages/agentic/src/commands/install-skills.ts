@@ -1,9 +1,9 @@
-import { command, flag } from "cmd-ts";
+import { command, option, flag, optional, string } from "cmd-ts";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import readline from "node:readline";
-import { COMMANDS, SKILLS } from "../skills/index.js";
+import { buildCommands, SKILLS, BUILTIN_COLLISIONS } from "../skills/index.js";
 import { ok, info, warn, yellow } from "../lib/fmt.js";
 import { gitRoot } from "../lib/git.js";
 import { select } from "../lib/select.js";
@@ -103,22 +103,13 @@ function removeStaleFiles(
   return removed;
 }
 
-/** Nest all skill files under a `glorious/` subdirectory */
-function addGloriousPrefix(files: Record<string, string>): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const [name, content] of Object.entries(files)) {
-    result[`glorious/${name}`] = content;
-  }
-  return result;
-}
-
 
 export interface InstallPlan {
   claudeDir: string;
   commands: Record<string, string>;
   skills: Record<string, string>;
   previousManifest: Manifest;
-  usePrefix: boolean;
+  prefix: string | undefined;
   force: boolean;
   collisions: string[];
   scope: "project" | "user";
@@ -127,7 +118,7 @@ export interface InstallPlan {
 /** Build a plan describing what to install, without performing any filesystem writes. */
 export function computeInstallPlan(opts: {
   claudeDir: string;
-  prefix: boolean;
+  prefix: string | undefined;
   force: boolean;
   scope?: "project" | "user";
   readManifestFn?: (dir: string) => Manifest;
@@ -145,8 +136,8 @@ export function computeInstallPlan(opts: {
   } = opts;
 
   const previousManifest = readManifestFn(claudeDir);
-  const commands = prefix ? addGloriousPrefix(COMMANDS) : COMMANDS;
-  const skills = prefix ? addGloriousPrefix(SKILLS) : SKILLS;
+  const commands = buildCommands(prefix || undefined);
+  const skills = { ...SKILLS };
 
   let collisions: string[] = [];
   if (!force) {
@@ -186,7 +177,7 @@ export function computeInstallPlan(opts: {
     commands,
     skills,
     previousManifest,
-    usePrefix: prefix,
+    prefix,
     force,
     collisions,
     scope,
@@ -342,10 +333,11 @@ export const installSkills = command({
       long: "project",
       description: "Install to .claude/ (project-level) in the current repo",
     }),
-    prefix: flag({
+    prefix: option({
+      type: optional(string),
       long: "prefix",
       description:
-        "Install all skills under a glorious/ subdirectory (e.g. work → glorious/work)",
+        "Prefix for skill names (e.g. --prefix gs- for legacy names). Default: no prefix.",
     }),
   },
   handler: async ({ force, user, project, prefix }) => {
@@ -370,7 +362,19 @@ export const installSkills = command({
     // 2. Compute plan
     let plan = computeInstallPlan({ claudeDir, prefix, force, scope });
 
-    // 3. Handle collisions
+    // 3. Check for built-in collisions
+    const builtinHits = Object.keys(plan.commands).filter((n) => BUILTIN_COLLISIONS.has(n));
+    if (builtinHits.length > 0) {
+      warn(`${builtinHits.length} skill name${builtinHits.length === 1 ? "" : "s"} would collide with Claude Code built-in commands:`);
+      for (const h of builtinHits) {
+        console.log(`  ${yellow(h.replace(".md", ""))}`);
+      }
+      console.log("");
+      warn("These skills may be shadowed by built-in commands. Consider using --prefix to avoid collisions.");
+      console.log("");
+    }
+
+    // 4. Handle file collisions
     if (plan.collisions.length > 0 && !force) {
       warn(`${plan.collisions.length} file${plan.collisions.length === 1 ? "" : "s"} would collide with existing files:`);
       for (const c of plan.collisions.slice(0, 5)) {
@@ -381,17 +385,17 @@ export const installSkills = command({
       }
       console.log("");
       const usePrefix = await askYesNo(
-        "Use --prefix to organize into subdirectories and avoid collisions? [y/N] ",
+        "Use --prefix gs- to avoid collisions? [y/N] ",
       );
       if (usePrefix) {
-        plan = computeInstallPlan({ claudeDir, prefix: true, force, scope });
+        plan = computeInstallPlan({ claudeDir, prefix: "gs-", force, scope });
       }
     }
 
-    // 4. Execute
+    // 5. Execute
     const result = executeInstall(plan);
 
-    // 5. Print
+    // 6. Print
     const lines = formatInstallResult(result);
     for (const line of lines) {
       // Re-apply formatting: status lines get ok/info prefixes
