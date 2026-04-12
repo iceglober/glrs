@@ -1,6 +1,7 @@
 import { command, subcommands, option, optional, string, number as cmdNumber } from "cmd-ts";
 import { loadPlan } from "../lib/state.js";
 import { startPlanReviewServer } from "../lib/plan-server.js";
+import { getSetting } from "../lib/settings.js";
 import { info, bold, dim } from "../lib/fmt.js";
 import { exec } from "node:child_process";
 
@@ -24,8 +25,10 @@ const review = command({
       port: args.port ?? undefined,
     });
 
-    const openCmd = process.platform === "darwin" ? "open" : "xdg-open";
-    exec(`${openCmd} ${server.url}`);
+    if (getSetting("plan.auto-open") !== "false") {
+      const openCmd = process.platform === "darwin" ? "open" : "xdg-open";
+      exec(`${openCmd} ${server.url}`);
+    }
 
     info(`Plan review server running at ${bold(server.url)}`);
     console.log(dim("Press Ctrl+C to stop.\n"));

@@ -93,6 +93,23 @@ ${bold("COMMANDS")}
       Show tasks that are ready to work on (dependencies met, non-terminal).
       --all shows tasks across all repos.
 
+  ${bold("Configuration")}
+
+  config list
+      Show all settings with their values and sources.
+
+  config get <key>
+      Get a config value. Example: gs-agentic config get plan.auto-open
+
+  config set <key> <value>
+      Set a config value. Example: gs-agentic config set plan.auto-open false
+
+  config unset <key>
+      Reset a config value to its default.
+
+      Available settings:
+        plan.auto-open   Open browser automatically in plan review (default: true)
+
   ${bold("Advanced")} ${dim("(internal — used by skills and orchestrator)")}
 
   state task create --title "..." [--epic <id>]
