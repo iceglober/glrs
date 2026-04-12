@@ -141,12 +141,13 @@ const next = command({
   description: "Find the next ready task in an epic",
   args: {
     epic: option({ type: string, long: "epic", short: "e", description: "Epic ID" }),
+    claim: option({ type: optional(string), long: "claim", description: "Claim the task atomically (transitions to implement)" }),
     json: flag({ long: "json", description: "Output as JSON" }),
     withSpec: flag({ long: "with-spec", description: "Include spec content" }),
     fields: option({ type: optional(string), long: "fields", description: "Comma-separated field names" }),
   },
   handler: (args) => {
-    const task = findNextTask(args.epic);
+    const task = findNextTask(args.epic, args.claim ? { claim: args.claim } : undefined);
     if (!task) {
       console.error(`No ready tasks in epic "${args.epic}".`);
       process.exit(1);

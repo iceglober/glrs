@@ -20,7 +20,7 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 - \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase
 - \`gs-agentic state plan set --id <id> --stdin\` — save plan content (pipe via heredoc)
 - \`gs-agentic state qa --id <id> --status pass|fail --summary "..."\` — record QA result
-- \`gs-agentic state task next --epic <id>\` — find next ready task in an epic`;
+- \`gs-agentic state task next --epic <id> --claim <actor>\` — atomically find and claim next ready task in an epic`;
 
 /**
  * Review preamble — for deep-review, quick-review, address-feedback.
@@ -53,4 +53,4 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 
 **State mutations:**
 - \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase
-- \`gs-agentic state task next --epic <id>\` — find next ready task in an epic`;
+- \`gs-agentic state task next --epic <id> --claim <actor>\` — atomically find and claim next ready task in an epic`;

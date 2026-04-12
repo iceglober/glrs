@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { gitRoot } from "./git.js";
-import { getDb, getDbSync, persistDb, getRepo, closeDb, resetDb, resetRepoCache, DB_PATH } from "./db.js";
+import { getDb, getDbSync, persistDb, withDbLock, getRepo, closeDb, resetDb, resetRepoCache, DB_PATH } from "./db.js";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -748,12 +748,38 @@ export function findCurrentTask(worktreePath: string, branch: string): Task | nu
   return findTaskByWorktree(worktreePath) ?? findTaskByBranch(branch) ?? null;
 }
 
-/** Find the next ready task under an epic (non-terminal, deps met). */
-export function findNextTask(epicId: string): Task | null {
+/** Find the next ready task under an epic (non-terminal, deps met).
+ *  With claim option, acquires a file lock and reloads the DB from disk
+ *  to prevent concurrent processes from claiming the same task.
+ *  If the transition fails (already claimed by another agent), skips to the next task. */
+export function findNextTask(epicId: string, opts?: { claim?: string }): Task | null {
+  if (opts?.claim) {
+    return withDbLock(() => claimNextTask(epicId, opts.claim!));
+  }
+  return findNextReadyTask(epicId);
+}
+
+function findNextReadyTask(epicId: string): Task | null {
   const tasks = listTasks({ epic: epicId });
   for (const task of tasks) {
     if (isTerminal(task.phase)) continue;
-    if (dependenciesMet(task)) return task;
+    if (!dependenciesMet(task)) continue;
+    return task;
+  }
+  return null;
+}
+
+function claimNextTask(epicId: string, actor: string): Task | null {
+  const tasks = listTasks({ epic: epicId });
+  for (const task of tasks) {
+    if (isTerminal(task.phase)) continue;
+    if (!dependenciesMet(task)) continue;
+    try {
+      transitionTask(task.id, "implement", { actor });
+      return loadTask(task.id)!;
+    } catch {
+      continue; // already claimed or invalid transition — try next
+    }
   }
   return null;
 }

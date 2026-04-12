@@ -106,7 +106,7 @@ const addTask = command({
     const child = createTask({
       title: args.title,
       epic: args.id,
-      phase: "implement",
+      phase: "design",
       actor: args.actor ?? "cli",
     });
 
