@@ -49,6 +49,8 @@ export interface Task {
   plan: string | null;
   planVersion: number | null;
   qaResult: QAResult | null;
+  claimedBy: string | null;
+  claimedAt: string | null;
   createdAt: string;
   updatedAt: string;
   children: string[];
@@ -379,6 +381,8 @@ function rowToTask(row: any[], transitions: Transition[], children: string[]): T
     createdAt: row[12] as string,
     updatedAt: row[16] as string,
     qaResult: qaStatus ? { status: qaStatus as "pass" | "fail", summary: qaSummary!, timestamp: qaTimestamp! } : null,
+    claimedBy: row[17] as string | null,
+    claimedAt: row[18] as string | null,
     children,
     transitions,
   };
@@ -408,7 +412,7 @@ function loadChildren(taskId: string): string[] {
   return result[0].values.map((row: any[]) => row[0] as string);
 }
 
-const TASK_SELECT = `SELECT id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, plan, plan_version, created_at, qa_status, qa_summary, qa_timestamp, updated_at FROM tasks`;
+const TASK_SELECT = `SELECT id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, plan, plan_version, created_at, qa_status, qa_summary, qa_timestamp, updated_at, claimed_by, claimed_at FROM tasks`;
 
 export function loadTask(id: string): Task | null {
   const db = getDbSync();
@@ -423,8 +427,8 @@ export function saveTask(task: Task): void {
   const db = getDbSync();
   const now = new Date().toISOString();
   db.run(
-    `INSERT OR REPLACE INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, plan, plan_version, qa_status, qa_summary, qa_timestamp, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, plan, plan_version, qa_status, qa_summary, qa_timestamp, claimed_by, claimed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       repo(),
       task.id,
@@ -442,6 +446,8 @@ export function saveTask(task: Task): void {
       task.qaResult?.status ?? null,
       task.qaResult?.summary ?? null,
       task.qaResult?.timestamp ?? null,
+      task.claimedBy,
+      task.claimedAt,
       task.createdAt,
       now,
     ],
@@ -485,6 +491,8 @@ export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean 
       if (deps.length > 0) compact.dependencies = deps;
       const qaStatus = row[13] as string | null;
       if (qaStatus) compact.qaResult = { status: qaStatus, summary: row[14] as string };
+      const claimedBy = row[17] as string | null;
+      if (claimedBy) compact.claimedBy = claimedBy;
       return compact as Task;
     }
     const transitions = loadTransitions(id, "task");
@@ -535,6 +543,8 @@ export function createTask(opts: {
     plan: null,
     planVersion: null,
     qaResult: null,
+    claimedBy: null,
+    claimedAt: null,
     createdAt: now,
     updatedAt: now,
     children: [],
@@ -594,6 +604,14 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
      VALUES (?, ?, 'task', ?, ?, ?)`,
     [repo(), id, target, opts.actor ?? "cli", now],
   );
+
+  if (target === "implement") {
+    db.run("UPDATE tasks SET claimed_by = ?, claimed_at = ? WHERE repo = ? AND id = ?",
+      [opts.actor ?? "cli", now, repo(), id]);
+  } else if (isTerminal(target)) {
+    db.run("UPDATE tasks SET claimed_by = NULL, claimed_at = NULL WHERE repo = ? AND id = ?",
+      [repo(), id]);
+  }
 
   persistDb();
 
