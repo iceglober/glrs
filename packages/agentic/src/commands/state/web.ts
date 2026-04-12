@@ -2,7 +2,7 @@ import { command, option, optional, number as cmdNumber } from "cmd-ts";
 import { startStateServer } from "../../lib/state-server.js";
 import { getSetting } from "../../lib/settings.js";
 import { info, bold, dim } from "../../lib/fmt.js";
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 
 export const web = command({
   name: "web",
@@ -22,7 +22,7 @@ export const web = command({
 
     if (getSetting("plan.auto-open") !== "false") {
       const openCmd = process.platform === "darwin" ? "open" : "xdg-open";
-      exec(`${openCmd} ${server.url}`);
+      execFile(openCmd, [server.url]);
     }
 
     info(`State dashboard running at ${bold(server.url)}`);

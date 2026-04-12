@@ -3,11 +3,11 @@ import { renderStatePage } from "./state-html.js";
 import {
   listEpics,
   listTasks,
-  listSteps,
   deriveEpicPhase,
   reviewSummary,
   loadPlan,
   type Task,
+  type ReviewSummaryResult,
 } from "./state.js";
 
 export interface StateServer {
@@ -24,9 +24,6 @@ export function startStateServer(opts?: {
     let cachedHtml: string | null = null;
 
     const server = http.createServer((req, res) => {
-      // CORS for local dev
-      res.setHeader("Access-Control-Allow-Origin", "*");
-
       if (req.method === "GET" && req.url === "/") {
         if (!cachedHtml) {
           const addr = server.address() as { port: number };
@@ -48,6 +45,11 @@ export function startStateServer(opts?: {
       const planMatch = req.url?.match(/^\/api\/plan\/(.+)$/);
       if (req.method === "GET" && planMatch) {
         const id = decodeURIComponent(planMatch[1]);
+        if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Invalid plan ID");
+          return;
+        }
         const content = loadPlan(id);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ content }));
@@ -78,11 +80,23 @@ function buildStatePayload() {
   const epicData = epics.map((epic) => {
     const tasks = allTasks.filter((t) => t.epic === epic.id);
     const derivedPhase = deriveEpicPhase(epic.id);
+    const enrichedTasks = tasks.map((t) => enrichTask(t));
+
+    // Aggregate epic-level review summary from per-task summaries
+    const epicReview = enrichedTasks.reduce(
+      (acc, t) => {
+        const rs = t.reviewSummary;
+        if (!rs) return acc;
+        return { total: acc.total + rs.total, open: acc.open + rs.open, fixed: acc.fixed + rs.fixed };
+      },
+      { total: 0, open: 0, fixed: 0 },
+    );
 
     return {
       ...epic,
       derivedPhase,
-      tasks: tasks.map((t) => enrichTask(t)),
+      tasks: enrichedTasks,
+      reviewSummary: epicReview.total > 0 ? epicReview : undefined,
     };
   });
 
@@ -95,7 +109,6 @@ function buildStatePayload() {
 
 function enrichTask(task: Task) {
   const rs = reviewSummary({ taskId: task.id });
-  const steps = listSteps({ task: task.id });
 
   return {
     id: task.id,
@@ -112,6 +125,5 @@ function enrichTask(task: Task) {
     claimedAt: task.claimedAt,
     qaResult: task.qaResult,
     reviewSummary: rs.total > 0 ? rs : undefined,
-    steps: steps.length > 0 ? steps : undefined,
   };
 }

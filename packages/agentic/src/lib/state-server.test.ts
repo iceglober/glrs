@@ -105,4 +105,60 @@ describe("state server", () => {
     expect(s.port).toBeGreaterThan(0);
     expect(s.url).toBe(`http://localhost:${s.port}`);
   });
+
+  test("path traversal rejected", async () => {
+    const s = await start();
+    const res = await fetch(s.url + "/api/plan/..%2F..%2Fetc%2Fpasswd");
+    expect(res.status).toBe(400);
+    const text = await res.text();
+    expect(text).toContain("Invalid plan ID");
+  });
+
+  test("no CORS header on responses", async () => {
+    const s = await start();
+    const res = await fetch(s.url + "/api/state");
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("standalone tasks in /api/state", async () => {
+    createTask({ title: "Orphan" });
+    const s = await start();
+    const res = await fetch(s.url + "/api/state");
+    const json = await res.json() as any;
+    expect(json.standalone.length).toBe(1);
+    expect(json.standalone[0].title).toBe("Orphan");
+  });
+
+  test("epic has derivedPhase", async () => {
+    createEpic({ title: "Ep" });
+    createTask({ title: "T", epic: "e1" });
+    const s = await start();
+    const json = await (await fetch(s.url + "/api/state")).json() as any;
+    expect(json.epics[0]).toHaveProperty("derivedPhase");
+  });
+
+  test("epic has reviewSummary when tasks have reviews", async () => {
+    createEpic({ title: "Rev Epic" });
+    createTask({ title: "Rev Task", epic: "e1" });
+    const review = createReview({ taskId: "t1", source: "test", commitSha: "abc" });
+    addReviewItem({ reviewId: review.id, body: "Finding", severity: "HIGH" });
+    const s = await start();
+    const json = await (await fetch(s.url + "/api/state")).json() as any;
+    expect(json.epics[0].reviewSummary).toBeDefined();
+    expect(json.epics[0].reviewSummary.total).toBeGreaterThan(0);
+  });
+
+  test("tasks do not have steps field", async () => {
+    createEpic({ title: "Ep" });
+    createTask({ title: "T", epic: "e1" });
+    const s = await start();
+    const json = await (await fetch(s.url + "/api/state")).json() as any;
+    expect(json.epics[0].tasks[0]).not.toHaveProperty("steps");
+  });
+
+  test("custom port binding", async () => {
+    server = await startStateServer({ port: 19876 });
+    expect(server.port).toBe(19876);
+    expect(server.url).toContain("19876");
+  });
 });
