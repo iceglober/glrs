@@ -83,18 +83,33 @@ gs-agentic state review add-item --review $REVIEW_ID \\
 
 ## Step 4: Classify each open item
 
-For each open review item, read the referenced code at the file and line range. Understand the context. Then classify:
+For each open review item:
+1. Read the file at the referenced line range — not just the line, but enough surrounding context to understand the flow
+2. If the comment references behavior (e.g. "this will break when X"), trace the code path to verify or refute the claim
+3. Only after reading the code, classify:
 
-- **MUST_FIX** — The comment is correct, code needs to change.
-- **PUSHBACK** — The comment is wrong or misunderstands the code. Cite evidence from the codebase.
-- **ACKNOWLEDGE** — Valid point but out of scope. Explain why and what follow-up is planned.
-- **WONT_FIX** — Intentional design choice. Explain the rationale with code references.
+- **MUST_FIX** — The comment is correct. Cite the specific code that confirms the problem (e.g. "Confirmed: \`db.ts:42\` queries without the tenant filter, so cross-tenant data leaks are possible").
+- **PUSHBACK** — The comment is wrong or already handled. Cite the specific code that refutes it (e.g. "Already handled: \`auth.ts:87-92\` validates the token expiry before reaching this code path").
+- **ACKNOWLEDGE** — Valid concern, out of scope for this PR. Cite the code that shows the concern exists AND explain concretely what follow-up is planned (e.g. "Confirmed \`cache.ts:15\` has no TTL. Out of scope — tracked as task t12 / will address in next PR").
+- **WONT_FIX** — Intentional design choice. Cite the architectural reason from the codebase (e.g. "By design: \`config.ts:8\` sets this limit because the upstream API enforces it — see their docs at ...").
 
-**Classification rules:**
-- Every classification MUST cite specific file:line references
-- PUSHBACK requires evidence that the concern is already handled or inapplicable
-- ACKNOWLEDGE requires a concrete follow-up action (issue, task, or "will address in next PR")
-- WONT_FIX requires rationale grounded in architecture or requirements, not preference
+**Evidence rules (non-negotiable):**
+- Every classification MUST cite at least one specific \`file:line\` reference that you actually read
+- "I checked and it's fine" is NOT evidence. Quote or describe the specific code.
+- PUSHBACK: you must show WHERE the concern is already handled — name the function, the guard, the check
+- ACKNOWLEDGE: you must show the code that exhibits the concern (proving you verified it's real) AND state a concrete follow-up (issue ID, task ID, or "next PR")
+- WONT_FIX: you must cite the architectural constraint or requirement that justifies the choice — not just "it's intentional"
+- If you cannot find evidence for your classification, CHANGE your classification. "I couldn't find where this is handled" means it's MUST_FIX, not PUSHBACK.
+
+### Evidence self-check
+
+Before proceeding to Step 5, review your classifications as a batch. For each item, verify:
+1. Does your classification cite a specific \`file:line\` you actually read?
+2. For PUSHBACK: can you name the exact function, guard, or check that handles the concern? If not → reclassify as MUST_FIX.
+3. For ACKNOWLEDGE: did you confirm the concern exists in the code AND state a concrete follow-up (issue ID, task ID, or "next PR")? If not → add the missing piece.
+4. For WONT_FIX: did you cite an architectural constraint from the codebase, not just a preference? If not → reclassify as ACKNOWLEDGE or MUST_FIX.
+
+If any item fails this check, fix it now before moving on.
 
 ## Step 5: Plan and execute fixes
 
@@ -108,54 +123,56 @@ For MUST_FIX items:
 4. After each commit, record the resolution:
    \`\`\`bash
    gs-agentic state review resolve --item <item-id> --status fixed \\
-     --resolution "<what was done and why>" \\
+     --resolution "Changed <file:line>: <what was wrong> → <what it does now>." \\
      --commit-sha $(git rev-parse HEAD)
    \`\`\`
 
 For PUSHBACK items:
 \`\`\`bash
 gs-agentic state review resolve --item <item-id> --status pushed_back \\
-  --resolution "<evidence from code explaining why this is already handled or not applicable>"
+  --resolution "Already handled: <file:line> does <what>. <quote or describe the specific guard/check/logic>."
 \`\`\`
 
 For ACKNOWLEDGE items:
 \`\`\`bash
 gs-agentic state review resolve --item <item-id> --status acknowledged \\
-  --resolution "<why it's out of scope and what the follow-up plan is>"
+  --resolution "Confirmed: <file:line> shows <the concern>. Out of scope — <concrete follow-up: issue ID, task ID, or 'next PR'>."
 \`\`\`
 
 For WONT_FIX items:
 \`\`\`bash
 gs-agentic state review resolve --item <item-id> --status wont_fix \\
-  --resolution "<design rationale with code references>"
+  --resolution "By design: <file:line> — <architectural constraint or requirement>. <why this is the right tradeoff>."
 \`\`\`
 
 ## Step 6: Respond on GitHub
 
 For each resolved item that came from a PR comment (has \`pr_comment_id\`), reply on the PR:
 
+**Before posting any reply:** re-read what you're about to send. Does it contain a specific \`file:line\` reference? Does it describe what the code does at that location? If not, go back and find the evidence.
+
 **Fixed items:**
 \`\`\`bash
 gh api repos/{owner}/{repo}/pulls/{num}/comments/{comment-id}/replies \\
-  -f body="Fixed in $(git rev-parse --short HEAD). <brief description of what changed>."
+  -f body="Fixed in $(git rev-parse --short HEAD). Changed \\\`file.ts:42\\\`: <what was wrong> → <what it does now>."
 \`\`\`
 
 **Pushback items:**
 \`\`\`bash
 gh api repos/{owner}/{repo}/pulls/{num}/comments/{comment-id}/replies \\
-  -f body="This is intentional — <evidence from code>. See \\\`file.ts:42\\\` where we handle this case via..."
+  -f body="Already handled — \\\`file.ts:42\\\` <does what>: <quote or describe the guard/check>. This covers the case you raised because <reasoning>."
 \`\`\`
 
 **Acknowledge items:**
 \`\`\`bash
 gh api repos/{owner}/{repo}/pulls/{num}/comments/{comment-id}/replies \\
-  -f body="Good catch. This is out of scope for this PR — <reason>. Tracking as follow-up in <issue/task>."
+  -f body="Confirmed — \\\`file.ts:42\\\` <shows the concern>. Out of scope for this PR because <reason>. Tracking as <issue/task ID or 'will address in next PR'>."
 \`\`\`
 
 **Wont-fix items:**
 \`\`\`bash
 gh api repos/{owner}/{repo}/pulls/{num}/comments/{comment-id}/replies \\
-  -f body="By design — <rationale with code reference>. <brief explanation of the architecture decision>."
+  -f body="By design — \\\`file.ts:42\\\` <architectural constraint>. <why this is the right tradeoff>."
 \`\`\`
 
 ## Step 7: Push and summarize
