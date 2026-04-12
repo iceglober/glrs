@@ -128,8 +128,8 @@ ${bold("COMMANDS")}
   state task transition --id <id> --phase <phase> [--force] [--actor <name>]
       Move task to a new phase.
 
-  state task update --id <id> [--title "..."] [--description "..."] [--branch <b>] [--worktree <path>] [--pr <url>]
-      Update task metadata.
+  state task update --id <id> [--title "..."] [--description "..."] [--branch <b>] [--worktree <path>] [--pr <url>] [--unclaim]
+      Update task metadata. --unclaim clears the claimed_by field.
 
   state task cancel --id <id>
       Cancel a task.

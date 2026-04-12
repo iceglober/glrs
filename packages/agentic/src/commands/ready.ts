@@ -60,7 +60,7 @@ export const ready = command({
       }
 
       for (const t of epicTasks) {
-        console.log(`  ● ${bold(t.id)} ${t.title} ${dim(`[${phaseColor(t.phase)}]`)}${t.branch ? dim(` ${t.branch}`) : ""}`);
+        console.log(`  ● ${bold(t.id)} ${t.title} ${dim(`[${phaseColor(t.phase)}]`)}${t.branch ? dim(` ${t.branch}`) : ""}${t.claimedBy ? yellow(` ← ${t.claimedBy}`) : ""}`);
       }
     }
   },

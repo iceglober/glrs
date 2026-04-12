@@ -31,6 +31,7 @@ function formatTask(task: Task, indent: number): void {
   let line = `${prefix}${color(icon)} ${bold(task.id)} ${task.title} ${dim(`[${task.phase}]`)}`;
   if (task.branch) line += dim(` ${task.branch}`);
   if (task.pr) line += ` ${dim(task.pr)}`;
+  if (task.claimedBy) line += yellow(` ← ${task.claimedBy}`);
   line += blocked;
   console.log(line);
 
