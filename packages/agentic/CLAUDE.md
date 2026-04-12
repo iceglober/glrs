@@ -23,12 +23,13 @@ src/
 │   ├── status.ts         # gsag status — epic > task hierarchy view
 │   ├── ready.ts          # gsag ready — show tasks ready to work on
 │   ├── state/            # gsag state — task state management (internal)
-│   │   ├── index.ts      # Subcommand group (task, epic, plan, review, qa, log)
+│   │   ├── index.ts      # Subcommand group (task, epic, plan, review, qa, log, web)
 │   │   ├── task.ts       # create, show, current, next, transition, update, cancel, list
 │   │   ├── plan.ts       # show, set (--file/--content/--stdin), add-task, history, feedback, clear-feedback
 │   │   ├── review.ts     # create, add-item, resolve, list, summary
 │   │   ├── qa.ts         # QA report
-│   │   └── log.ts        # Transition history
+│   │   ├── log.ts        # Transition history
+│   │   └── web.ts        # gsag state web — open state dashboard in browser
 │   ├── go.ts             # gsag wt (bare) — interactive worktree picker
 │   ├── create.ts         # gsag wt create
 │   ├── checkout.ts       # gsag wt checkout
@@ -62,6 +63,10 @@ src/
 │   ├── plan-html.test.ts     # Plan HTML tests
 │   ├── plan-server.ts        # Local HTTP server for plan review sessions
 │   ├── plan-server.test.ts   # Plan server tests
+│   ├── state-html.ts         # React+htm CDN dashboard HTML renderer
+│   ├── state-html.test.ts   # State HTML tests
+│   ├── state-server.ts      # Local HTTP server for state web dashboard
+│   ├── state-server.test.ts # State server tests
 │   ├── settings.ts           # User settings (~/.glorious/settings.json)
 │   ├── settings.test.ts      # Settings tests
 │   ├── fmt.ts            # Terminal formatting (bold, dim, colors)
