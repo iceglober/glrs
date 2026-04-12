@@ -199,21 +199,21 @@ For each numbered step (N.M) in the plan, create a task under the epic:
 
 \`\`\`bash
 # Step 1.1 — no dependencies (first step)
-gs-agentic state spec add-task --id <epic-id> --title "Step 1.1: <verb phrase from plan>"
+gs-agentic state plan add-task --id <epic-id> --title "Step 1.1: <verb phrase from plan>"
 
 # Step 1.2 — depends on 1.1
-gs-agentic state spec add-task --id <epic-id> --title "Step 1.2: <verb phrase from plan>" --depends-on <step-1.1-task-id>
+gs-agentic state plan add-task --id <epic-id> --title "Step 1.2: <verb phrase from plan>" --depends-on <step-1.1-task-id>
 
 # Step 2.1 — depends on 1.2
-gs-agentic state spec add-task --id <epic-id> --title "Step 2.1: <verb phrase from plan>" --depends-on <step-1.2-task-id>
+gs-agentic state plan add-task --id <epic-id> --title "Step 2.1: <verb phrase from plan>" --depends-on <step-1.2-task-id>
 \`\`\`
 
 Use the dependency graph from Step 5 to set \`--depends-on\` for each task. If a step depends on multiple prior steps, comma-separate the IDs: \`--depends-on t2,t3\`.
 
-#### Save the plan file as the epic's spec:
+#### Save the plan file as the epic's plan:
 
 \`\`\`bash
-gs-agentic state spec set --id <epic-id> --file .claude/plans/plan-<slug>.md
+gs-agentic state plan set --id <epic-id> --file .claude/plans/plan-<slug>.md
 \`\`\`
 
 #### Report the task tree:
@@ -231,9 +231,9 @@ If the user requests changes to an existing plan:
 2. **Identify which tasks are affected** by the requested changes.
 3. **Update gs-agentic state to match** — cancel removed steps, create new tasks, update titles/dependencies for modified steps.
 4. **Then update the plan file** to reflect the changes.
-5. **Re-save the spec:**
+5. **Re-save the plan:**
    \`\`\`bash
-   gs-agentic state spec set --id <epic-id> --file .claude/plans/plan-<slug>.md
+   gs-agentic state plan set --id <epic-id> --file .claude/plans/plan-<slug>.md
    \`\`\`
 
 The state is the source of truth. Plan file updates follow state changes, not the other way around.

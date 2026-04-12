@@ -17,7 +17,7 @@ interface OldTask {
   worktree: string | null;
   pr: string | null;
   externalId: string | null;
-  spec: string | null;
+  plan: string | null;
   qaResult: { status: string; summary: string; timestamp: string } | null;
   transitions: { phase: string; timestamp: string; actor: string }[];
   createdAt: string;
@@ -122,7 +122,7 @@ export async function migrateJsonToSqlite(
     for (const parent of sortedParents) {
       const newId = idMapping[parent.id];
       db.run(
-        `INSERT INTO epics (repo, id, title, description, phase, spec, created_at, updated_at)
+        `INSERT INTO epics (repo, id, title, description, phase, plan, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           repo,
@@ -130,7 +130,7 @@ export async function migrateJsonToSqlite(
           parent.title,
           parent.description || "",
           parent.phase,
-          parent.spec || null,
+          parent.plan || null,
           parent.createdAt,
           now,
         ],
@@ -192,8 +192,8 @@ function insertTask(
   now: string,
 ): void {
   db.run(
-    `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, spec, qa_status, qa_summary, qa_timestamp, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, plan, plan_version, qa_status, qa_summary, qa_timestamp, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       repo,
       newId,
@@ -206,7 +206,8 @@ function insertTask(
       task.worktree || null,
       task.pr || null,
       task.externalId || null,
-      task.spec || null,
+      task.plan || null,
+      null, // plan_version
       task.qaResult?.status || null,
       task.qaResult?.summary || null,
       task.qaResult?.timestamp || null,

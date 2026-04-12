@@ -1,6 +1,6 @@
 export function gsBuild(): string {
   return `---
-description: Implement a specific gs-agentic task. Use when user says 'build t3', 'implement this task', 'work on t5', or provides a specific task ID. Reads the task's spec and context, then implements with TDD methodology. Updates task state on completion.
+description: Implement a specific gs-agentic task. Use when user says 'build t3', 'implement this task', 'work on t5', or provides a specific task ID. Reads the task's plan and context, then implements with TDD methodology. Updates task state on completion.
 ---
 
 # Build — Implement a Specific Task
@@ -51,21 +51,21 @@ The target task has:
 - \`title\` — short description
 - \`description\` — full context
 - \`phase\` — current phase
-- \`spec\` — path to spec file (if exists)
-- \`specContent\` — inline spec content (if --with-spec was used)
+- \`plan\` — path to plan file (if exists)
+- \`planContent\` — inline plan content (if --with-spec was used)
 - \`dependencies\` — array of task IDs that must complete first
 - \`branch\` — the git branch
 - \`epic\` — epic ID (if this task belongs to an epic)
 
-1. **Read the task's spec** (if specContent wasn't inline): \`gs-agentic state spec show --id <id>\`
-2. **If this belongs to an epic, read the epic's spec too**: \`gs-agentic state spec show --id <epic-id>\` — this is the full plan with file paths, test cases, and signatures.
+1. **Read the task's plan** (if planContent wasn't inline): \`gs-agentic state plan show --id <id>\`
+2. **If this belongs to an epic, read the epic's plan too**: \`gs-agentic state plan show --id <epic-id>\` — this is the full plan with file paths, test cases, and signatures.
 3. **Read \`CLAUDE.md\`** for project-specific commands (typecheck, build, lint, test).
-4. **Read all source files** listed in the task's plan step — every file path mentioned in the spec.
+4. **Read all source files** listed in the task's plan step — every file path mentioned in the plan.
 5. **Transition to implement**: \`gs-agentic state task transition --id <id> --phase implement --actor build\`
 
 ## Step 3: Plan the increment
 
-From the task spec / plan step, extract:
+From the task plan step, extract:
 - What behavior to add
 - What test(s) to write
 - What file(s) to modify

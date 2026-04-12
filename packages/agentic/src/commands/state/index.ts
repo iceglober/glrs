@@ -1,6 +1,6 @@
 import { subcommands } from "cmd-ts";
 import { stateTask, stateEpic } from "./task.js";
-import { stateSpec } from "./spec.js";
+import { statePlan } from "./plan.js";
 import { stateReview } from "./review.js";
 import { qaReport } from "./qa.js";
 import { stateLog } from "./log.js";
@@ -11,7 +11,7 @@ export const state = subcommands({
   cmds: {
     task: stateTask,
     epic: stateEpic,
-    spec: stateSpec,
+    plan: statePlan,
     review: stateReview,
     qa: qaReport,
     log: stateLog,

@@ -48,6 +48,7 @@ describe("db", () => {
 
     expect(tables).toContain("epics");
     expect(tables).toContain("tasks");
+    expect(tables).toContain("steps");
     expect(tables).toContain("transitions");
     expect(tables).toContain("reviews");
     expect(tables).toContain("review_items");
@@ -120,6 +121,53 @@ describe("db", () => {
 
     const result = db.exec("SELECT COUNT(*) FROM epics");
     expect(result[0]?.values[0]?.[0]).toBe(0);
+  });
+
+  test("resetDb clears steps table", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const now = new Date().toISOString();
+    // Need an epic and task first for FK constraints
+    db.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ["test/repo", "e1", "Epic", now, now]);
+    db.run("INSERT INTO tasks (repo, id, epic, title, phase, dependencies, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["test/repo", "t1", "e1", "Task", "implement", "[]", now, now]);
+    db.run("INSERT INTO steps (repo, id, task, title, phase, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["test/repo", "s1", "t1", "Step", "understand", 0, now, now]);
+
+    resetDb();
+
+    const result = db.exec("SELECT COUNT(*) FROM steps");
+    expect(result[0]?.values[0]?.[0]).toBe(0);
+  });
+
+  test("epics table has plan column not spec", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const cols = db.exec("PRAGMA table_info(epics)");
+    const colNames = cols[0]?.values.map((row: any[]) => row[1]) ?? [];
+    expect(colNames).toContain("plan");
+    expect(colNames).not.toContain("spec");
+  });
+
+  test("tasks table has plan column not spec", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const cols = db.exec("PRAGMA table_info(tasks)");
+    const colNames = cols[0]?.values.map((row: any[]) => row[1]) ?? [];
+    expect(colNames).toContain("plan");
+    expect(colNames).not.toContain("spec");
+  });
+
+  test("epics table has plan_version column", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const cols = db.exec("PRAGMA table_info(epics)");
+    const colNames = cols[0]?.values.map((row: any[]) => row[1]) ?? [];
+    expect(colNames).toContain("plan_version");
+  });
+
+  test("tasks table has plan_version column", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const cols = db.exec("PRAGMA table_info(tasks)");
+    const colNames = cols[0]?.values.map((row: any[]) => row[1]) ?? [];
+    expect(colNames).toContain("plan_version");
   });
 
   test("closeDb allows reopening", async () => {

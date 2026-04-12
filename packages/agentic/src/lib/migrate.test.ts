@@ -27,7 +27,7 @@ function makeTask(overrides: Record<string, unknown> = {}): Record<string, unkno
     worktree: "/tmp/worktree",
     pr: "https://github.com/test/repo/pull/1",
     externalId: "EXT-123",
-    spec: ".glorious/specs/t1.md",
+    plan: ".glorious/specs/t1.md",
     qaResult: null,
     transitions: [
       { phase: "understand", timestamp: "2026-01-01T00:00:00.000Z", actor: "cli" },
@@ -58,7 +58,7 @@ describe("migrateJsonToSqlite", () => {
       phase: "design",
       children: ["t1-1"],
       branch: "feat/epic",
-      spec: ".glorious/specs/t1.md",
+      plan: ".glorious/specs/t1.md",
     }));
     writeStateFile("t1-1", makeTask({
       id: "t1-1",
@@ -71,7 +71,7 @@ describe("migrateJsonToSqlite", () => {
     const db = await getDb(TEST_DB_PATH);
     const result = await migrateJsonToSqlite(db, "test/repo", TEST_STATE_DIR);
 
-    const epics = db.exec("SELECT id, title, description, phase, spec FROM epics WHERE repo = 'test/repo'");
+    const epics = db.exec("SELECT id, title, description, phase, plan FROM epics WHERE repo = 'test/repo'");
     expect(epics[0]?.values.length).toBe(1);
     expect(epics[0].values[0][0]).toBe("e1"); // t1 → e1
     expect(epics[0].values[0][1]).toBe("Parent epic");
@@ -167,7 +167,7 @@ describe("migrateJsonToSqlite", () => {
       worktree: "/tmp/wt",
       pr: "https://github.com/test/repo/pull/42",
       externalId: "JIRA-123",
-      spec: ".glorious/specs/t1.md",
+      plan: ".glorious/specs/t1.md",
       qaResult: { status: "pass", summary: "All tests pass", timestamp: "2026-01-03T00:00:00.000Z" },
       createdAt: "2026-01-01T00:00:00.000Z",
     }));
@@ -176,7 +176,7 @@ describe("migrateJsonToSqlite", () => {
     await migrateJsonToSqlite(db, "test/repo", TEST_STATE_DIR);
 
     const tasks = db.exec(
-      "SELECT id, title, description, phase, branch, worktree, pr, external_id, spec, qa_status, qa_summary, qa_timestamp, created_at FROM tasks WHERE repo = 'test/repo'"
+      "SELECT id, title, description, phase, branch, worktree, pr, external_id, plan, qa_status, qa_summary, qa_timestamp, created_at FROM tasks WHERE repo = 'test/repo'"
     );
     const row = tasks[0]?.values[0];
     expect(row).toBeTruthy();
@@ -188,7 +188,7 @@ describe("migrateJsonToSqlite", () => {
     expect(row![5]).toBe("/tmp/wt"); // worktree
     expect(row![6]).toBe("https://github.com/test/repo/pull/42"); // pr
     expect(row![7]).toBe("JIRA-123"); // external_id
-    expect(row![8]).toBe(".glorious/specs/t1.md"); // spec
+    expect(row![8]).toBe(".glorious/specs/t1.md"); // plan
     expect(row![9]).toBe("pass"); // qa_status
     expect(row![10]).toBe("All tests pass"); // qa_summary
     expect(row![11]).toBe("2026-01-03T00:00:00.000Z"); // qa_timestamp

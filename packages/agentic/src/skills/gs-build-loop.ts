@@ -31,7 +31,7 @@ If \`$ARGUMENTS\` contains a file path:
 1. Run \`gs-agentic state task current --json\` to find the current task.
 2. If a task is found:
    - If it has an \`epic\` field → use that epic ID and go to Step 2.
-   - If standalone with a spec file → read it and go to Step 3 (plan-file mode).
+   - If standalone with a plan file → read it and go to Step 3 (plan-file mode).
 3. If no task found:
    - Run \`gs-agentic state epic list --json\` — if exactly one active epic exists, use it.
    - Otherwise, look for the most recently modified \`.claude/plans/plan-*.md\` in the repo.
@@ -49,7 +49,7 @@ gs-agentic state epic show --id <epic-id> --json
 gs-agentic state task list --epic <epic-id> --json
 \`\`\`
 
-Read the epic's spec if it exists: \`gs-agentic state spec show --id <epic-id>\`
+Read the epic's plan if it exists: \`gs-agentic state plan show --id <epic-id>\`
 
 Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
 
@@ -72,9 +72,9 @@ EPIC: <epic-id>
 
 RULES:
 1. Run \`gs-agentic state task show --id <task-id> --json --with-spec\` to get full details.
-2. If the task has a spec, read it: \`gs-agentic state spec show --id <task-id>\`
-3. Read the epic spec for overall context: \`gs-agentic state spec show --id <epic-id>\`
-4. Find the matching step in the plan spec — read ALL files listed in that step.
+2. If the task has a plan, read it: \`gs-agentic state plan show --id <task-id>\`
+3. Read the epic plan for overall context: \`gs-agentic state plan show --id <epic-id>\`
+4. Find the matching step in the plan — read ALL files listed in that step.
 5. Transition the task to implement: \`gs-agentic state task transition --id <task-id> --phase implement --actor build-loop\`
 6. Read CLAUDE.md for build/test commands.
 7. If the step has test cases: write tests FIRST, run them, confirm they fail.

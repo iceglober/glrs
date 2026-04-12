@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { gitRoot } from "./git.js";
 import { getDb, getDbSync, persistDb, getRepo, closeDb, resetDb, resetRepoCache, DB_PATH } from "./db.js";
 
@@ -28,7 +29,8 @@ export interface Epic {
   title: string;
   description: string;
   phase: Phase;
-  spec: string | null;
+  plan: string | null;
+  planVersion: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -44,12 +46,26 @@ export interface Task {
   worktree: string | null;
   pr: string | null;
   externalId: string | null;
-  spec: string | null;
+  plan: string | null;
+  planVersion: number | null;
   qaResult: QAResult | null;
   createdAt: string;
   updatedAt: string;
   children: string[];
   transitions: Transition[];
+}
+
+export interface Step {
+  id: string;
+  task: string;
+  title: string;
+  description: string;
+  phase: Phase;
+  sortOrder: number;
+  plan: string | null;
+  planVersion: number | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 
@@ -66,22 +82,32 @@ export function cleanupState(): void {
   resetRepoCache();
 }
 
-// ── Paths (specs remain in filesystem) ──────────────────────────────
+// ── Paths (plans in global ~/.glorious/plans/) ─────────────────────
 
-function specsDir(): string {
-  return path.join(gitRoot(), ".glorious", "specs");
+let _testPlansDir: string | null = null;
+
+/** Override the plans directory (for testing). */
+export function setPlansDir(dir: string | null): void {
+  _testPlansDir = dir;
 }
 
-function specPath(id: string): string {
-  return path.join(specsDir(), `${id}.md`);
+function plansDir(): string {
+  if (_testPlansDir) return _testPlansDir;
+  const repoId = getRepo();
+  const slug = repoId ? repoId.replace(/\//g, "-") : "local";
+  return path.join(os.homedir(), ".glorious", "plans", slug);
+}
+
+function planVersionPath(id: string, version: number): string {
+  return path.join(plansDir(), id, `v${version}.md`);
 }
 
 // ── Auto-setup ──────────────────────────────────────────────────────
 
-/** Ensure specs directory and gitignore are configured. */
+/** Ensure plans directory and gitignore are configured. */
 export function ensureSetup(): void {
-  const sp = specsDir();
-  if (!fs.existsSync(sp)) fs.mkdirSync(sp, { recursive: true });
+  const pd = plansDir();
+  if (!fs.existsSync(pd)) fs.mkdirSync(pd, { recursive: true });
 
   // Also ensure the old state dir entry is in gitignore (harmless)
   const root = gitRoot();
@@ -130,13 +156,134 @@ export function nextTaskId(): string {
   return `t${(max || 0) + 1}`;
 }
 
+/** Generate next step ID (s1, s2, ...) */
+export function nextStepId(): string {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) FROM steps WHERE repo = ?",
+    [repo()],
+  );
+  const max = result[0]?.values[0]?.[0] ?? 0;
+  return `s${(max || 0) + 1}`;
+}
+
+// ── Step CRUD ──────────────────────────────────────────────────────
+
+const STEP_SELECT = `SELECT id, task, title, description, phase, sort_order, plan, plan_version, created_at, updated_at FROM steps`;
+
+function rowToStep(row: any[]): Step {
+  return {
+    id: row[0] as string,
+    task: row[1] as string,
+    title: row[2] as string,
+    description: row[3] as string,
+    phase: row[4] as Phase,
+    sortOrder: row[5] as number,
+    plan: row[6] as string | null,
+    planVersion: row[7] as number | null,
+    createdAt: row[8] as string,
+    updatedAt: row[9] as string,
+  };
+}
+
+export function createStep(opts: {
+  title: string;
+  task: string;
+  description?: string;
+  phase?: Phase;
+  sortOrder?: number;
+  actor?: string;
+}): Step {
+  const db = getDbSync();
+  const id = nextStepId();
+  const now = new Date().toISOString();
+  const phase = opts.phase ?? "understand";
+  const sortOrder = opts.sortOrder ?? 0;
+
+  db.run(
+    `INSERT INTO steps (repo, id, task, title, description, phase, sort_order, plan, plan_version, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
+    [repo(), id, opts.task, opts.title, opts.description ?? "", phase, sortOrder, now, now],
+  );
+
+  // Record transition
+  db.run(
+    `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
+     VALUES (?, ?, 'step', ?, ?, ?)`,
+    [repo(), id, phase, opts.actor ?? "cli", now],
+  );
+
+  persistDb();
+
+  return {
+    id,
+    task: opts.task,
+    title: opts.title,
+    description: opts.description ?? "",
+    phase,
+    sortOrder,
+    plan: null,
+    planVersion: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function loadStep(id: string): Step | null {
+  const db = getDbSync();
+  const result = db.exec(`${STEP_SELECT} WHERE repo = ? AND id = ?`, [repo(), id]);
+  if (!result[0]?.values.length) return null;
+  return rowToStep(result[0].values[0]);
+}
+
+export function listSteps(opts?: { task?: string }): Step[] {
+  const db = getDbSync();
+  let query = `${STEP_SELECT} WHERE repo = ?`;
+  const params: any[] = [repo()];
+
+  if (opts?.task) {
+    query += " AND task = ?";
+    params.push(opts.task);
+  }
+
+  query += " ORDER BY sort_order, id";
+
+  const result = db.exec(query, params);
+  if (!result[0]?.values.length) return [];
+  return result[0].values.map((row: any[]) => rowToStep(row));
+}
+
+export function saveStep(step: Step): void {
+  const db = getDbSync();
+  const now = new Date().toISOString();
+  db.run(
+    `INSERT OR REPLACE INTO steps (repo, id, task, title, description, phase, sort_order, plan, plan_version, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      repo(),
+      step.id,
+      step.task,
+      step.title,
+      step.description,
+      step.phase,
+      step.sortOrder,
+      step.plan,
+      step.planVersion,
+      step.createdAt,
+      now,
+    ],
+  );
+  persistDb();
+  step.updatedAt = now;
+}
+
 // ── Epic CRUD ───────────────────────────────────────────────────────
 
 export function createEpic(opts: {
   title: string;
   description?: string;
   phase?: Phase;
-  spec?: string;
+  plan?: string;
 }): Epic {
   const db = getDbSync();
   const id = nextEpicId();
@@ -144,9 +291,9 @@ export function createEpic(opts: {
   const phase = opts.phase ?? "understand";
 
   db.run(
-    `INSERT INTO epics (repo, id, title, description, phase, spec, created_at, updated_at)
+    `INSERT INTO epics (repo, id, title, description, phase, plan, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [repo(), id, opts.title, opts.description ?? "", phase, opts.spec ?? null, now, now],
+    [repo(), id, opts.title, opts.description ?? "", phase, opts.plan ?? null, now, now],
   );
 
   // Record initial transition
@@ -163,7 +310,8 @@ export function createEpic(opts: {
     title: opts.title,
     description: opts.description ?? "",
     phase,
-    spec: opts.spec ?? null,
+    plan: opts.plan ?? null,
+    planVersion: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -172,7 +320,7 @@ export function createEpic(opts: {
 export function loadEpic(id: string): Epic | null {
   const db = getDbSync();
   const result = db.exec(
-    "SELECT id, title, description, phase, spec, created_at, updated_at FROM epics WHERE repo = ? AND id = ?",
+    "SELECT id, title, description, phase, plan, plan_version, created_at, updated_at FROM epics WHERE repo = ? AND id = ?",
     [repo(), id],
   );
   if (!result[0]?.values.length) return null;
@@ -182,16 +330,17 @@ export function loadEpic(id: string): Epic | null {
     title: row[1] as string,
     description: row[2] as string,
     phase: row[3] as Phase,
-    spec: row[4] as string | null,
-    createdAt: row[5] as string,
-    updatedAt: row[6] as string,
+    plan: row[4] as string | null,
+    planVersion: row[5] as number | null,
+    createdAt: row[6] as string,
+    updatedAt: row[7] as string,
   };
 }
 
 export function listEpics(): Epic[] {
   const db = getDbSync();
   const result = db.exec(
-    "SELECT id, title, description, phase, spec, created_at, updated_at FROM epics WHERE repo = ? ORDER BY id",
+    "SELECT id, title, description, phase, plan, plan_version, created_at, updated_at FROM epics WHERE repo = ? ORDER BY id",
     [repo()],
   );
   if (!result[0]?.values.length) return [];
@@ -200,18 +349,19 @@ export function listEpics(): Epic[] {
     title: row[1] as string,
     description: row[2] as string,
     phase: row[3] as Phase,
-    spec: row[4] as string | null,
-    createdAt: row[5] as string,
-    updatedAt: row[6] as string,
+    plan: row[4] as string | null,
+    planVersion: row[5] as number | null,
+    createdAt: row[6] as string,
+    updatedAt: row[7] as string,
   }));
 }
 
 // ── Task CRUD ───────────────────────────────────────────────────────
 
 function rowToTask(row: any[], transitions: Transition[], children: string[]): Task {
-  const qaStatus = row[12] as string | null;
-  const qaSummary = row[13] as string | null;
-  const qaTimestamp = row[14] as string | null;
+  const qaStatus = row[13] as string | null;
+  const qaSummary = row[14] as string | null;
+  const qaTimestamp = row[15] as string | null;
 
   return {
     id: row[0] as string,
@@ -224,9 +374,10 @@ function rowToTask(row: any[], transitions: Transition[], children: string[]): T
     worktree: row[7] as string | null,
     pr: row[8] as string | null,
     externalId: row[9] as string | null,
-    spec: row[10] as string | null,
-    createdAt: row[11] as string,
-    updatedAt: row[15] as string,
+    plan: row[10] as string | null,
+    planVersion: row[11] as number | null,
+    createdAt: row[12] as string,
+    updatedAt: row[16] as string,
     qaResult: qaStatus ? { status: qaStatus as "pass" | "fail", summary: qaSummary!, timestamp: qaTimestamp! } : null,
     children,
     transitions,
@@ -257,7 +408,7 @@ function loadChildren(taskId: string): string[] {
   return result[0].values.map((row: any[]) => row[0] as string);
 }
 
-const TASK_SELECT = `SELECT id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, spec, created_at, qa_status, qa_summary, qa_timestamp, updated_at FROM tasks`;
+const TASK_SELECT = `SELECT id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, plan, plan_version, created_at, qa_status, qa_summary, qa_timestamp, updated_at FROM tasks`;
 
 export function loadTask(id: string): Task | null {
   const db = getDbSync();
@@ -272,8 +423,8 @@ export function saveTask(task: Task): void {
   const db = getDbSync();
   const now = new Date().toISOString();
   db.run(
-    `INSERT OR REPLACE INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, spec, qa_status, qa_summary, qa_timestamp, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, plan, plan_version, qa_status, qa_summary, qa_timestamp, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       repo(),
       task.id,
@@ -286,7 +437,8 @@ export function saveTask(task: Task): void {
       task.worktree,
       task.pr,
       task.externalId,
-      task.spec,
+      task.plan,
+      task.planVersion,
       task.qaResult?.status ?? null,
       task.qaResult?.summary ?? null,
       task.qaResult?.timestamp ?? null,
@@ -331,8 +483,8 @@ export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean 
       if (branch) compact.branch = branch;
       const deps = JSON.parse((row[5] as string) || "[]");
       if (deps.length > 0) compact.dependencies = deps;
-      const qaStatus = row[12] as string | null;
-      if (qaStatus) compact.qaResult = { status: qaStatus, summary: row[13] as string };
+      const qaStatus = row[13] as string | null;
+      if (qaStatus) compact.qaResult = { status: qaStatus, summary: row[14] as string };
       return compact as Task;
     }
     const transitions = loadTransitions(id, "task");
@@ -355,8 +507,8 @@ export function createTask(opts: {
   const epic = opts.epic ?? null;
 
   db.run(
-    `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, spec, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, '[]', NULL, NULL, NULL, NULL, NULL, ?, ?)`,
+    `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, plan, plan_version, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, '[]', NULL, NULL, NULL, NULL, NULL, NULL, ?, ?)`,
     [repo(), id, epic, opts.title, opts.description ?? "", phase, now, now],
   );
 
@@ -380,7 +532,8 @@ export function createTask(opts: {
     worktree: null,
     pr: null,
     externalId: null,
-    spec: null,
+    plan: null,
+    planVersion: null,
     qaResult: null,
     createdAt: now,
     updatedAt: now,
@@ -494,36 +647,79 @@ export function dependenciesMet(task: Task): boolean {
   return true;
 }
 
-// ── Spec management ─────────────────────────────────────────────────
+// ── Plan management (versioned, global ~/.glorious/plans/) ──────────
 
-export function loadSpec(taskId: string): string | null {
-  const p = specPath(taskId);
+/** Get the latest plan version number for an entity, or 0 if none. */
+function latestPlanVersion(id: string): number {
+  const dir = path.join(plansDir(), id);
+  if (!fs.existsSync(dir)) return 0;
+  const files = fs.readdirSync(dir).filter(f => /^v\d+\.md$/.test(f));
+  if (files.length === 0) return 0;
+  return Math.max(...files.map(f => parseInt(f.slice(1, -3), 10)));
+}
+
+/** Load the latest version of a plan for any entity (epic, task, step). */
+export function loadPlan(id: string): string | null {
+  const ver = latestPlanVersion(id);
+  if (ver === 0) return null;
+  return loadPlanVersion(id, ver);
+}
+
+/** Load a specific version of a plan. */
+export function loadPlanVersion(id: string, version: number): string | null {
+  const p = planVersionPath(id, version);
   if (!fs.existsSync(p)) return null;
   return fs.readFileSync(p, "utf-8");
 }
 
-export function saveSpec(taskId: string, content: string): void {
-  const sp = specsDir();
-  if (!fs.existsSync(sp)) fs.mkdirSync(sp, { recursive: true });
-  const p = specPath(taskId);
+/** List all plan versions for an entity, sorted ascending. */
+export function listPlanVersions(id: string): number[] {
+  const dir = path.join(plansDir(), id);
+  if (!fs.existsSync(dir)) return [];
+  const files = fs.readdirSync(dir).filter(f => /^v\d+\.md$/.test(f));
+  return files.map(f => parseInt(f.slice(1, -3), 10)).sort((a, b) => a - b);
+}
+
+/** Save a new version of a plan. Returns the new version number. */
+export function savePlan(id: string, content: string): number {
+  const ver = latestPlanVersion(id) + 1;
+  const p = planVersionPath(id, ver);
+  const dir = path.dirname(p);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(p, content);
 
-  // Update the task's spec field
-  const task = loadTask(taskId);
+  // Update the entity's plan field (try task first, then epic)
+  const task = loadTask(id);
   if (task) {
-    const rel = `.glorious/specs/${taskId}.md`;
-    if (task.spec !== rel) {
-      task.spec = rel;
-      saveTask(task);
+    task.plan = p;
+    task.planVersion = ver;
+    saveTask(task);
+  } else {
+    const epic = loadEpic(id);
+    if (epic) {
+      const db = getDbSync();
+      db.run(
+        "UPDATE epics SET plan = ?, plan_version = ?, updated_at = ? WHERE repo = ? AND id = ?",
+        [p, ver, new Date().toISOString(), repo(), id],
+      );
+      persistDb();
     }
   }
+
+  return ver;
 }
 
-export function saveSpecFromFile(taskId: string, filePath: string): void {
+/** Save a plan from a file on disk. Returns the new version number. */
+export function savePlanFromFile(id: string, filePath: string): number {
   if (!fs.existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
   const content = fs.readFileSync(filePath, "utf-8");
-  saveSpec(taskId, content);
+  return savePlan(id, content);
 }
+
+// Backward compat aliases for spec commands still referencing old names
+export const loadSpec = loadPlan;
+export const saveSpec = (id: string, content: string) => { savePlan(id, content); };
+export const saveSpecFromFile = (id: string, filePath: string) => { savePlanFromFile(id, filePath); };
 
 // ── Task lookup helpers ─────────────────────────────────────────────
 
@@ -568,7 +764,7 @@ export function findReadyTasks(opts?: { all?: boolean }): Task[] {
   return tasks.filter((t) => !isTerminal(t.phase) && dependenciesMet(t));
 }
 
-/** Load a task with optional spec content inlining and field projection. */
+/** Load a task with optional plan content inlining and field projection. */
 export function loadTaskFull(
   id: string,
   opts?: { withSpec?: boolean; fields?: string[] },
@@ -578,9 +774,9 @@ export function loadTaskFull(
 
   let result: Record<string, unknown> = { ...task };
 
-  if (opts?.withSpec && task.spec) {
-    const content = loadSpec(id);
-    if (content) result.specContent = content;
+  if (opts?.withSpec && task.plan) {
+    const content = loadPlan(id);
+    if (content) result.planContent = content;
   }
 
   if (opts?.fields) {
