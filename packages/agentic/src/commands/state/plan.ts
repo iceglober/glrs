@@ -1,5 +1,6 @@
 import { command, subcommands, option, flag, optional, string } from "cmd-ts";
 import { loadTask, loadEpic, loadPlan, savePlan, savePlanFromFile, listPlanVersions, createTask, saveTask } from "../../lib/state.js";
+import { loadFeedback, clearFeedback as clearFeedbackFile } from "../../lib/plan-feedback.js";
 import { ok, bold, dim } from "../../lib/fmt.js";
 
 // ── gs-agentic state plan show ──────────────────────────────────────────────
@@ -118,6 +119,38 @@ const history = command({
   },
 });
 
+// ── gs-agentic state plan feedback ────────────────────────────────────────
+
+const feedback = command({
+  name: "feedback",
+  description: "Display plan feedback for a task or epic",
+  args: {
+    id: option({ type: string, long: "id", short: "i", description: "Task or Epic ID" }),
+  },
+  handler: (args) => {
+    const content = loadFeedback(args.id);
+    if (!content) {
+      console.log(dim(`No feedback for "${args.id}".`));
+      return;
+    }
+    console.log(content);
+  },
+});
+
+// ── gs-agentic state plan clear-feedback ──────────────────────────────────
+
+const clearFeedback = command({
+  name: "clear-feedback",
+  description: "Clear plan feedback for a task or epic",
+  args: {
+    id: option({ type: string, long: "id", short: "i", description: "Task or Epic ID" }),
+  },
+  handler: (args) => {
+    clearFeedbackFile(args.id);
+    ok(`feedback cleared for ${bold(args.id)}`);
+  },
+});
+
 // ── Export subcommands ───────────────────────────────────────────────
 
 export const statePlan = subcommands({
@@ -128,5 +161,7 @@ export const statePlan = subcommands({
     set,
     "add-task": addTask,
     history,
+    feedback,
+    "clear-feedback": clearFeedback,
   },
 });

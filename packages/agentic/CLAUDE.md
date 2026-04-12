@@ -36,6 +36,7 @@ src/
 │   ├── delete.ts         # gsag wt delete (interactive multi-select or by name)
 │   ├── cleanup.ts        # gsag wt cleanup
 │   ├── root.ts           # gsag wt root
+│   ├── plan-review.ts    # gsag plan review — open plan in browser with feedback
 │   ├── install-skills.ts      # gsag skills (interactive scope picker, --user/--project)
 │   ├── install-skills.test.ts # Unit tests for install-skills
 │   ├── init-hooks.ts     # gsag wt hooks
@@ -54,6 +55,12 @@ src/
 │   ├── config.ts         # worktreePath, repoName, isProtected
 │   ├── hooks.ts          # runHook (non-fatal, per-command resilient)
 │   ├── slug.ts           # slugify
+│   ├── plan-feedback.ts      # Feedback read/write/clear for plan review
+│   ├── plan-feedback.test.ts # Plan feedback tests
+│   ├── plan-html.ts          # Markdown→HTML plan renderer with feedback buttons
+│   ├── plan-html.test.ts     # Plan HTML tests
+│   ├── plan-server.ts        # Local HTTP server for plan review sessions
+│   ├── plan-server.test.ts   # Plan server tests
 │   ├── fmt.ts            # Terminal formatting (bold, dim, colors)
 │   ├── version.ts        # VERSION constant
 │   └── update-check.ts   # Update checker

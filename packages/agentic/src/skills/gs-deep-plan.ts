@@ -224,16 +224,26 @@ After creating all tasks, run \`gs-agentic status\` and display the result so th
 
 If the user requests changes to an existing plan:
 
-1. **Read current state first:**
+1. **Check for feedback first:**
+   \`\`\`bash
+   gs-agentic state plan feedback --id <epic-id>
+   \`\`\`
+   If feedback exists, use it to guide your revisions. The feedback file contains per-step annotations from the user's browser review session (via \`gs-agentic plan review\`).
+
+2. **Read current state:**
    \`\`\`bash
    gs-agentic state task list --epic <epic-id> --json
    \`\`\`
-2. **Identify which tasks are affected** by the requested changes.
-3. **Update gs-agentic state to match** — cancel removed steps, create new tasks, update titles/dependencies for modified steps.
-4. **Then update the plan file** to reflect the changes.
-5. **Re-save the plan:**
+3. **Identify which tasks are affected** by the requested changes (and feedback).
+4. **Update gs-agentic state to match** — cancel removed steps, create new tasks, update titles/dependencies for modified steps.
+5. **Then update the plan file** to reflect the changes.
+6. **Re-save the plan:**
    \`\`\`bash
    gs-agentic state plan set --id <epic-id> --file .claude/plans/plan-<slug>.md
+   \`\`\`
+7. **Clear incorporated feedback:**
+   \`\`\`bash
+   gs-agentic state plan clear-feedback --id <epic-id>
    \`\`\`
 
 The state is the source of truth. Plan file updates follow state changes, not the other way around.

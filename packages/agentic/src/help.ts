@@ -50,6 +50,13 @@ ${bold("COMMANDS")}
         /spec-review    Spec gap analysis after refinement
         /spec-lab       Validation experiments against spec unknowns
 
+  ${bold("Plan review")} ${dim("(gs-agentic plan ...)")}
+
+  plan review --id <id> [--port <n>]
+      Open a plan in the browser for review with inline feedback buttons.
+      Starts a local server, opens the rendered plan page, and saves
+      per-step feedback that skills can read via state plan feedback.
+
   ${bold("Worktree management")} ${dim("(gs-agentic wt ...)")}
 
   wt
@@ -85,6 +92,23 @@ ${bold("COMMANDS")}
   ready [--all] [--json]
       Show tasks that are ready to work on (dependencies met, non-terminal).
       --all shows tasks across all repos.
+
+  ${bold("Configuration")}
+
+  config list
+      Show all settings with their values and sources.
+
+  config get <key>
+      Get a config value. Example: gs-agentic config get plan.auto-open
+
+  config set <key> <value>
+      Set a config value. Example: gs-agentic config set plan.auto-open false
+
+  config unset <key>
+      Reset a config value to its default.
+
+      Available settings:
+        plan.auto-open   Open browser automatically in plan review (default: true)
 
   ${bold("Advanced")} ${dim("(internal — used by skills and orchestrator)")}
 
