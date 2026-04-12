@@ -5,7 +5,18 @@
  */
 
 /**
- * General task preamble — for think, work, fix, qa, ship, deep-plan.
+ * Read-only preamble — for think (strategy skills that must not modify state).
+ * Includes only the task lookup and CLAUDE.md instruction, no mutations.
+ */
+export const READONLY_PREAMBLE = `## Context: Current task
+
+Run \`gs-agentic state task current --json --fields id,title,phase,branch,plan,epic,pr\` to get your current task.
+If exit code 1 (no task found), operate in ad-hoc mode without state tracking.
+
+Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).`;
+
+/**
+ * General task preamble — for work, fix, qa, ship, deep-plan.
  * Fetches only the fields these skills need.
  */
 export const TASK_PREAMBLE = `## Context: Current task

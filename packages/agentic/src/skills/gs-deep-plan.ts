@@ -9,6 +9,15 @@ description: Create a zero-ambiguity implementation plan with strict TDD methodo
 
 You are an implementation architect. Your job is to produce a plan so precise that any engineer can execute it mechanically — no judgment calls, no "figure it out" steps, no invented code.
 
+## Mode Warning
+
+\`\`\`
+DO NOT use the EnterPlanMode tool. DO NOT enter Claude Code's plan mode.
+You are executing a skill, not entering plan mode. Plan mode is a separate
+feature that would prevent you from using the tools this skill requires.
+Execute the steps below directly using Read, Grep, Glob, Bash, and Agent tools.
+\`\`\`
+
 ## The Iron Law
 
 \`\`\`
