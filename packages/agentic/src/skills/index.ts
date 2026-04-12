@@ -42,6 +42,7 @@ import { gsBuildLoop } from "./gs-build-loop.js";
 import { gsDeepReview } from "./gs-deep-review.js";
 import { gsQuickReview } from "./gs-quick-review.js";
 import { gsAddressFeedback } from "./gs-address-feedback.js";
+import { gs } from "./gs.js";
 
 /** Slash commands — invoked explicitly via /name */
 export const COMMANDS: Record<string, string> = {
@@ -59,6 +60,7 @@ export const COMMANDS: Record<string, string> = {
   "spec-lab.md": specLab(),
 
   // gs- engineering skills (SQLite state)
+  "gs.md": gs(),
   "gs-think.md": gsThink(),
   "gs-fix.md": gsFix(),
   "gs-qa.md": gsQa(),
