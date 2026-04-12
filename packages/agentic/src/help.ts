@@ -178,6 +178,10 @@ ${bold("COMMANDS")}
   state log --id <id>
       Show phase transition history.
 
+  state web [--port <n>]
+      Open a read-only dashboard in the browser showing all epics, tasks,
+      plans, and reviews. Auto-refreshes every 5 seconds.
+
 ${bold("FLAGS")}
 
   --version, -V    Print version
