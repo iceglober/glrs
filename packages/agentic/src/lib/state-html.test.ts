@@ -16,7 +16,7 @@ describe("renderStatePage", () => {
   test("loads htm from CDN", () => {
     const html = renderStatePage(3000);
     expect(html).toContain("htm");
-    expect(html).toContain("unpkg.com/htm");
+    expect(html).toContain("cdn.jsdelivr.net/npm/htm");
   });
 
   test("uses correct API port", () => {

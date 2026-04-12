@@ -168,10 +168,10 @@ export function renderStatePage(serverPort: number, opts?: { all?: boolean }): s
 </head>
 <body>
 <div id="root"></div>
-<script crossorigin src="https://unpkg.com/react@19/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@19/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react@19/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@19/umd/react-dom.production.min.js"></script>
 <script type="module">
-import htm from "https://unpkg.com/htm@3?module";
+import htm from "https://cdn.jsdelivr.net/npm/htm@3/+esm";
 const h = htm.bind(React.createElement);
 
 const API = "http://localhost:${serverPort}";
