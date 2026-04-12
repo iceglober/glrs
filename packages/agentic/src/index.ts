@@ -13,6 +13,7 @@ import { installSkills } from "./commands/install-skills.js";
 import { state } from "./commands/state/index.js";
 import { status } from "./commands/status.js";
 import { ready } from "./commands/ready.js";
+import { plan } from "./commands/plan-review.js";
 import { HELP_TEXT } from "./help.js";
 import { VERSION } from "./lib/version.js";
 import { checkForUpdate } from "./lib/update-check.js";
@@ -60,6 +61,7 @@ const cli = subcommands({
   description: "glorious — AI-native development workflow",
   cmds: {
     wt,
+    plan,
     status,
     ready,
     skills: installSkills,
