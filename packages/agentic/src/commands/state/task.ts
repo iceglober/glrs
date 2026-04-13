@@ -219,6 +219,12 @@ const transition = command({
           actor: args.actor ?? undefined,
         });
         ok(`${bold(task.id)} → ${task.phase}`);
+        const unblocked = (task as any).unblocked as Array<{ id: string; title: string }> | undefined;
+        if (unblocked?.length) {
+          for (const u of unblocked) {
+            console.log(`  ${green("▸")} Unblocked: ${bold(u.id)} ${u.title}`);
+          }
+        }
       } catch (e: any) {
         console.error(e.message);
         process.exit(1);

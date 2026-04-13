@@ -52,6 +52,7 @@ import {
   resolveActor,
   touchTask,
   getLastTouched,
+  findNewlyUnblocked,
   PHASES,
   type Task,
   type Phase,
@@ -1862,6 +1863,81 @@ ref:Y | Task Y | depends:X`);
     expect(typeof json.tasks).toBe("object");
     expect(typeof json.tasks["X"]).toBe("string");
     expect(typeof json.tasks["Y"]).toBe("string");
+  });
+});
+
+// ── findNewlyUnblocked ──────────────────────────────────────────────
+
+describe("findNewlyUnblocked", () => {
+  test("returns empty when no dependents exist", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "t1", epic: epic.id });
+    transitionTask("t1", "done", { actor: "test" });
+    expect(findNewlyUnblocked("t1")).toEqual([]);
+  });
+
+  test("returns newly unblocked task", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "t1", epic: epic.id });
+    const t2 = createTask({ title: "t2", epic: epic.id });
+    const t2task = loadTask(t2.id)!;
+    t2task.dependencies = [t1.id];
+    saveTask(t2task);
+    transitionTask(t1.id, "done", { actor: "test" });
+    const unblocked = findNewlyUnblocked(t1.id);
+    expect(unblocked.length).toBe(1);
+    expect(unblocked[0].id).toBe(t2.id);
+  });
+
+  test("does not return task still blocked by other dep", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "t1", epic: epic.id });
+    const t2 = createTask({ title: "t2", epic: epic.id });
+    const t3 = createTask({ title: "t3", epic: epic.id });
+    const t3task = loadTask(t3.id)!;
+    t3task.dependencies = [t1.id, t2.id];
+    saveTask(t3task);
+    transitionTask(t1.id, "done", { actor: "test" });
+    expect(findNewlyUnblocked(t1.id)).toEqual([]);
+  });
+
+  test("returns task when last blocker completes", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "t1", epic: epic.id });
+    const t2 = createTask({ title: "t2", epic: epic.id });
+    const t3 = createTask({ title: "t3", epic: epic.id });
+    const t3task = loadTask(t3.id)!;
+    t3task.dependencies = [t1.id, t2.id];
+    saveTask(t3task);
+    transitionTask(t1.id, "done", { actor: "test" });
+    transitionTask(t2.id, "done", { actor: "test" });
+    const unblocked = findNewlyUnblocked(t2.id);
+    expect(unblocked.length).toBe(1);
+    expect(unblocked[0].id).toBe(t3.id);
+  });
+
+  test("does not return terminal tasks", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "t1", epic: epic.id });
+    const t2 = createTask({ title: "t2", epic: epic.id });
+    const t2task = loadTask(t2.id)!;
+    t2task.dependencies = [t1.id];
+    saveTask(t2task);
+    transitionTask(t2.id, "done", { actor: "test", force: true });
+    transitionTask(t1.id, "done", { actor: "test" });
+    expect(findNewlyUnblocked(t1.id)).toEqual([]);
+  });
+
+  test("transitionTask includes unblocked in return", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "t1", epic: epic.id });
+    const t2 = createTask({ title: "t2", epic: epic.id });
+    const t2task = loadTask(t2.id)!;
+    t2task.dependencies = [t1.id];
+    saveTask(t2task);
+    const result = transitionTask(t1.id, "done", { actor: "test" }) as any;
+    expect(result.unblocked?.length).toBe(1);
+    expect(result.unblocked[0].id).toBe(t2.id);
   });
 });
 

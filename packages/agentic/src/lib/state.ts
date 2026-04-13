@@ -689,9 +689,13 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
 
   persistDb();
 
-  // Return updated task
+  // Return updated task with newly-unblocked info
   touchTask(id);
-  return loadTask(id)!;
+  const updated = loadTask(id)!;
+  if (isTerminal(target)) {
+    (updated as any).unblocked = findNewlyUnblocked(id);
+  }
+  return updated;
 }
 
 // ── Batch transitions ──────────────────────────────────────────────
@@ -758,6 +762,24 @@ export function dependenciesMet(task: Task): boolean {
     if (result[0].values[0][0] !== "done") return false;
   }
   return true;
+}
+
+/**
+ * Find tasks that became unblocked when completedTaskId finished.
+ * Returns tasks whose dependencies all now met and are in non-terminal phase.
+ */
+export function findNewlyUnblocked(completedTaskId: string): Task[] {
+  const completed = loadTask(completedTaskId);
+  if (!completed) return [];
+
+  // Find all tasks in the same epic (or all tasks if standalone)
+  const tasks = completed.epic ? listTasks({ epic: completed.epic }) : listTasks();
+
+  return tasks.filter((t) => {
+    if (isTerminal(t.phase)) return false;
+    if (!t.dependencies.includes(completedTaskId)) return false;
+    return dependenciesMet(t);
+  });
 }
 
 // ── Epic progress ───────────────────────────────────────────────────
