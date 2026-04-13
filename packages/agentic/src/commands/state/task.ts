@@ -216,7 +216,7 @@ const transition = command({
       }
       try {
         const id = resolveId(args.id);
-        const { closed, next } = closeAndClaimNext(id, {
+        const { closed, next } = closeAndClaimNext(id, args.phase as Phase, {
           force: args.force,
           actor: args.actor ?? undefined,
         });

@@ -1087,14 +1087,18 @@ function claimNextTask(epicId: string, actor: string): Task | null {
  */
 export function closeAndClaimNext(
   taskId: string,
+  target: Phase = "done",
   opts: { actor?: string; force?: boolean } = {},
 ): { closed: Task; next: Task | null } {
+  if (!isTerminal(target)) {
+    throw new Error(`closeAndClaimNext target must be terminal (done/cancelled), got "${target}".`);
+  }
   const task = loadTask(taskId);
   if (!task) throw new Error(`Task "${taskId}" not found.`);
   if (!task.epic) throw new Error(`Task "${taskId}" has no epic. Use transitionTask() directly.`);
 
   return withDbLock(() => {
-    const closed = transitionTask(taskId, "done", opts);
+    const closed = transitionTask(taskId, target, opts);
     const next = claimNextTask(task.epic!, resolveActor(opts.actor));
     return { closed, next };
   });

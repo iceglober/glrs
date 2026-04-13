@@ -2176,7 +2176,7 @@ describe("closeAndClaimNext", () => {
     saveTask(t2task);
     transitionTask(t1.id, "implement", { actor: "bot" });
 
-    const result = closeAndClaimNext(t1.id, { actor: "bot" });
+    const result = closeAndClaimNext(t1.id, "done", { actor: "bot" });
     expect(result.closed.id).toBe(t1.id);
     expect(result.closed.phase).toBe("done");
     expect(result.next).not.toBeNull();
@@ -2190,7 +2190,7 @@ describe("closeAndClaimNext", () => {
     createTask({ title: "Only task", epic: epic.id });
     transitionTask("t1", "implement", { actor: "bot" });
 
-    const result = closeAndClaimNext("t1", { actor: "bot" });
+    const result = closeAndClaimNext("t1", "done", { actor: "bot" });
     expect(result.closed.phase).toBe("done");
     expect(result.next).toBeNull();
   });
@@ -2209,7 +2209,7 @@ describe("closeAndClaimNext", () => {
     saveTask(t3task);
     transitionTask(t1.id, "implement", { actor: "bot" });
 
-    const result = closeAndClaimNext(t1.id, { actor: "bot" });
+    const result = closeAndClaimNext(t1.id, "done", { actor: "bot" });
     // t2 is now unblocked and claimable, t3 is still blocked by t2
     expect(result.next).not.toBeNull();
     expect(result.next!.id).toBe(t2.id);
@@ -2218,7 +2218,7 @@ describe("closeAndClaimNext", () => {
   test("throws if task has no epic", () => {
     createTask({ title: "Standalone" });
     transitionTask("t1", "implement", { actor: "bot" });
-    expect(() => closeAndClaimNext("t1", { actor: "bot" })).toThrow(/no epic/i);
+    expect(() => closeAndClaimNext("t1", "done", { actor: "bot" })).toThrow(/no epic/i);
   });
 
   test("throws if task not found", () => {
@@ -2229,7 +2229,7 @@ describe("closeAndClaimNext", () => {
     const epic = createEpic({ title: "E" });
     createTask({ title: "Already done", epic: epic.id });
     transitionTask("t1", "done", { actor: "bot", force: true });
-    expect(() => closeAndClaimNext("t1", { actor: "bot" })).toThrow(/terminal/i);
+    expect(() => closeAndClaimNext("t1", "done", { actor: "bot" })).toThrow(/terminal/i);
   });
 
   test("emits unblocked in closed result", () => {
@@ -2241,11 +2241,41 @@ describe("closeAndClaimNext", () => {
     saveTask(t2task);
     transitionTask(t1.id, "implement", { actor: "bot" });
 
-    const result = closeAndClaimNext(t1.id, { actor: "bot" });
+    const result = closeAndClaimNext(t1.id, "done", { actor: "bot" });
     const unblocked = (result.closed as any).unblocked;
     expect(unblocked).toBeDefined();
     expect(unblocked.length).toBe(1);
     expect(unblocked[0].id).toBe(t2.id);
+  });
+
+  test("closes as cancelled when target is cancelled", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "First", epic: epic.id });
+    transitionTask(t1.id, "implement", { actor: "bot" });
+
+    const result = closeAndClaimNext(t1.id, "cancelled", { actor: "bot" });
+    expect(result.closed.phase).toBe("cancelled");
+  });
+
+  test("cancelled close does not unblock dependent tasks", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "First", epic: epic.id });
+    const t2 = createTask({ title: "Second", epic: epic.id });
+    const t2task = loadTask(t2.id)!;
+    t2task.dependencies = [t1.id];
+    saveTask(t2task);
+    transitionTask(t1.id, "implement", { actor: "bot" });
+
+    const result = closeAndClaimNext(t1.id, "cancelled", { actor: "bot" });
+    expect(result.closed.phase).toBe("cancelled");
+    expect(result.next).toBeNull();
+  });
+
+  test("rejects non-terminal target phase", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "T", epic: epic.id });
+    transitionTask("t1", "implement", { actor: "bot" });
+    expect(() => closeAndClaimNext("t1", "verify" as any, { actor: "bot" })).toThrow();
   });
 });
 
