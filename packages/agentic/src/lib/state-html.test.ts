@@ -54,4 +54,15 @@ describe("renderStatePage", () => {
     expect(html).toContain('r.split("/")');
     expect(html).not.toContain('r.split("-")');
   });
+
+  test("seeds selectedRepo from first fetch", () => {
+    const html = renderStatePage(3000, { all: true });
+    expect(html).toContain("prev => prev || data.repos[0].repo");
+  });
+
+  test("repo tabs require more than 1 repo", () => {
+    const html = renderStatePage(3000, { all: true });
+    // Tab rendering guard uses > 1, not > 0
+    expect(html).toContain("isMultiRepo && state.repos.length > 1");
+  });
 });

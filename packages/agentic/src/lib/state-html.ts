@@ -213,6 +213,10 @@ function App() {
       setState(data);
       setLastUpdate(new Date());
       setError(null);
+      // Seed selectedRepo from first load to prevent poll-driven repo switches
+      if (Array.isArray(data.repos) && data.repos.length > 0) {
+        setSelectedRepo(prev => prev || data.repos[0].repo);
+      }
     } catch (e) {
       setError(e.message);
     }
@@ -267,7 +271,7 @@ function App() {
     <div class="layout">
       <\${Sidebar} epics=\${epics} standalone=\${standalone} selectedEpic=\${selectedEpic} onSelectEpic=\${toggleEpic} repoName=\${activeRepoName} />
       <div class="main">
-        \${isMultiRepo && state.repos.length > 0 && h\`
+        \${isMultiRepo && state.repos.length > 1 && h\`
           <div class="repo-tabs">
             \${state.repos.map(r => h\`
               <div
