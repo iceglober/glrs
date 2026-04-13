@@ -231,6 +231,7 @@ const update = command({
     branch: option({ type: optional(string), long: "branch", description: "Branch name" }),
     worktree: option({ type: optional(string), long: "worktree", description: "Worktree path" }),
     pr: option({ type: optional(string), long: "pr", description: "PR URL" }),
+    dependsOn: option({ type: optional(string), long: "depends-on", description: "Set dependency IDs (comma-separated, replaces existing)" }),
     unclaim: flag({ long: "unclaim", description: "Clear the claimed_by field" }),
   },
   handler: (args) => {
@@ -244,6 +245,9 @@ const update = command({
     if (args.branch !== undefined) task.branch = args.branch;
     if (args.worktree !== undefined) task.worktree = args.worktree;
     if (args.pr !== undefined) task.pr = args.pr;
+    if (args.dependsOn !== undefined) {
+      task.dependencies = args.dependsOn ? args.dependsOn.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    }
     if (args.unclaim) { task.claimedBy = null; task.claimedAt = null; }
     saveTask(task);
     ok(`updated ${bold(task.id)}`);
