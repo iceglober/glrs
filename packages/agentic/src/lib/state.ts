@@ -9,7 +9,7 @@ import { getDb, getDbSync, persistDb, withDbLock, getRepo, closeDb, resetDb, res
 export const PHASES = ["understand", "design", "implement", "verify", "ship", "done", "cancelled"] as const;
 export type Phase = (typeof PHASES)[number];
 
-const ORDERED_PHASES: Phase[] = ["understand", "design", "implement", "verify", "ship", "done"];
+const ORDERED_PHASES: Phase[] = PHASES.filter((p): p is Phase => p !== "cancelled");
 const TERMINAL: Phase[] = ["done", "cancelled"];
 
 export interface Transition {
