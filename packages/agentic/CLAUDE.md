@@ -75,12 +75,13 @@ src/
 └── skills/
     ├── index.ts          # GS_SKILL_NAMES, buildCommands(), BUILTIN_COLLISIONS, SKILLS
     ├── index.test.ts     # Unit tests for skill registry and buildCommands
-    ├── preamble.ts       # Role-specific preambles (TASK/REVIEW/BUILD) for skills
+    ├── preamble.ts       # Role-specific preambles (READONLY/TASK/REVIEW/BUILD) for skills
     │
     │  # Engineering skills (default: /think, /work, etc. — configurable via --prefix)
     ├── gs.ts             # /gs — general workflow assistant
     ├── gs.test.ts        # Unit tests for gs skill
-    ├── gs-think.ts       # /think — product strategy
+    ├── gs-think.ts       # /think — product strategy (read-only analysis)
+    ├── gs-think.test.ts  # Unit tests for think skill
     ├── gs-work.ts        # /work — implement a task
     ├── gs-fix.ts         # /fix — TDD bug resolution
     ├── gs-fix.test.ts    # Unit tests for fix skill
@@ -90,6 +91,7 @@ src/
     ├── gs-build.ts       # /build — implement a specific task
     ├── gs-build-loop.ts  # /build-loop — loop through epic tasks
     ├── gs-deep-plan.ts   # /deep-plan — zero-ambiguity planning
+    ├── gs-deep-plan.test.ts # Unit tests for deep-plan skill
     ├── gs-deep-review.ts # /deep-review — 6-agent parallel review
     ├── gs-quick-review.ts # /quick-review — fast single-pass review
     ├── gs-address-feedback.ts # /address-feedback — resolve PR feedback
@@ -135,7 +137,7 @@ src/
 - **Pipeline phases**: understand → design → implement → verify → ship → done
 - **Repo-scoped by default** — each task is keyed by `(repo, id)`. Use `--all` for cross-repo views.
 - **Reviews** are stored in DB with commit SHA anchoring for persistence across context compaction
-- Skills use `TASK_PREAMBLE` from `preamble.ts` to find the current task via `gsag state task current`
+- Skills use role-specific preambles from `preamble.ts`: `READONLY_PREAMBLE` (think), `TASK_PREAMBLE` (work/fix/ship/plan), `REVIEW_PREAMBLE` (review/qa), `BUILD_PREAMBLE` (build)
 
 ## Stack
 

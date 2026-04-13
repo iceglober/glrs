@@ -29,9 +29,10 @@ describe("cross-references use canonical names", () => {
     expect(output).not.toContain("/gs-fix");
   });
 
-  test("gs-think description uses /work not /gs-work", () => {
+  test("gs-think uses /deep-plan not /gs-deep-plan", () => {
     const output = gsThink();
-    expect(output).toContain("use /work");
+    expect(output).toContain("/deep-plan");
+    expect(output).not.toContain("/gs-deep-plan");
     expect(output).not.toContain("/gs-work");
   });
 
