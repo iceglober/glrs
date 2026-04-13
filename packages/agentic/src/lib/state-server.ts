@@ -26,42 +26,47 @@ export function startStateServer(opts?: {
     let cachedHtml: string | null = null;
 
     const server = http.createServer((req, res) => {
-      if (req.method === "GET" && req.url === "/") {
-        if (!cachedHtml) {
-          const addr = server.address() as { port: number };
-          cachedHtml = renderStatePage(addr.port, { all: opts?.all });
-        }
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(cachedHtml);
-        return;
-      }
-
-      if (req.method === "GET" && (req.url === "/api/state" || req.url?.startsWith("/api/state?"))) {
-        const url = new URL(req.url, `http://localhost`);
-        const all = url.searchParams.get("all") === "true";
-        const data = buildStatePayload({ all });
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(data));
-        return;
-      }
-
-      // Match /api/plan/:id
-      const planMatch = req.url?.match(/^\/api\/plan\/(.+)$/);
-      if (req.method === "GET" && planMatch) {
-        const id = decodeURIComponent(planMatch[1]);
-        if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
-          res.writeHead(400, { "Content-Type": "text/plain" });
-          res.end("Invalid plan ID");
+      try {
+        if (req.method === "GET" && req.url === "/") {
+          if (!cachedHtml) {
+            const addr = server.address() as { port: number };
+            cachedHtml = renderStatePage(addr.port, { all: opts?.all });
+          }
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(cachedHtml);
           return;
         }
-        const content = loadPlan(id);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ content }));
-        return;
-      }
 
-      res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Not found");
+        if (req.method === "GET" && (req.url === "/api/state" || req.url?.startsWith("/api/state?"))) {
+          const url = new URL(req.url, `http://localhost`);
+          const all = url.searchParams.get("all") === "true";
+          const data = buildStatePayload({ all });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(data));
+          return;
+        }
+
+        // Match /api/plan/:id
+        const planMatch = req.url?.match(/^\/api\/plan\/(.+)$/);
+        if (req.method === "GET" && planMatch) {
+          const id = decodeURIComponent(planMatch[1]);
+          if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+            res.writeHead(400, { "Content-Type": "text/plain" });
+            res.end("Invalid plan ID");
+            return;
+          }
+          const content = loadPlan(id);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ content }));
+          return;
+        }
+
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not found");
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err?.message ?? "Internal server error" }));
+      }
     });
 
     server.on("error", reject);
