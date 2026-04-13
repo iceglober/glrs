@@ -46,9 +46,9 @@ describe("cross-references use canonical names", () => {
 
   test("gs-deep-review uses canonical cross-refs", () => {
     const output = gsDeepReview();
-    expect(output).toContain("/deep-plan");
-    expect(output).toContain("/qa");
-    expect(output).toContain("/ship");
+    expect(output).toContain("deep-plan");
+    expect(output).toContain('Skill("qa")');
+    expect(output).toContain('Skill("ship")');
     expect(output).not.toContain("/gs-deep-plan");
     expect(output).not.toContain("/gs-qa");
     expect(output).not.toContain("/gs-ship");
@@ -64,9 +64,9 @@ describe("cross-references use canonical names", () => {
     const output = gsBuild();
     expect(output).toContain("/build t3");
     expect(output).toContain("/deep-plan");
-    expect(output).toContain("/deep-review");
-    expect(output).toContain("/quick-review");
-    expect(output).toContain("/ship");
+    expect(output).toContain('Skill("deep-review")');
+    expect(output).toContain('Skill("quick-review")');
+    expect(output).toContain('Skill("ship")');
     expect(output).not.toContain("/gs-build t3");
     expect(output).not.toContain("/gs-deep-plan");
     expect(output).not.toContain("/gs-ship");
@@ -94,6 +94,17 @@ describe("cross-references use canonical names", () => {
     const output = gsQa();
     expect(output).toContain("/work");
     expect(output).not.toContain("/gs-work");
+  });
+
+  test("no skill uses text-based slash command handoff", () => {
+    const skills = [gs, gsThink, gsDeepPlan, gsDeepReview, gsQuickReview, gsBuild, gsBuildLoop, gsAddressFeedback, gsQa, gsFix, gsWork, gsShip];
+    for (const skill of skills) {
+      const output = skill();
+      const matches = output.match(/respond with exactly [`']?\/\w/g);
+      if (matches) {
+        throw new Error(`Found text-based handoff in skill output: ${matches.join(", ")}. Use Skill tool instead.`);
+      }
+    }
   });
 
   test("no skill file contains /gs- slash command references (except gs-agentic CLI)", () => {

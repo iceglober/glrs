@@ -103,9 +103,9 @@ options:
 \`\`\`
 
 Based on the user's response:
-- **Deep review**: respond with exactly \`/deep-review\` as your full message
-- **Quick review**: respond with exactly \`/quick-review\` as your full message
-- **Ship it**: respond with exactly \`/ship\` as your full message
+- **Deep review**: invoke the deep-review skill using the Skill tool: Skill("deep-review")
+- **Quick review**: invoke the quick-review skill using the Skill tool: Skill("quick-review")
+- **Ship it**: invoke the ship skill using the Skill tool: Skill("ship")
 - **Done for now**: summarize what was built, then stop
 
 ## Step 3: Plan-file fallback mode

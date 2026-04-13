@@ -300,8 +300,8 @@ options:
 \`\`\`
 
 Based on the user's response:
-- **QA**: respond with exactly \`/qa\` as your full message
-- **Ship it**: respond with exactly \`/ship\` as your full message
+- **QA**: invoke the qa skill using the Skill tool: Skill("qa")
+- **Ship it**: invoke the ship skill using the Skill tool: Skill("ship")
 - **Done for now**: stop
 - **Other (free text)**: the user is giving direction — follow their instructions
 
@@ -317,9 +317,9 @@ options:
 \`\`\`
 
 Based on the user's response:
-- **Plan the fixes**: respond with exactly \`/deep-plan\` followed by a one-line summary of each CRITICAL and HIGH finding (severity, file:line, description) so deep-plan has concrete context
-- **QA anyway**: respond with exactly \`/qa\` as your full message
-- **Ship anyway**: respond with exactly \`/ship\` as your full message
+- **Plan the fixes**: invoke the deep-plan skill using the Skill tool with a one-line summary of each CRITICAL and HIGH finding (severity, file:line, description) as the argument: Skill("deep-plan", args: "<findings summary>")
+- **QA anyway**: invoke the qa skill using the Skill tool: Skill("qa")
+- **Ship anyway**: invoke the ship skill using the Skill tool: Skill("ship")
 - **Done for now**: stop
 - **Other (free text)**: the user is giving direction — follow their instructions
 
