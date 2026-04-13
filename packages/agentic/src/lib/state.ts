@@ -649,8 +649,8 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
   const task = loadTask(id);
   if (!task) throw new Error(`Task "${id}" not found.`);
 
-  // Enforce claims: if claimed by a different actor, reject unless --force or transitioning to implement/terminal
-  if (task.claimedBy && target !== "implement" && !isTerminal(target) && !opts.force) {
+  // Enforce claims: if claimed by a different actor, reject unless --force or transitioning to terminal
+  if (task.claimedBy && !isTerminal(target) && !opts.force) {
     const actor = resolveActor(opts.actor);
     if (task.claimedBy !== actor) {
       throw new Error(`Task "${id}" is claimed by "${task.claimedBy}". Use --force to override.`);

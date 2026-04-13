@@ -2029,10 +2029,36 @@ describe("claim enforcement", () => {
     expect(() => transitionTask("t1", "verify", { actor: "agent-b", force: true })).not.toThrow();
   });
 
-  test("skip claim check for implement transitions (claiming is the purpose)", () => {
+  test("allows implement on unclaimed task (claiming is the purpose)", () => {
     createTask({ title: "Unclaimed" });
     transitionTask("t1", "design");
     expect(() => transitionTask("t1", "implement", { actor: "any-actor" })).not.toThrow();
+  });
+
+  test("blocks re-implement by different actor on claimed task", () => {
+    createTask({ title: "Claimed" });
+    // Set up: task in design phase but with claimedBy set (e.g., partially worked then rewound)
+    const t = loadTask("t1")!;
+    t.claimedBy = "agent-a";
+    saveTask(t);
+    // agent-b tries to implement — should be blocked because agent-a holds the claim
+    expect(() => transitionTask("t1", "implement", { actor: "agent-b" })).toThrow(/claimed by/);
+  });
+
+  test("allows re-implement by same actor on claimed task", () => {
+    createTask({ title: "Claimed" });
+    const t = loadTask("t1")!;
+    t.claimedBy = "agent-a";
+    saveTask(t);
+    expect(() => transitionTask("t1", "implement", { actor: "agent-a" })).not.toThrow();
+  });
+
+  test("force override on implement works", () => {
+    createTask({ title: "Claimed" });
+    const t = loadTask("t1")!;
+    t.claimedBy = "agent-a";
+    saveTask(t);
+    expect(() => transitionTask("t1", "implement", { actor: "agent-b", force: true })).not.toThrow();
   });
 
   test("skip claim check for terminal transitions (cancellation by orchestrator)", () => {
