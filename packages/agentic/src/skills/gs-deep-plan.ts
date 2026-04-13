@@ -249,17 +249,26 @@ This saves the plan as a versioned file under \`~/.glorious/plans/<repo>/\`. No 
 
 #### 7c. Create tasks for every plan step
 
-For each numbered step (N.M) in the plan, create a task under the epic:
+**Option A (preferred): Atomic sync** — create epic + all tasks in one command:
 
 \`\`\`bash
-# Step 1.1 — no dependencies (first step)
+cat <<'SYNC_EOF' | gs-agentic state plan sync --stdin
+title: <epic title>
+description: <1-2 sentence summary>
+---
+ref:1.1 | Step 1.1: <verb phrase from plan>
+ref:1.2 | Step 1.2: <verb phrase from plan> | depends:1.1
+ref:2.1 | Step 2.1: <verb phrase from plan> | depends:1.1,1.2
+SYNC_EOF
+\`\`\`
+
+Returns JSON: \`{ "epicId": "e1", "tasks": { "1.1": "t1", "1.2": "t2", ... } }\`
+
+**Option B: Individual commands** — for adding tasks to an existing epic:
+
+\`\`\`bash
 gs-agentic state plan add-task --id <epic-id> --title "Step 1.1: <verb phrase from plan>"
-
-# Step 1.2 — depends on 1.1
 gs-agentic state plan add-task --id <epic-id> --title "Step 1.2: <verb phrase from plan>" --depends-on <step-1.1-task-id>
-
-# Step 2.1 — depends on 1.2
-gs-agentic state plan add-task --id <epic-id> --title "Step 2.1: <verb phrase from plan>" --depends-on <step-1.2-task-id>
 \`\`\`
 
 Use the dependency graph from Step 5 to set \`--depends-on\` for each task. If a step depends on multiple prior steps, comma-separate the IDs: \`--depends-on t2,t3\`.
