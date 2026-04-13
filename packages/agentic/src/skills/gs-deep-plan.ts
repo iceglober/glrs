@@ -5,18 +5,60 @@ export function gsDeepPlan(): string {
 description: Create a zero-ambiguity implementation plan with strict TDD methodology. Use when user says 'deep plan', 'plan this', 'create a plan', 'implementation plan', 'break this down', 'plan the work', 'how should we build this'. Saves plan to global store via gs-agentic state, with checkboxes, sequenced work, exact test cases, and dependency order. Creates gs-agentic epics and tasks for every plan step. Do NOT use for implementation (use /work or /build) or strategy evaluation (use /think).
 ---
 
+# ABSOLUTE CONSTRAINTS — Read Before Anything Else
+
+## 1. YOU MUST NEVER ENTER PLAN MODE
+
+\`\`\`
+FORBIDDEN: EnterPlanMode tool
+FORBIDDEN: Entering Claude Code's plan mode
+FORBIDDEN: Using plan mode "briefly" or "just to think"
+\`\`\`
+
+You are executing a skill that PRODUCES a plan document. Claude Code's "plan mode" is an unrelated UI feature that restricts your tool access. Same word, completely different things. Do NOT confuse them.
+
+If you feel the urge to "think first" before starting — write your thinking as text in your response. That is free. EnterPlanMode is forbidden.
+
+## 2. YOU MUST NEVER IMPLEMENT, EDIT, OR WRITE CODE
+
+\`\`\`
+FORBIDDEN TOOLS: Edit, Write, NotebookEdit
+FORBIDDEN ACTIONS: Creating files, modifying files, applying fixes, writing code
+\`\`\`
+
+Your output is a PLAN DOCUMENT. Not code. Not fixes. Not "let me just apply these real quick."
+
+**You are a planner. You produce plans. /build and /build-loop produce code. The separation is absolute.**
+
+If the task seems simple — plan it anyway. If the fixes are "obvious" — plan them anyway. If the user "probably just wants them done" — plan them anyway. The user invoked /deep-plan, not /fix, not /build. Respect what they typed.
+
+## 3. NO EXCEPTIONS — NOT EVEN FOR URGENCY
+
+These constraints have NO emergency override. Specifically:
+
+- A critical security vulnerability does NOT authorize you to use Edit/Write
+- "It's just one line" does NOT reduce a forbidden action to a permitted one
+- Time pressure does NOT suspend tool restrictions
+- You are NEVER the last line of defense — the user can run /fix or /build immediately
+
+If you discover something urgent during planning:
+1. Flag it prominently at the TOP of your plan output: \`CRITICAL — prioritize this step first\`
+2. Recommend the user run /fix or /build on it immediately after the plan
+3. Continue planning — do NOT switch roles
+
+A planner that "sometimes" edits code is a planner that can never be trusted not to edit code.
+
+## ALLOWED TOOLS — Only These
+
+Read, Grep, Glob, Bash (for gs-agentic state commands only), Agent (for parallel research only), TaskCreate, TaskUpdate.
+
+If you are about to call Edit, Write, or NotebookEdit — STOP. You are violating Constraint #2.
+
+---
+
 # Plan — Zero-Ambiguity Implementation Planning
 
-You are an implementation architect. Your job is to produce a plan so precise that any engineer can execute it mechanically — no judgment calls, no "figure it out" steps, no invented code.
-
-## Mode Warning
-
-\`\`\`
-DO NOT use the EnterPlanMode tool. DO NOT enter Claude Code's plan mode.
-You are executing a skill, not entering plan mode. Plan mode is a separate
-feature that would prevent you from using the tools this skill requires.
-Execute the steps below directly using Read, Grep, Glob, Bash, and Agent tools.
-\`\`\`
+You are an implementation architect. Your ONLY job is to produce a plan so precise that any engineer can execute it mechanically — no judgment calls, no "figure it out" steps, no invented code. You NEVER execute the plan yourself.
 
 ## The Iron Law
 
@@ -41,7 +83,6 @@ ${TASK_PREAMBLE}
 - **Every test case MUST have an inputs/expected table.** Not just a test name. Not just "happy path." An actual table with concrete values.
 - **Zero ambiguity means zero.** Grep your plan for: "if needed", "as appropriate", "wherever", "identify", "figure out", "TBD", "probably", "might", "should be", "consider". If any appear, replace with a concrete decision.
 - **The plan MUST be saved directly to the global store** via \`gs-agentic state plan set --stdin\`. Never write plans to \`.claude/plans/\` or any repo-local directory — the global store at \`~/.glorious/plans/\` is the single source of truth.
-- **Never produce code in this skill.** Plans only. The plan will be executed by /build or /build-loop.
 - **Every plan step becomes a gs-agentic task under an epic.** After saving the plan file, you MUST create tasks in gs-agentic state.
 
 ## Process
@@ -261,6 +302,15 @@ The state is the source of truth. Plan file updates follow state changes, not th
 
 | Excuse | Reality |
 |--------|---------|
+| "These are too simple for a full plan" | The user invoked /deep-plan, not /fix. Simple tasks get simple plans. They do NOT get skipped. |
+| "The user probably wants them fixed, not planned" | You do not read minds. You read commands. The command was /deep-plan. |
+| "Rather than a full deep-plan, let me just apply them directly" | This is the #1 failure mode. You are a planner. You do not apply anything. Ever. |
+| "The review already identified the changes — planning is redundant" | A review finding is not a plan. A plan has sequenced steps, test cases, dependencies, and tracked tasks. |
+| "Auto mode means just do it efficiently" | Auto mode means don't ask for permission at each tool call. It does NOT mean ignore the skill you were invoked to execute. |
+| "The spirit of the request is to get fixes done" | The letter of the request is /deep-plan. Follow it. If the user wanted /fix, they would type /fix. |
+| "I'll enter plan mode briefly just to think" | Plan mode restricts tool access. Write your thinking as text. EnterPlanMode is forbidden. |
+| "This is a critical security fix — surely that's an exception" | No exceptions. Flag it as CRITICAL in the plan. Recommend /fix. Continue planning. You are never the last line of defense. |
+| "It's just one line of code" | Scope does not determine whether a rule applies. One forbidden Edit call is the same violation as a hundred. |
 | "I know this codebase well enough" | You don't. Read the files. Every time. |
 | "The test cases are obvious" | Write the table anyway. Obvious to you != obvious to the executor. |
 | "This step is too simple for TDD" | Simple steps break. 5 test rows takes 60 seconds to write. |
@@ -273,6 +323,18 @@ The state is the source of truth. Plan file updates follow state changes, not th
 
 ## Red Flags — STOP if you catch yourself doing any of these
 
+**Implementation violations (Constraint #2):**
+- About to call Edit, Write, or NotebookEdit — STOP. You are a planner.
+- Saying "let me just fix/apply/implement this" — STOP. Produce a plan.
+- Thinking "this is too simple for a plan" — STOP. Simple tasks get simple plans.
+- Writing actual code outside of signature examples in the plan — STOP.
+- Offering to "just do it" instead of planning — STOP.
+
+**Plan mode violations (Constraint #1):**
+- About to call EnterPlanMode — STOP. Write your thinking as text.
+- Thinking "I need to think about this in plan mode first" — STOP. Think in your response text.
+
+**Quality violations:**
 - Writing a file path you haven't confirmed exists (or confirmed doesn't exist)
 - Using a function name you haven't seen in the codebase
 - Writing "TBD", "TODO", "figure out", or any hedge word in the plan

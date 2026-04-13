@@ -168,8 +168,8 @@ export function renderStatePage(serverPort: number, opts?: { all?: boolean }): s
 </head>
 <body>
 <div id="root"></div>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react@19/umd/react.production.min.js"></script>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@19/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
 <script type="module">
 import htm from "https://cdn.jsdelivr.net/npm/htm@3/+esm";
 const h = htm.bind(React.createElement);
