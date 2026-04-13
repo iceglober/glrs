@@ -291,8 +291,28 @@ If the user requests changes to an existing plan:
    \`\`\`bash
    gs-agentic state task list --epic <epic-id> --json
    \`\`\`
-3. **Identify which tasks are affected** by the requested changes (and feedback).
-4. **Update gs-agentic state to match** — cancel removed steps, create new tasks, update titles/dependencies for modified steps.
+3. **Identify which tasks are affected** by the requested changes (and feedback). Compare the JSON task list from step 2 against the revised plan steps. Categorize each task as: **unchanged**, **modified** (title or dependencies changed), **removed** (no longer in plan), or **new** (not in current task list).
+
+4. **Update gs-agentic state to match** — for EACH affected task, run the appropriate command:
+
+   **Modified tasks** — update title and/or dependencies:
+   \`\`\`bash
+   gs-agentic state task update --id <task-id> --title "Step N.M: <updated verb phrase>"
+   gs-agentic state task update --id <task-id> --depends-on <comma-separated-task-ids>
+   \`\`\`
+
+   **Removed tasks** — cancel them:
+   \`\`\`bash
+   gs-agentic state task cancel --id <task-id>
+   \`\`\`
+
+   **New tasks** — create them under the epic:
+   \`\`\`bash
+   gs-agentic state plan add-task --id <epic-id> --title "Step N.M: <verb phrase>" --depends-on <task-ids>
+   \`\`\`
+
+   **You MUST update every affected task.** The task titles displayed to the user come from the state DB, not from the plan markdown. If you update the plan but skip the task updates, the user will see stale titles.
+
 5. **Then update the plan content** to reflect the changes.
 6. **Re-save the plan** (pipe updated content via stdin):
    \`\`\`bash
@@ -300,12 +320,13 @@ cat <<'PLAN_EOF' | gs-agentic state plan set --id <epic-id> --stdin
 <updated plan content>
 PLAN_EOF
    \`\`\`
-7. **Clear incorporated feedback:**
+7. **Verify task state matches plan** — run \`gs-agentic state task list --epic <epic-id> --json\` and confirm every non-cancelled task title matches the revised plan steps.
+8. **Clear incorporated feedback:**
    \`\`\`bash
    gs-agentic state plan clear-feedback --id <epic-id>
    \`\`\`
 
-The state is the source of truth. Plan file updates follow state changes, not the other way around.
+The state is the source of truth. Plan file updates follow state changes, not the other way around. **Never save the plan without also updating the task titles.**
 
 ### Step 9: Ask what's next
 
@@ -324,7 +345,7 @@ Based on the user's response:
 - **Build it**: invoke the build-loop skill using the Skill tool: Skill("build-loop")
 - **Review the plan**: run \`gs-agentic plan review --id <epic-id>\` to open the browser reviewer, then stop
 - **Done for now**: summarize the epic and task IDs, then stop
-- **Other (free text)**: the user is giving plan feedback — incorporate their feedback by going back to Step 8 (Handle plan updates), update the plan and tasks accordingly, then ask this question again
+- **Other (free text)**: the user is giving plan feedback — incorporate their feedback by going back to Step 8 (Handle plan updates). You MUST update both the plan markdown AND the task titles/dependencies in gs-agentic state. Then ask this question again.
 
 ## Rationalization Table
 
