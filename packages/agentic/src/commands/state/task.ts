@@ -225,6 +225,10 @@ const transition = command({
             console.log(`  ${green("▸")} Unblocked: ${bold(u.id)} ${u.title}`);
           }
         }
+        const epicClosed = (task as any).epicClosed as { epicId: string; phase: string } | undefined;
+        if (epicClosed) {
+          ok(`Epic ${bold(epicClosed.epicId)} auto-closed → ${epicClosed.phase}`);
+        }
       } catch (e: any) {
         console.error(e.message);
         process.exit(1);

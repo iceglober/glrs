@@ -689,11 +689,15 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
 
   persistDb();
 
-  // Return updated task with newly-unblocked info
+  // Return updated task with newly-unblocked and auto-close info
   touchTask(id);
   const updated = loadTask(id)!;
   if (isTerminal(target)) {
     (updated as any).unblocked = findNewlyUnblocked(id);
+    const epicClosed = autoCloseEpic(id);
+    if (epicClosed) {
+      (updated as any).epicClosed = epicClosed;
+    }
   }
   return updated;
 }
@@ -780,6 +784,39 @@ export function findNewlyUnblocked(completedTaskId: string): Task[] {
     if (!t.dependencies.includes(completedTaskId)) return false;
     return dependenciesMet(t);
   });
+}
+
+/**
+ * Auto-close an epic when all its children reach terminal phases.
+ * Called from transitionTask() after a task reaches done/cancelled.
+ * Returns the epic closure info, or null if no change.
+ */
+export function autoCloseEpic(taskId: string): { epicId: string; phase: Phase } | null {
+  const task = loadTask(taskId);
+  if (!task?.epic) return null;
+
+  const derived = deriveEpicPhase(task.epic);
+  if (!isTerminal(derived)) return null;
+
+  const epic = loadEpic(task.epic);
+  if (!epic || isTerminal(epic.phase)) return null; // already closed
+
+  const db = getDbSync();
+  const now = new Date().toISOString();
+
+  db.run(
+    "UPDATE epics SET phase = ?, updated_at = ? WHERE repo = ? AND id = ?",
+    [derived, now, repo(), task.epic],
+  );
+
+  db.run(
+    `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
+     VALUES (?, ?, 'epic', ?, ?, ?)`,
+    [repo(), task.epic, derived, resolveActor(), now],
+  );
+
+  persistDb();
+  return { epicId: task.epic, phase: derived };
 }
 
 // ── Epic progress ───────────────────────────────────────────────────

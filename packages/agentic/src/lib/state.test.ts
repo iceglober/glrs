@@ -53,6 +53,7 @@ import {
   touchTask,
   getLastTouched,
   findNewlyUnblocked,
+  autoCloseEpic,
   PHASES,
   type Task,
   type Phase,
@@ -1863,6 +1864,65 @@ ref:Y | Task Y | depends:X`);
     expect(typeof json.tasks).toBe("object");
     expect(typeof json.tasks["X"]).toBe("string");
     expect(typeof json.tasks["Y"]).toBe("string");
+  });
+});
+
+// ── autoCloseEpic ───────────────────────────────────────────────────
+
+describe("autoCloseEpic", () => {
+  test("returns null for standalone task", () => {
+    createTask({ title: "Standalone" });
+    transitionTask("t1", "done", { actor: "test" });
+    expect(autoCloseEpic("t1")).toBeNull();
+  });
+
+  test("returns null when non-terminal children remain", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "t1", epic: epic.id });
+    createTask({ title: "t2", epic: epic.id });
+    transitionTask("t1", "done", { actor: "test" });
+    expect(autoCloseEpic("t1")).toBeNull();
+  });
+
+  test("auto-closes epic when all children done", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "t1", epic: epic.id });
+    createTask({ title: "t2", epic: epic.id });
+    transitionTask("t1", "done", { actor: "test" });
+    transitionTask("t2", "done", { actor: "test" });
+    // autoCloseEpic was called inside transitionTask, but we can call again to check
+    // (it will return null because epic is already closed)
+    const epicAfter = loadEpic(epic.id)!;
+    expect(epicAfter.phase).toBe("done");
+  });
+
+  test("auto-cancels epic when all children cancelled", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "t1", epic: epic.id });
+    createTask({ title: "t2", epic: epic.id });
+    transitionTask("t1", "cancelled", { actor: "test", force: true });
+    transitionTask("t2", "cancelled", { actor: "test", force: true });
+    const epicAfter = loadEpic(epic.id)!;
+    expect(epicAfter.phase).toBe("cancelled");
+  });
+
+  test("returns done for mix of done+cancelled", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "t1", epic: epic.id });
+    createTask({ title: "t2", epic: epic.id });
+    transitionTask("t1", "done", { actor: "test" });
+    transitionTask("t2", "cancelled", { actor: "test", force: true });
+    const epicAfter = loadEpic(epic.id)!;
+    expect(epicAfter.phase).toBe("done");
+  });
+
+  test("transitionTask attaches epicClosed to return", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "solo", epic: epic.id });
+    const result = transitionTask("t1", "done", { actor: "test" }) as any;
+    expect(result.epicClosed).toBeDefined();
+    expect(result.epicClosed.epicId).toBe(epic.id);
+    expect(result.epicClosed.phase).toBe("done");
   });
 });
 
