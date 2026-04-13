@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { initState, cleanupState, setPlansDir, createEpic, createTask, savePlan, createReview, addReviewItem } from "./state.js";
+import { initState, cleanupState, setPlansDir, createEpic, createTask, savePlan, createReview, addReviewItem, transitionTask, type Phase } from "./state.js";
 import { getDbSync } from "./db.js";
 import { startStateServer, type StateServer } from "./state-server.js";
 
@@ -227,5 +227,71 @@ describe("state server", () => {
     const json = await res.json() as any;
     expect(json.epics).toHaveLength(1);
     expect(json.epics[0].title).toBe("Mine");
+  });
+
+  test("GET /api/state/summary returns aggregate counts", async () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1" });
+    createTask({ title: "T2", epic: "e1" });
+    const s = await start();
+    const res = await fetch(s.url + "/api/state/summary");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const json = await res.json() as any;
+    expect(json.totalEpics).toBe(1);
+    expect(json.totalTasks).toBe(2);
+    expect(typeof json.activeEpics).toBe("number");
+    expect(typeof json.blockedTasks).toBe("number");
+    expect(typeof json.readyTasks).toBe("number");
+    expect(typeof json.openReviews).toBe("number");
+  });
+
+  test("GET /api/state/summary?all=true includes cross-repo", async () => {
+    createEpic({ title: "Local" });
+    const db = getDbSync();
+    db.run(
+      "INSERT INTO epics (id, repo, title, description, phase, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["e1", "other-repo", "Foreign", "", "understand", new Date().toISOString(), new Date().toISOString()],
+    );
+    const s = await start();
+    const res = await fetch(s.url + "/api/state/summary?all=true");
+    const json = await res.json() as any;
+    expect(json.totalEpics).toBe(2);
+  });
+
+  test("GET /api/task/:id/reviews returns review items", async () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T", epic: "e1" });
+    const review = createReview({ taskId: "t1", source: "test", commitSha: "abc" });
+    addReviewItem({ reviewId: review.id, body: "Finding 1", severity: "HIGH" });
+    addReviewItem({ reviewId: review.id, body: "Finding 2", severity: "LOW" });
+    const s = await start();
+    const res = await fetch(s.url + "/api/task/t1/reviews");
+    expect(res.status).toBe(200);
+    const json = await res.json() as any;
+    expect(Array.isArray(json)).toBe(true);
+    expect(json.length).toBe(2);
+  });
+
+  test("GET /api/task/:id/reviews empty for no reviews", async () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T", epic: "e1" });
+    const s = await start();
+    const res = await fetch(s.url + "/api/task/t1/reviews");
+    expect(res.status).toBe(200);
+    const json = await res.json() as any;
+    expect(Array.isArray(json)).toBe(true);
+    expect(json.length).toBe(0);
+  });
+
+  test("GET /api/state includes recentTransitions", async () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T", epic: "e1" });
+    transitionTask("t1", "design" as Phase, { actor: "test" });
+    const s = await start();
+    const res = await fetch(s.url + "/api/state");
+    const json = await res.json() as any;
+    expect(Array.isArray(json.recentTransitions)).toBe(true);
+    expect(json.recentTransitions.length).toBeGreaterThan(0);
   });
 });
