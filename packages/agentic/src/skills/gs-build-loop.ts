@@ -81,10 +81,10 @@ RULES:
 8. Write the implementation.
 9. Run verification: typecheck + tests. No exceptions.
 10. If tests fail: fix until green.
-11. Transition task to done: \`gs-agentic state task transition --id <task-id> --phase done --actor build-loop\`
+11. Close task and claim next: \`gs-agentic state task transition --id <task-id> --phase done --close-and-claim-next --actor build-loop\`
 12. Commit all changes with message: \`<task title>\`
 13. Report: Completed task, verification result, remaining count.
-14. Run \`gs-agentic state task next --epic <epic-id> --claim build-loop --json\` to find the NEXT ready task and repeat from step 1.
+14. If the close-and-claim-next output includes a nextId, repeat from step 1 with the new task.
 15. If no tasks remain: report "All tasks complete." and stop.
 \`\`\`
 
