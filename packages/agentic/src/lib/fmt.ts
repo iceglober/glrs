@@ -10,3 +10,10 @@ export const cyan = (s: string) => (isTTY ? `\x1b[36m${s}\x1b[0m` : s);
 export const ok = (msg: string) => console.log(`${green("✓")} ${msg}`);
 export const info = (msg: string) => console.log(`${cyan("▸")} ${msg}`);
 export const warn = (msg: string) => console.error(`${yellow("warning:")} ${msg}`);
+
+export function progressBar(done: number, total: number, width: number = 20): string {
+  if (total === 0) return `${"░".repeat(width)} 0/0 (0%)`;
+  const pct = Math.round((done / total) * 100);
+  const filled = Math.round((done / total) * width);
+  return `${"█".repeat(filled)}${"░".repeat(width - filled)} ${done}/${total} (${pct}%)`;
+}
