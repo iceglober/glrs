@@ -13,6 +13,8 @@ import {
   findCurrentTask,
   findNextTask,
   loadTaskFull,
+  addTaskNote,
+  loadTaskNotes,
   PHASES,
   type Phase,
 } from "../../lib/state.js";
@@ -396,6 +398,47 @@ const epicList = command({
   },
 });
 
+// ── gs-agentic state task note ───────────────────────────────────────────────
+
+const note = command({
+  name: "note",
+  description: "Add a note to a task",
+  args: {
+    id: option({ type: string, long: "id", short: "i", description: "Task ID" }),
+    body: option({ type: string, long: "body", short: "b", description: "Note content" }),
+    actor: option({ type: optional(string), long: "actor", description: "Actor name" }),
+  },
+  handler: (args) => {
+    const n = addTaskNote({ taskId: args.id, body: args.body, actor: args.actor ?? undefined });
+    ok(`note ${bold(n.id)} added to ${bold(args.id)}`);
+  },
+});
+
+// ── gs-agentic state task notes ──────────────────────────────────────────────
+
+const notes = command({
+  name: "notes",
+  description: "List notes for a task",
+  args: {
+    id: option({ type: string, long: "id", short: "i", description: "Task ID" }),
+    json: flag({ long: "json", description: "Output as JSON" }),
+  },
+  handler: (args) => {
+    const items = loadTaskNotes(args.id);
+    if (args.json) {
+      console.log(JSON.stringify(items));
+      return;
+    }
+    if (items.length === 0) {
+      console.log(dim("No notes."));
+      return;
+    }
+    for (const n of items) {
+      console.log(`  ${bold(n.id)} ${dim(n.createdAt)} ${dim(`[${n.actor}]`)} ${n.body}`);
+    }
+  },
+});
+
 // ── Export subcommands ───────────────────────────────────────────────
 
 const stateEpic = subcommands({
@@ -420,6 +463,8 @@ export const stateTask = subcommands({
     update,
     cancel,
     list,
+    note,
+    notes,
   },
 });
 
