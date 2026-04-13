@@ -173,6 +173,51 @@ describe("db", () => {
     expect(colNames).toContain("plan_version");
   });
 
+  test("tasks table has claimed_by column", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const cols = db.exec("PRAGMA table_info(tasks)");
+    const colNames = cols[0]?.values.map((row: any[]) => row[1]) ?? [];
+    expect(colNames).toContain("claimed_by");
+  });
+
+  test("tasks table has claimed_at column", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const cols = db.exec("PRAGMA table_info(tasks)");
+    const colNames = cols[0]?.values.map((row: any[]) => row[1]) ?? [];
+    expect(colNames).toContain("claimed_at");
+  });
+
+  test("task_notes table has ephemeral column", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const cols = db.exec("PRAGMA table_info(task_notes)");
+    const colNames = cols[0]?.values.map((row: any[]) => row[1]) ?? [];
+    expect(colNames).toContain("ephemeral");
+  });
+
+  test("claimed_by defaults to NULL on new tasks", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const now = new Date().toISOString();
+    db.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ["test/repo", "e1", "Epic", now, now]);
+    db.run("INSERT INTO tasks (repo, id, epic, title, phase, dependencies, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["test/repo", "t1", "e1", "Task", "understand", "[]", now, now]);
+    const result = db.exec("SELECT claimed_by FROM tasks WHERE repo = 'test/repo' AND id = 't1'");
+    expect(result[0]?.values[0]?.[0]).toBeNull();
+  });
+
+  test("ephemeral defaults to 0 on new task_notes", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const now = new Date().toISOString();
+    db.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ["test/repo", "e1", "Epic", now, now]);
+    db.run("INSERT INTO tasks (repo, id, epic, title, phase, dependencies, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["test/repo", "t1", "e1", "Task", "understand", "[]", now, now]);
+    db.run("INSERT INTO task_notes (repo, id, task_id, body, actor, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      ["test/repo", "n1", "t1", "test note", "cli", now]);
+    const result = db.exec("SELECT ephemeral FROM task_notes WHERE repo = 'test/repo' AND id = 'n1'");
+    expect(result[0]?.values[0]?.[0]).toBe(0);
+  });
+
   test("closeDb allows reopening", async () => {
     await getDb(TEST_DB_PATH);
     closeDb();

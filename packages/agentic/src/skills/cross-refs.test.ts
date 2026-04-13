@@ -38,18 +38,20 @@ describe("cross-references use canonical names", () => {
 
   test("gs-deep-plan uses canonical cross-refs", () => {
     const output = gsDeepPlan();
-    expect(output).toContain("/work");
     expect(output).toContain("/build");
-    expect(output).not.toContain("/gs-work");
+    expect(output).toContain("/build-loop");
     expect(output).not.toContain("/gs-build");
+    expect(output).not.toContain("/gs-build-loop");
   });
 
   test("gs-deep-review uses canonical cross-refs", () => {
     const output = gsDeepReview();
     expect(output).toContain("/deep-plan");
-    expect(output).toContain("/address-feedback");
+    expect(output).toContain("/qa");
+    expect(output).toContain("/ship");
     expect(output).not.toContain("/gs-deep-plan");
-    expect(output).not.toContain("/gs-address-feedback");
+    expect(output).not.toContain("/gs-qa");
+    expect(output).not.toContain("/gs-ship");
   });
 
   test("gs-quick-review uses canonical cross-refs", () => {
@@ -62,8 +64,12 @@ describe("cross-references use canonical names", () => {
     const output = gsBuild();
     expect(output).toContain("/build t3");
     expect(output).toContain("/deep-plan");
+    expect(output).toContain("/deep-review");
+    expect(output).toContain("/quick-review");
+    expect(output).toContain("/ship");
     expect(output).not.toContain("/gs-build t3");
     expect(output).not.toContain("/gs-deep-plan");
+    expect(output).not.toContain("/gs-ship");
   });
 
   test("gs-build-loop uses canonical cross-refs", () => {

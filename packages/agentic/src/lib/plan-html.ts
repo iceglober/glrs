@@ -1,8 +1,15 @@
 import { marked } from "marked";
 
+/** Strip dangerous HTML from marked output (script tags and on* event handlers). */
+function sanitizeHtml(html: string): string {
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, "");
+}
+
 /** Render plan markdown into a self-contained HTML review page with per-step feedback buttons. */
 export function renderPlanPage(planMarkdown: string, planId: string, serverPort: number): string {
-  const rawHtml = marked(planMarkdown) as string;
+  const rawHtml = sanitizeHtml(marked(planMarkdown) as string);
   const html = injectFeedbackButtons(rawHtml);
 
   return `<!DOCTYPE html>

@@ -3,7 +3,7 @@ import { loadPlan } from "../lib/state.js";
 import { startPlanReviewServer } from "../lib/plan-server.js";
 import { getSetting } from "../lib/settings.js";
 import { info, bold, dim } from "../lib/fmt.js";
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 
 const review = command({
   name: "review",
@@ -27,7 +27,7 @@ const review = command({
 
     if (getSetting("plan.auto-open") !== "false") {
       const openCmd = process.platform === "darwin" ? "open" : "xdg-open";
-      exec(`${openCmd} ${server.url}`);
+      execFile(openCmd, [server.url]);
     }
 
     info(`Plan review server running at ${bold(server.url)}`);

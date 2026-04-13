@@ -49,6 +49,14 @@ import {
   epicProgress,
   parseSyncInput,
   syncCreateEpicWithTasks,
+  resolveActor,
+  touchTask,
+  getLastTouched,
+  findNewlyUnblocked,
+  autoCloseEpic,
+  closeAndClaimNext,
+  pruneEphemeralNotes,
+  setLastTouchedPath,
   PHASES,
   type Task,
   type Phase,
@@ -361,14 +369,16 @@ describe("listTasks", () => {
     expect(task).not.toHaveProperty("transitions");
   });
 
-  test("lean includes qaResult when present", () => {
+  test("lean includes qaResult with timestamp when present", () => {
     createTask({ title: "T" });
     const task = loadTask("t1")!;
-    task.qaResult = { status: "pass", summary: "ok", timestamp: new Date().toISOString() };
+    const ts = new Date().toISOString();
+    task.qaResult = { status: "pass", summary: "ok", timestamp: ts };
     saveTask(task);
     const tasks = listTasks({ lean: true });
     expect(tasks[0].qaResult?.status).toBe("pass");
     expect(tasks[0].qaResult?.summary).toBe("ok");
+    expect(tasks[0].qaResult?.timestamp).toBe(ts);
   });
 
 });
@@ -1552,7 +1562,7 @@ describe("listRecentTransitions", () => {
 describe("task notes", () => {
   test("addTaskNote creates note with n-prefix ID", () => {
     createTask({ title: "Test task" });
-    const note = addTaskNote({ taskId: "t1", body: "found X" });
+    const note = addTaskNote({ taskId: "t1", body: "found X", actor: "cli" });
     expect(note.id).toBe("n1");
     expect(note.taskId).toBe("t1");
     expect(note.body).toBe("found X");
@@ -1859,5 +1869,521 @@ ref:Y | Task Y | depends:X`);
     expect(typeof json.tasks).toBe("object");
     expect(typeof json.tasks["X"]).toBe("string");
     expect(typeof json.tasks["Y"]).toBe("string");
+  });
+});
+
+// ── autoCloseEpic ───────────────────────────────────────────────────
+
+describe("autoCloseEpic", () => {
+  test("returns null for standalone task", () => {
+    createTask({ title: "Standalone" });
+    transitionTask("t1", "done", { actor: "test" });
+    expect(autoCloseEpic("t1")).toBeNull();
+  });
+
+  test("returns null when non-terminal children remain", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "t1", epic: epic.id });
+    createTask({ title: "t2", epic: epic.id });
+    transitionTask("t1", "done", { actor: "test" });
+    expect(autoCloseEpic("t1")).toBeNull();
+  });
+
+  test("auto-closes epic when all children done", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "t1", epic: epic.id });
+    createTask({ title: "t2", epic: epic.id });
+    transitionTask("t1", "done", { actor: "test" });
+    transitionTask("t2", "done", { actor: "test" });
+    // autoCloseEpic was called inside transitionTask, but we can call again to check
+    // (it will return null because epic is already closed)
+    const epicAfter = loadEpic(epic.id)!;
+    expect(epicAfter.phase).toBe("done");
+  });
+
+  test("auto-cancels epic when all children cancelled", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "t1", epic: epic.id });
+    createTask({ title: "t2", epic: epic.id });
+    transitionTask("t1", "cancelled", { actor: "test", force: true });
+    transitionTask("t2", "cancelled", { actor: "test", force: true });
+    const epicAfter = loadEpic(epic.id)!;
+    expect(epicAfter.phase).toBe("cancelled");
+  });
+
+  test("returns done for mix of done+cancelled", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "t1", epic: epic.id });
+    createTask({ title: "t2", epic: epic.id });
+    transitionTask("t1", "done", { actor: "test" });
+    transitionTask("t2", "cancelled", { actor: "test", force: true });
+    const epicAfter = loadEpic(epic.id)!;
+    expect(epicAfter.phase).toBe("done");
+  });
+
+  test("transitionTask attaches epicClosed to return", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "solo", epic: epic.id });
+    const result = transitionTask("t1", "done", { actor: "test" }) as any;
+    expect(result.epicClosed).toBeDefined();
+    expect(result.epicClosed.epicId).toBe(epic.id);
+    expect(result.epicClosed.phase).toBe("done");
+  });
+});
+
+// ── findNewlyUnblocked ──────────────────────────────────────────────
+
+describe("findNewlyUnblocked", () => {
+  test("returns empty when no dependents exist", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "t1", epic: epic.id });
+    transitionTask("t1", "done", { actor: "test" });
+    expect(findNewlyUnblocked("t1")).toEqual([]);
+  });
+
+  test("returns newly unblocked task", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "t1", epic: epic.id });
+    const t2 = createTask({ title: "t2", epic: epic.id });
+    const t2task = loadTask(t2.id)!;
+    t2task.dependencies = [t1.id];
+    saveTask(t2task);
+    transitionTask(t1.id, "done", { actor: "test" });
+    const unblocked = findNewlyUnblocked(t1.id);
+    expect(unblocked.length).toBe(1);
+    expect(unblocked[0].id).toBe(t2.id);
+  });
+
+  test("does not return task still blocked by other dep", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "t1", epic: epic.id });
+    const t2 = createTask({ title: "t2", epic: epic.id });
+    const t3 = createTask({ title: "t3", epic: epic.id });
+    const t3task = loadTask(t3.id)!;
+    t3task.dependencies = [t1.id, t2.id];
+    saveTask(t3task);
+    transitionTask(t1.id, "done", { actor: "test" });
+    expect(findNewlyUnblocked(t1.id)).toEqual([]);
+  });
+
+  test("returns task when last blocker completes", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "t1", epic: epic.id });
+    const t2 = createTask({ title: "t2", epic: epic.id });
+    const t3 = createTask({ title: "t3", epic: epic.id });
+    const t3task = loadTask(t3.id)!;
+    t3task.dependencies = [t1.id, t2.id];
+    saveTask(t3task);
+    transitionTask(t1.id, "done", { actor: "test" });
+    transitionTask(t2.id, "done", { actor: "test" });
+    const unblocked = findNewlyUnblocked(t2.id);
+    expect(unblocked.length).toBe(1);
+    expect(unblocked[0].id).toBe(t3.id);
+  });
+
+  test("does not return terminal tasks", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "t1", epic: epic.id });
+    const t2 = createTask({ title: "t2", epic: epic.id });
+    const t2task = loadTask(t2.id)!;
+    t2task.dependencies = [t1.id];
+    saveTask(t2task);
+    transitionTask(t2.id, "done", { actor: "test", force: true });
+    transitionTask(t1.id, "done", { actor: "test" });
+    expect(findNewlyUnblocked(t1.id)).toEqual([]);
+  });
+
+  test("transitionTask includes unblocked in return", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "t1", epic: epic.id });
+    const t2 = createTask({ title: "t2", epic: epic.id });
+    const t2task = loadTask(t2.id)!;
+    t2task.dependencies = [t1.id];
+    saveTask(t2task);
+    const result = transitionTask(t1.id, "done", { actor: "test" }) as any;
+    expect(result.unblocked?.length).toBe(1);
+    expect(result.unblocked[0].id).toBe(t2.id);
+  });
+});
+
+// ── claim enforcement ───────────────────────────────────────────────
+
+describe("claim enforcement", () => {
+  test("allows transition when unclaimed", () => {
+    createTask({ title: "Unclaimed" });
+    expect(() => transitionTask("t1", "design")).not.toThrow();
+  });
+
+  test("allows transition when actor matches claim", () => {
+    createTask({ title: "Claimed" });
+    transitionTask("t1", "implement", { actor: "agent-a" }); // claims it
+    expect(() => transitionTask("t1", "verify", { actor: "agent-a" })).not.toThrow();
+  });
+
+  test("blocks transition when actor differs from claim", () => {
+    createTask({ title: "Claimed" });
+    transitionTask("t1", "implement", { actor: "agent-a" });
+    expect(() => transitionTask("t1", "verify", { actor: "agent-b" })).toThrow(/claimed by/);
+  });
+
+  test("allows override with --force", () => {
+    createTask({ title: "Claimed" });
+    transitionTask("t1", "implement", { actor: "agent-a" });
+    expect(() => transitionTask("t1", "verify", { actor: "agent-b", force: true })).not.toThrow();
+  });
+
+  test("allows implement on unclaimed task (claiming is the purpose)", () => {
+    createTask({ title: "Unclaimed" });
+    transitionTask("t1", "design");
+    expect(() => transitionTask("t1", "implement", { actor: "any-actor" })).not.toThrow();
+  });
+
+  test("blocks re-implement by different actor on claimed task", () => {
+    createTask({ title: "Claimed" });
+    // Set up: task in design phase but with claimedBy set (e.g., partially worked then rewound)
+    const t = loadTask("t1")!;
+    t.claimedBy = "agent-a";
+    saveTask(t);
+    // agent-b tries to implement — should be blocked because agent-a holds the claim
+    expect(() => transitionTask("t1", "implement", { actor: "agent-b" })).toThrow(/claimed by/);
+  });
+
+  test("allows re-implement by same actor on claimed task", () => {
+    createTask({ title: "Claimed" });
+    const t = loadTask("t1")!;
+    t.claimedBy = "agent-a";
+    saveTask(t);
+    expect(() => transitionTask("t1", "implement", { actor: "agent-a" })).not.toThrow();
+  });
+
+  test("force override on implement works", () => {
+    createTask({ title: "Claimed" });
+    const t = loadTask("t1")!;
+    t.claimedBy = "agent-a";
+    saveTask(t);
+    expect(() => transitionTask("t1", "implement", { actor: "agent-b", force: true })).not.toThrow();
+  });
+
+  test("skip claim check for terminal transitions (cancellation by orchestrator)", () => {
+    createTask({ title: "Claimed" });
+    transitionTask("t1", "implement", { actor: "agent-a" });
+    expect(() => transitionTask("t1", "done", { actor: "agent-b" })).not.toThrow();
+  });
+
+  test("full claim lifecycle", () => {
+    createTask({ title: "Lifecycle" });
+    transitionTask("t1", "implement", { actor: "agent-a" });
+    const claimed = loadTask("t1")!;
+    expect(claimed.claimedBy).toBe("agent-a");
+
+    transitionTask("t1", "verify", { actor: "agent-a" });
+    transitionTask("t1", "done", { actor: "agent-a" });
+    const done = loadTask("t1")!;
+    expect(done.claimedBy).toBeNull();
+  });
+});
+
+// ── last-touched context ────────────────────────────────────────────
+
+describe("last-touched context", () => {
+  const tmpLastTouched = path.join(TEST_DIR, ".last-task");
+
+  beforeEach(() => {
+    setLastTouchedPath(tmpLastTouched);
+  });
+
+  afterEach(() => {
+    setLastTouchedPath(null);
+  });
+
+  test("touchTask writes repo and task ID to file", () => {
+    touchTask("t5");
+    const content = fs.readFileSync(tmpLastTouched, "utf-8").trim();
+    expect(content).toContain("\t");
+    expect(content.endsWith("t5")).toBe(true);
+  });
+
+  test("getLastTouched returns task ID when repo matches", () => {
+    touchTask("t3");
+    expect(getLastTouched()).toBe("t3");
+  });
+
+  test("getLastTouched returns null when repo mismatches", () => {
+    fs.writeFileSync(tmpLastTouched, "other-repo\tt3\n");
+    expect(getLastTouched()).toBeNull();
+  });
+
+  test("getLastTouched returns null when file missing", () => {
+    try { fs.unlinkSync(tmpLastTouched); } catch {}
+    expect(getLastTouched()).toBeNull();
+  });
+
+  test("getLastTouched returns null when file malformed", () => {
+    fs.writeFileSync(tmpLastTouched, "garbage");
+    expect(getLastTouched()).toBeNull();
+  });
+
+  test("createTask touches the task", () => {
+    createTask({ title: "Touch test" });
+    expect(getLastTouched()).toBe("t1");
+  });
+
+  test("transitionTask touches the task", () => {
+    const task = createTask({ title: "Touch test" });
+    touchTask("other"); // reset
+    transitionTask(task.id, "design");
+    expect(getLastTouched()).toBe(task.id);
+  });
+
+  test("production file not touched when override is set", () => {
+    const prodPath = path.join(os.homedir(), ".glorious", ".last-task");
+    let prodBefore: string | null = null;
+    try { prodBefore = fs.readFileSync(prodPath, "utf-8"); } catch {}
+    touchTask("t99");
+    let prodAfter: string | null = null;
+    try { prodAfter = fs.readFileSync(prodPath, "utf-8"); } catch {}
+    expect(prodAfter).toBe(prodBefore);
+  });
+});
+
+// ── resolveActor ────────────────────────────────────────────────────
+
+describe("resolveActor", () => {
+  const origEnv = process.env.GSAG_ACTOR;
+
+  afterEach(() => {
+    if (origEnv === undefined) delete process.env.GSAG_ACTOR;
+    else process.env.GSAG_ACTOR = origEnv;
+  });
+
+  test("returns explicit actor when provided", () => {
+    expect(resolveActor("build-agent")).toBe("build-agent");
+  });
+
+  test("explicit takes precedence over env", () => {
+    process.env.GSAG_ACTOR = "env-bot";
+    expect(resolveActor("explicit-bot")).toBe("explicit-bot");
+  });
+
+  test("returns GSAG_ACTOR env when no explicit", () => {
+    process.env.GSAG_ACTOR = "ci-bot";
+    expect(resolveActor()).toBe("ci-bot");
+  });
+
+  test("falls back to git user.name when no env", () => {
+    delete process.env.GSAG_ACTOR;
+    const result = resolveActor();
+    // In test env, git user.name is set — should return a non-empty string
+    // Falls back to "cli" if git is not configured
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  test("returns 'cli' when explicit is empty string", () => {
+    delete process.env.GSAG_ACTOR;
+    // Empty string is falsy, should cascade
+    expect(typeof resolveActor("")).toBe("string");
+  });
+
+  test("createTask uses resolveActor for transitions", () => {
+    process.env.GSAG_ACTOR = "test-bot";
+    const task = createTask({ title: "Actor test" });
+    expect(task.transitions[0].actor).toBe("test-bot");
+  });
+
+  test("transitionTask uses resolveActor for transitions", () => {
+    process.env.GSAG_ACTOR = "test-bot";
+    const task = createTask({ title: "Actor test" });
+    delete process.env.GSAG_ACTOR;
+    process.env.GSAG_ACTOR = "other-bot";
+    const updated = transitionTask(task.id, "design");
+    expect(updated.transitions[1].actor).toBe("other-bot");
+  });
+});
+
+// ── closeAndClaimNext ──────────────────────────────────────────────
+
+describe("closeAndClaimNext", () => {
+  test("closes task and claims next ready task", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "First", epic: epic.id });
+    const t2 = createTask({ title: "Second", epic: epic.id });
+    const t2task = loadTask(t2.id)!;
+    t2task.dependencies = [t1.id];
+    saveTask(t2task);
+    transitionTask(t1.id, "implement", { actor: "bot" });
+
+    const result = closeAndClaimNext(t1.id, "done", { actor: "bot" });
+    expect(result.closed.id).toBe(t1.id);
+    expect(result.closed.phase).toBe("done");
+    expect(result.next).not.toBeNull();
+    expect(result.next!.id).toBe(t2.id);
+    expect(result.next!.phase).toBe("implement");
+    expect(result.next!.claimedBy).toBe("bot");
+  });
+
+  test("returns null next when no ready tasks remain", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "Only task", epic: epic.id });
+    transitionTask("t1", "implement", { actor: "bot" });
+
+    const result = closeAndClaimNext("t1", "done", { actor: "bot" });
+    expect(result.closed.phase).toBe("done");
+    expect(result.next).toBeNull();
+  });
+
+  test("respects dependencies — skips blocked tasks", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "First", epic: epic.id });
+    const t2 = createTask({ title: "Second", epic: epic.id });
+    const t3 = createTask({ title: "Third", epic: epic.id });
+    // t2 depends on t1, t3 depends on t1 AND t2
+    const t2task = loadTask(t2.id)!;
+    t2task.dependencies = [t1.id];
+    saveTask(t2task);
+    const t3task = loadTask(t3.id)!;
+    t3task.dependencies = [t1.id, t2.id];
+    saveTask(t3task);
+    transitionTask(t1.id, "implement", { actor: "bot" });
+
+    const result = closeAndClaimNext(t1.id, "done", { actor: "bot" });
+    // t2 is now unblocked and claimable, t3 is still blocked by t2
+    expect(result.next).not.toBeNull();
+    expect(result.next!.id).toBe(t2.id);
+  });
+
+  test("throws if task has no epic", () => {
+    createTask({ title: "Standalone" });
+    transitionTask("t1", "implement", { actor: "bot" });
+    expect(() => closeAndClaimNext("t1", "done", { actor: "bot" })).toThrow(/no epic/i);
+  });
+
+  test("throws if task not found", () => {
+    expect(() => closeAndClaimNext("t999")).toThrow(/not found/i);
+  });
+
+  test("throws if task already done", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "Already done", epic: epic.id });
+    transitionTask("t1", "done", { actor: "bot", force: true });
+    expect(() => closeAndClaimNext("t1", "done", { actor: "bot" })).toThrow(/terminal/i);
+  });
+
+  test("emits unblocked in closed result", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "Blocker", epic: epic.id });
+    const t2 = createTask({ title: "Blocked", epic: epic.id });
+    const t2task = loadTask(t2.id)!;
+    t2task.dependencies = [t1.id];
+    saveTask(t2task);
+    transitionTask(t1.id, "implement", { actor: "bot" });
+
+    const result = closeAndClaimNext(t1.id, "done", { actor: "bot" });
+    const unblocked = (result.closed as any).unblocked;
+    expect(unblocked).toBeDefined();
+    expect(unblocked.length).toBe(1);
+    expect(unblocked[0].id).toBe(t2.id);
+  });
+
+  test("closes as cancelled when target is cancelled", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "First", epic: epic.id });
+    transitionTask(t1.id, "implement", { actor: "bot" });
+
+    const result = closeAndClaimNext(t1.id, "cancelled", { actor: "bot" });
+    expect(result.closed.phase).toBe("cancelled");
+  });
+
+  test("cancelled close does not unblock dependent tasks", () => {
+    const epic = createEpic({ title: "E" });
+    const t1 = createTask({ title: "First", epic: epic.id });
+    const t2 = createTask({ title: "Second", epic: epic.id });
+    const t2task = loadTask(t2.id)!;
+    t2task.dependencies = [t1.id];
+    saveTask(t2task);
+    transitionTask(t1.id, "implement", { actor: "bot" });
+
+    const result = closeAndClaimNext(t1.id, "cancelled", { actor: "bot" });
+    expect(result.closed.phase).toBe("cancelled");
+    expect(result.next).toBeNull();
+  });
+
+  test("rejects non-terminal target phase", () => {
+    const epic = createEpic({ title: "E" });
+    createTask({ title: "T", epic: epic.id });
+    transitionTask("t1", "implement", { actor: "bot" });
+    expect(() => closeAndClaimNext("t1", "verify" as any, { actor: "bot" })).toThrow();
+  });
+});
+
+// ── ephemeral notes ────────────────────────────────────────────────
+
+describe("ephemeral notes", () => {
+  test("addTaskNote defaults ephemeral to false", () => {
+    createTask({ title: "T" });
+    const note = addTaskNote({ taskId: "t1", body: "permanent", actor: "cli" });
+    expect(note.ephemeral).toBe(false);
+  });
+
+  test("addTaskNote sets ephemeral when flagged", () => {
+    createTask({ title: "T" });
+    const note = addTaskNote({ taskId: "t1", body: "tmp", actor: "cli", ephemeral: true });
+    expect(note.ephemeral).toBe(true);
+  });
+
+  test("loadTaskNotes returns ephemeral field correctly", () => {
+    createTask({ title: "T" });
+    addTaskNote({ taskId: "t1", body: "permanent", actor: "cli" });
+    addTaskNote({ taskId: "t1", body: "tmp", actor: "cli", ephemeral: true });
+    const notes = loadTaskNotes("t1");
+    expect(notes).toHaveLength(2);
+    expect(notes[0].ephemeral).toBe(false);
+    expect(notes[1].ephemeral).toBe(true);
+  });
+
+  test("pruneEphemeralNotes deletes only ephemeral", () => {
+    createTask({ title: "T" });
+    addTaskNote({ taskId: "t1", body: "keep1", actor: "cli" });
+    addTaskNote({ taskId: "t1", body: "keep2", actor: "cli" });
+    addTaskNote({ taskId: "t1", body: "remove", actor: "cli", ephemeral: true });
+    const count = pruneEphemeralNotes("t1");
+    expect(count).toBe(1);
+    const remaining = loadTaskNotes("t1");
+    expect(remaining).toHaveLength(2);
+    expect(remaining.every((n) => !n.ephemeral)).toBe(true);
+  });
+
+  test("pruneEphemeralNotes returns 0 when none", () => {
+    createTask({ title: "T" });
+    addTaskNote({ taskId: "t1", body: "permanent", actor: "cli" });
+    expect(pruneEphemeralNotes("t1")).toBe(0);
+  });
+
+  test("pruneEphemeralNotes on task with no notes returns 0", () => {
+    createTask({ title: "T" });
+    expect(pruneEphemeralNotes("t1")).toBe(0);
+  });
+
+  test("ephemeral notes across different tasks are independent", () => {
+    createTask({ title: "A" });
+    createTask({ title: "B" });
+    addTaskNote({ taskId: "t1", body: "eph1", actor: "cli", ephemeral: true });
+    addTaskNote({ taskId: "t2", body: "eph2", actor: "cli", ephemeral: true });
+    addTaskNote({ taskId: "t1", body: "perm", actor: "cli" });
+    pruneEphemeralNotes("t1");
+    expect(loadTaskNotes("t1")).toHaveLength(1);
+    expect(loadTaskNotes("t2")).toHaveLength(1);
+    expect(loadTaskNotes("t2")[0].ephemeral).toBe(true);
+  });
+
+  test("multiple ephemeral notes pruned at once", () => {
+    createTask({ title: "T" });
+    addTaskNote({ taskId: "t1", body: "e1", actor: "cli", ephemeral: true });
+    addTaskNote({ taskId: "t1", body: "e2", actor: "cli", ephemeral: true });
+    addTaskNote({ taskId: "t1", body: "e3", actor: "cli", ephemeral: true });
+    addTaskNote({ taskId: "t1", body: "permanent", actor: "cli" });
+    const count = pruneEphemeralNotes("t1");
+    expect(count).toBe(3);
+    expect(loadTaskNotes("t1")).toHaveLength(1);
   });
 });

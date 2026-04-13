@@ -74,12 +74,12 @@ describe("state server", () => {
     expect(json.content).toBe("# My Plan");
   });
 
-  test("GET /api/plan/:id returns null for missing", async () => {
+  test("GET /api/plan/:id returns 404 for missing", async () => {
     const s = await start();
     const res = await fetch(s.url + "/api/plan/e99");
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
     const json = await res.json() as any;
-    expect(json.content).toBeNull();
+    expect(json.error).toBe("Plan not found");
   });
 
   test("GET /api/state includes review summary", async () => {
@@ -191,7 +191,7 @@ describe("state server", () => {
     expect(titles).toContain("Foreign Epic");
   });
 
-  test("handler error returns 500 with JSON instead of crashing", async () => {
+  test("handler error returns 500 with generic message", async () => {
     // Drop the epics table to force buildStatePayload to throw
     const db = getDbSync();
     db.run("DROP TABLE IF EXISTS epics");
@@ -200,7 +200,7 @@ describe("state server", () => {
     expect(res.status).toBe(500);
     expect(res.headers.get("content-type")).toContain("application/json");
     const json = await res.json() as any;
-    expect(json.error).toBeDefined();
+    expect(json.error).toBe("Internal server error");
   });
 
   test("server stays alive after 500 error", async () => {

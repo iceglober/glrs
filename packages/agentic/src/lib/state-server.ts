@@ -11,7 +11,6 @@ import {
   listRecentTransitions,
   listReviewItems,
   type Task,
-  type ReviewSummaryResult,
 } from "./state.js";
 
 export interface StateServer {
@@ -78,6 +77,11 @@ export function startStateServer(opts?: {
             return;
           }
           const content = loadPlan(id);
+          if (content === null) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Plan not found" }));
+            return;
+          }
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ content }));
           return;
@@ -86,8 +90,9 @@ export function startStateServer(opts?: {
         res.writeHead(404, { "Content-Type": "text/plain" });
         res.end("Not found");
       } catch (err: any) {
+        console.error("State server error:", err);
         res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: err?.message ?? "Internal server error" }));
+        res.end(JSON.stringify({ error: "Internal server error" }));
       }
     });
 

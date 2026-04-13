@@ -9,7 +9,7 @@ import { getDb, getDbSync, persistDb, withDbLock, getRepo, closeDb, resetDb, res
 export const PHASES = ["understand", "design", "implement", "verify", "ship", "done", "cancelled"] as const;
 export type Phase = (typeof PHASES)[number];
 
-const ORDERED_PHASES: Phase[] = ["understand", "design", "implement", "verify", "ship", "done"];
+const ORDERED_PHASES: Phase[] = PHASES.filter((p): p is Phase => p !== "cancelled");
 const TERMINAL: Phase[] = ["done", "cancelled"];
 
 export interface Transition {
@@ -134,6 +134,56 @@ function repo(): string {
   return r;
 }
 
+// ── Actor resolution ────────────────────────────────────────────────
+
+/**
+ * Resolve the actor identity via cascade:
+ * explicit arg → GSAG_ACTOR env → git config user.name → "cli"
+ */
+export function resolveActor(explicit?: string): string {
+  if (explicit) return explicit;
+  const env = process.env.GSAG_ACTOR;
+  if (env) return env;
+  const gitName = gitSafe("config", "user.name");
+  if (gitName) return gitName;
+  return "cli";
+}
+
+// ── Last-touched context ────────────────────────────────────────────
+
+let _testLastTouchedPath: string | null = null;
+
+/** Override the last-touched file path (for testing). */
+export function setLastTouchedPath(p: string | null): void {
+  _testLastTouchedPath = p;
+}
+
+function lastTouchedPath(): string {
+  return _testLastTouchedPath ?? path.join(os.homedir(), ".glorious", ".last-task");
+}
+
+/** Persist the last-touched task ID for this repo. */
+export function touchTask(taskId: string): void {
+  const p = lastTouchedPath();
+  const dir = path.dirname(p);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(p, `${repo()}\t${taskId}\n`);
+}
+
+/** Get the last-touched task ID for the current repo, or null. */
+export function getLastTouched(): string | null {
+  try {
+    const content = fs.readFileSync(lastTouchedPath(), "utf-8").trim();
+    const parts = content.split("\t");
+    if (parts.length !== 2) return null;
+    const [savedRepo, taskId] = parts;
+    if (savedRepo !== repo()) return null;
+    return taskId;
+  } catch {
+    return null;
+  }
+}
+
 // ── ID generation ───────────────────────────────────────────────────
 
 /** Generate next epic ID (e1, e2, ...) */
@@ -212,7 +262,7 @@ export function createStep(opts: {
   db.run(
     `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
      VALUES (?, ?, 'step', ?, ?, ?)`,
-    [repo(), id, phase, opts.actor ?? "cli", now],
+    [repo(), id, phase, resolveActor(opts.actor), now],
   );
 
   persistDb();
@@ -393,7 +443,7 @@ function rowToTask(row: any[], transitions: Transition[], children: string[]): T
     planVersion: row[11] as number | null,
     createdAt: row[12] as string,
     updatedAt: row[16] as string,
-    qaResult: qaStatus ? { status: qaStatus as "pass" | "fail", summary: qaSummary!, timestamp: qaTimestamp! } : null,
+    qaResult: qaStatus ? { status: qaStatus as "pass" | "fail", summary: qaSummary ?? "", timestamp: qaTimestamp ?? "" } : null,
     claimedBy: row[17] as string | null,
     claimedAt: row[18] as string | null,
     children,
@@ -467,6 +517,7 @@ export function saveTask(task: Task): void {
   );
   persistDb();
   task.updatedAt = now;
+  touchTask(task.id);
 }
 
 export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean }): (Task & { repo?: string })[] {
@@ -508,7 +559,7 @@ export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean 
       const deps = JSON.parse((row[5] as string) || "[]");
       if (deps.length > 0) compact.dependencies = deps;
       const qaStatus = row[13] as string | null;
-      if (qaStatus) compact.qaResult = { status: qaStatus, summary: row[14] as string };
+      if (qaStatus) compact.qaResult = { status: qaStatus, summary: row[14] as string ?? "", timestamp: row[15] as string ?? "" };
       const claimedBy = row[17] as string | null;
       if (claimedBy) compact.claimedBy = claimedBy;
       return compact as Task;
@@ -542,12 +593,12 @@ export function createTask(opts: {
   db.run(
     `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
      VALUES (?, ?, 'task', ?, ?, ?)`,
-    [repo(), id, phase, opts.actor ?? "cli", now],
+    [repo(), id, phase, resolveActor(opts.actor), now],
   );
 
   persistDb();
 
-  return {
+  const task: Task = {
     id,
     epic,
     title: opts.title,
@@ -566,8 +617,10 @@ export function createTask(opts: {
     createdAt: now,
     updatedAt: now,
     children: [],
-    transitions: [{ phase, timestamp: now, actor: opts.actor ?? "cli" }],
+    transitions: [{ phase, timestamp: now, actor: resolveActor(opts.actor) }],
   };
+  touchTask(task.id);
+  return task;
 }
 
 // ── Phase transitions ───────────────────────────────────────────────
@@ -606,6 +659,14 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
   const task = loadTask(id);
   if (!task) throw new Error(`Task "${id}" not found.`);
 
+  // Enforce claims: if claimed by a different actor, reject unless --force or transitioning to terminal
+  if (task.claimedBy && !isTerminal(target) && !opts.force) {
+    const actor = resolveActor(opts.actor);
+    if (task.claimedBy !== actor) {
+      throw new Error(`Task "${id}" is claimed by "${task.claimedBy}". Use --force to override.`);
+    }
+  }
+
   const err = validateTransition(task.phase, target, opts.force ?? false);
   if (err) throw new Error(err);
 
@@ -620,7 +681,7 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
   db.run(
     `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
      VALUES (?, ?, 'task', ?, ?, ?)`,
-    [repo(), id, target, opts.actor ?? "cli", now],
+    [repo(), id, target, resolveActor(opts.actor), now],
   );
 
   if (target === "implement") {
@@ -630,7 +691,7 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
       `UPDATE tasks SET claimed_by = ?, claimed_at = ?,
        branch = COALESCE(branch, ?), worktree = COALESCE(worktree, ?)
        WHERE repo = ? AND id = ?`,
-      [opts.actor ?? "cli", now, branch, worktree, repo(), id]);
+      [resolveActor(opts.actor), now, branch, worktree, repo(), id]);
   } else if (isTerminal(target)) {
     db.run("UPDATE tasks SET claimed_by = NULL, claimed_at = NULL WHERE repo = ? AND id = ?",
       [repo(), id]);
@@ -638,8 +699,17 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
 
   persistDb();
 
-  // Return updated task
-  return loadTask(id)!;
+  // Return updated task with newly-unblocked and auto-close info
+  touchTask(id);
+  const updated = loadTask(id)!;
+  if (isTerminal(target)) {
+    (updated as any).unblocked = findNewlyUnblocked(id);
+    const epicClosed = autoCloseEpic(id);
+    if (epicClosed) {
+      (updated as any).epicClosed = epicClosed;
+    }
+  }
+  return updated;
 }
 
 // ── Batch transitions ──────────────────────────────────────────────
@@ -706,6 +776,57 @@ export function dependenciesMet(task: Task): boolean {
     if (result[0].values[0][0] !== "done") return false;
   }
   return true;
+}
+
+/**
+ * Find tasks that became unblocked when completedTaskId finished.
+ * Returns tasks whose dependencies all now met and are in non-terminal phase.
+ */
+export function findNewlyUnblocked(completedTaskId: string): Task[] {
+  const completed = loadTask(completedTaskId);
+  if (!completed) return [];
+
+  // Find all tasks in the same epic (or all tasks if standalone)
+  const tasks = completed.epic ? listTasks({ epic: completed.epic }) : listTasks();
+
+  return tasks.filter((t) => {
+    if (isTerminal(t.phase)) return false;
+    if (!t.dependencies.includes(completedTaskId)) return false;
+    return dependenciesMet(t);
+  });
+}
+
+/**
+ * Auto-close an epic when all its children reach terminal phases.
+ * Called from transitionTask() after a task reaches done/cancelled.
+ * Returns the epic closure info, or null if no change.
+ */
+export function autoCloseEpic(taskId: string): { epicId: string; phase: Phase } | null {
+  const task = loadTask(taskId);
+  if (!task?.epic) return null;
+
+  const derived = deriveEpicPhase(task.epic);
+  if (!isTerminal(derived)) return null;
+
+  const epic = loadEpic(task.epic);
+  if (!epic || isTerminal(epic.phase)) return null; // already closed
+
+  const db = getDbSync();
+  const now = new Date().toISOString();
+
+  db.run(
+    "UPDATE epics SET phase = ?, updated_at = ? WHERE repo = ? AND id = ?",
+    [derived, now, repo(), task.epic],
+  );
+
+  db.run(
+    `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
+     VALUES (?, ?, 'epic', ?, ?, ?)`,
+    [repo(), task.epic, derived, resolveActor(), now],
+  );
+
+  persistDb();
+  return { epicId: task.epic, phase: derived };
 }
 
 // ── Epic progress ───────────────────────────────────────────────────
@@ -812,7 +933,7 @@ export function syncCreateEpicWithTasks(
       title: def.title,
       epic: epic.id,
       phase: "design",
-      actor: opts?.actor ?? "plan-sync",
+      actor: resolveActor(opts?.actor ?? "plan-sync"),
     });
     refToId[def.ref] = task.id;
   }
@@ -970,6 +1091,29 @@ function claimNextTask(epicId: string, actor: string): Task | null {
   return null;
 }
 
+/**
+ * Atomically close a task and claim the next ready task in the same epic.
+ * Wraps both operations in withDbLock for concurrency safety.
+ */
+export function closeAndClaimNext(
+  taskId: string,
+  target: Phase = "done",
+  opts: { actor?: string; force?: boolean } = {},
+): { closed: Task; next: Task | null } {
+  if (!isTerminal(target)) {
+    throw new Error(`closeAndClaimNext target must be terminal (done/cancelled), got "${target}".`);
+  }
+  const task = loadTask(taskId);
+  if (!task) throw new Error(`Task "${taskId}" not found.`);
+  if (!task.epic) throw new Error(`Task "${taskId}" has no epic. Use transitionTask() directly.`);
+
+  return withDbLock(() => {
+    const closed = transitionTask(taskId, target, opts);
+    const next = claimNextTask(task.epic!, resolveActor(opts.actor));
+    return { closed, next };
+  });
+}
+
 /** Find all ready tasks (non-terminal, deps met) across all epics and standalone. */
 export function findReadyTasks(opts?: { all?: boolean }): Task[] {
   const tasks = listTasks({ all: opts?.all });
@@ -1081,6 +1225,7 @@ export interface TaskNote {
   taskId: string;
   body: string;
   actor: string;
+  ephemeral: boolean;
   createdAt: string;
 }
 
@@ -1094,26 +1239,27 @@ function nextNoteId(): string {
   return `n${(max || 0) + 1}`;
 }
 
-export function addTaskNote(opts: { taskId: string; body: string; actor?: string }): TaskNote {
+export function addTaskNote(opts: { taskId: string; body: string; actor?: string; ephemeral?: boolean }): TaskNote {
   const db = getDbSync();
   const id = nextNoteId();
   const now = new Date().toISOString();
-  const actor = opts.actor ?? "cli";
+  const actor = resolveActor(opts.actor);
+  const ephemeral = opts.ephemeral ?? false;
 
   db.run(
-    `INSERT INTO task_notes (repo, id, task_id, body, actor, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [repo(), id, opts.taskId, opts.body, actor, now],
+    `INSERT INTO task_notes (repo, id, task_id, body, actor, ephemeral, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [repo(), id, opts.taskId, opts.body, actor, ephemeral ? 1 : 0, now],
   );
   persistDb();
 
-  return { id, taskId: opts.taskId, body: opts.body, actor, createdAt: now };
+  return { id, taskId: opts.taskId, body: opts.body, actor, ephemeral, createdAt: now };
 }
 
 export function loadTaskNotes(taskId: string): TaskNote[] {
   const db = getDbSync();
   const result = db.exec(
-    "SELECT id, task_id, body, actor, created_at FROM task_notes WHERE repo = ? AND task_id = ? ORDER BY created_at, id",
+    "SELECT id, task_id, body, actor, ephemeral, created_at FROM task_notes WHERE repo = ? AND task_id = ? ORDER BY created_at, id",
     [repo(), taskId],
   );
   if (!result[0]?.values.length) return [];
@@ -1122,8 +1268,27 @@ export function loadTaskNotes(taskId: string): TaskNote[] {
     taskId: row[1] as string,
     body: row[2] as string,
     actor: row[3] as string,
-    createdAt: row[4] as string,
+    ephemeral: row[4] === 1,
+    createdAt: row[5] as string,
   }));
+}
+
+/** Delete all ephemeral notes for a task. Returns count deleted. */
+export function pruneEphemeralNotes(taskId: string): number {
+  const db = getDbSync();
+  const before = db.exec(
+    "SELECT COUNT(*) FROM task_notes WHERE repo = ? AND task_id = ? AND ephemeral = 1",
+    [repo(), taskId],
+  );
+  const count = (before[0]?.values[0]?.[0] as number) ?? 0;
+  if (count > 0) {
+    db.run(
+      "DELETE FROM task_notes WHERE repo = ? AND task_id = ? AND ephemeral = 1",
+      [repo(), taskId],
+    );
+    persistDb();
+  }
+  return count;
 }
 
 // ── Review types ────────────────────────────────────────────────────

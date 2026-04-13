@@ -5,6 +5,8 @@ import {
   listTasks,
   transitionTask,
   transitionBatch,
+  closeAndClaimNext,
+  pruneEphemeralNotes,
   saveTask,
   deriveEpicPhase,
   isTerminal,
@@ -16,11 +18,21 @@ import {
   loadTaskFull,
   addTaskNote,
   loadTaskNotes,
+  getLastTouched,
   PHASES,
   type Phase,
 } from "../../lib/state.js";
 import { gitSafe } from "../../lib/git.js";
 import { ok, warn, bold, dim, cyan, green, yellow, red } from "../../lib/fmt.js";
+
+/** Resolve --id: explicit value → last-touched → error */
+function resolveId(explicit?: string): string {
+  if (explicit) return explicit;
+  const last = getLastTouched();
+  if (last) return last;
+  console.error("No --id provided and no last-touched task found.");
+  process.exit(1);
+}
 
 // ── gs-agentic state task create ─────────────────────────────────────────────
 
@@ -58,16 +70,17 @@ const show = command({
   name: "show",
   description: "Show task details",
   args: {
-    id: option({ type: string, long: "id", short: "i", description: "Task ID" }),
+    id: option({ type: optional(string), long: "id", short: "i", description: "Task ID (defaults to last-touched)" }),
     json: flag({ long: "json", description: "Output as JSON" }),
     withSpec: flag({ long: "with-spec", description: "Include spec content" }),
     fields: option({ type: optional(string), long: "fields", description: "Comma-separated field names to include" }),
   },
   handler: (args) => {
+    const id = resolveId(args.id);
     const fieldList = args.fields?.split(",").map((f) => f.trim());
-    const full = loadTaskFull(args.id, { withSpec: args.withSpec, fields: fieldList });
+    const full = loadTaskFull(id, { withSpec: args.withSpec, fields: fieldList });
     if (!full) {
-      console.error(`Task "${args.id}" not found.`);
+      console.error(`Task "${id}" not found.`);
       process.exit(1);
     }
 
@@ -76,7 +89,7 @@ const show = command({
       return;
     }
 
-    const task = loadTask(args.id)!;
+    const task = loadTask(id)!;
     const phaseColor = {
       understand: cyan,
       design: (s: string) => `\x1b[35m${s}\x1b[0m`, // purple
@@ -175,24 +188,60 @@ const transition = command({
   name: "transition",
   description: "Move task(s) to a new phase",
   args: {
-    id: option({ type: optional(string), long: "id", short: "i", description: "Task ID" }),
+    id: option({ type: optional(string), long: "id", short: "i", description: "Task ID (defaults to last-touched)" }),
     ids: option({ type: optional(string), long: "ids", description: "Comma-separated task IDs (batch)" }),
     phase: option({ type: string, long: "phase", short: "p", description: "Target phase" }),
     force: flag({ long: "force", short: "f", description: "Allow backward transitions" }),
     actor: option({ type: optional(string), long: "actor", description: "Actor name for log" }),
+    closeAndClaimNext: flag({ long: "close-and-claim-next", description: "Atomically close task and claim next ready task in same epic" }),
   },
   handler: (args) => {
     if (args.id && args.ids) {
       console.error("Provide --id or --ids, not both.");
       process.exit(1);
     }
-    if (!args.id && !args.ids) {
-      console.error("Provide --id or --ids.");
-      process.exit(1);
-    }
     if (!PHASES.includes(args.phase as Phase)) {
       console.error(`Invalid phase: "${args.phase}". Valid: ${PHASES.join(", ")}`);
       process.exit(1);
+    }
+
+    if (args.closeAndClaimNext) {
+      if (args.ids) {
+        console.error("--close-and-claim-next cannot be used with --ids.");
+        process.exit(1);
+      }
+      if (args.phase !== "done" && args.phase !== "cancelled") {
+        console.error("--close-and-claim-next requires --phase done or --phase cancelled.");
+        process.exit(1);
+      }
+      try {
+        const id = resolveId(args.id);
+        const { closed, next } = closeAndClaimNext(id, args.phase as Phase, {
+          force: args.force,
+          actor: args.actor ?? undefined,
+        });
+        ok(`${bold(closed.id)} → ${closed.phase}`);
+        const unblocked = (closed as any).unblocked as Array<{ id: string; title: string }> | undefined;
+        if (unblocked?.length) {
+          for (const u of unblocked) {
+            console.log(`  ${green("▸")} Unblocked: ${bold(u.id)} ${u.title}`);
+          }
+        }
+        const epicClosed = (closed as any).epicClosed as { epicId: string; phase: string } | undefined;
+        if (epicClosed) {
+          ok(`Epic ${bold(epicClosed.epicId)} auto-closed → ${epicClosed.phase}`);
+        }
+        if (next) {
+          ok(`Claimed next: ${bold(next.id)} ${next.title}`);
+          console.log(JSON.stringify({ closedId: closed.id, nextId: next.id, nextTitle: next.title }));
+        } else {
+          console.log(JSON.stringify({ closedId: closed.id, nextId: null }));
+        }
+      } catch (e: any) {
+        console.error(e.message);
+        process.exit(1);
+      }
+      return;
     }
 
     if (args.ids) {
@@ -206,11 +255,22 @@ const transition = command({
       if (failed.length > 0) process.exit(1);
     } else {
       try {
-        const task = transitionTask(args.id!, args.phase as Phase, {
+        const id = resolveId(args.id);
+        const task = transitionTask(id, args.phase as Phase, {
           force: args.force,
           actor: args.actor ?? undefined,
         });
         ok(`${bold(task.id)} → ${task.phase}`);
+        const unblocked = (task as any).unblocked as Array<{ id: string; title: string }> | undefined;
+        if (unblocked?.length) {
+          for (const u of unblocked) {
+            console.log(`  ${green("▸")} Unblocked: ${bold(u.id)} ${u.title}`);
+          }
+        }
+        const epicClosed = (task as any).epicClosed as { epicId: string; phase: string } | undefined;
+        if (epicClosed) {
+          ok(`Epic ${bold(epicClosed.epicId)} auto-closed → ${epicClosed.phase}`);
+        }
       } catch (e: any) {
         console.error(e.message);
         process.exit(1);
@@ -225,7 +285,7 @@ const update = command({
   name: "update",
   description: "Update task metadata",
   args: {
-    id: option({ type: string, long: "id", short: "i", description: "Task ID" }),
+    id: option({ type: optional(string), long: "id", short: "i", description: "Task ID (defaults to last-touched)" }),
     title: option({ type: optional(string), long: "title", description: "New title" }),
     description: option({ type: optional(string), long: "description", description: "New description" }),
     branch: option({ type: optional(string), long: "branch", description: "Branch name" }),
@@ -235,9 +295,10 @@ const update = command({
     unclaim: flag({ long: "unclaim", description: "Clear the claimed_by field" }),
   },
   handler: (args) => {
-    const task = loadTask(args.id);
+    const id = resolveId(args.id);
+    const task = loadTask(id);
     if (!task) {
-      console.error(`Task "${args.id}" not found.`);
+      console.error(`Task "${id}" not found.`);
       process.exit(1);
     }
     if (args.title !== undefined) task.title = args.title;
@@ -260,12 +321,13 @@ const cancel = command({
   name: "cancel",
   description: "Cancel a task",
   args: {
-    id: option({ type: string, long: "id", short: "i", description: "Task ID" }),
+    id: option({ type: optional(string), long: "id", short: "i", description: "Task ID (defaults to last-touched)" }),
     actor: option({ type: optional(string), long: "actor", description: "Actor name" }),
   },
   handler: (args) => {
     try {
-      const task = transitionTask(args.id, "cancelled", {
+      const id = resolveId(args.id);
+      const task = transitionTask(id, "cancelled", {
         force: false,
         actor: args.actor ?? undefined,
       });
@@ -430,13 +492,15 @@ const note = command({
   name: "note",
   description: "Add a note to a task",
   args: {
-    id: option({ type: string, long: "id", short: "i", description: "Task ID" }),
+    id: option({ type: optional(string), long: "id", short: "i", description: "Task ID (defaults to last-touched)" }),
     body: option({ type: string, long: "body", short: "b", description: "Note content" }),
     actor: option({ type: optional(string), long: "actor", description: "Actor name" }),
+    ephemeral: flag({ long: "ephemeral", description: "Mark note as ephemeral (prunable)" }),
   },
   handler: (args) => {
-    const n = addTaskNote({ taskId: args.id, body: args.body, actor: args.actor ?? undefined });
-    ok(`note ${bold(n.id)} added to ${bold(args.id)}`);
+    const id = resolveId(args.id);
+    const n = addTaskNote({ taskId: id, body: args.body, actor: args.actor ?? undefined, ephemeral: args.ephemeral });
+    ok(`note ${bold(n.id)} added to ${bold(id)}${args.ephemeral ? dim(" (ephemeral)") : ""}`);
   },
 });
 
@@ -446,11 +510,18 @@ const notes = command({
   name: "notes",
   description: "List notes for a task",
   args: {
-    id: option({ type: string, long: "id", short: "i", description: "Task ID" }),
+    id: option({ type: optional(string), long: "id", short: "i", description: "Task ID (defaults to last-touched)" }),
     json: flag({ long: "json", description: "Output as JSON" }),
+    pruneEphemeral: flag({ long: "prune-ephemeral", description: "Delete all ephemeral notes for this task" }),
   },
   handler: (args) => {
-    const items = loadTaskNotes(args.id);
+    const id = resolveId(args.id);
+    if (args.pruneEphemeral) {
+      const count = pruneEphemeralNotes(id);
+      ok(`Pruned ${count} ephemeral note${count !== 1 ? "s" : ""} from ${bold(id)}`);
+      return;
+    }
+    const items = loadTaskNotes(id);
     if (args.json) {
       console.log(JSON.stringify(items));
       return;
@@ -460,7 +531,8 @@ const notes = command({
       return;
     }
     for (const n of items) {
-      console.log(`  ${bold(n.id)} ${dim(n.createdAt)} ${dim(`[${n.actor}]`)} ${n.body}`);
+      const eph = n.ephemeral ? yellow(" ⚡") : "";
+      console.log(`  ${bold(n.id)} ${dim(n.createdAt)} ${dim(`[${n.actor}]`)} ${n.body}${eph}`);
     }
   },
 });

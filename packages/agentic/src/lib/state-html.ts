@@ -396,7 +396,7 @@ import htm from "https://esm.sh/htm@3.1.1";
 import { marked } from "https://esm.sh/marked@12.0.1";
 const h = htm.bind(React.createElement);
 
-const API = "http://localhost:${serverPort}";
+const API = "http://127.0.0.1:${serverPort}";
 const API_STATE_URL = "${apiUrl}";
 const API_SUMMARY_URL = "${summaryUrl}";
 const PHASES = ["understand", "design", "implement", "verify", "ship", "done"];

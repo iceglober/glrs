@@ -307,6 +307,25 @@ PLAN_EOF
 
 The state is the source of truth. Plan file updates follow state changes, not the other way around.
 
+### Step 9: Ask what's next
+
+After the plan is saved and tasks are created, use the AskUserQuestion tool to ask the user what they want to do next. Frame the options as the natural next steps after planning:
+
+\`\`\`
+question: "Plan is saved and tasks are created. What would you like to do next?"
+header: "Next step"
+options:
+  1. label: "Build it (Recommended)", description: "Start implementing — /build-loop will work through tasks in order"
+  2. label: "Review the plan", description: "Open the plan in the browser for review and feedback"
+  3. label: "Done for now", description: "Stop here — come back later to build"
+\`\`\`
+
+Based on the user's response:
+- **Build it**: respond with exactly \`/build-loop\` as your full message, nothing else — this will trigger the build-loop skill
+- **Review the plan**: run \`gs-agentic plan review --id <epic-id>\` to open the browser reviewer, then stop
+- **Done for now**: summarize the epic and task IDs, then stop
+- **Other (free text)**: the user is giving plan feedback — incorporate their feedback by going back to Step 8 (Handle plan updates), update the plan and tasks accordingly, then ask this question again
+
 ## Rationalization Table
 
 | Excuse | Reality |

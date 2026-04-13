@@ -29,9 +29,20 @@ export function startPlanReviewServer(opts: {
       }
 
       if (req.method === "POST" && req.url === "/api/feedback") {
+        const MAX_BODY = 1024 * 1024; // 1MB
         let body = "";
-        req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+        let exceeded = false;
+        req.on("data", (chunk: Buffer) => {
+          body += chunk.toString();
+          if (body.length > MAX_BODY && !exceeded) {
+            exceeded = true;
+            res.writeHead(413, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Request body too large" }));
+            req.destroy();
+          }
+        });
         req.on("end", () => {
+          if (exceeded) return;
           try {
             const data = JSON.parse(body);
             if (!data.step || typeof data.step !== "string") {

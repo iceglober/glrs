@@ -287,12 +287,41 @@ End with one of:
 - **NEEDS FIXES** -- Has high/critical findings that must be addressed.
 - **STOP** -- Has critical issues that indicate fundamental problems with the approach.
 
-If **NEEDS FIXES** or **STOP**, ask the user:
+Then use the AskUserQuestion tool based on the verdict:
 
-> How would you like to proceed?
-> 1. **Fix now** — I'll address the CRITICAL/HIGH findings immediately
-> 2. **Plan fixes** — Run \`/deep-plan\` to create a structured fix plan
-> 3. **Address later** — Run \`/address-feedback\` when ready to work through findings
+**If SHIP IT:**
+\`\`\`
+question: "Review clean — no critical or high findings. What's next?"
+header: "Next step"
+options:
+  1. label: "QA (Recommended)", description: "Run QA against the task's acceptance criteria"
+  2. label: "Ship it", description: "Typecheck, commit, push, and create a PR"
+  3. label: "Done for now", description: "Stop here — come back later"
+\`\`\`
+
+Based on the user's response:
+- **QA**: respond with exactly \`/qa\` as your full message
+- **Ship it**: respond with exactly \`/ship\` as your full message
+- **Done for now**: stop
+- **Other (free text)**: the user is giving direction — follow their instructions
+
+**If NEEDS FIXES or STOP:**
+\`\`\`
+question: "Review found issues that need addressing. What's next?"
+header: "Next step"
+options:
+  1. label: "Plan the fixes (Recommended)", description: "Create a structured fix plan with /deep-plan"
+  2. label: "QA anyway", description: "Run QA to see full acceptance criteria status"
+  3. label: "Ship anyway", description: "Skip unresolved CRITICAL/HIGH findings — typecheck, commit, push, and create a PR"
+  4. label: "Done for now", description: "Stop here — address findings later"
+\`\`\`
+
+Based on the user's response:
+- **Plan the fixes**: respond with exactly \`/deep-plan\` followed by a one-line summary of each CRITICAL and HIGH finding (severity, file:line, description) so deep-plan has concrete context
+- **QA anyway**: respond with exactly \`/qa\` as your full message
+- **Ship anyway**: respond with exactly \`/ship\` as your full message
+- **Done for now**: stop
+- **Other (free text)**: the user is giving direction — follow their instructions
 
 Do NOT auto-fix. Wait for the user's choice.
 `;

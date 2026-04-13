@@ -145,6 +145,44 @@ After all test cases are implemented:
    **Remaining tasks in epic:** {count} (if applicable)
    \`\`\`
 
+5. **Ask what's next** using the AskUserQuestion tool:
+
+   **If tasks remain in the epic**, use these options:
+
+   \`\`\`
+   question: "Task complete. What would you like to do next?"
+   header: "Next step"
+   options:
+     1. label: "Keep building (Recommended)", description: "Claim and build the next task in the epic"
+     2. label: "Deep review", description: "Thorough multi-agent parallel code review"
+     3. label: "Quick review", description: "Fast single-pass code review of the diff"
+     4. label: "Done for now", description: "Stop here — come back later"
+   \`\`\`
+
+   Based on the user's response:
+   - **Keep building**: respond with exactly \`/build\` as your full message
+   - **Deep review**: respond with exactly \`/deep-review\` as your full message
+   - **Quick review**: respond with exactly \`/quick-review\` as your full message
+   - **Done for now**: summarize what was built, then stop
+
+   **If all tasks in the epic are complete** (or no epic), use these options:
+
+   \`\`\`
+   question: "All tasks complete! What would you like to do next?"
+   header: "Next step"
+   options:
+     1. label: "Deep review (Recommended)", description: "Thorough multi-agent parallel code review"
+     2. label: "Quick review", description: "Fast single-pass code review of the diff"
+     3. label: "Ship it", description: "Typecheck, commit, push, and create a PR"
+     4. label: "Done for now", description: "Stop here — come back later"
+   \`\`\`
+
+   Based on the user's response:
+   - **Deep review**: respond with exactly \`/deep-review\` as your full message
+   - **Quick review**: respond with exactly \`/quick-review\` as your full message
+   - **Ship it**: respond with exactly \`/ship\` as your full message
+   - **Done for now**: summarize what was built, then stop
+
 ## Common rationalizations — all invalid
 
 | Excuse | Reality |

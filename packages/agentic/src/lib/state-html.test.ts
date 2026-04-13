@@ -25,7 +25,7 @@ describe("renderStatePage", () => {
 
   test("uses correct API port", () => {
     const html = renderStatePage(4567);
-    expect(html).toContain("localhost:4567");
+    expect(html).toContain("127.0.0.1:4567");
   });
 
   test("all mode embeds all flag in fetch URL", () => {
