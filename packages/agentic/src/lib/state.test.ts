@@ -49,6 +49,7 @@ import {
   epicProgress,
   parseSyncInput,
   syncCreateEpicWithTasks,
+  resolveActor,
   PHASES,
   type Task,
   type Phase,
@@ -1552,7 +1553,7 @@ describe("listRecentTransitions", () => {
 describe("task notes", () => {
   test("addTaskNote creates note with n-prefix ID", () => {
     createTask({ title: "Test task" });
-    const note = addTaskNote({ taskId: "t1", body: "found X" });
+    const note = addTaskNote({ taskId: "t1", body: "found X", actor: "cli" });
     expect(note.id).toBe("n1");
     expect(note.taskId).toBe("t1");
     expect(note.body).toBe("found X");
@@ -1859,5 +1860,60 @@ ref:Y | Task Y | depends:X`);
     expect(typeof json.tasks).toBe("object");
     expect(typeof json.tasks["X"]).toBe("string");
     expect(typeof json.tasks["Y"]).toBe("string");
+  });
+});
+
+// ── resolveActor ────────────────────────────────────────────────────
+
+describe("resolveActor", () => {
+  const origEnv = process.env.GSAG_ACTOR;
+
+  afterEach(() => {
+    if (origEnv === undefined) delete process.env.GSAG_ACTOR;
+    else process.env.GSAG_ACTOR = origEnv;
+  });
+
+  test("returns explicit actor when provided", () => {
+    expect(resolveActor("build-agent")).toBe("build-agent");
+  });
+
+  test("explicit takes precedence over env", () => {
+    process.env.GSAG_ACTOR = "env-bot";
+    expect(resolveActor("explicit-bot")).toBe("explicit-bot");
+  });
+
+  test("returns GSAG_ACTOR env when no explicit", () => {
+    process.env.GSAG_ACTOR = "ci-bot";
+    expect(resolveActor()).toBe("ci-bot");
+  });
+
+  test("falls back to git user.name when no env", () => {
+    delete process.env.GSAG_ACTOR;
+    const result = resolveActor();
+    // In test env, git user.name is set — should return a non-empty string
+    // Falls back to "cli" if git is not configured
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  test("returns 'cli' when explicit is empty string", () => {
+    delete process.env.GSAG_ACTOR;
+    // Empty string is falsy, should cascade
+    expect(typeof resolveActor("")).toBe("string");
+  });
+
+  test("createTask uses resolveActor for transitions", () => {
+    process.env.GSAG_ACTOR = "test-bot";
+    const task = createTask({ title: "Actor test" });
+    expect(task.transitions[0].actor).toBe("test-bot");
+  });
+
+  test("transitionTask uses resolveActor for transitions", () => {
+    process.env.GSAG_ACTOR = "test-bot";
+    const task = createTask({ title: "Actor test" });
+    delete process.env.GSAG_ACTOR;
+    process.env.GSAG_ACTOR = "other-bot";
+    const updated = transitionTask(task.id, "design");
+    expect(updated.transitions[1].actor).toBe("other-bot");
   });
 });

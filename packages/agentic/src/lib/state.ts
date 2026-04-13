@@ -134,6 +134,21 @@ function repo(): string {
   return r;
 }
 
+// ── Actor resolution ────────────────────────────────────────────────
+
+/**
+ * Resolve the actor identity via cascade:
+ * explicit arg → GSAG_ACTOR env → git config user.name → "cli"
+ */
+export function resolveActor(explicit?: string): string {
+  if (explicit) return explicit;
+  const env = process.env.GSAG_ACTOR;
+  if (env) return env;
+  const gitName = gitSafe("config", "user.name");
+  if (gitName) return gitName;
+  return "cli";
+}
+
 // ── ID generation ───────────────────────────────────────────────────
 
 /** Generate next epic ID (e1, e2, ...) */
@@ -212,7 +227,7 @@ export function createStep(opts: {
   db.run(
     `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
      VALUES (?, ?, 'step', ?, ?, ?)`,
-    [repo(), id, phase, opts.actor ?? "cli", now],
+    [repo(), id, phase, resolveActor(opts.actor), now],
   );
 
   persistDb();
@@ -542,7 +557,7 @@ export function createTask(opts: {
   db.run(
     `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
      VALUES (?, ?, 'task', ?, ?, ?)`,
-    [repo(), id, phase, opts.actor ?? "cli", now],
+    [repo(), id, phase, resolveActor(opts.actor), now],
   );
 
   persistDb();
@@ -566,7 +581,7 @@ export function createTask(opts: {
     createdAt: now,
     updatedAt: now,
     children: [],
-    transitions: [{ phase, timestamp: now, actor: opts.actor ?? "cli" }],
+    transitions: [{ phase, timestamp: now, actor: resolveActor(opts.actor) }],
   };
 }
 
@@ -620,7 +635,7 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
   db.run(
     `INSERT INTO transitions (repo, task_id, entity, phase, actor, timestamp)
      VALUES (?, ?, 'task', ?, ?, ?)`,
-    [repo(), id, target, opts.actor ?? "cli", now],
+    [repo(), id, target, resolveActor(opts.actor), now],
   );
 
   if (target === "implement") {
@@ -630,7 +645,7 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
       `UPDATE tasks SET claimed_by = ?, claimed_at = ?,
        branch = COALESCE(branch, ?), worktree = COALESCE(worktree, ?)
        WHERE repo = ? AND id = ?`,
-      [opts.actor ?? "cli", now, branch, worktree, repo(), id]);
+      [resolveActor(opts.actor), now, branch, worktree, repo(), id]);
   } else if (isTerminal(target)) {
     db.run("UPDATE tasks SET claimed_by = NULL, claimed_at = NULL WHERE repo = ? AND id = ?",
       [repo(), id]);
@@ -812,7 +827,7 @@ export function syncCreateEpicWithTasks(
       title: def.title,
       epic: epic.id,
       phase: "design",
-      actor: opts?.actor ?? "plan-sync",
+      actor: resolveActor(opts?.actor || "plan-sync"),
     });
     refToId[def.ref] = task.id;
   }
@@ -1098,7 +1113,7 @@ export function addTaskNote(opts: { taskId: string; body: string; actor?: string
   const db = getDbSync();
   const id = nextNoteId();
   const now = new Date().toISOString();
-  const actor = opts.actor ?? "cli";
+  const actor = resolveActor(opts.actor);
 
   db.run(
     `INSERT INTO task_notes (repo, id, task_id, body, actor, created_at)
