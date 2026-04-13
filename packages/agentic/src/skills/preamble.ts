@@ -38,7 +38,7 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 - \`gs-agentic state qa --id <id> --status pass|fail --summary "..."\` — record QA result
 - \`gs-agentic state task next --epic <id> --claim <actor>\` — atomically find and claim next ready task in an epic
 
-**Claim check:** If the task's \`claimedBy\` field is set and doesn't match your role, another session is already working on it. Warn the user: "Task {id} is claimed by {claimedBy} since {claimedAt}. Proceed anyway?" and wait for confirmation before making changes.
+**Claim enforcement:** Claims are enforced at the database level. If a task is claimed by a different actor, \`gs-agentic state task transition\` will reject with an error. Terminal transitions (done/cancelled) always succeed regardless of claim. Use \`--force\` to override if needed.
 
 **Output convention:** All \`create\` and \`add-task\` commands print the machine-readable ID on the **last line** of stdout. Capture it with \`... | tail -1\` — never parse with grep.
 
@@ -63,6 +63,7 @@ gs-agentic state task next --epic <id> --claim <actor> --json  # claim next read
 # ... do the work ...
 gs-agentic state task transition --id <id> --phase done --actor <actor>
 \`\`\``;
+
 
 /**
  * Review preamble — for deep-review, quick-review, address-feedback.
@@ -100,6 +101,7 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 - \`gs-agentic state task next --epic <id> --claim <actor>\` — atomically find and claim next ready task in an epic
 - \`gs-agentic status --epic <id>\` — show epic progress with bar
 
-**Claim check:** If the task's \`claimedBy\` field is set and doesn't match your role, another session is already working on it. Warn the user: "Task {id} is claimed by {claimedBy} since {claimedAt}. Proceed anyway?" and wait for confirmation before making changes.
+**Claim enforcement:** Claims are enforced at the database level. If a task is claimed by a different actor, \`gs-agentic state task transition\` will reject with an error. Terminal transitions (done/cancelled) always succeed regardless of claim. Use \`--force\` to override if needed.
 
 **Output convention:** All \`create\` and \`add-task\` commands print the machine-readable ID on the **last line** of stdout. Capture it with \`... | tail -1\` — never parse with grep.`;
+

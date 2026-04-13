@@ -1865,6 +1865,57 @@ ref:Y | Task Y | depends:X`);
   });
 });
 
+// ── claim enforcement ───────────────────────────────────────────────
+
+describe("claim enforcement", () => {
+  test("allows transition when unclaimed", () => {
+    createTask({ title: "Unclaimed" });
+    expect(() => transitionTask("t1", "design")).not.toThrow();
+  });
+
+  test("allows transition when actor matches claim", () => {
+    createTask({ title: "Claimed" });
+    transitionTask("t1", "implement", { actor: "agent-a" }); // claims it
+    expect(() => transitionTask("t1", "verify", { actor: "agent-a" })).not.toThrow();
+  });
+
+  test("blocks transition when actor differs from claim", () => {
+    createTask({ title: "Claimed" });
+    transitionTask("t1", "implement", { actor: "agent-a" });
+    expect(() => transitionTask("t1", "verify", { actor: "agent-b" })).toThrow(/claimed by/);
+  });
+
+  test("allows override with --force", () => {
+    createTask({ title: "Claimed" });
+    transitionTask("t1", "implement", { actor: "agent-a" });
+    expect(() => transitionTask("t1", "verify", { actor: "agent-b", force: true })).not.toThrow();
+  });
+
+  test("skip claim check for implement transitions (claiming is the purpose)", () => {
+    createTask({ title: "Unclaimed" });
+    transitionTask("t1", "design");
+    expect(() => transitionTask("t1", "implement", { actor: "any-actor" })).not.toThrow();
+  });
+
+  test("skip claim check for terminal transitions (cancellation by orchestrator)", () => {
+    createTask({ title: "Claimed" });
+    transitionTask("t1", "implement", { actor: "agent-a" });
+    expect(() => transitionTask("t1", "done", { actor: "agent-b" })).not.toThrow();
+  });
+
+  test("full claim lifecycle", () => {
+    createTask({ title: "Lifecycle" });
+    transitionTask("t1", "implement", { actor: "agent-a" });
+    const claimed = loadTask("t1")!;
+    expect(claimed.claimedBy).toBe("agent-a");
+
+    transitionTask("t1", "verify", { actor: "agent-a" });
+    transitionTask("t1", "done", { actor: "agent-a" });
+    const done = loadTask("t1")!;
+    expect(done.claimedBy).toBeNull();
+  });
+});
+
 // ── last-touched context ────────────────────────────────────────────
 
 describe("last-touched context", () => {
