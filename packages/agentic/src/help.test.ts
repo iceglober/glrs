@@ -27,4 +27,16 @@ describe("HELP_TEXT", () => {
     expect(HELP_TEXT).toContain("/research-auto");
     expect(HELP_TEXT).toContain("/spec-make");
   });
+
+  test("includes State Management section", () => {
+    expect(HELP_TEXT).toContain("State Management");
+    expect(HELP_TEXT).toContain("state task create");
+    expect(HELP_TEXT).toContain("state plan sync");
+  });
+
+  test("includes Common Patterns section", () => {
+    expect(HELP_TEXT).toContain("Common Patterns");
+    expect(HELP_TEXT).toContain("plan sync --stdin");
+    expect(HELP_TEXT).toContain("--claim build");
+  });
 });

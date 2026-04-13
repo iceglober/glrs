@@ -38,7 +38,31 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 - \`gs-agentic state qa --id <id> --status pass|fail --summary "..."\` — record QA result
 - \`gs-agentic state task next --epic <id> --claim <actor>\` — atomically find and claim next ready task in an epic
 
-**Claim check:** If the task's \`claimedBy\` field is set and doesn't match your role, another session is already working on it. Warn the user: "Task {id} is claimed by {claimedBy} since {claimedAt}. Proceed anyway?" and wait for confirmation before making changes.`;
+**Claim check:** If the task's \`claimedBy\` field is set and doesn't match your role, another session is already working on it. Warn the user: "Task {id} is claimed by {claimedBy} since {claimedAt}. Proceed anyway?" and wait for confirmation before making changes.
+
+**Output convention:** All \`create\` and \`add-task\` commands print the machine-readable ID on the **last line** of stdout. Capture it with \`... | tail -1\` — never parse with grep.
+
+**Recipes:**
+
+*Atomic epic + tasks (preferred over individual add-task calls):*
+\`\`\`bash
+cat <<'SYNC_EOF' | gs-agentic state plan sync --stdin --actor <role>
+title: Epic title
+description: One-line summary
+---
+ref:1.1 | Step 1.1: Verb phrase
+ref:1.2 | Step 1.2: Verb phrase | depends:1.1
+ref:2.1 | Step 2.1: Verb phrase | depends:1.1,1.2
+SYNC_EOF
+\`\`\`
+Returns JSON: \`{ "epicId": "e1", "tasks": { "1.1": "t1", "1.2": "t2", ... } }\`
+
+*Claim → build → done cycle:*
+\`\`\`bash
+gs-agentic state task next --epic <id> --claim <actor> --json  # claim next ready task
+# ... do the work ...
+gs-agentic state task transition --id <id> --phase done --actor <actor>
+\`\`\``;
 
 /**
  * Review preamble — for deep-review, quick-review, address-feedback.
@@ -76,4 +100,6 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 - \`gs-agentic state task next --epic <id> --claim <actor>\` — atomically find and claim next ready task in an epic
 - \`gs-agentic status --epic <id>\` — show epic progress with bar
 
-**Claim check:** If the task's \`claimedBy\` field is set and doesn't match your role, another session is already working on it. Warn the user: "Task {id} is claimed by {claimedBy} since {claimedAt}. Proceed anyway?" and wait for confirmation before making changes.`;
+**Claim check:** If the task's \`claimedBy\` field is set and doesn't match your role, another session is already working on it. Warn the user: "Task {id} is claimed by {claimedBy} since {claimedAt}. Proceed anyway?" and wait for confirmation before making changes.
+
+**Output convention:** All \`create\` and \`add-task\` commands print the machine-readable ID on the **last line** of stdout. Capture it with \`... | tail -1\` — never parse with grep.`;
