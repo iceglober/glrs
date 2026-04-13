@@ -154,7 +154,7 @@ export function closeDb(): void {
 /** Clear all data from all tables (for test isolation). */
 export function resetDb(): void {
   if (!db) return;
-  const tables = ["review_items", "reviews", "transitions", "steps", "tasks", "epics", "migrations"];
+  const tables = ["task_notes", "review_items", "reviews", "transitions", "steps", "tasks", "epics", "migrations"];
   for (const table of tables) {
     db.run(`DELETE FROM ${table}`);
   }
@@ -275,6 +275,18 @@ function runSchema(database: Database): void {
   `);
 
   database.run(`
+    CREATE TABLE IF NOT EXISTS task_notes (
+      repo       TEXT NOT NULL,
+      id         TEXT NOT NULL,
+      task_id    TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      actor      TEXT NOT NULL DEFAULT 'cli',
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (repo, id)
+    )
+  `);
+
+  database.run(`
     CREATE TABLE IF NOT EXISTS migrations (
       repo        TEXT PRIMARY KEY,
       migrated_at TEXT NOT NULL,
@@ -294,6 +306,7 @@ function runSchema(database: Database): void {
   database.run("CREATE INDEX IF NOT EXISTS idx_review_items_review  ON review_items(repo, review_id)");
   database.run("CREATE INDEX IF NOT EXISTS idx_review_items_status  ON review_items(repo, status)");
   database.run("CREATE INDEX IF NOT EXISTS idx_review_items_severity ON review_items(repo, severity)");
+  database.run("CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes(repo, task_id)");
 
   // ── Migration: rename spec → plan columns on existing databases ────
   migrateSpecToPlan(database, "epics");

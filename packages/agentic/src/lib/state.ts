@@ -319,11 +319,11 @@ export function createEpic(opts: {
   };
 }
 
-export function loadEpic(id: string): Epic | null {
+export function loadEpic(id: string, repoId?: string): Epic | null {
   const db = getDbSync();
   const result = db.exec(
     "SELECT id, title, description, phase, plan, plan_version, created_at, updated_at FROM epics WHERE repo = ? AND id = ?",
-    [repo(), id],
+    [repoId ?? repo(), id],
   );
   if (!result[0]?.values.length) return null;
   const row = result[0].values[0];
@@ -642,18 +642,38 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
   return loadTask(id)!;
 }
 
+// ── Batch transitions ──────────────────────────────────────────────
+
+export function transitionBatch(
+  ids: string[],
+  target: Phase,
+  opts?: { force?: boolean; actor?: string },
+): { succeeded: Task[]; failed: { id: string; error: string }[] } {
+  const succeeded: Task[] = [];
+  const failed: { id: string; error: string }[] = [];
+  for (const id of ids) {
+    try {
+      const task = transitionTask(id, target, opts);
+      succeeded.push(task);
+    } catch (e: any) {
+      failed.push({ id, error: e.message });
+    }
+  }
+  return { succeeded, failed };
+}
+
 // ── Epic phase derivation ───────────────────────────────────────────
 
-export function deriveEpicPhase(epicId: string): Phase {
+export function deriveEpicPhase(epicId: string, repoId?: string): Phase {
   const db = getDbSync();
   const result = db.exec(
     "SELECT phase FROM tasks WHERE repo = ? AND epic = ?",
-    [repo(), epicId],
+    [repoId ?? repo(), epicId],
   );
 
   if (!result[0]?.values.length) {
     // No children — check if epic exists and return its stored phase
-    const epic = loadEpic(epicId);
+    const epic = loadEpic(epicId, repoId);
     return epic?.phase ?? "understand";
   }
 
@@ -686,6 +706,131 @@ export function dependenciesMet(task: Task): boolean {
     if (result[0].values[0][0] !== "done") return false;
   }
   return true;
+}
+
+// ── Epic progress ───────────────────────────────────────────────────
+
+export interface EpicProgress {
+  total: number;
+  done: number;
+  cancelled: number;
+  inProgress: number;
+  blocked: number;
+  ready: number;
+  phases: Partial<Record<Phase, number>>;
+}
+
+const IN_PROGRESS_PHASES: Phase[] = ["implement", "verify", "ship"];
+
+export function epicProgress(epicId: string): EpicProgress {
+  const tasks = listTasks({ epic: epicId });
+  const result: EpicProgress = { total: tasks.length, done: 0, cancelled: 0, inProgress: 0, blocked: 0, ready: 0, phases: {} };
+  for (const t of tasks) {
+    result.phases[t.phase] = (result.phases[t.phase] ?? 0) + 1;
+    if (t.phase === "done") { result.done++; continue; }
+    if (t.phase === "cancelled") { result.cancelled++; continue; }
+    if (IN_PROGRESS_PHASES.includes(t.phase)) { result.inProgress++; continue; }
+    // Non-terminal, non-in-progress: either blocked or ready
+    if (dependenciesMet(t)) { result.ready++; } else { result.blocked++; }
+  }
+  return result;
+}
+
+// ── Plan sync (atomic epic+tasks creation) ──────────────────────────
+
+export interface SyncTaskDef {
+  ref: string;
+  title: string;
+  depends: string[];
+}
+
+export interface SyncInput {
+  title: string;
+  description: string;
+  tasks: SyncTaskDef[];
+}
+
+/**
+ * Parse the line-based sync format:
+ *   title: Epic title
+ *   description: Optional description
+ *   ---
+ *   ref:1.1 | Step 1.1: Do something
+ *   ref:1.2 | Step 1.2: Another thing | depends:1.1
+ */
+export function parseSyncInput(input: string): SyncInput {
+  const text = input.trim();
+  if (!text) throw new Error("No input received");
+
+  const parts = text.split(/^---$/m);
+  const header = parts[0] ?? "";
+  const body = parts.slice(1).join("---");
+
+  let title = "";
+  let description = "";
+  for (const line of header.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("title:")) title = trimmed.slice(6).trim();
+    else if (trimmed.startsWith("description:")) description = trimmed.slice(12).trim();
+  }
+  if (!title) throw new Error("Missing title");
+
+  const tasks: SyncTaskDef[] = [];
+  for (const line of body.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const segments = trimmed.split("|").map((s) => s.trim());
+    const refSegment = segments[0];
+    if (!refSegment?.startsWith("ref:")) continue;
+
+    const ref = refSegment.slice(4).trim();
+    const taskTitle = segments[1] ?? "";
+    const depends: string[] = [];
+    for (const seg of segments.slice(2)) {
+      if (seg.startsWith("depends:")) {
+        depends.push(...seg.slice(8).split(",").map((s) => s.trim()).filter(Boolean));
+      }
+    }
+    tasks.push({ ref, title: taskTitle, depends });
+  }
+
+  return { title, description, tasks };
+}
+
+/**
+ * Create an epic and tasks from a SyncInput. Returns the epic ID and ref→taskId mapping.
+ */
+export function syncCreateEpicWithTasks(
+  input: SyncInput,
+  opts?: { actor?: string },
+): { epicId: string; tasks: Record<string, string> } {
+  const epic = createEpic({ title: input.title, description: input.description, phase: "design" });
+  const refToId: Record<string, string> = {};
+
+  for (const def of input.tasks) {
+    const task = createTask({
+      title: def.title,
+      epic: epic.id,
+      phase: "design",
+      actor: opts?.actor ?? "plan-sync",
+    });
+    refToId[def.ref] = task.id;
+  }
+
+  // Resolve dependency refs to actual task IDs
+  for (const def of input.tasks) {
+    if (def.depends.length === 0) continue;
+    const taskId = refToId[def.ref];
+    const task = loadTask(taskId)!;
+    task.dependencies = def.depends.map((depRef) => {
+      const resolved = refToId[depRef];
+      if (!resolved) throw new Error(`Unknown ref "${depRef}"`);
+      return resolved;
+    });
+    saveTask(task);
+  }
+
+  return { epicId: epic.id, tasks: refToId };
 }
 
 // ── Plan management (versioned, global ~/.glorious/plans/) ──────────
@@ -929,6 +1074,58 @@ export function loadTaskFull(
   return result;
 }
 
+// ── Task notes ─────────────────────────────────────────────────────
+
+export interface TaskNote {
+  id: string;
+  taskId: string;
+  body: string;
+  actor: string;
+  createdAt: string;
+}
+
+function nextNoteId(): string {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) FROM task_notes WHERE repo = ?",
+    [repo()],
+  );
+  const max = result[0]?.values[0]?.[0] ?? 0;
+  return `n${(max || 0) + 1}`;
+}
+
+export function addTaskNote(opts: { taskId: string; body: string; actor?: string }): TaskNote {
+  const db = getDbSync();
+  const id = nextNoteId();
+  const now = new Date().toISOString();
+  const actor = opts.actor ?? "cli";
+
+  db.run(
+    `INSERT INTO task_notes (repo, id, task_id, body, actor, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [repo(), id, opts.taskId, opts.body, actor, now],
+  );
+  persistDb();
+
+  return { id, taskId: opts.taskId, body: opts.body, actor, createdAt: now };
+}
+
+export function loadTaskNotes(taskId: string): TaskNote[] {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT id, task_id, body, actor, created_at FROM task_notes WHERE repo = ? AND task_id = ? ORDER BY created_at, id",
+    [repo(), taskId],
+  );
+  if (!result[0]?.values.length) return [];
+  return result[0].values.map((row: any[]) => ({
+    id: row[0] as string,
+    taskId: row[1] as string,
+    body: row[2] as string,
+    actor: row[3] as string,
+    createdAt: row[4] as string,
+  }));
+}
+
 // ── Review types ────────────────────────────────────────────────────
 
 export interface Review {
@@ -1166,7 +1363,7 @@ export function listReviewItems(opts?: {
   return result[0].values.map((row: any[]) => rowToReviewItem(row));
 }
 
-export function reviewSummary(opts?: { taskId?: string }): ReviewSummaryResult {
+export function reviewSummary(opts?: { taskId?: string; repoId?: string }): ReviewSummaryResult {
   const db = getDbSync();
 
   // SQL GROUP BY for counts — avoids loading full review item payloads
@@ -1175,7 +1372,7 @@ export function reviewSummary(opts?: { taskId?: string }): ReviewSummaryResult {
     FROM review_items ri
     JOIN reviews r ON ri.repo = r.repo AND ri.review_id = r.id
     WHERE ri.repo = ?`;
-  const params: any[] = [repo()];
+  const params: any[] = [opts?.repoId ?? repo()];
 
   if (opts?.taskId) {
     query += " AND r.task_id = ?";

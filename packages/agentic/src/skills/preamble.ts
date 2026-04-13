@@ -28,8 +28,13 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 
 **State mutations:**
 - \`gs-agentic state task update --id <id> --field value\` — update metadata
+- \`gs-agentic state task update --id <id> --depends-on <comma-list>\` — fix dependencies
 - \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase
+- \`gs-agentic state task transition --ids <comma-list> --phase <phase>\` — batch transition
+- \`gs-agentic state task note --id <id> --body "..."\` — attach finding to task
+- \`gs-agentic state task notes --id <id> --json\` — list task notes
 - \`gs-agentic state plan set --id <id> --stdin\` — save plan content (pipe via heredoc)
+- \`gs-agentic state plan sync --stdin\` — atomic epic+tasks from stdin (pipe line-based format)
 - \`gs-agentic state qa --id <id> --status pass|fail --summary "..."\` — record QA result
 - \`gs-agentic state task next --epic <id> --claim <actor>\` — atomically find and claim next ready task in an epic
 
@@ -66,6 +71,9 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 
 **State mutations:**
 - \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase
+- \`gs-agentic state task transition --ids <comma-list> --phase <phase>\` — batch transition
+- \`gs-agentic state task note --id <id> --body "..."\` — log finding
 - \`gs-agentic state task next --epic <id> --claim <actor>\` — atomically find and claim next ready task in an epic
+- \`gs-agentic status --epic <id>\` — show epic progress with bar
 
 **Claim check:** If the task's \`claimedBy\` field is set and doesn't match your role, another session is already working on it. Warn the user: "Task {id} is claimed by {claimedBy} since {claimedAt}. Proceed anyway?" and wait for confirmation before making changes.`;

@@ -13,8 +13,9 @@ ${bold("COMMANDS")}
 
   ${bold("Workflow")}
 
-  status [--json]
+  status [--json] [--epic <id>]
       Show all tasks in a tree view with phases, branches, and progress.
+      --epic filters to a single epic with progress bar.
 
   skills [--user | --project] [--force] [--prefix <string>]
       Install glorious workflow skills as Claude Code slash commands.
@@ -129,13 +130,20 @@ ${bold("COMMANDS")}
       --claim atomically transitions the task to implement, preventing races.
 
   state task transition --id <id> --phase <phase> [--force] [--actor <name>]
-      Move task to a new phase.
+  state task transition --ids <comma-list> --phase <phase> [--force] [--actor <name>]
+      Move task(s) to a new phase. Use --ids for batch transitions.
 
-  state task update --id <id> [--title "..."] [--description "..."] [--branch <b>] [--worktree <path>] [--pr <url>] [--unclaim]
-      Update task metadata. --unclaim clears the claimed_by field.
+  state task update --id <id> [--title "..."] [--description "..."] [--branch <b>] [--worktree <path>] [--pr <url>] [--depends-on <ids>] [--unclaim]
+      Update task metadata. --depends-on replaces dependencies. --unclaim clears the claimed_by field.
 
   state task cancel --id <id>
       Cancel a task.
+
+  state task note --id <id> --body "..." [--actor <name>]
+      Add a note to a task.
+
+  state task notes --id <id> [--json]
+      List notes for a task.
 
   state task list [--phase <p>] [--epic <id>] [--all] [--json]
       List tasks with optional filters.
@@ -158,6 +166,13 @@ ${bold("COMMANDS")}
   state plan add-task --id <epic-id> --title "..." [--depends-on <ids>]
       Add a task to an epic.
 
+  state plan sync --stdin [--actor <name>]
+      Atomically create epic + tasks from stdin. Pipe a line-based format:
+        title: Epic title
+        description: Optional
+        ---
+        ref:1.1 | Step title | depends:ref1,ref2
+
   state review create --task <id> --source <source> --commit-sha <sha> [--epic <id>] [--pr-number <n>] [--summary "..."]
       Create a review record (returns review ID).
 
@@ -179,10 +194,10 @@ ${bold("COMMANDS")}
   state log --id <id>
       Show phase transition history.
 
-  state web [--port <n>] [--all]
+  state web [--port <n>] [--local]
       Open a read-only dashboard in the browser showing all epics, tasks,
-      plans, and reviews. Auto-refreshes every 5 seconds.
-      --all shows data across all repos/worktrees.
+      plans, and reviews across all repos. Auto-refreshes every 5 seconds.
+      --local restricts view to current repo only.
 
 ${bold("FLAGS")}
 

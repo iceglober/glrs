@@ -411,10 +411,9 @@ function relTime(ts) {
 }
 
 function repoLabel(r) {
+  // github.com/org/repo → org/repo
   const parts = r.split("/");
-  if (parts.length >= 2) return parts.slice(-2).join("/");
-  const dashParts = r.split("-");
-  if (dashParts.length >= 3) return dashParts.slice(1).join("/");
+  if (parts.length >= 3) return parts.slice(1).join("/");
   return r;
 }
 
@@ -449,6 +448,10 @@ function App() {
       setSummary(summaryData);
       setLastUpdate(new Date());
       setError(null);
+      // Seed selectedRepo from first load to prevent poll-driven repo switches
+      if (Array.isArray(data.repos) && data.repos.length > 0) {
+        setSelectedRepo(prev => prev || data.repos[0].repo);
+      }
     } catch (e) {
       setError(e.message);
     }
@@ -535,7 +538,7 @@ function App() {
   }
 
   const isMultiRepo = Array.isArray(state.repos);
-  let epics, standalone, transitions;
+  let epics, standalone, transitions, activeRepoName;
 
   if (isMultiRepo) {
     const activeRepo = selectedRepo || (state.repos.length > 0 ? state.repos[0].repo : null);
@@ -543,10 +546,12 @@ function App() {
     epics = repoData ? repoData.epics : [];
     standalone = repoData ? repoData.standalone : [];
     transitions = state.recentTransitions || [];
+    activeRepoName = activeRepo ? repoLabel(activeRepo) : null;
   } else {
     epics = state.epics || [];
     standalone = state.standalone || [];
     transitions = state.recentTransitions || [];
+    activeRepoName = null;
   }
 
   // Apply filter
@@ -563,6 +568,7 @@ function App() {
         onSelectEpic=\${selectEpic}
         filter=\${filter}
         onFilter=\${setFilter}
+        repoName=\${activeRepoName}
       />
       <div class="main-area">
         \${isMultiRepo && state.repos.length > 1 && h\`
@@ -667,7 +673,7 @@ function StatCard({ number, label }) {
 
 // ── Sidebar ───────────────────────────────────────────────────────
 
-function Sidebar({ epics, standalone, selectedEpic, onSelectEpic, filter, onFilter }) {
+function Sidebar({ epics, standalone, selectedEpic, onSelectEpic, filter, onFilter, repoName }) {
   const [showCompleted, setShowCompleted] = React.useState(false);
 
   const active = epics.filter(e => {
@@ -682,6 +688,7 @@ function Sidebar({ epics, standalone, selectedEpic, onSelectEpic, filter, onFilt
   return h\`
     <div class="sidebar">
       <div class="sidebar-title">gsag state</div>
+      \${repoName && h\`<div style=\${css("font-size:0.75rem;color:#888;margin-bottom:0.75rem;padding:0.25rem 0.4rem;background:rgba(255,255,255,0.05);border-radius:4px")}>\${repoName}</div>\`}
       <\${SidebarSearch} value=\${filter} onChange=\${onFilter} />
       \${active.length > 0 && h\`
         <div class="sidebar-group-label">Active (\${active.length})</div>

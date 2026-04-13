@@ -10,6 +10,7 @@ import {
   listTasks,
   saveTask,
   transitionTask,
+  transitionBatch,
   validateTransition,
   deriveEpicPhase,
   dependenciesMet,
@@ -43,6 +44,11 @@ import {
   resolveReviewItem,
   listReviewItems,
   reviewSummary,
+  addTaskNote,
+  loadTaskNotes,
+  epicProgress,
+  parseSyncInput,
+  syncCreateEpicWithTasks,
   PHASES,
   type Task,
   type Phase,
@@ -1538,5 +1544,320 @@ describe("listRecentTransitions", () => {
     expect(entry!.entity).toBe("task");
     expect(entry!.actor).toBe("test");
     expect(entry!.timestamp).toBeTruthy();
+  });
+});
+
+// ── Task notes ─────────────────────────────────────────────────────
+
+describe("task notes", () => {
+  test("addTaskNote creates note with n-prefix ID", () => {
+    createTask({ title: "Test task" });
+    const note = addTaskNote({ taskId: "t1", body: "found X" });
+    expect(note.id).toBe("n1");
+    expect(note.taskId).toBe("t1");
+    expect(note.body).toBe("found X");
+    expect(note.actor).toBe("cli");
+    expect(note.createdAt).toBeTruthy();
+  });
+
+  test("addTaskNote with custom actor", () => {
+    createTask({ title: "Test task" });
+    const note = addTaskNote({ taskId: "t1", body: "y", actor: "build" });
+    expect(note.actor).toBe("build");
+  });
+
+  test("loadTaskNotes returns chronological order", () => {
+    createTask({ title: "Test task" });
+    addTaskNote({ taskId: "t1", body: "first" });
+    addTaskNote({ taskId: "t1", body: "second" });
+    addTaskNote({ taskId: "t1", body: "third" });
+    const notes = loadTaskNotes("t1");
+    expect(notes).toHaveLength(3);
+    expect(notes[0].body).toBe("first");
+    expect(notes[1].body).toBe("second");
+    expect(notes[2].body).toBe("third");
+    expect(notes[0].createdAt <= notes[1].createdAt).toBe(true);
+    expect(notes[1].createdAt <= notes[2].createdAt).toBe(true);
+  });
+
+  test("loadTaskNotes returns empty for task with no notes", () => {
+    createTask({ title: "Test task" });
+    expect(loadTaskNotes("t1")).toEqual([]);
+  });
+
+  test("loadTaskNotes returns empty for nonexistent task", () => {
+    expect(loadTaskNotes("t999")).toEqual([]);
+  });
+
+  test("nextNoteId increments", () => {
+    createTask({ title: "Test task" });
+    addTaskNote({ taskId: "t1", body: "first" });
+    addTaskNote({ taskId: "t1", body: "second" });
+    const third = addTaskNote({ taskId: "t1", body: "third" });
+    expect(third.id).toBe("n3");
+  });
+
+  test("notes for different tasks are separate", () => {
+    createTask({ title: "Task A" });
+    createTask({ title: "Task B" });
+    addTaskNote({ taskId: "t1", body: "note for t1" });
+    addTaskNote({ taskId: "t2", body: "note for t2" });
+    addTaskNote({ taskId: "t1", body: "another for t1" });
+
+    expect(loadTaskNotes("t1")).toHaveLength(2);
+    expect(loadTaskNotes("t2")).toHaveLength(1);
+    expect(loadTaskNotes("t2")[0].body).toBe("note for t2");
+  });
+});
+
+// ── transitionBatch ────────────────────────────────────────────────
+
+describe("transitionBatch", () => {
+  test("transitions multiple tasks forward", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "design" });
+    createTask({ title: "T2", epic: "e1", phase: "design" });
+    createTask({ title: "T3", epic: "e1", phase: "design" });
+
+    const result = transitionBatch(["t1", "t2", "t3"], "implement", { force: true });
+    expect(result.succeeded).toHaveLength(3);
+    expect(result.failed).toHaveLength(0);
+    expect(result.succeeded.map(t => t.phase)).toEqual(["implement", "implement", "implement"]);
+  });
+
+  test("partial failure — one already done", () => {
+    createTask({ title: "T1", phase: "implement" });
+    createTask({ title: "T2", phase: "implement" });
+    transitionTask("t2", "done", { force: true });
+
+    const result = transitionBatch(["t1", "t2"], "done", { force: true });
+    expect(result.succeeded).toHaveLength(1);
+    expect(result.succeeded[0].id).toBe("t1");
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0].id).toBe("t2");
+    expect(result.failed[0].error).toContain("terminal");
+  });
+
+  test("all invalid IDs", () => {
+    const result = transitionBatch(["t999", "t998"], "done");
+    expect(result.succeeded).toHaveLength(0);
+    expect(result.failed).toHaveLength(2);
+    expect(result.failed[0].error).toContain("not found");
+    expect(result.failed[1].error).toContain("not found");
+  });
+
+  test("empty array", () => {
+    const result = transitionBatch([], "done");
+    expect(result.succeeded).toEqual([]);
+    expect(result.failed).toEqual([]);
+  });
+
+  test("batch with force backward", () => {
+    createTask({ title: "T1", phase: "implement" });
+    createTask({ title: "T2", phase: "implement" });
+    transitionTask("t1", "verify", { force: true });
+    transitionTask("t2", "verify", { force: true });
+
+    const result = transitionBatch(["t1", "t2"], "implement", { force: true });
+    expect(result.succeeded).toHaveLength(2);
+  });
+
+  test("actor propagated to transitions", () => {
+    createTask({ title: "T1", phase: "design" });
+    const result = transitionBatch(["t1"], "implement", { actor: "build", force: true });
+    expect(result.succeeded).toHaveLength(1);
+    const task = loadTask("t1")!;
+    const lastTransition = task.transitions[task.transitions.length - 1];
+    expect(lastTransition.actor).toBe("build");
+  });
+});
+
+// ── epicProgress ─────────────────────────────────────────────────────
+
+describe("epicProgress", () => {
+  test("empty epic returns all zeros", () => {
+    createEpic({ title: "Empty" });
+    const p = epicProgress("e1");
+    expect(p.total).toBe(0);
+    expect(p.done).toBe(0);
+    expect(p.cancelled).toBe(0);
+    expect(p.inProgress).toBe(0);
+    expect(p.blocked).toBe(0);
+    expect(p.ready).toBe(0);
+    expect(p.phases).toEqual({});
+  });
+
+  test("all done", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "done" });
+    createTask({ title: "T2", epic: "e1", phase: "done" });
+    createTask({ title: "T3", epic: "e1", phase: "done" });
+    const p = epicProgress("e1");
+    expect(p.total).toBe(3);
+    expect(p.done).toBe(3);
+    expect(p.inProgress).toBe(0);
+    expect(p.blocked).toBe(0);
+    expect(p.ready).toBe(0);
+  });
+
+  test("cancelled counted separately from done", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "done" });
+    createTask({ title: "T2", epic: "e1", phase: "done" });
+    createTask({ title: "T3", epic: "e1", phase: "cancelled" });
+    const p = epicProgress("e1");
+    expect(p.total).toBe(3);
+    expect(p.done).toBe(2);
+    expect(p.cancelled).toBe(1);
+  });
+
+  test("in-progress includes implement, verify, and ship phases", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "implement" });
+    createTask({ title: "T2", epic: "e1", phase: "verify" });
+    createTask({ title: "T3", epic: "e1", phase: "design" });
+    createTask({ title: "T4", epic: "e1", phase: "ship" });
+    const p = epicProgress("e1");
+    expect(p.inProgress).toBe(3);
+  });
+
+  test("phases breakdown", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "understand" });
+    createTask({ title: "T2", epic: "e1", phase: "design" });
+    createTask({ title: "T3", epic: "e1", phase: "design" });
+    createTask({ title: "T4", epic: "e1", phase: "implement" });
+    createTask({ title: "T5", epic: "e1", phase: "done" });
+    const p = epicProgress("e1");
+    expect(p.phases).toEqual({ understand: 1, design: 2, implement: 1, done: 1 });
+  });
+
+  test("blocked vs ready with dependencies", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "implement" }); // in progress
+    createTask({ title: "T2", epic: "e1", phase: "design" }); // ready (no deps)
+    // t3 depends on t1 which is not done → blocked
+    const t3 = createTask({ title: "T3", epic: "e1", phase: "design" });
+    t3.dependencies = ["t1"];
+    saveTask(t3);
+    const p = epicProgress("e1");
+    expect(p.inProgress).toBe(1);
+    expect(p.ready).toBe(1);
+    expect(p.blocked).toBe(1);
+  });
+});
+
+// ── parseSyncInput ───────────────────────────────────────────────────
+
+describe("parseSyncInput", () => {
+  test("parses header and tasks", () => {
+    const input = `title: My Epic
+description: A test epic
+---
+ref:1.1 | Step 1.1: First thing
+ref:1.2 | Step 1.2: Second thing | depends:1.1
+ref:2.1 | Step 2.1: Third thing | depends:1.1,1.2`;
+    const result = parseSyncInput(input);
+    expect(result.title).toBe("My Epic");
+    expect(result.description).toBe("A test epic");
+    expect(result.tasks).toHaveLength(3);
+    expect(result.tasks[0].ref).toBe("1.1");
+    expect(result.tasks[0].title).toBe("Step 1.1: First thing");
+    expect(result.tasks[0].depends).toEqual([]);
+    expect(result.tasks[1].depends).toEqual(["1.1"]);
+    expect(result.tasks[2].depends).toEqual(["1.1", "1.2"]);
+  });
+
+  test("empty input throws", () => {
+    expect(() => parseSyncInput("")).toThrow("No input received");
+    expect(() => parseSyncInput("  \n  ")).toThrow("No input received");
+  });
+
+  test("missing title throws", () => {
+    expect(() => parseSyncInput("description: no title\n---\nref:1 | Task")).toThrow("Missing title");
+  });
+
+  test("description is optional", () => {
+    const input = `title: No desc
+---
+ref:1 | Task one`;
+    const result = parseSyncInput(input);
+    expect(result.description).toBe("");
+    expect(result.tasks).toHaveLength(1);
+  });
+
+  test("ignores blank lines in task body", () => {
+    const input = `title: Test
+---
+
+ref:1 | A
+
+ref:2 | B
+`;
+    const result = parseSyncInput(input);
+    expect(result.tasks).toHaveLength(2);
+  });
+});
+
+// ── syncCreateEpicWithTasks ──────────────────────────────────────────
+
+describe("syncCreateEpicWithTasks", () => {
+  test("creates epic and tasks", () => {
+    const input = parseSyncInput(`title: Sync Test
+---
+ref:A | Task A
+ref:B | Task B
+ref:C | Task C`);
+    const result = syncCreateEpicWithTasks(input);
+    expect(result.epicId).toBe("e1");
+    expect(Object.keys(result.tasks)).toHaveLength(3);
+    const epic = loadEpic("e1")!;
+    expect(epic.title).toBe("Sync Test");
+    const tasks = listTasks({ epic: "e1" });
+    expect(tasks).toHaveLength(3);
+    expect(tasks.every((t) => t.phase === "design")).toBe(true);
+  });
+
+  test("resolves dependency refs to task IDs", () => {
+    const input = parseSyncInput(`title: Deps Test
+---
+ref:1.1 | First
+ref:1.2 | Second | depends:1.1`);
+    const result = syncCreateEpicWithTasks(input);
+    const t2 = loadTask(result.tasks["1.2"])!;
+    expect(t2.dependencies).toEqual([result.tasks["1.1"]]);
+  });
+
+  test("chain dependencies A → B → C", () => {
+    const input = parseSyncInput(`title: Chain
+---
+ref:A | Step A
+ref:B | Step B | depends:A
+ref:C | Step C | depends:B`);
+    const result = syncCreateEpicWithTasks(input);
+    const tC = loadTask(result.tasks["C"])!;
+    expect(tC.dependencies).toEqual([result.tasks["B"]]);
+    const tB = loadTask(result.tasks["B"])!;
+    expect(tB.dependencies).toEqual([result.tasks["A"]]);
+  });
+
+  test("unknown ref throws", () => {
+    const input = parseSyncInput(`title: Bad ref
+---
+ref:A | Task A | depends:Z`);
+    expect(() => syncCreateEpicWithTasks(input)).toThrow('Unknown ref "Z"');
+  });
+
+  test("JSON-compatible output", () => {
+    const input = parseSyncInput(`title: JSON Test
+---
+ref:X | Task X
+ref:Y | Task Y | depends:X`);
+    const result = syncCreateEpicWithTasks(input);
+    const json = JSON.parse(JSON.stringify(result));
+    expect(typeof json.epicId).toBe("string");
+    expect(typeof json.tasks).toBe("object");
+    expect(typeof json.tasks["X"]).toBe("string");
+    expect(typeof json.tasks["Y"]).toBe("string");
   });
 });

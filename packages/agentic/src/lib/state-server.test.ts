@@ -191,6 +191,30 @@ describe("state server", () => {
     expect(titles).toContain("Foreign Epic");
   });
 
+  test("handler error returns 500 with JSON instead of crashing", async () => {
+    // Drop the epics table to force buildStatePayload to throw
+    const db = getDbSync();
+    db.run("DROP TABLE IF EXISTS epics");
+    const s = await start();
+    const res = await fetch(s.url + "/api/state");
+    expect(res.status).toBe(500);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const json = await res.json() as any;
+    expect(json.error).toBeDefined();
+  });
+
+  test("server stays alive after 500 error", async () => {
+    const db = getDbSync();
+    db.run("DROP TABLE IF EXISTS epics");
+    const s = await start();
+    // First request triggers 500
+    const r1 = await fetch(s.url + "/api/state");
+    expect(r1.status).toBe(500);
+    // Server is still alive — GET / should work (HTML is cached/rendered independently)
+    const r2 = await fetch(s.url + "/");
+    expect(r2.status).toBe(200);
+  });
+
   test("GET /api/state?all=false returns local only", async () => {
     createEpic({ title: "Mine" });
     const db = getDbSync();
