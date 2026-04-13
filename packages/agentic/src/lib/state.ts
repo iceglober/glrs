@@ -857,6 +857,58 @@ export function loadTaskFull(
   return result;
 }
 
+// ── Task notes ─────────────────────────────────────────────────────
+
+export interface TaskNote {
+  id: string;
+  taskId: string;
+  body: string;
+  actor: string;
+  createdAt: string;
+}
+
+function nextNoteId(): string {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) FROM task_notes WHERE repo = ?",
+    [repo()],
+  );
+  const max = result[0]?.values[0]?.[0] ?? 0;
+  return `n${(max || 0) + 1}`;
+}
+
+export function addTaskNote(opts: { taskId: string; body: string; actor?: string }): TaskNote {
+  const db = getDbSync();
+  const id = nextNoteId();
+  const now = new Date().toISOString();
+  const actor = opts.actor ?? "cli";
+
+  db.run(
+    `INSERT INTO task_notes (repo, id, task_id, body, actor, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [repo(), id, opts.taskId, opts.body, actor, now],
+  );
+  persistDb();
+
+  return { id, taskId: opts.taskId, body: opts.body, actor, createdAt: now };
+}
+
+export function loadTaskNotes(taskId: string): TaskNote[] {
+  const db = getDbSync();
+  const result = db.exec(
+    "SELECT id, task_id, body, actor, created_at FROM task_notes WHERE repo = ? AND task_id = ? ORDER BY created_at, id",
+    [repo(), taskId],
+  );
+  if (!result[0]?.values.length) return [];
+  return result[0].values.map((row: any[]) => ({
+    id: row[0] as string,
+    taskId: row[1] as string,
+    body: row[2] as string,
+    actor: row[3] as string,
+    createdAt: row[4] as string,
+  }));
+}
+
 // ── Review types ────────────────────────────────────────────────────
 
 export interface Review {

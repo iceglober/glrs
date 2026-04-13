@@ -41,6 +41,8 @@ import {
   resolveReviewItem,
   listReviewItems,
   reviewSummary,
+  addTaskNote,
+  loadTaskNotes,
   PHASES,
   type Task,
   type Phase,
@@ -1421,5 +1423,68 @@ describe("persistDb path behavior", () => {
     // the test DB path is what was used by checking its content)
     const testDbSize = fs.statSync(TEST_DB_PATH).size;
     expect(testDbSize).toBeGreaterThan(0);
+  });
+});
+
+// ── Task notes ─────────────────────────────────────────────────────
+
+describe("task notes", () => {
+  test("addTaskNote creates note with n-prefix ID", () => {
+    createTask({ title: "Test task" });
+    const note = addTaskNote({ taskId: "t1", body: "found X" });
+    expect(note.id).toBe("n1");
+    expect(note.taskId).toBe("t1");
+    expect(note.body).toBe("found X");
+    expect(note.actor).toBe("cli");
+    expect(note.createdAt).toBeTruthy();
+  });
+
+  test("addTaskNote with custom actor", () => {
+    createTask({ title: "Test task" });
+    const note = addTaskNote({ taskId: "t1", body: "y", actor: "build" });
+    expect(note.actor).toBe("build");
+  });
+
+  test("loadTaskNotes returns chronological order", () => {
+    createTask({ title: "Test task" });
+    addTaskNote({ taskId: "t1", body: "first" });
+    addTaskNote({ taskId: "t1", body: "second" });
+    addTaskNote({ taskId: "t1", body: "third" });
+    const notes = loadTaskNotes("t1");
+    expect(notes).toHaveLength(3);
+    expect(notes[0].body).toBe("first");
+    expect(notes[1].body).toBe("second");
+    expect(notes[2].body).toBe("third");
+    expect(notes[0].createdAt <= notes[1].createdAt).toBe(true);
+    expect(notes[1].createdAt <= notes[2].createdAt).toBe(true);
+  });
+
+  test("loadTaskNotes returns empty for task with no notes", () => {
+    createTask({ title: "Test task" });
+    expect(loadTaskNotes("t1")).toEqual([]);
+  });
+
+  test("loadTaskNotes returns empty for nonexistent task", () => {
+    expect(loadTaskNotes("t999")).toEqual([]);
+  });
+
+  test("nextNoteId increments", () => {
+    createTask({ title: "Test task" });
+    addTaskNote({ taskId: "t1", body: "first" });
+    addTaskNote({ taskId: "t1", body: "second" });
+    const third = addTaskNote({ taskId: "t1", body: "third" });
+    expect(third.id).toBe("n3");
+  });
+
+  test("notes for different tasks are separate", () => {
+    createTask({ title: "Task A" });
+    createTask({ title: "Task B" });
+    addTaskNote({ taskId: "t1", body: "note for t1" });
+    addTaskNote({ taskId: "t2", body: "note for t2" });
+    addTaskNote({ taskId: "t1", body: "another for t1" });
+
+    expect(loadTaskNotes("t1")).toHaveLength(2);
+    expect(loadTaskNotes("t2")).toHaveLength(1);
+    expect(loadTaskNotes("t2")[0].body).toBe("note for t2");
   });
 });
