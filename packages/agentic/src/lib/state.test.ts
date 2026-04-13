@@ -44,6 +44,7 @@ import {
   reviewSummary,
   addTaskNote,
   loadTaskNotes,
+  epicProgress,
   PHASES,
   type Task,
   type Phase,
@@ -1549,5 +1550,79 @@ describe("transitionBatch", () => {
     const task = loadTask("t1")!;
     const lastTransition = task.transitions[task.transitions.length - 1];
     expect(lastTransition.actor).toBe("build");
+  });
+});
+
+// ── epicProgress ─────────────────────────────────────────────────────
+
+describe("epicProgress", () => {
+  test("empty epic returns all zeros", () => {
+    createEpic({ title: "Empty" });
+    const p = epicProgress("e1");
+    expect(p.total).toBe(0);
+    expect(p.done).toBe(0);
+    expect(p.cancelled).toBe(0);
+    expect(p.inProgress).toBe(0);
+    expect(p.blocked).toBe(0);
+    expect(p.ready).toBe(0);
+    expect(p.phases).toEqual({});
+  });
+
+  test("all done", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "done" });
+    createTask({ title: "T2", epic: "e1", phase: "done" });
+    createTask({ title: "T3", epic: "e1", phase: "done" });
+    const p = epicProgress("e1");
+    expect(p.total).toBe(3);
+    expect(p.done).toBe(3);
+    expect(p.inProgress).toBe(0);
+    expect(p.blocked).toBe(0);
+    expect(p.ready).toBe(0);
+  });
+
+  test("cancelled counted separately from done", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "done" });
+    createTask({ title: "T2", epic: "e1", phase: "done" });
+    createTask({ title: "T3", epic: "e1", phase: "cancelled" });
+    const p = epicProgress("e1");
+    expect(p.total).toBe(3);
+    expect(p.done).toBe(2);
+    expect(p.cancelled).toBe(1);
+  });
+
+  test("in-progress includes implement and verify phases", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "implement" });
+    createTask({ title: "T2", epic: "e1", phase: "verify" });
+    createTask({ title: "T3", epic: "e1", phase: "design" });
+    const p = epicProgress("e1");
+    expect(p.inProgress).toBe(2);
+  });
+
+  test("phases breakdown", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "understand" });
+    createTask({ title: "T2", epic: "e1", phase: "design" });
+    createTask({ title: "T3", epic: "e1", phase: "design" });
+    createTask({ title: "T4", epic: "e1", phase: "implement" });
+    createTask({ title: "T5", epic: "e1", phase: "done" });
+    const p = epicProgress("e1");
+    expect(p.phases).toEqual({ understand: 1, design: 2, implement: 1, done: 1 });
+  });
+
+  test("blocked vs ready with dependencies", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "implement" }); // in progress
+    createTask({ title: "T2", epic: "e1", phase: "design" }); // ready (no deps)
+    // t3 depends on t1 which is not done → blocked
+    const t3 = createTask({ title: "T3", epic: "e1", phase: "design" });
+    t3.dependencies = ["t1"];
+    saveTask(t3);
+    const p = epicProgress("e1");
+    expect(p.inProgress).toBe(1);
+    expect(p.ready).toBe(1);
+    expect(p.blocked).toBe(1);
   });
 });

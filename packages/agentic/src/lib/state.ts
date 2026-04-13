@@ -708,6 +708,34 @@ export function dependenciesMet(task: Task): boolean {
   return true;
 }
 
+// ── Epic progress ───────────────────────────────────────────────────
+
+export interface EpicProgress {
+  total: number;
+  done: number;
+  cancelled: number;
+  inProgress: number;
+  blocked: number;
+  ready: number;
+  phases: Partial<Record<Phase, number>>;
+}
+
+const IN_PROGRESS_PHASES: Phase[] = ["implement", "verify"];
+
+export function epicProgress(epicId: string): EpicProgress {
+  const tasks = listTasks({ epic: epicId });
+  const result: EpicProgress = { total: tasks.length, done: 0, cancelled: 0, inProgress: 0, blocked: 0, ready: 0, phases: {} };
+  for (const t of tasks) {
+    result.phases[t.phase] = (result.phases[t.phase] ?? 0) + 1;
+    if (t.phase === "done") { result.done++; continue; }
+    if (t.phase === "cancelled") { result.cancelled++; continue; }
+    if (IN_PROGRESS_PHASES.includes(t.phase)) { result.inProgress++; continue; }
+    // Non-terminal, non-in-progress: either blocked or ready
+    if (dependenciesMet(t)) { result.ready++; } else { result.blocked++; }
+  }
+  return result;
+}
+
 // ── Plan management (versioned, global ~/.glorious/plans/) ──────────
 
 /** Get the latest plan version number for an entity, or 0 if none. */
