@@ -319,11 +319,11 @@ export function createEpic(opts: {
   };
 }
 
-export function loadEpic(id: string): Epic | null {
+export function loadEpic(id: string, repoId?: string): Epic | null {
   const db = getDbSync();
   const result = db.exec(
     "SELECT id, title, description, phase, plan, plan_version, created_at, updated_at FROM epics WHERE repo = ? AND id = ?",
-    [repo(), id],
+    [repoId ?? repo(), id],
   );
   if (!result[0]?.values.length) return null;
   const row = result[0].values[0];
@@ -664,16 +664,16 @@ export function transitionBatch(
 
 // ── Epic phase derivation ───────────────────────────────────────────
 
-export function deriveEpicPhase(epicId: string): Phase {
+export function deriveEpicPhase(epicId: string, repoId?: string): Phase {
   const db = getDbSync();
   const result = db.exec(
     "SELECT phase FROM tasks WHERE repo = ? AND epic = ?",
-    [repo(), epicId],
+    [repoId ?? repo(), epicId],
   );
 
   if (!result[0]?.values.length) {
     // No children — check if epic exists and return its stored phase
-    const epic = loadEpic(epicId);
+    const epic = loadEpic(epicId, repoId);
     return epic?.phase ?? "understand";
   }
 
@@ -1291,7 +1291,7 @@ export function listReviewItems(opts?: {
   return result[0].values.map((row: any[]) => rowToReviewItem(row));
 }
 
-export function reviewSummary(opts?: { taskId?: string }): ReviewSummaryResult {
+export function reviewSummary(opts?: { taskId?: string; repoId?: string }): ReviewSummaryResult {
   const db = getDbSync();
 
   // SQL GROUP BY for counts — avoids loading full review item payloads
@@ -1300,7 +1300,7 @@ export function reviewSummary(opts?: { taskId?: string }): ReviewSummaryResult {
     FROM review_items ri
     JOIN reviews r ON ri.repo = r.repo AND ri.review_id = r.id
     WHERE ri.repo = ?`;
-  const params: any[] = [repo()];
+  const params: any[] = [opts?.repoId ?? repo()];
 
   if (opts?.taskId) {
     query += " AND r.task_id = ?";
