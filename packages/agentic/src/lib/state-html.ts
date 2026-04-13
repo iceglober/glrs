@@ -190,8 +190,16 @@ const API_STATE_URL = "${apiUrl}";
 
 // ── App ────────────────────────────────────────────────────────────
 
+function repoLabel(r) {
+  // github.com-org-repo → org/repo
+  const parts = r.split("-");
+  if (parts.length >= 3) return parts.slice(1).join("/");
+  return r;
+}
+
 function App() {
   const [state, setState] = React.useState(null);
+  const [selectedRepo, setSelectedRepo] = React.useState(null);
   const [selectedEpic, setSelectedEpic] = React.useState(null);
   const [selectedTask, setSelectedTask] = React.useState(null);
   const [planCache, setPlanCache] = React.useState({});
@@ -238,13 +246,36 @@ function App() {
     return h\`<div class="layout"><div class="sidebar"><div class="sidebar-title">gsag state</div></div><div class="main"><div class="empty">Loading...</div></div></div>\`;
   }
 
-  const epics = state.epics || [];
-  const standalone = state.standalone || [];
+  // Multi-repo mode (--all): state.repos is an array
+  // Single-repo mode: state.epics / state.standalone
+  const isMultiRepo = Array.isArray(state.repos);
+  let epics, standalone;
+
+  if (isMultiRepo) {
+    const activeRepo = selectedRepo || (state.repos.length > 0 ? state.repos[0].repo : null);
+    const repoData = state.repos.find(r => r.repo === activeRepo);
+    epics = repoData ? repoData.epics : [];
+    standalone = repoData ? repoData.standalone : [];
+  } else {
+    epics = state.epics || [];
+    standalone = state.standalone || [];
+  }
 
   return h\`
     <div class="layout">
       <\${Sidebar} epics=\${epics} standalone=\${standalone} selectedEpic=\${selectedEpic} onSelectEpic=\${toggleEpic} />
       <div class="main">
+        \${isMultiRepo && state.repos.length > 1 && h\`
+          <div class="repo-tabs">
+            \${state.repos.map(r => h\`
+              <div
+                key=\${r.repo}
+                class=\${"repo-tab" + ((selectedRepo || state.repos[0].repo) === r.repo ? " active" : "")}
+                onClick=\${() => { setSelectedRepo(r.repo); setSelectedEpic(null); setSelectedTask(null); }}
+              >\${repoLabel(r.repo)}</div>
+            \`)}
+          </div>
+        \`}
         <\${MainPanel}
           epics=\${epics}
           standalone=\${standalone}

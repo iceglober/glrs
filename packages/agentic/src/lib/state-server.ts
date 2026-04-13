@@ -81,34 +81,51 @@ function buildStatePayload(opts?: { all?: boolean }) {
   const epics = listEpics({ all: opts?.all });
   const allTasks = listTasks({ all: opts?.all });
 
-  const epicData = epics.map((epic) => {
-    const tasks = allTasks.filter((t) => t.epic === epic.id);
-    const derivedPhase = deriveEpicPhase(epic.id);
-    const enrichedTasks = tasks.map((t) => enrichTask(t));
+  function buildEpicData(epicList: typeof epics, taskList: typeof allTasks) {
+    return epicList.map((epic) => {
+      const tasks = taskList.filter((t) => t.epic === epic.id);
+      const derivedPhase = deriveEpicPhase(epic.id);
+      const enrichedTasks = tasks.map((t) => enrichTask(t));
 
-    // Aggregate epic-level review summary from per-task summaries
-    const epicReview = enrichedTasks.reduce(
-      (acc, t) => {
-        const rs = t.reviewSummary;
-        if (!rs) return acc;
-        return { total: acc.total + rs.total, open: acc.open + rs.open, fixed: acc.fixed + rs.fixed };
-      },
-      { total: 0, open: 0, fixed: 0 },
-    );
+      const epicReview = enrichedTasks.reduce(
+        (acc, t) => {
+          const rs = t.reviewSummary;
+          if (!rs) return acc;
+          return { total: acc.total + rs.total, open: acc.open + rs.open, fixed: acc.fixed + rs.fixed };
+        },
+        { total: 0, open: 0, fixed: 0 },
+      );
 
+      return {
+        ...epic,
+        derivedPhase,
+        tasks: enrichedTasks,
+        reviewSummary: epicReview.total > 0 ? epicReview : undefined,
+      };
+    });
+  }
+
+  if (opts?.all) {
+    // Group by repo
+    const repos = listAllRepos();
     return {
-      ...epic,
-      derivedPhase,
-      tasks: enrichedTasks,
-      reviewSummary: epicReview.total > 0 ? epicReview : undefined,
+      repos: repos.map((r) => {
+        const repoEpics = epics.filter((e: any) => e.repo === r);
+        const repoTasks = allTasks.filter((t: any) => t.repo === r);
+        return {
+          repo: r,
+          epics: buildEpicData(repoEpics, repoTasks),
+          standalone: repoTasks.filter((t) => !t.epic).map((t) => enrichTask(t)),
+        };
+      }),
     };
-  });
+  }
 
-  const standalone = allTasks
-    .filter((t) => !t.epic)
-    .map((t) => enrichTask(t));
-
-  return { epics: epicData, standalone };
+  // Single-repo mode: flat structure (backward compat)
+  return {
+    epics: buildEpicData(epics, allTasks),
+    standalone: allTasks.filter((t) => !t.epic).map((t) => enrichTask(t)),
+  };
 }
 
 function enrichTask(task: Task) {

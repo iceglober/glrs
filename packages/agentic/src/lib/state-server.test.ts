@@ -163,7 +163,7 @@ describe("state server", () => {
     expect(server.url).toContain("19876");
   });
 
-  test("GET /api/state?all=true returns cross-repo data", async () => {
+  test("GET /api/state?all=true returns cross-repo data grouped by repo", async () => {
     createEpic({ title: "Local Epic" });
     // Insert a foreign-repo epic directly
     const db = getDbSync();
@@ -173,17 +173,20 @@ describe("state server", () => {
     );
     const s = await start();
 
-    // Default: only local
+    // Default: only local (flat structure)
     const localRes = await fetch(s.url + "/api/state");
     const localJson = await localRes.json() as any;
     expect(localJson.epics).toHaveLength(1);
     expect(localJson.epics[0].title).toBe("Local Epic");
 
-    // all=true: both repos
+    // all=true: grouped by repo
     const allRes = await fetch(s.url + "/api/state?all=true");
     const allJson = await allRes.json() as any;
-    expect(allJson.epics).toHaveLength(2);
-    const titles = allJson.epics.map((e: any) => e.title);
+    expect(allJson.repos).toBeDefined();
+    expect(allJson.repos.length).toBe(2);
+    const repoNames = allJson.repos.map((r: any) => r.repo);
+    const allEpics = allJson.repos.flatMap((r: any) => r.epics);
+    const titles = allEpics.map((e: any) => e.title);
     expect(titles).toContain("Local Epic");
     expect(titles).toContain("Foreign Epic");
   });
