@@ -56,6 +56,7 @@ import {
   autoCloseEpic,
   closeAndClaimNext,
   pruneEphemeralNotes,
+  setLastTouchedPath,
   PHASES,
   type Task,
   type Phase,
@@ -2083,21 +2084,19 @@ describe("claim enforcement", () => {
 // ── last-touched context ────────────────────────────────────────────
 
 describe("last-touched context", () => {
-  const LAST_TOUCHED = path.join(os.homedir(), ".glorious", ".last-task");
-  let originalContent: string | null = null;
+  const tmpLastTouched = path.join(TEST_DIR, ".last-task");
 
   beforeEach(() => {
-    try { originalContent = fs.readFileSync(LAST_TOUCHED, "utf-8"); } catch { originalContent = null; }
+    setLastTouchedPath(tmpLastTouched);
   });
 
   afterEach(() => {
-    if (originalContent !== null) fs.writeFileSync(LAST_TOUCHED, originalContent);
-    else try { fs.unlinkSync(LAST_TOUCHED); } catch {}
+    setLastTouchedPath(null);
   });
 
   test("touchTask writes repo and task ID to file", () => {
     touchTask("t5");
-    const content = fs.readFileSync(LAST_TOUCHED, "utf-8").trim();
+    const content = fs.readFileSync(tmpLastTouched, "utf-8").trim();
     expect(content).toContain("\t");
     expect(content.endsWith("t5")).toBe(true);
   });
@@ -2108,17 +2107,17 @@ describe("last-touched context", () => {
   });
 
   test("getLastTouched returns null when repo mismatches", () => {
-    fs.writeFileSync(LAST_TOUCHED, "other-repo\tt3\n");
+    fs.writeFileSync(tmpLastTouched, "other-repo\tt3\n");
     expect(getLastTouched()).toBeNull();
   });
 
   test("getLastTouched returns null when file missing", () => {
-    try { fs.unlinkSync(LAST_TOUCHED); } catch {}
+    try { fs.unlinkSync(tmpLastTouched); } catch {}
     expect(getLastTouched()).toBeNull();
   });
 
   test("getLastTouched returns null when file malformed", () => {
-    fs.writeFileSync(LAST_TOUCHED, "garbage");
+    fs.writeFileSync(tmpLastTouched, "garbage");
     expect(getLastTouched()).toBeNull();
   });
 
@@ -2132,6 +2131,16 @@ describe("last-touched context", () => {
     touchTask("other"); // reset
     transitionTask(task.id, "design");
     expect(getLastTouched()).toBe(task.id);
+  });
+
+  test("production file not touched when override is set", () => {
+    const prodPath = path.join(os.homedir(), ".glorious", ".last-task");
+    let prodBefore: string | null = null;
+    try { prodBefore = fs.readFileSync(prodPath, "utf-8"); } catch {}
+    touchTask("t99");
+    let prodAfter: string | null = null;
+    try { prodAfter = fs.readFileSync(prodPath, "utf-8"); } catch {}
+    expect(prodAfter).toBe(prodBefore);
   });
 });
 

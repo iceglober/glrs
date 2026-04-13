@@ -151,19 +151,29 @@ export function resolveActor(explicit?: string): string {
 
 // ── Last-touched context ────────────────────────────────────────────
 
-const LAST_TOUCHED_PATH = path.join(os.homedir(), ".glorious", ".last-task");
+let _testLastTouchedPath: string | null = null;
+
+/** Override the last-touched file path (for testing). */
+export function setLastTouchedPath(p: string | null): void {
+  _testLastTouchedPath = p;
+}
+
+function lastTouchedPath(): string {
+  return _testLastTouchedPath ?? path.join(os.homedir(), ".glorious", ".last-task");
+}
 
 /** Persist the last-touched task ID for this repo. */
 export function touchTask(taskId: string): void {
-  const dir = path.dirname(LAST_TOUCHED_PATH);
+  const p = lastTouchedPath();
+  const dir = path.dirname(p);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(LAST_TOUCHED_PATH, `${repo()}\t${taskId}\n`);
+  fs.writeFileSync(p, `${repo()}\t${taskId}\n`);
 }
 
 /** Get the last-touched task ID for the current repo, or null. */
 export function getLastTouched(): string | null {
   try {
-    const content = fs.readFileSync(LAST_TOUCHED_PATH, "utf-8").trim();
+    const content = fs.readFileSync(lastTouchedPath(), "utf-8").trim();
     const parts = content.split("\t");
     if (parts.length !== 2) return null;
     const [savedRepo, taskId] = parts;
