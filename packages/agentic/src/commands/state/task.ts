@@ -4,6 +4,7 @@ import {
   loadTask,
   listTasks,
   transitionTask,
+  transitionBatch,
   saveTask,
   deriveEpicPhase,
   isTerminal,
@@ -172,27 +173,48 @@ const next = command({
 
 const transition = command({
   name: "transition",
-  description: "Move task to a new phase",
+  description: "Move task(s) to a new phase",
   args: {
-    id: option({ type: string, long: "id", short: "i", description: "Task ID" }),
+    id: option({ type: optional(string), long: "id", short: "i", description: "Task ID" }),
+    ids: option({ type: optional(string), long: "ids", description: "Comma-separated task IDs (batch)" }),
     phase: option({ type: string, long: "phase", short: "p", description: "Target phase" }),
     force: flag({ long: "force", short: "f", description: "Allow backward transitions" }),
     actor: option({ type: optional(string), long: "actor", description: "Actor name for log" }),
   },
   handler: (args) => {
+    if (args.id && args.ids) {
+      console.error("Provide --id or --ids, not both.");
+      process.exit(1);
+    }
+    if (!args.id && !args.ids) {
+      console.error("Provide --id or --ids.");
+      process.exit(1);
+    }
     if (!PHASES.includes(args.phase as Phase)) {
       console.error(`Invalid phase: "${args.phase}". Valid: ${PHASES.join(", ")}`);
       process.exit(1);
     }
-    try {
-      const task = transitionTask(args.id, args.phase as Phase, {
+
+    if (args.ids) {
+      const idList = args.ids.split(",").map((s) => s.trim()).filter(Boolean);
+      const { succeeded, failed } = transitionBatch(idList, args.phase as Phase, {
         force: args.force,
         actor: args.actor ?? undefined,
       });
-      ok(`${bold(task.id)} → ${task.phase}`);
-    } catch (e: any) {
-      console.error(e.message);
-      process.exit(1);
+      for (const t of succeeded) ok(`${bold(t.id)} → ${t.phase}`);
+      for (const f of failed) console.error(`${bold(f.id)}: ${f.error}`);
+      if (failed.length > 0) process.exit(1);
+    } else {
+      try {
+        const task = transitionTask(args.id!, args.phase as Phase, {
+          force: args.force,
+          actor: args.actor ?? undefined,
+        });
+        ok(`${bold(task.id)} → ${task.phase}`);
+      } catch (e: any) {
+        console.error(e.message);
+        process.exit(1);
+      }
     }
   },
 });
