@@ -149,6 +149,31 @@ export function resolveActor(explicit?: string): string {
   return "cli";
 }
 
+// ── Last-touched context ────────────────────────────────────────────
+
+const LAST_TOUCHED_PATH = path.join(os.homedir(), ".glorious", ".last-task");
+
+/** Persist the last-touched task ID for this repo. */
+export function touchTask(taskId: string): void {
+  const dir = path.dirname(LAST_TOUCHED_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(LAST_TOUCHED_PATH, `${repo()}\t${taskId}\n`);
+}
+
+/** Get the last-touched task ID for the current repo, or null. */
+export function getLastTouched(): string | null {
+  try {
+    const content = fs.readFileSync(LAST_TOUCHED_PATH, "utf-8").trim();
+    const parts = content.split("\t");
+    if (parts.length !== 2) return null;
+    const [savedRepo, taskId] = parts;
+    if (savedRepo !== repo()) return null;
+    return taskId;
+  } catch {
+    return null;
+  }
+}
+
 // ── ID generation ───────────────────────────────────────────────────
 
 /** Generate next epic ID (e1, e2, ...) */
@@ -482,6 +507,7 @@ export function saveTask(task: Task): void {
   );
   persistDb();
   task.updatedAt = now;
+  touchTask(task.id);
 }
 
 export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean }): (Task & { repo?: string })[] {
@@ -562,7 +588,7 @@ export function createTask(opts: {
 
   persistDb();
 
-  return {
+  const task: Task = {
     id,
     epic,
     title: opts.title,
@@ -583,6 +609,8 @@ export function createTask(opts: {
     children: [],
     transitions: [{ phase, timestamp: now, actor: resolveActor(opts.actor) }],
   };
+  touchTask(task.id);
+  return task;
 }
 
 // ── Phase transitions ───────────────────────────────────────────────
@@ -654,6 +682,7 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
   persistDb();
 
   // Return updated task
+  touchTask(id);
   return loadTask(id)!;
 }
 

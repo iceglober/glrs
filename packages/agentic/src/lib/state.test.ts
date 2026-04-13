@@ -50,6 +50,8 @@ import {
   parseSyncInput,
   syncCreateEpicWithTasks,
   resolveActor,
+  touchTask,
+  getLastTouched,
   PHASES,
   type Task,
   type Phase,
@@ -1860,6 +1862,61 @@ ref:Y | Task Y | depends:X`);
     expect(typeof json.tasks).toBe("object");
     expect(typeof json.tasks["X"]).toBe("string");
     expect(typeof json.tasks["Y"]).toBe("string");
+  });
+});
+
+// ── last-touched context ────────────────────────────────────────────
+
+describe("last-touched context", () => {
+  const LAST_TOUCHED = path.join(os.homedir(), ".glorious", ".last-task");
+  let originalContent: string | null = null;
+
+  beforeEach(() => {
+    try { originalContent = fs.readFileSync(LAST_TOUCHED, "utf-8"); } catch { originalContent = null; }
+  });
+
+  afterEach(() => {
+    if (originalContent !== null) fs.writeFileSync(LAST_TOUCHED, originalContent);
+    else try { fs.unlinkSync(LAST_TOUCHED); } catch {}
+  });
+
+  test("touchTask writes repo and task ID to file", () => {
+    touchTask("t5");
+    const content = fs.readFileSync(LAST_TOUCHED, "utf-8").trim();
+    expect(content).toContain("\t");
+    expect(content.endsWith("t5")).toBe(true);
+  });
+
+  test("getLastTouched returns task ID when repo matches", () => {
+    touchTask("t3");
+    expect(getLastTouched()).toBe("t3");
+  });
+
+  test("getLastTouched returns null when repo mismatches", () => {
+    fs.writeFileSync(LAST_TOUCHED, "other-repo\tt3\n");
+    expect(getLastTouched()).toBeNull();
+  });
+
+  test("getLastTouched returns null when file missing", () => {
+    try { fs.unlinkSync(LAST_TOUCHED); } catch {}
+    expect(getLastTouched()).toBeNull();
+  });
+
+  test("getLastTouched returns null when file malformed", () => {
+    fs.writeFileSync(LAST_TOUCHED, "garbage");
+    expect(getLastTouched()).toBeNull();
+  });
+
+  test("createTask touches the task", () => {
+    createTask({ title: "Touch test" });
+    expect(getLastTouched()).toBe("t1");
+  });
+
+  test("transitionTask touches the task", () => {
+    const task = createTask({ title: "Touch test" });
+    touchTask("other"); // reset
+    transitionTask(task.id, "design");
+    expect(getLastTouched()).toBe(task.id);
   });
 });
 
