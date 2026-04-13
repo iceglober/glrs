@@ -642,6 +642,26 @@ export function transitionTask(id: string, target: Phase, opts: { force?: boolea
   return loadTask(id)!;
 }
 
+// ── Batch transitions ──────────────────────────────────────────────
+
+export function transitionBatch(
+  ids: string[],
+  target: Phase,
+  opts?: { force?: boolean; actor?: string },
+): { succeeded: Task[]; failed: { id: string; error: string }[] } {
+  const succeeded: Task[] = [];
+  const failed: { id: string; error: string }[] = [];
+  for (const id of ids) {
+    try {
+      const task = transitionTask(id, target, opts);
+      succeeded.push(task);
+    } catch (e: any) {
+      failed.push({ id, error: e.message });
+    }
+  }
+  return { succeeded, failed };
+}
+
 // ── Epic phase derivation ───────────────────────────────────────────
 
 export function deriveEpicPhase(epicId: string): Phase {

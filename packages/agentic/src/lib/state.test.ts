@@ -10,6 +10,7 @@ import {
   listTasks,
   saveTask,
   transitionTask,
+  transitionBatch,
   validateTransition,
   deriveEpicPhase,
   dependenciesMet,
@@ -1486,5 +1487,67 @@ describe("task notes", () => {
     expect(loadTaskNotes("t1")).toHaveLength(2);
     expect(loadTaskNotes("t2")).toHaveLength(1);
     expect(loadTaskNotes("t2")[0].body).toBe("note for t2");
+  });
+});
+
+// ── transitionBatch ────────────────────────────────────────────────
+
+describe("transitionBatch", () => {
+  test("transitions multiple tasks forward", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1", phase: "design" });
+    createTask({ title: "T2", epic: "e1", phase: "design" });
+    createTask({ title: "T3", epic: "e1", phase: "design" });
+
+    const result = transitionBatch(["t1", "t2", "t3"], "implement", { force: true });
+    expect(result.succeeded).toHaveLength(3);
+    expect(result.failed).toHaveLength(0);
+    expect(result.succeeded.map(t => t.phase)).toEqual(["implement", "implement", "implement"]);
+  });
+
+  test("partial failure — one already done", () => {
+    createTask({ title: "T1", phase: "implement" });
+    createTask({ title: "T2", phase: "implement" });
+    transitionTask("t2", "done", { force: true });
+
+    const result = transitionBatch(["t1", "t2"], "done", { force: true });
+    expect(result.succeeded).toHaveLength(1);
+    expect(result.succeeded[0].id).toBe("t1");
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0].id).toBe("t2");
+    expect(result.failed[0].error).toContain("terminal");
+  });
+
+  test("all invalid IDs", () => {
+    const result = transitionBatch(["t999", "t998"], "done");
+    expect(result.succeeded).toHaveLength(0);
+    expect(result.failed).toHaveLength(2);
+    expect(result.failed[0].error).toContain("not found");
+    expect(result.failed[1].error).toContain("not found");
+  });
+
+  test("empty array", () => {
+    const result = transitionBatch([], "done");
+    expect(result.succeeded).toEqual([]);
+    expect(result.failed).toEqual([]);
+  });
+
+  test("batch with force backward", () => {
+    createTask({ title: "T1", phase: "implement" });
+    createTask({ title: "T2", phase: "implement" });
+    transitionTask("t1", "verify", { force: true });
+    transitionTask("t2", "verify", { force: true });
+
+    const result = transitionBatch(["t1", "t2"], "implement", { force: true });
+    expect(result.succeeded).toHaveLength(2);
+  });
+
+  test("actor propagated to transitions", () => {
+    createTask({ title: "T1", phase: "design" });
+    const result = transitionBatch(["t1"], "implement", { actor: "build", force: true });
+    expect(result.succeeded).toHaveLength(1);
+    const task = loadTask("t1")!;
+    const lastTransition = task.transitions[task.transitions.length - 1];
+    expect(lastTransition.actor).toBe("build");
   });
 });
