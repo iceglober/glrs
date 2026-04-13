@@ -48,4 +48,10 @@ describe("renderStatePage", () => {
     const html = renderStatePage(3000);
     expect(html).toContain('id="root"');
   });
+
+  test("repoLabel splits on / not -", () => {
+    const html = renderStatePage(3000, { all: true });
+    expect(html).toContain('r.split("/")');
+    expect(html).not.toContain('r.split("-")');
+  });
 });
