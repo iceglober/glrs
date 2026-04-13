@@ -45,6 +45,8 @@ import {
   addTaskNote,
   loadTaskNotes,
   epicProgress,
+  parseSyncInput,
+  syncCreateEpicWithTasks,
   PHASES,
   type Task,
   type Phase,
@@ -1624,5 +1626,120 @@ describe("epicProgress", () => {
     expect(p.inProgress).toBe(1);
     expect(p.ready).toBe(1);
     expect(p.blocked).toBe(1);
+  });
+});
+
+// ── parseSyncInput ───────────────────────────────────────────────────
+
+describe("parseSyncInput", () => {
+  test("parses header and tasks", () => {
+    const input = `title: My Epic
+description: A test epic
+---
+ref:1.1 | Step 1.1: First thing
+ref:1.2 | Step 1.2: Second thing | depends:1.1
+ref:2.1 | Step 2.1: Third thing | depends:1.1,1.2`;
+    const result = parseSyncInput(input);
+    expect(result.title).toBe("My Epic");
+    expect(result.description).toBe("A test epic");
+    expect(result.tasks).toHaveLength(3);
+    expect(result.tasks[0].ref).toBe("1.1");
+    expect(result.tasks[0].title).toBe("Step 1.1: First thing");
+    expect(result.tasks[0].depends).toEqual([]);
+    expect(result.tasks[1].depends).toEqual(["1.1"]);
+    expect(result.tasks[2].depends).toEqual(["1.1", "1.2"]);
+  });
+
+  test("empty input throws", () => {
+    expect(() => parseSyncInput("")).toThrow("No input received");
+    expect(() => parseSyncInput("  \n  ")).toThrow("No input received");
+  });
+
+  test("missing title throws", () => {
+    expect(() => parseSyncInput("description: no title\n---\nref:1 | Task")).toThrow("Missing title");
+  });
+
+  test("description is optional", () => {
+    const input = `title: No desc
+---
+ref:1 | Task one`;
+    const result = parseSyncInput(input);
+    expect(result.description).toBe("");
+    expect(result.tasks).toHaveLength(1);
+  });
+
+  test("ignores blank lines in task body", () => {
+    const input = `title: Test
+---
+
+ref:1 | A
+
+ref:2 | B
+`;
+    const result = parseSyncInput(input);
+    expect(result.tasks).toHaveLength(2);
+  });
+});
+
+// ── syncCreateEpicWithTasks ──────────────────────────────────────────
+
+describe("syncCreateEpicWithTasks", () => {
+  test("creates epic and tasks", () => {
+    const input = parseSyncInput(`title: Sync Test
+---
+ref:A | Task A
+ref:B | Task B
+ref:C | Task C`);
+    const result = syncCreateEpicWithTasks(input);
+    expect(result.epicId).toBe("e1");
+    expect(Object.keys(result.tasks)).toHaveLength(3);
+    const epic = loadEpic("e1")!;
+    expect(epic.title).toBe("Sync Test");
+    const tasks = listTasks({ epic: "e1" });
+    expect(tasks).toHaveLength(3);
+    expect(tasks.every((t) => t.phase === "design")).toBe(true);
+  });
+
+  test("resolves dependency refs to task IDs", () => {
+    const input = parseSyncInput(`title: Deps Test
+---
+ref:1.1 | First
+ref:1.2 | Second | depends:1.1`);
+    const result = syncCreateEpicWithTasks(input);
+    const t2 = loadTask(result.tasks["1.2"])!;
+    expect(t2.dependencies).toEqual([result.tasks["1.1"]]);
+  });
+
+  test("chain dependencies A → B → C", () => {
+    const input = parseSyncInput(`title: Chain
+---
+ref:A | Step A
+ref:B | Step B | depends:A
+ref:C | Step C | depends:B`);
+    const result = syncCreateEpicWithTasks(input);
+    const tC = loadTask(result.tasks["C"])!;
+    expect(tC.dependencies).toEqual([result.tasks["B"]]);
+    const tB = loadTask(result.tasks["B"])!;
+    expect(tB.dependencies).toEqual([result.tasks["A"]]);
+  });
+
+  test("unknown ref throws", () => {
+    const input = parseSyncInput(`title: Bad ref
+---
+ref:A | Task A | depends:Z`);
+    expect(() => syncCreateEpicWithTasks(input)).toThrow('Unknown ref "Z"');
+  });
+
+  test("JSON-compatible output", () => {
+    const input = parseSyncInput(`title: JSON Test
+---
+ref:X | Task X
+ref:Y | Task Y | depends:X`);
+    const result = syncCreateEpicWithTasks(input);
+    const json = JSON.parse(JSON.stringify(result));
+    expect(typeof json.epicId).toBe("string");
+    expect(typeof json.tasks).toBe("object");
+    expect(typeof json.tasks["X"]).toBe("string");
+    expect(typeof json.tasks["Y"]).toBe("string");
   });
 });

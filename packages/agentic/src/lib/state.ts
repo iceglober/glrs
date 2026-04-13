@@ -736,6 +736,103 @@ export function epicProgress(epicId: string): EpicProgress {
   return result;
 }
 
+// ── Plan sync (atomic epic+tasks creation) ──────────────────────────
+
+export interface SyncTaskDef {
+  ref: string;
+  title: string;
+  depends: string[];
+}
+
+export interface SyncInput {
+  title: string;
+  description: string;
+  tasks: SyncTaskDef[];
+}
+
+/**
+ * Parse the line-based sync format:
+ *   title: Epic title
+ *   description: Optional description
+ *   ---
+ *   ref:1.1 | Step 1.1: Do something
+ *   ref:1.2 | Step 1.2: Another thing | depends:1.1
+ */
+export function parseSyncInput(input: string): SyncInput {
+  const text = input.trim();
+  if (!text) throw new Error("No input received");
+
+  const parts = text.split(/^---$/m);
+  const header = parts[0] ?? "";
+  const body = parts.slice(1).join("---");
+
+  let title = "";
+  let description = "";
+  for (const line of header.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("title:")) title = trimmed.slice(6).trim();
+    else if (trimmed.startsWith("description:")) description = trimmed.slice(12).trim();
+  }
+  if (!title) throw new Error("Missing title");
+
+  const tasks: SyncTaskDef[] = [];
+  for (const line of body.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const segments = trimmed.split("|").map((s) => s.trim());
+    const refSegment = segments[0];
+    if (!refSegment?.startsWith("ref:")) continue;
+
+    const ref = refSegment.slice(4).trim();
+    const taskTitle = segments[1] ?? "";
+    const depends: string[] = [];
+    for (const seg of segments.slice(2)) {
+      if (seg.startsWith("depends:")) {
+        depends.push(...seg.slice(8).split(",").map((s) => s.trim()).filter(Boolean));
+      }
+    }
+    tasks.push({ ref, title: taskTitle, depends });
+  }
+
+  return { title, description, tasks };
+}
+
+/**
+ * Create an epic and tasks from a SyncInput. Returns the epic ID and ref→taskId mapping.
+ */
+export function syncCreateEpicWithTasks(
+  input: SyncInput,
+  opts?: { actor?: string },
+): { epicId: string; tasks: Record<string, string> } {
+  const epic = createEpic({ title: input.title, description: input.description, phase: "design" });
+  const refToId: Record<string, string> = {};
+
+  for (const def of input.tasks) {
+    const task = createTask({
+      title: def.title,
+      epic: epic.id,
+      phase: "design",
+      actor: opts?.actor ?? "plan-sync",
+    });
+    refToId[def.ref] = task.id;
+  }
+
+  // Resolve dependency refs to actual task IDs
+  for (const def of input.tasks) {
+    if (def.depends.length === 0) continue;
+    const taskId = refToId[def.ref];
+    const task = loadTask(taskId)!;
+    task.dependencies = def.depends.map((depRef) => {
+      const resolved = refToId[depRef];
+      if (!resolved) throw new Error(`Unknown ref "${depRef}"`);
+      return resolved;
+    });
+    saveTask(task);
+  }
+
+  return { epicId: epic.id, tasks: refToId };
+}
+
 // ── Plan management (versioned, global ~/.glorious/plans/) ──────────
 
 /** Get the latest plan version number for an entity, or 0 if none. */

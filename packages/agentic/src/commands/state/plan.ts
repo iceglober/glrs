@@ -1,5 +1,5 @@
 import { command, subcommands, option, flag, optional, string } from "cmd-ts";
-import { loadTask, loadEpic, loadPlan, savePlan, savePlanFromFile, listPlanVersions, createTask, saveTask } from "../../lib/state.js";
+import { loadTask, loadEpic, loadPlan, savePlan, savePlanFromFile, listPlanVersions, createTask, saveTask, parseSyncInput, syncCreateEpicWithTasks } from "../../lib/state.js";
 import { loadFeedback, clearFeedback as clearFeedbackFile } from "../../lib/plan-feedback.js";
 import { ok, bold, dim } from "../../lib/fmt.js";
 
@@ -181,6 +181,53 @@ const clearFeedback = command({
   },
 });
 
+// ── gs-agentic state plan sync ──────────────────────────────────────────────
+
+const sync = command({
+  name: "sync",
+  description: "Atomically create epic + tasks from stdin",
+  args: {
+    stdin: flag({ long: "stdin", description: "Read task definitions from stdin" }),
+    actor: option({ type: optional(string), long: "actor", description: "Actor name" }),
+  },
+  handler: async (args) => {
+    if (!args.stdin) {
+      console.error("--stdin is required. Pipe input: echo '...' | gs-agentic state plan sync --stdin");
+      process.exit(1);
+    }
+    if (process.stdin.isTTY) {
+      console.error("--stdin requires piped input.");
+      process.exit(1);
+    }
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string, "utf-8"));
+    }
+    const text = Buffer.concat(chunks).toString("utf-8");
+
+    let input;
+    try {
+      input = parseSyncInput(text);
+    } catch (e: any) {
+      console.error(e.message);
+      process.exit(1);
+      return;
+    }
+
+    let result;
+    try {
+      result = syncCreateEpicWithTasks(input, { actor: args.actor ?? undefined });
+    } catch (e: any) {
+      console.error(e.message);
+      process.exit(1);
+      return;
+    }
+
+    console.log(JSON.stringify(result));
+  },
+});
+
 // ── Export subcommands ───────────────────────────────────────────────
 
 export const statePlan = subcommands({
@@ -190,6 +237,7 @@ export const statePlan = subcommands({
     show,
     set,
     "add-task": addTask,
+    sync,
     history,
     feedback,
     "clear-feedback": clearFeedback,
