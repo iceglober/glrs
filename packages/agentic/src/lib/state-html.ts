@@ -168,19 +168,38 @@ export function renderStatePage(serverPort: number, opts?: { all?: boolean }): s
 </head>
 <body>
 <div id="root"></div>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
 <script type="module">
-import htm from "https://cdn.jsdelivr.net/npm/htm@3/+esm";
+import React from "https://esm.sh/react@18.3.1";
+import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
+import htm from "https://esm.sh/htm@3.1.1";
 const h = htm.bind(React.createElement);
+const css = s => {
+  const o = {};
+  s.split(";").forEach(p => {
+    const [k, ...v] = p.split(":");
+    if (k && v.length) {
+      const prop = k.trim().replace(/-[a-z]/g, m => m[1].toUpperCase());
+      o[prop] = v.join(":").trim();
+    }
+  });
+  return o;
+};
 
 const API = "http://localhost:${serverPort}";
 const API_STATE_URL = "${apiUrl}";
 
 // ── App ────────────────────────────────────────────────────────────
 
+function repoLabel(r) {
+  // github.com-org-repo → org/repo
+  const parts = r.split("-");
+  if (parts.length >= 3) return parts.slice(1).join("/");
+  return r;
+}
+
 function App() {
   const [state, setState] = React.useState(null);
+  const [selectedRepo, setSelectedRepo] = React.useState(null);
   const [selectedEpic, setSelectedEpic] = React.useState(null);
   const [selectedTask, setSelectedTask] = React.useState(null);
   const [planCache, setPlanCache] = React.useState({});
@@ -227,13 +246,36 @@ function App() {
     return h\`<div class="layout"><div class="sidebar"><div class="sidebar-title">gsag state</div></div><div class="main"><div class="empty">Loading...</div></div></div>\`;
   }
 
-  const epics = state.epics || [];
-  const standalone = state.standalone || [];
+  // Multi-repo mode (--all): state.repos is an array
+  // Single-repo mode: state.epics / state.standalone
+  const isMultiRepo = Array.isArray(state.repos);
+  let epics, standalone;
+
+  if (isMultiRepo) {
+    const activeRepo = selectedRepo || (state.repos.length > 0 ? state.repos[0].repo : null);
+    const repoData = state.repos.find(r => r.repo === activeRepo);
+    epics = repoData ? repoData.epics : [];
+    standalone = repoData ? repoData.standalone : [];
+  } else {
+    epics = state.epics || [];
+    standalone = state.standalone || [];
+  }
 
   return h\`
     <div class="layout">
       <\${Sidebar} epics=\${epics} standalone=\${standalone} selectedEpic=\${selectedEpic} onSelectEpic=\${toggleEpic} />
       <div class="main">
+        \${isMultiRepo && state.repos.length > 1 && h\`
+          <div class="repo-tabs">
+            \${state.repos.map(r => h\`
+              <div
+                key=\${r.repo}
+                class=\${"repo-tab" + ((selectedRepo || state.repos[0].repo) === r.repo ? " active" : "")}
+                onClick=\${() => { setSelectedRepo(r.repo); setSelectedEpic(null); setSelectedTask(null); }}
+              >\${repoLabel(r.repo)}</div>
+            \`)}
+          </div>
+        \`}
         <\${MainPanel}
           epics=\${epics}
           standalone=\${standalone}
@@ -273,7 +315,7 @@ function Sidebar({ epics, standalone, selectedEpic, onSelectEpic }) {
         \`;
       })}
       \${standalone.length > 0 && h\`
-        <div style="margin-top:1rem;font-size:0.75rem;color:#888">Standalone tasks: \${standalone.length}</div>
+        <div style=\${css("margin-top:1rem;font-size:0.75rem;color:#888")}>Standalone tasks: \${standalone.length}</div>
       \`}
     </div>
   \`;
@@ -289,7 +331,7 @@ function MainPanel({ epics, standalone, selectedEpic, selectedTask, onSelectEpic
     return h\`
       <div>
         <h2><\${Badge} phase=\${epic.derivedPhase || epic.phase} /> \${epic.id}: \${epic.title}</h2>
-        \${epic.description && h\`<p style="color:var(--text-muted);margin-bottom:1rem">\${epic.description}</p>\`}
+        \${epic.description && h\`<p style=\${css("color:var(--text-muted);margin-bottom:1rem")}>\${epic.description}</p>\`}
         \${epic.reviewSummary && epic.reviewSummary.total > 0 && h\`<\${ReviewBar} summary=\${epic.reviewSummary} />\`}
         \${(epic.tasks || []).map(task => h\`
           <\${TaskCard}
@@ -320,7 +362,7 @@ function MainPanel({ epics, standalone, selectedEpic, selectedTask, onSelectEpic
         \${active.map(epic => h\`<\${EpicCard} key=\${epic.id} epic=\${epic} onClick=\${() => onSelectEpic(epic.id)} />\`)}
       \`}
       \${completed.length > 0 && h\`
-        <h3 style="color:var(--text-muted);margin-top:1rem">Completed (\${completed.length})</h3>
+        <h3 style=\${css("color:var(--text-muted);margin-top:1rem")}>Completed (\${completed.length})</h3>
         \${completed.map(epic => h\`<\${EpicCard} key=\${epic.id} epic=\${epic} onClick=\${() => onSelectEpic(epic.id)} dimmed />\`)}
       \`}
       \${standalone.length > 0 && h\`
@@ -359,7 +401,7 @@ function EpicCard({ epic, onClick, dimmed }) {
   const total = epic.tasks ? epic.tasks.length : 0;
   const done = epic.tasks ? epic.tasks.filter(t => t.phase === "done").length : 0;
   return h\`
-    <div class="card" onClick=\${onClick} style=\${dimmed ? "opacity:0.6" : ""}>
+    <div class="card" onClick=\${onClick} style=\${dimmed ? {opacity: "0.6"} : {}}>
       <div class="card-header">
         <\${Badge} phase=\${phase} />
         <span class="card-id">\${epic.id}</span>
@@ -406,19 +448,19 @@ function TaskDetail({ task, planCache, loadPlan }) {
   return h\`
     <div class="detail">
       <h3>\${task.id}: \${task.title}</h3>
-      <div style="margin-bottom:0.5rem">
+      <div style=\${css("margin-bottom:0.5rem")}>
         <\${Badge} phase=\${task.phase} />
         \${task.claimedBy && h\` <\${ClaimTag} name=\${"claimed by " + task.claimedBy} />\`}
       </div>
-      \${task.description && h\`<p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem">\${task.description}</p>\`}
+      \${task.description && h\`<p style=\${css("font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem")}>\${task.description}</p>\`}
       \${task.branch && h\`<div class="detail-row"><span class="detail-label">Branch: </span>\${task.branch}</div>\`}
       \${task.worktree && h\`<div class="detail-row"><span class="detail-label">Worktree: </span>\${task.worktree}</div>\`}
       \${task.pr && h\`<div class="detail-row"><span class="detail-label">PR: </span><a class="link" href=\${task.pr} target="_blank">\${task.pr}</a></div>\`}
       \${task.qaResult && h\`<div class="detail-row"><span class="detail-label">QA: </span>\${task.qaResult.status} — \${task.qaResult.summary}</div>\`}
       \${task.reviewSummary && task.reviewSummary.total > 0 && h\`<\${ReviewBar} summary=\${task.reviewSummary} />\`}
       \${planContent && h\`
-        <div style="margin-top:0.75rem">
-          <h4 style="margin-bottom:0.25rem">Plan</h4>
+        <div style=\${css("margin-top:0.75rem")}>
+          <h4 style=\${css("margin-bottom:0.25rem")}>Plan</h4>
           <div class="plan-content">\${planContent}</div>
         </div>
       \`}
@@ -428,7 +470,7 @@ function TaskDetail({ task, planCache, loadPlan }) {
 
 // ── Mount ──────────────────────────────────────────────────────────
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
+const root = createRoot(document.getElementById("root"));
 root.render(h\`<\${App} />\`);
 </script>
 </body>

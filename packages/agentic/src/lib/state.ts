@@ -339,16 +339,13 @@ export function loadEpic(id: string): Epic | null {
   };
 }
 
-export function listEpics(opts?: { all?: boolean }): Epic[] {
+export function listEpics(opts?: { all?: boolean }): (Epic & { repo?: string })[] {
   const db = getDbSync();
-  let query = "SELECT id, title, description, phase, plan, plan_version, created_at, updated_at FROM epics";
-  const params: any[] = [];
-  if (opts?.all) {
-    query += " WHERE 1=1";
-  } else {
-    query += " WHERE repo = ?";
-    params.push(repo());
-  }
+  const selectRepo = opts?.all;
+  let query = selectRepo
+    ? "SELECT id, title, description, phase, plan, plan_version, created_at, updated_at, repo FROM epics WHERE 1=1"
+    : "SELECT id, title, description, phase, plan, plan_version, created_at, updated_at FROM epics WHERE repo = ?";
+  const params: any[] = selectRepo ? [] : [repo()];
   query += " ORDER BY id";
   const result = db.exec(query, params);
   if (!result[0]?.values.length) return [];
@@ -361,6 +358,7 @@ export function listEpics(opts?: { all?: boolean }): Epic[] {
     planVersion: row[5] as number | null,
     createdAt: row[6] as string,
     updatedAt: row[7] as string,
+    ...(selectRepo ? { repo: row[8] as string } : {}),
   }));
 }
 
@@ -471,13 +469,14 @@ export function saveTask(task: Task): void {
   task.updatedAt = now;
 }
 
-export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean }): Task[] {
+export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean }): (Task & { repo?: string })[] {
   const db = getDbSync();
+  const selectRepo = opts?.all;
   let query: string;
   const params: any[] = [];
 
-  if (opts?.all) {
-    query = `${TASK_SELECT} WHERE 1=1`;
+  if (selectRepo) {
+    query = `SELECT id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, plan, plan_version, created_at, qa_status, qa_summary, qa_timestamp, updated_at, claimed_by, claimed_at, repo FROM tasks WHERE 1=1`;
   } else {
     query = `${TASK_SELECT} WHERE repo = ?`;
     params.push(repo());
@@ -493,11 +492,15 @@ export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean 
   const result = db.exec(query, params);
   if (!result[0]?.values.length) return [];
 
+  // When selectRepo, repo is the last column (index 19)
+  const repoIdx = 19;
+
   return result[0].values.map((row: any[]) => {
     const id = row[0] as string;
+    const repoField = selectRepo ? { repo: row[repoIdx] as string } : {};
     if (opts?.lean) {
       // Compact object: only non-null, non-empty fields. Skip transitions/children queries.
-      const compact: Record<string, any> = { id, title: row[2] as string, phase: row[4] as Phase };
+      const compact: Record<string, any> = { id, title: row[2] as string, phase: row[4] as Phase, ...repoField };
       const epic = row[1] as string | null;
       if (epic) compact.epic = epic;
       const branch = row[6] as string | null;
@@ -512,7 +515,7 @@ export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean 
     }
     const transitions = loadTransitions(id, "task");
     const children = loadChildren(id);
-    return rowToTask(row, transitions, children);
+    return { ...rowToTask(row, transitions, children), ...repoField };
   });
 }
 
