@@ -1081,6 +1081,25 @@ function claimNextTask(epicId: string, actor: string): Task | null {
   return null;
 }
 
+/**
+ * Atomically close a task and claim the next ready task in the same epic.
+ * Wraps both operations in withDbLock for concurrency safety.
+ */
+export function closeAndClaimNext(
+  taskId: string,
+  opts: { actor?: string; force?: boolean } = {},
+): { closed: Task; next: Task | null } {
+  const task = loadTask(taskId);
+  if (!task) throw new Error(`Task "${taskId}" not found.`);
+  if (!task.epic) throw new Error(`Task "${taskId}" has no epic. Use transitionTask() directly.`);
+
+  return withDbLock(() => {
+    const closed = transitionTask(taskId, "done", opts);
+    const next = claimNextTask(task.epic!, resolveActor(opts.actor));
+    return { closed, next };
+  });
+}
+
 /** Find all ready tasks (non-terminal, deps met) across all epics and standalone. */
 export function findReadyTasks(opts?: { all?: boolean }): Task[] {
   const tasks = listTasks({ all: opts?.all });

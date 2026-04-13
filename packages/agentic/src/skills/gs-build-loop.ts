@@ -57,7 +57,7 @@ Use \`gs-agentic state task next --epic <epic-id> --claim build-loop --json --wi
 
 The \`--claim\` flag atomically transitions the task from \`design\` to \`implement\`, preventing other parallel agents from picking up the same task. If another agent already claimed it, the command skips to the next available task.
 
-- If exit code 1 (no ready tasks): check if all tasks are done → report "All tasks complete." and stop. If some are blocked, report which tasks are blocked and by what.
+- If exit code 1 (no ready tasks): check if all tasks are done. If all done, go to the **Epic Complete** section below. If some are blocked, report which tasks are blocked and by what.
 - If a task is returned: it is already claimed (in \`implement\` phase). Execute it.
 
 ### Execute the task
@@ -87,6 +87,26 @@ RULES:
 14. Run \`gs-agentic state task next --epic <epic-id> --claim build-loop --json\` to find the NEXT ready task and repeat from step 1.
 15. If no tasks remain: report "All tasks complete." and stop.
 \`\`\`
+
+## Epic Complete
+
+When all tasks in the epic are done, use the AskUserQuestion tool:
+
+\`\`\`
+question: "All tasks complete! What would you like to do next?"
+header: "Next step"
+options:
+  1. label: "Deep review (Recommended)", description: "Thorough multi-agent parallel code review"
+  2. label: "Quick review", description: "Fast single-pass code review of the diff"
+  3. label: "Ship it", description: "Typecheck, review, commit, push, and create a PR"
+  4. label: "Done for now", description: "Stop here — come back later"
+\`\`\`
+
+Based on the user's response:
+- **Deep review**: respond with exactly \`/deep-review\` as your full message
+- **Quick review**: respond with exactly \`/quick-review\` as your full message
+- **Ship it**: respond with exactly \`/ship\` as your full message
+- **Done for now**: summarize what was built, then stop
 
 ## Step 3: Plan-file fallback mode
 

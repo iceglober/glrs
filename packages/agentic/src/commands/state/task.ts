@@ -5,6 +5,7 @@ import {
   listTasks,
   transitionTask,
   transitionBatch,
+  closeAndClaimNext,
   saveTask,
   deriveEpicPhase,
   isTerminal,
@@ -191,6 +192,7 @@ const transition = command({
     phase: option({ type: string, long: "phase", short: "p", description: "Target phase" }),
     force: flag({ long: "force", short: "f", description: "Allow backward transitions" }),
     actor: option({ type: optional(string), long: "actor", description: "Actor name for log" }),
+    closeAndClaimNext: flag({ long: "close-and-claim-next", description: "Atomically close task and claim next ready task in same epic" }),
   },
   handler: (args) => {
     if (args.id && args.ids) {
@@ -200,6 +202,45 @@ const transition = command({
     if (!PHASES.includes(args.phase as Phase)) {
       console.error(`Invalid phase: "${args.phase}". Valid: ${PHASES.join(", ")}`);
       process.exit(1);
+    }
+
+    if (args.closeAndClaimNext) {
+      if (args.ids) {
+        console.error("--close-and-claim-next cannot be used with --ids.");
+        process.exit(1);
+      }
+      if (args.phase !== "done" && args.phase !== "cancelled") {
+        console.error("--close-and-claim-next requires --phase done or --phase cancelled.");
+        process.exit(1);
+      }
+      try {
+        const id = resolveId(args.id);
+        const { closed, next } = closeAndClaimNext(id, {
+          force: args.force,
+          actor: args.actor ?? undefined,
+        });
+        ok(`${bold(closed.id)} → ${closed.phase}`);
+        const unblocked = (closed as any).unblocked as Array<{ id: string; title: string }> | undefined;
+        if (unblocked?.length) {
+          for (const u of unblocked) {
+            console.log(`  ${green("▸")} Unblocked: ${bold(u.id)} ${u.title}`);
+          }
+        }
+        const epicClosed = (closed as any).epicClosed as { epicId: string; phase: string } | undefined;
+        if (epicClosed) {
+          ok(`Epic ${bold(epicClosed.epicId)} auto-closed → ${epicClosed.phase}`);
+        }
+        if (next) {
+          ok(`Claimed next: ${bold(next.id)} ${next.title}`);
+          console.log(JSON.stringify({ closedId: closed.id, nextId: next.id, nextTitle: next.title }));
+        } else {
+          console.log(JSON.stringify({ closedId: closed.id, nextId: null }));
+        }
+      } catch (e: any) {
+        console.error(e.message);
+        process.exit(1);
+      }
+      return;
     }
 
     if (args.ids) {
