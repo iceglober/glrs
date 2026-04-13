@@ -78,7 +78,7 @@ export const status = command({
       const progress = epicProgress(epic.id);
 
       console.log(`${color(icon)} ${bold(epic.id)} ${epic.title} ${dim(`[${derivedPhase}]`)} ${dim(`(${tasks.length} tasks)`)}`);
-      console.log(`  ${progressBar(progress.done, progress.total)}`);
+      console.log(`  ${progressBar(progress.done + progress.cancelled, progress.total)}`);
       for (const task of tasks) {
         formatTask(task, 1);
       }

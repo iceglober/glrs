@@ -720,7 +720,7 @@ export interface EpicProgress {
   phases: Partial<Record<Phase, number>>;
 }
 
-const IN_PROGRESS_PHASES: Phase[] = ["implement", "verify"];
+const IN_PROGRESS_PHASES: Phase[] = ["implement", "verify", "ship"];
 
 export function epicProgress(epicId: string): EpicProgress {
   const tasks = listTasks({ epic: epicId });

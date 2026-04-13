@@ -1594,13 +1594,14 @@ describe("epicProgress", () => {
     expect(p.cancelled).toBe(1);
   });
 
-  test("in-progress includes implement and verify phases", () => {
+  test("in-progress includes implement, verify, and ship phases", () => {
     createEpic({ title: "E" });
     createTask({ title: "T1", epic: "e1", phase: "implement" });
     createTask({ title: "T2", epic: "e1", phase: "verify" });
     createTask({ title: "T3", epic: "e1", phase: "design" });
+    createTask({ title: "T4", epic: "e1", phase: "ship" });
     const p = epicProgress("e1");
-    expect(p.inProgress).toBe(2);
+    expect(p.inProgress).toBe(3);
   });
 
   test("phases breakdown", () => {
