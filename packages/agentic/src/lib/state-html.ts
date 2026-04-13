@@ -168,10 +168,10 @@ export function renderStatePage(serverPort: number, opts?: { all?: boolean }): s
 </head>
 <body>
 <div id="root"></div>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
 <script type="module">
-import htm from "https://cdn.jsdelivr.net/npm/htm@3/+esm";
+import React from "https://esm.sh/react@18.3.1";
+import ReactDOM from "https://esm.sh/react-dom@18.3.1";
+import htm from "https://esm.sh/htm@3.1.1";
 const h = htm.bind(React.createElement);
 
 const API = "http://localhost:${serverPort}";

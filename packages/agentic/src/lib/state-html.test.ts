@@ -10,13 +10,13 @@ describe("renderStatePage", () => {
 
   test("loads React from CDN", () => {
     const html = renderStatePage(3000);
-    expect(html).toMatch(/src="[^"]*react@/);
+    expect(html).toContain("esm.sh/react@");
   });
 
   test("loads htm from CDN", () => {
     const html = renderStatePage(3000);
     expect(html).toContain("htm");
-    expect(html).toContain("cdn.jsdelivr.net/npm/htm");
+    expect(html).toContain("esm.sh/htm");
   });
 
   test("uses correct API port", () => {
