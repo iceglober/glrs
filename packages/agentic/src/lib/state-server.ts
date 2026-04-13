@@ -86,11 +86,12 @@ function buildStatePayload(opts?: { all?: boolean }) {
   const epics = listEpics({ all: opts?.all });
   const allTasks = listTasks({ all: opts?.all });
 
-  function buildEpicData(epicList: typeof epics, taskList: typeof allTasks) {
+  function buildEpicData(epicList: typeof epics, taskList: typeof allTasks, repoId?: string) {
     return epicList.map((epic) => {
+      const epicRepo = repoId ?? (epic as any).repo;
       const tasks = taskList.filter((t) => t.epic === epic.id);
-      const derivedPhase = deriveEpicPhase(epic.id);
-      const enrichedTasks = tasks.map((t) => enrichTask(t));
+      const derivedPhase = deriveEpicPhase(epic.id, epicRepo);
+      const enrichedTasks = tasks.map((t) => enrichTask(t, epicRepo));
 
       const epicReview = enrichedTasks.reduce(
         (acc, t) => {
@@ -119,8 +120,8 @@ function buildStatePayload(opts?: { all?: boolean }) {
         const repoTasks = allTasks.filter((t: any) => t.repo === r);
         return {
           repo: r,
-          epics: buildEpicData(repoEpics, repoTasks),
-          standalone: repoTasks.filter((t) => !t.epic).map((t) => enrichTask(t)),
+          epics: buildEpicData(repoEpics, repoTasks, r),
+          standalone: repoTasks.filter((t) => !t.epic).map((t) => enrichTask(t, r)),
         };
       }),
     };
@@ -133,8 +134,8 @@ function buildStatePayload(opts?: { all?: boolean }) {
   };
 }
 
-function enrichTask(task: Task) {
-  const rs = reviewSummary({ taskId: task.id });
+function enrichTask(task: Task, repoId?: string) {
+  const rs = reviewSummary({ taskId: task.id, repoId });
 
   return {
     id: task.id,
