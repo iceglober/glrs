@@ -136,7 +136,7 @@ src/
 - **`gsag state`** is the sole interface for reading/writing state — skills call it via Bash, never edit DB directly
 - **Hierarchy**: Epic (`e1`) > Task (`t1`) > Step (`s1`) — all tracked in DB, all can have plans attached
 - **Pipeline phases**: understand → design → implement → verify → ship → done
-- **Repo-scoped by default** — each task is keyed by `(repo, id)`. Use `--all` for cross-repo views.
+- **Repo-scoped by default** — each task is keyed by `(repo, id)`. `state web` shows all repos by default; use `--local` for single-repo view.
 - **Reviews** are stored in DB with commit SHA anchoring for persistence across context compaction
 - Skills use role-specific preambles from `preamble.ts`: `READONLY_PREAMBLE` (think), `TASK_PREAMBLE` (work/fix/ship/plan), `REVIEW_PREAMBLE` (review/qa), `BUILD_PREAMBLE` (build)
 

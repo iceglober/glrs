@@ -14,16 +14,16 @@ export const web = command({
       short: "p",
       description: "Server port (default: random)",
     }),
-    all: flag({
-      long: "all",
-      short: "a",
-      description: "Show all repos (not just current)",
+    local: flag({
+      long: "local",
+      short: "l",
+      description: "Show only current repo (default: all repos)",
     }),
   },
   handler: async (args) => {
     const server = await startStateServer({
       port: args.port ?? undefined,
-      all: args.all,
+      all: !args.local,
     });
 
     if (getSetting("state.auto-open") !== "false") {

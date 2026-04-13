@@ -194,10 +194,10 @@ ${bold("COMMANDS")}
   state log --id <id>
       Show phase transition history.
 
-  state web [--port <n>] [--all]
+  state web [--port <n>] [--local]
       Open a read-only dashboard in the browser showing all epics, tasks,
-      plans, and reviews. Auto-refreshes every 5 seconds.
-      --all shows data across all repos/worktrees.
+      plans, and reviews across all repos. Auto-refreshes every 5 seconds.
+      --local restricts view to current repo only.
 
   ${bold("Common Patterns")}
 

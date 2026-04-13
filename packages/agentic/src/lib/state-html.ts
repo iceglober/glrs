@@ -191,8 +191,8 @@ const API_STATE_URL = "${apiUrl}";
 // ── App ────────────────────────────────────────────────────────────
 
 function repoLabel(r) {
-  // github.com-org-repo → org/repo
-  const parts = r.split("-");
+  // github.com/org/repo → org/repo
+  const parts = r.split("/");
   if (parts.length >= 3) return parts.slice(1).join("/");
   return r;
 }
@@ -213,6 +213,10 @@ function App() {
       setState(data);
       setLastUpdate(new Date());
       setError(null);
+      // Seed selectedRepo from first load to prevent poll-driven repo switches
+      if (Array.isArray(data.repos) && data.repos.length > 0) {
+        setSelectedRepo(prev => prev || data.repos[0].repo);
+      }
     } catch (e) {
       setError(e.message);
     }
@@ -249,21 +253,23 @@ function App() {
   // Multi-repo mode (--all): state.repos is an array
   // Single-repo mode: state.epics / state.standalone
   const isMultiRepo = Array.isArray(state.repos);
-  let epics, standalone;
+  let epics, standalone, activeRepoName;
 
   if (isMultiRepo) {
     const activeRepo = selectedRepo || (state.repos.length > 0 ? state.repos[0].repo : null);
     const repoData = state.repos.find(r => r.repo === activeRepo);
     epics = repoData ? repoData.epics : [];
     standalone = repoData ? repoData.standalone : [];
+    activeRepoName = activeRepo ? repoLabel(activeRepo) : null;
   } else {
     epics = state.epics || [];
     standalone = state.standalone || [];
+    activeRepoName = null;
   }
 
   return h\`
     <div class="layout">
-      <\${Sidebar} epics=\${epics} standalone=\${standalone} selectedEpic=\${selectedEpic} onSelectEpic=\${toggleEpic} />
+      <\${Sidebar} epics=\${epics} standalone=\${standalone} selectedEpic=\${selectedEpic} onSelectEpic=\${toggleEpic} repoName=\${activeRepoName} />
       <div class="main">
         \${isMultiRepo && state.repos.length > 1 && h\`
           <div class="repo-tabs">
@@ -296,10 +302,11 @@ function App() {
 
 // ── Sidebar ────────────────────────────────────────────────────────
 
-function Sidebar({ epics, standalone, selectedEpic, onSelectEpic }) {
+function Sidebar({ epics, standalone, selectedEpic, onSelectEpic, repoName }) {
   return h\`
     <div class="sidebar">
       <div class="sidebar-title">gsag state</div>
+      \${repoName && h\`<div style=\${css("font-size:0.75rem;color:#888;margin-bottom:0.75rem;padding:0.25rem 0.4rem;background:rgba(255,255,255,0.05);border-radius:4px")}>\${repoName}</div>\`}
       \${epics.map(epic => {
         const phase = epic.derivedPhase || epic.phase;
         const total = epic.tasks ? epic.tasks.length : 0;
