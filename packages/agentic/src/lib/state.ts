@@ -443,7 +443,7 @@ function rowToTask(row: any[], transitions: Transition[], children: string[]): T
     planVersion: row[11] as number | null,
     createdAt: row[12] as string,
     updatedAt: row[16] as string,
-    qaResult: qaStatus ? { status: qaStatus as "pass" | "fail", summary: qaSummary!, timestamp: qaTimestamp! } : null,
+    qaResult: qaStatus ? { status: qaStatus as "pass" | "fail", summary: qaSummary ?? "", timestamp: qaTimestamp ?? "" } : null,
     claimedBy: row[17] as string | null,
     claimedAt: row[18] as string | null,
     children,
@@ -559,7 +559,7 @@ export function listTasks(opts?: { epic?: string; all?: boolean; lean?: boolean 
       const deps = JSON.parse((row[5] as string) || "[]");
       if (deps.length > 0) compact.dependencies = deps;
       const qaStatus = row[13] as string | null;
-      if (qaStatus) compact.qaResult = { status: qaStatus, summary: row[14] as string };
+      if (qaStatus) compact.qaResult = { status: qaStatus, summary: row[14] as string ?? "", timestamp: row[15] as string ?? "" };
       const claimedBy = row[17] as string | null;
       if (claimedBy) compact.claimedBy = claimedBy;
       return compact as Task;
@@ -933,7 +933,7 @@ export function syncCreateEpicWithTasks(
       title: def.title,
       epic: epic.id,
       phase: "design",
-      actor: resolveActor(opts?.actor || "plan-sync"),
+      actor: resolveActor(opts?.actor ?? "plan-sync"),
     });
     refToId[def.ref] = task.id;
   }

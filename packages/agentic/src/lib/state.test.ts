@@ -369,14 +369,16 @@ describe("listTasks", () => {
     expect(task).not.toHaveProperty("transitions");
   });
 
-  test("lean includes qaResult when present", () => {
+  test("lean includes qaResult with timestamp when present", () => {
     createTask({ title: "T" });
     const task = loadTask("t1")!;
-    task.qaResult = { status: "pass", summary: "ok", timestamp: new Date().toISOString() };
+    const ts = new Date().toISOString();
+    task.qaResult = { status: "pass", summary: "ok", timestamp: ts };
     saveTask(task);
     const tasks = listTasks({ lean: true });
     expect(tasks[0].qaResult?.status).toBe("pass");
     expect(tasks[0].qaResult?.summary).toBe("ok");
+    expect(tasks[0].qaResult?.timestamp).toBe(ts);
   });
 
 });
