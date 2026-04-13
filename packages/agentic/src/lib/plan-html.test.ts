@@ -68,4 +68,20 @@ describe("renderPlanPage", () => {
     expect(html).toContain("general-feedback");
     expect(html).toContain("General Feedback");
   });
+
+  test("strips script tags from markdown", () => {
+    const html = renderPlanPage("<script>alert(1)</script># Hello", "e1", 3000);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("Hello");
+  });
+
+  test("strips onerror handlers from markdown", () => {
+    const html = renderPlanPage('<img onerror="alert(1)" src=x>', "e1", 3000);
+    expect(html).not.toContain("onerror");
+  });
+
+  test("preserves safe HTML from markdown", () => {
+    const html = renderPlanPage("**bold** text", "e1", 3000);
+    expect(html).toContain("<strong>bold</strong>");
+  });
 });

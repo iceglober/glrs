@@ -14,6 +14,6 @@ export const warn = (msg: string) => console.error(`${yellow("warning:")} ${msg}
 export function progressBar(done: number, total: number, width: number = 20): string {
   if (total === 0) return `${"░".repeat(width)} 0/0 (0%)`;
   const pct = Math.round((done / total) * 100);
-  const filled = Math.round((done / total) * width);
+  const filled = Math.min(Math.round((done / total) * width), width);
   return `${"█".repeat(filled)}${"░".repeat(width - filled)} ${done}/${total} (${pct}%)`;
 }
