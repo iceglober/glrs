@@ -6,6 +6,7 @@ import {
   transitionTask,
   transitionBatch,
   closeAndClaimNext,
+  pruneEphemeralNotes,
   saveTask,
   deriveEpicPhase,
   isTerminal,
@@ -494,11 +495,12 @@ const note = command({
     id: option({ type: optional(string), long: "id", short: "i", description: "Task ID (defaults to last-touched)" }),
     body: option({ type: string, long: "body", short: "b", description: "Note content" }),
     actor: option({ type: optional(string), long: "actor", description: "Actor name" }),
+    ephemeral: flag({ long: "ephemeral", description: "Mark note as ephemeral (prunable)" }),
   },
   handler: (args) => {
     const id = resolveId(args.id);
-    const n = addTaskNote({ taskId: id, body: args.body, actor: args.actor ?? undefined });
-    ok(`note ${bold(n.id)} added to ${bold(id)}`);
+    const n = addTaskNote({ taskId: id, body: args.body, actor: args.actor ?? undefined, ephemeral: args.ephemeral });
+    ok(`note ${bold(n.id)} added to ${bold(id)}${args.ephemeral ? dim(" (ephemeral)") : ""}`);
   },
 });
 
@@ -510,9 +512,15 @@ const notes = command({
   args: {
     id: option({ type: optional(string), long: "id", short: "i", description: "Task ID (defaults to last-touched)" }),
     json: flag({ long: "json", description: "Output as JSON" }),
+    pruneEphemeral: flag({ long: "prune-ephemeral", description: "Delete all ephemeral notes for this task" }),
   },
   handler: (args) => {
     const id = resolveId(args.id);
+    if (args.pruneEphemeral) {
+      const count = pruneEphemeralNotes(id);
+      ok(`Pruned ${count} ephemeral note${count !== 1 ? "s" : ""} from ${bold(id)}`);
+      return;
+    }
     const items = loadTaskNotes(id);
     if (args.json) {
       console.log(JSON.stringify(items));
@@ -523,7 +531,8 @@ const notes = command({
       return;
     }
     for (const n of items) {
-      console.log(`  ${bold(n.id)} ${dim(n.createdAt)} ${dim(`[${n.actor}]`)} ${n.body}`);
+      const eph = n.ephemeral ? yellow(" ⚡") : "";
+      console.log(`  ${bold(n.id)} ${dim(n.createdAt)} ${dim(`[${n.actor}]`)} ${n.body}${eph}`);
     }
   },
 });

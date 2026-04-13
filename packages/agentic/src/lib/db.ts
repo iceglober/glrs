@@ -281,6 +281,7 @@ function runSchema(database: Database): void {
       task_id    TEXT NOT NULL,
       body       TEXT NOT NULL,
       actor      TEXT NOT NULL DEFAULT 'cli',
+      ephemeral  INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       PRIMARY KEY (repo, id)
     )
@@ -314,6 +315,9 @@ function runSchema(database: Database): void {
 
   // ── Migration: add claimed_by/claimed_at columns ────
   migrateAddClaimedBy(database);
+
+  // ── Migration: add ephemeral column to task_notes ────
+  migrateAddEphemeralNotes(database);
 }
 
 /** Rename `spec` column to `plan` and add `plan_version` if needed (for existing DBs). */
@@ -337,6 +341,16 @@ function migrateAddClaimedBy(database: Database): void {
   if (!colNames.includes("claimed_by")) {
     database.run("ALTER TABLE tasks ADD COLUMN claimed_by TEXT");
     database.run("ALTER TABLE tasks ADD COLUMN claimed_at TEXT");
+  }
+}
+
+/** Add ephemeral column to task_notes table (for existing DBs). */
+function migrateAddEphemeralNotes(database: Database): void {
+  const cols = database.exec("PRAGMA table_info(task_notes)");
+  if (!cols[0]?.values.length) return;
+  const colNames = cols[0].values.map((row: any[]) => row[1] as string);
+  if (!colNames.includes("ephemeral")) {
+    database.run("ALTER TABLE task_notes ADD COLUMN ephemeral INTEGER NOT NULL DEFAULT 0");
   }
 }
 

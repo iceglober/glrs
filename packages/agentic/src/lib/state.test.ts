@@ -55,6 +55,7 @@ import {
   findNewlyUnblocked,
   autoCloseEpic,
   closeAndClaimNext,
+  pruneEphemeralNotes,
   PHASES,
   type Task,
   type Phase,
@@ -2245,5 +2246,77 @@ describe("closeAndClaimNext", () => {
     expect(unblocked).toBeDefined();
     expect(unblocked.length).toBe(1);
     expect(unblocked[0].id).toBe(t2.id);
+  });
+});
+
+// ── ephemeral notes ────────────────────────────────────────────────
+
+describe("ephemeral notes", () => {
+  test("addTaskNote defaults ephemeral to false", () => {
+    createTask({ title: "T" });
+    const note = addTaskNote({ taskId: "t1", body: "permanent", actor: "cli" });
+    expect(note.ephemeral).toBe(false);
+  });
+
+  test("addTaskNote sets ephemeral when flagged", () => {
+    createTask({ title: "T" });
+    const note = addTaskNote({ taskId: "t1", body: "tmp", actor: "cli", ephemeral: true });
+    expect(note.ephemeral).toBe(true);
+  });
+
+  test("loadTaskNotes returns ephemeral field correctly", () => {
+    createTask({ title: "T" });
+    addTaskNote({ taskId: "t1", body: "permanent", actor: "cli" });
+    addTaskNote({ taskId: "t1", body: "tmp", actor: "cli", ephemeral: true });
+    const notes = loadTaskNotes("t1");
+    expect(notes).toHaveLength(2);
+    expect(notes[0].ephemeral).toBe(false);
+    expect(notes[1].ephemeral).toBe(true);
+  });
+
+  test("pruneEphemeralNotes deletes only ephemeral", () => {
+    createTask({ title: "T" });
+    addTaskNote({ taskId: "t1", body: "keep1", actor: "cli" });
+    addTaskNote({ taskId: "t1", body: "keep2", actor: "cli" });
+    addTaskNote({ taskId: "t1", body: "remove", actor: "cli", ephemeral: true });
+    const count = pruneEphemeralNotes("t1");
+    expect(count).toBe(1);
+    const remaining = loadTaskNotes("t1");
+    expect(remaining).toHaveLength(2);
+    expect(remaining.every((n) => !n.ephemeral)).toBe(true);
+  });
+
+  test("pruneEphemeralNotes returns 0 when none", () => {
+    createTask({ title: "T" });
+    addTaskNote({ taskId: "t1", body: "permanent", actor: "cli" });
+    expect(pruneEphemeralNotes("t1")).toBe(0);
+  });
+
+  test("pruneEphemeralNotes on task with no notes returns 0", () => {
+    createTask({ title: "T" });
+    expect(pruneEphemeralNotes("t1")).toBe(0);
+  });
+
+  test("ephemeral notes across different tasks are independent", () => {
+    createTask({ title: "A" });
+    createTask({ title: "B" });
+    addTaskNote({ taskId: "t1", body: "eph1", actor: "cli", ephemeral: true });
+    addTaskNote({ taskId: "t2", body: "eph2", actor: "cli", ephemeral: true });
+    addTaskNote({ taskId: "t1", body: "perm", actor: "cli" });
+    pruneEphemeralNotes("t1");
+    expect(loadTaskNotes("t1")).toHaveLength(1);
+    expect(loadTaskNotes("t2")).toHaveLength(1);
+    expect(loadTaskNotes("t2")[0].ephemeral).toBe(true);
+  });
+
+  test("multiple ephemeral notes pruned at once", () => {
+    createTask({ title: "T" });
+    addTaskNote({ taskId: "t1", body: "e1", actor: "cli", ephemeral: true });
+    addTaskNote({ taskId: "t1", body: "e2", actor: "cli", ephemeral: true });
+    addTaskNote({ taskId: "t1", body: "e3", actor: "cli", ephemeral: true });
+    addTaskNote({ taskId: "t1", body: "permanent", actor: "cli" });
+    const count = pruneEphemeralNotes("t1");
+    expect(count).toBe(3);
+    expect(loadTaskNotes("t1")).toHaveLength(1);
   });
 });

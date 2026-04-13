@@ -1211,6 +1211,7 @@ export interface TaskNote {
   taskId: string;
   body: string;
   actor: string;
+  ephemeral: boolean;
   createdAt: string;
 }
 
@@ -1224,26 +1225,27 @@ function nextNoteId(): string {
   return `n${(max || 0) + 1}`;
 }
 
-export function addTaskNote(opts: { taskId: string; body: string; actor?: string }): TaskNote {
+export function addTaskNote(opts: { taskId: string; body: string; actor?: string; ephemeral?: boolean }): TaskNote {
   const db = getDbSync();
   const id = nextNoteId();
   const now = new Date().toISOString();
   const actor = resolveActor(opts.actor);
+  const ephemeral = opts.ephemeral ?? false;
 
   db.run(
-    `INSERT INTO task_notes (repo, id, task_id, body, actor, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [repo(), id, opts.taskId, opts.body, actor, now],
+    `INSERT INTO task_notes (repo, id, task_id, body, actor, ephemeral, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [repo(), id, opts.taskId, opts.body, actor, ephemeral ? 1 : 0, now],
   );
   persistDb();
 
-  return { id, taskId: opts.taskId, body: opts.body, actor, createdAt: now };
+  return { id, taskId: opts.taskId, body: opts.body, actor, ephemeral, createdAt: now };
 }
 
 export function loadTaskNotes(taskId: string): TaskNote[] {
   const db = getDbSync();
   const result = db.exec(
-    "SELECT id, task_id, body, actor, created_at FROM task_notes WHERE repo = ? AND task_id = ? ORDER BY created_at, id",
+    "SELECT id, task_id, body, actor, ephemeral, created_at FROM task_notes WHERE repo = ? AND task_id = ? ORDER BY created_at, id",
     [repo(), taskId],
   );
   if (!result[0]?.values.length) return [];
@@ -1252,8 +1254,27 @@ export function loadTaskNotes(taskId: string): TaskNote[] {
     taskId: row[1] as string,
     body: row[2] as string,
     actor: row[3] as string,
-    createdAt: row[4] as string,
+    ephemeral: row[4] === 1,
+    createdAt: row[5] as string,
   }));
+}
+
+/** Delete all ephemeral notes for a task. Returns count deleted. */
+export function pruneEphemeralNotes(taskId: string): number {
+  const db = getDbSync();
+  const before = db.exec(
+    "SELECT COUNT(*) FROM task_notes WHERE repo = ? AND task_id = ? AND ephemeral = 1",
+    [repo(), taskId],
+  );
+  const count = (before[0]?.values[0]?.[0] as number) ?? 0;
+  if (count > 0) {
+    db.run(
+      "DELETE FROM task_notes WHERE repo = ? AND task_id = ? AND ephemeral = 1",
+      [repo(), taskId],
+    );
+    persistDb();
+  }
+  return count;
 }
 
 // ── Review types ────────────────────────────────────────────────────
