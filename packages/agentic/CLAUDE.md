@@ -76,6 +76,7 @@ src/
     ├── index.ts          # GS_SKILL_NAMES, buildCommands(), BUILTIN_COLLISIONS, SKILLS
     ├── index.test.ts     # Unit tests for skill registry and buildCommands
     ├── preamble.ts       # Role-specific preambles (READONLY/TASK/REVIEW/BUILD) for skills
+    ├── preamble.test.ts  # Preamble tests (output convention, plan sync recipe, READONLY negatives)
     │
     │  # Engineering skills (default: /think, /work, etc. — configurable via --prefix)
     ├── gs.ts             # /gs — general workflow assistant

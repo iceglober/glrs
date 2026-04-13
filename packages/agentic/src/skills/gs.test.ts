@@ -37,6 +37,13 @@ describe("gs", () => {
     expect(result).toContain("gs-agentic status");
   });
 
+  test("includes state commands quick-reference section", () => {
+    expect(result).toContain("State commands");
+    expect(result).toContain("plan sync");
+    expect(result).toContain("task next");
+    expect(result).toContain("--claim");
+  });
+
   test("does not include $ARGUMENTS in frontmatter description", () => {
     const frontmatter = result.split("---")[1];
     expect(frontmatter).not.toContain("$ARGUMENTS");

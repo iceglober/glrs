@@ -68,6 +68,32 @@ This installs slash commands (`/work`, `/ship`, etc.) into your Claude Code proj
 | `gs-agentic wt list` | List all worktrees |
 | `gs-agentic wt cleanup` | Delete merged/stale worktrees |
 
+### State & task tracking
+
+> Epics contain tasks. Tasks flow through phases. Everything is tracked.
+
+```
+Epic (e1) ─── Task (t1) ─── understand → design → implement → verify → ship → done
+           ├── Task (t2)
+           └── Task (t3)
+```
+
+| Command | What happens |
+|:--|:--|
+| `gs-agentic status` | Tree view of all epics/tasks with progress bars |
+| `gs-agentic ready` | Show tasks ready to work on (dependencies met) |
+| `gs-agentic state plan sync --stdin` | Create epic + tasks atomically from piped input |
+| `gs-agentic state task next --epic e1 --claim build` | Claim the next ready task (prevents races) |
+| `gs-agentic state web` | Open read-only dashboard in the browser |
+
+**Workflow: review → plan → build loop**
+
+```
+/deep-review   Review the diff, store findings in state
+/deep-plan     Create an epic with sequenced tasks from review findings
+/build-loop e1       Execute tasks one by one, auto-claiming the next
+```
+
 ### Design — idea to spec
 
 > Each step reduces ambiguity. Loop `enrich -> refine` until unknowns hit zero.

@@ -41,6 +41,21 @@ If the user's request maps to a specific workflow, suggest the right skill:
 | \`/ship\` | Typecheck, review, commit, push, create PR |
 | \`/address-feedback\` | Resolve PR review feedback |
 
+## State commands
+
+Query and manage the task lifecycle directly:
+
+| Command | What it does |
+|---------|-------------|
+| \`gs-agentic status [--epic <id>]\` | Tree view of all tasks with progress bars |
+| \`gs-agentic ready\` | Show tasks ready to work on (dependencies met) |
+| \`gs-agentic state task list --epic <id> --json\` | List tasks in an epic as JSON |
+| \`gs-agentic state task next --epic <id> --claim <actor> --json\` | Claim the next ready task atomically |
+| \`gs-agentic state task transition --id <id> --phase done --actor <actor>\` | Mark a task complete |
+| \`gs-agentic state plan sync --stdin\` | Create epic + tasks atomically (pipe line format) |
+
+**Output convention:** All \`create\` and \`add-task\` commands print the machine-readable ID on the last line.
+
 ## How to respond
 
 1. Run \`gs-agentic status\` to see the full project state, then answer the user's question

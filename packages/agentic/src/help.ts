@@ -114,7 +114,7 @@ ${bold("COMMANDS")}
         plan.auto-open    Open browser automatically in plan review (default: true)
         state.auto-open   Open browser automatically in state web (default: true)
 
-  ${bold("Advanced")} ${dim("(internal — used by skills and orchestrator)")}
+  ${bold("State Management")} ${dim("(task lifecycle & review tracking)")}
 
   state task create --title "..." [--epic <id>]
       Create a new task (returns task ID). Optionally link to an epic.
@@ -198,6 +198,26 @@ ${bold("COMMANDS")}
       Open a read-only dashboard in the browser showing all epics, tasks,
       plans, and reviews. Auto-refreshes every 5 seconds.
       --all shows data across all repos/worktrees.
+
+  ${bold("Common Patterns")}
+
+  All create and add-task commands print the machine-readable ID on the
+  last line of stdout.
+
+  Create an epic with tasks atomically:
+      cat <<'EOF' | gs-agentic state plan sync --stdin
+  title: My epic
+  description: What this epic does
+  ---
+  ref:1 | First task
+  ref:2 | Second task | depends:1
+  EOF
+
+  Claim and build the next ready task:
+      gs-agentic state task next --epic e1 --claim build --json
+
+  Check progress:
+      gs-agentic status --epic e1
 
 ${bold("FLAGS")}
 
