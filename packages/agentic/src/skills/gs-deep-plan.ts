@@ -307,12 +307,28 @@ PLAN_EOF
 
 The state is the source of truth. Plan file updates follow state changes, not the other way around.
 
-### Step 9: Ask what's next
+### Step 9: Show task table and ask what's next
 
-After the plan is saved and tasks are created, use the AskUserQuestion tool to ask the user what they want to do next. Frame the options as the natural next steps after planning:
+After the plan is saved and tasks are created, display a summary table of all tasks in the epic. Run:
+
+\`\`\`bash
+gs-agentic state task list --epic <epic-id> --json
+\`\`\`
+
+Format the output as a markdown table for the user:
+
+| # | Task | Title | Phase | Dependencies |
+|---|------|-------|-------|--------------|
+| 1 | t1 | Step 1.1: ... | design | — |
+| 2 | t2 | Step 1.2: ... | design | t1 |
+| ... | ... | ... | ... | ... |
+
+Include a one-line summary: **Epic \`<id>\`: <title> — N tasks created**
+
+Then use the AskUserQuestion tool to ask the user what they want to do next:
 
 \`\`\`
-question: "Plan is saved and tasks are created. What would you like to do next?"
+question: "What would you like to do next?"
 header: "Next step"
 options:
   1. label: "Build it (Recommended)", description: "Start implementing — /build-loop will work through tasks in order"
