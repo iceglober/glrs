@@ -831,6 +831,78 @@ export function findReadyTasks(opts?: { all?: boolean }): Task[] {
   return tasks.filter((t) => !isTerminal(t.phase) && dependenciesMet(t));
 }
 
+/** Aggregate summary counts for the dashboard stats bar. */
+export function stateSummary(opts?: { all?: boolean }): {
+  totalEpics: number;
+  activeEpics: number;
+  totalTasks: number;
+  activeTasks: number;
+  blockedTasks: number;
+  readyTasks: number;
+  openReviews: number;
+} {
+  const epics = listEpics({ all: opts?.all });
+  const tasks = listTasks({ all: opts?.all });
+
+  const totalEpics = epics.length;
+  const activeEpics = epics.filter((e) => {
+    const phase = deriveEpicPhase(e.id);
+    return !isTerminal(phase);
+  }).length;
+
+  const totalTasks = tasks.length;
+  const nonTerminal = tasks.filter((t) => !isTerminal(t.phase));
+  const activeTasks = nonTerminal.length;
+  const readyList = nonTerminal.filter((t) => dependenciesMet(t));
+  const readyTasks = readyList.length;
+  const blockedTasks = activeTasks - readyTasks;
+
+  // Count open review items
+  const db = getDbSync();
+  let openQuery: string;
+  const params: any[] = [];
+  if (opts?.all) {
+    openQuery = "SELECT COUNT(*) FROM review_items WHERE status = 'open'";
+  } else {
+    openQuery = "SELECT COUNT(*) FROM review_items WHERE repo = ? AND status = 'open'";
+    params.push(repo());
+  }
+  const result = db.exec(openQuery, params);
+  const openReviews = (result[0]?.values[0]?.[0] as number) || 0;
+
+  return { totalEpics, activeEpics, totalTasks, activeTasks, blockedTasks, readyTasks, openReviews };
+}
+
+/** Recent transitions for the activity timeline. */
+export function listRecentTransitions(opts?: { all?: boolean; limit?: number }): Array<{
+  taskId: string;
+  entity: string;
+  phase: string;
+  actor: string;
+  timestamp: string;
+}> {
+  const db = getDbSync();
+  const limit = opts?.limit ?? 20;
+  let query: string;
+  const params: any[] = [];
+  if (opts?.all) {
+    query = "SELECT task_id, entity, phase, actor, timestamp FROM transitions ORDER BY timestamp DESC LIMIT ?";
+    params.push(limit);
+  } else {
+    query = "SELECT task_id, entity, phase, actor, timestamp FROM transitions WHERE repo = ? ORDER BY timestamp DESC LIMIT ?";
+    params.push(repo(), limit);
+  }
+  const result = db.exec(query, params);
+  if (!result[0]?.values.length) return [];
+  return result[0].values.map((row: any[]) => ({
+    taskId: row[0] as string,
+    entity: row[1] as string,
+    phase: row[2] as string,
+    actor: row[3] as string,
+    timestamp: row[4] as string,
+  }));
+}
+
 /** Load a task with optional plan content inlining and field projection. */
 export function loadTaskFull(
   id: string,

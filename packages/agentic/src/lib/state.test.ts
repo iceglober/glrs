@@ -35,6 +35,8 @@ import {
   findCurrentTask,
   findNextTask,
   findReadyTasks,
+  stateSummary,
+  listRecentTransitions,
   loadTaskFull,
   createReview,
   addReviewItem,
@@ -1421,5 +1423,120 @@ describe("persistDb path behavior", () => {
     // the test DB path is what was used by checking its content)
     const testDbSize = fs.statSync(TEST_DB_PATH).size;
     expect(testDbSize).toBeGreaterThan(0);
+  });
+});
+
+describe("stateSummary", () => {
+  test("empty DB returns zeros", () => {
+    const s = stateSummary();
+    expect(s.totalEpics).toBe(0);
+    expect(s.activeEpics).toBe(0);
+    expect(s.totalTasks).toBe(0);
+    expect(s.activeTasks).toBe(0);
+    expect(s.blockedTasks).toBe(0);
+    expect(s.readyTasks).toBe(0);
+    expect(s.openReviews).toBe(0);
+  });
+
+  test("counts epics by terminal status", () => {
+    createEpic({ title: "Done Epic" });
+    createEpic({ title: "Active Epic 1" });
+    createEpic({ title: "Active Epic 2" });
+    // Make e1 "done" by giving it a task and completing it
+    createTask({ title: "T for done epic", epic: "e1" });
+    transitionTask("t1", "done" as Phase, { force: true, actor: "test" });
+    // e2 and e3 have no tasks so deriveEpicPhase returns their stored phase (understand)
+    const s = stateSummary();
+    expect(s.totalEpics).toBe(3);
+    expect(s.activeEpics).toBe(2);
+  });
+
+  test("counts active/blocked/ready tasks", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "Done", epic: "e1" });
+    createTask({ title: "Done2", epic: "e1" });
+    createTask({ title: "Implement", epic: "e1" });
+    createTask({ title: "Blocked", epic: "e1" }); // depends on t3 which is not done
+    createTask({ title: "Ready", epic: "e1" }); // no deps
+
+    transitionTask("t1", "done" as Phase, { force: true, actor: "test" });
+    transitionTask("t2", "done" as Phase, { force: true, actor: "test" });
+    transitionTask("t3", "implement" as Phase, { actor: "test" });
+
+    // Set t4 to depend on t3 (not done yet)
+    const t4 = loadTask("t4")!;
+    t4.dependencies = ["t3"];
+    saveTask(t4);
+
+    const s = stateSummary();
+    expect(s.totalTasks).toBe(5);
+    expect(s.activeTasks).toBe(3); // t3, t4, t5 are non-terminal
+    expect(s.blockedTasks).toBe(1); // t4 has unmet dep
+    expect(s.readyTasks).toBe(2); // t3 (no deps) + t5 (no deps)
+  });
+
+  test("counts open review items", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T", epic: "e1" });
+    const review = createReview({ taskId: "t1", source: "test", commitSha: "abc" });
+    addReviewItem({ reviewId: review.id, body: "Open item", severity: "HIGH" });
+    addReviewItem({ reviewId: review.id, body: "Fixed item", severity: "LOW" });
+    resolveReviewItem(
+      (listReviewItems({ reviewId: review.id }) as any[]).find((i: any) => i.body === "Fixed item").id,
+      { status: "fixed", resolution: "done", commitSha: "def" },
+    );
+    const s = stateSummary();
+    expect(s.openReviews).toBe(1);
+  });
+});
+
+describe("listRecentTransitions", () => {
+  test("empty DB returns empty array", () => {
+    expect(listRecentTransitions()).toEqual([]);
+  });
+
+  test("returns transitions including all recorded phases", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T", epic: "e1" });
+    transitionTask("t1", "design" as Phase, { actor: "a" });
+    transitionTask("t1", "implement" as Phase, { actor: "b" });
+    const result = listRecentTransitions();
+    // Should have at least: epic understand, task understand, design, implement
+    expect(result.length).toBeGreaterThanOrEqual(3);
+    const phases = result.map((t) => t.phase);
+    expect(phases).toContain("implement");
+    expect(phases).toContain("design");
+    expect(phases).toContain("understand");
+    // All sorted by timestamp DESC (newest first)
+    for (let i = 1; i < result.length; i++) {
+      expect(result[i - 1].timestamp >= result[i].timestamp).toBe(true);
+    }
+  });
+
+  test("respects limit parameter", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T1", epic: "e1" });
+    createTask({ title: "T2", epic: "e1" });
+    createTask({ title: "T3", epic: "e1" });
+    // Each create produces an initial transition (understand)
+    transitionTask("t1", "design" as Phase, { actor: "a" });
+    transitionTask("t2", "design" as Phase, { actor: "a" });
+    transitionTask("t3", "design" as Phase, { actor: "a" });
+    // Now we have 6+ transitions
+    const result = listRecentTransitions({ limit: 3 });
+    expect(result.length).toBe(3);
+  });
+
+  test("includes taskId and entity", () => {
+    createEpic({ title: "E" });
+    createTask({ title: "T", epic: "e1" });
+    transitionTask("t1", "design" as Phase, { actor: "test" });
+    const result = listRecentTransitions();
+    const entry = result.find((t) => t.phase === "design");
+    expect(entry).toBeDefined();
+    expect(entry!.taskId).toBe("t1");
+    expect(entry!.entity).toBe("task");
+    expect(entry!.actor).toBe("test");
+    expect(entry!.timestamp).toBeTruthy();
   });
 });

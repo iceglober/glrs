@@ -7,6 +7,9 @@ import {
   deriveEpicPhase,
   reviewSummary,
   loadPlan,
+  stateSummary,
+  listRecentTransitions,
+  listReviewItems,
   type Task,
   type ReviewSummaryResult,
 } from "./state.js";
@@ -42,6 +45,25 @@ export function startStateServer(opts?: {
         const data = buildStatePayload({ all });
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(data));
+        return;
+      }
+
+      if (req.method === "GET" && (req.url === "/api/state/summary" || req.url?.startsWith("/api/state/summary?"))) {
+        const url = new URL(req.url, `http://localhost`);
+        const all = url.searchParams.get("all") === "true";
+        const data = stateSummary({ all });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+
+      // Match /api/task/:id/reviews
+      const reviewMatch = req.url?.match(/^\/api\/task\/([a-zA-Z0-9_-]+)\/reviews$/);
+      if (req.method === "GET" && reviewMatch) {
+        const taskId = decodeURIComponent(reviewMatch[1]);
+        const items = listReviewItems({ taskId });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(items));
         return;
       }
 
@@ -105,6 +127,8 @@ function buildStatePayload(opts?: { all?: boolean }) {
     });
   }
 
+  const recentTransitions = listRecentTransitions({ all: opts?.all, limit: 20 });
+
   if (opts?.all) {
     // Group by repo
     const repos = listAllRepos();
@@ -118,6 +142,7 @@ function buildStatePayload(opts?: { all?: boolean }) {
           standalone: repoTasks.filter((t) => !t.epic).map((t) => enrichTask(t)),
         };
       }),
+      recentTransitions,
     };
   }
 
@@ -125,6 +150,7 @@ function buildStatePayload(opts?: { all?: boolean }) {
   return {
     epics: buildEpicData(epics, allTasks),
     standalone: allTasks.filter((t) => !t.epic).map((t) => enrichTask(t)),
+    recentTransitions,
   };
 }
 
