@@ -58,6 +58,8 @@ src/
 │   ├── config.ts         # worktreePath, repoName, isProtected
 │   ├── hooks.ts          # runHook (non-fatal, per-command resilient)
 │   ├── slug.ts           # slugify
+│   ├── open-browser.ts       # Open URL in default browser (execFile, setting-gated)
+│   ├── open-browser.test.ts  # Open browser tests
 │   ├── plan-feedback.ts      # Feedback read/write/clear for plan review
 │   ├── plan-feedback.test.ts # Plan feedback tests
 │   ├── plan-html.ts          # Markdown→HTML plan renderer with feedback buttons
