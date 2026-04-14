@@ -111,6 +111,43 @@ describe("renderPlanPage", () => {
     expect(html).toContain("Hello");
   });
 
+  test("toggle z-index exceeds sidebar z-index", () => {
+    const html = renderPlanPage("# T", "e1", 3000);
+    expect(html).toContain("#sidebar-toggle");
+    // toggle must have z-index: 101
+    const toggleMatch = html.match(/#sidebar-toggle\s*\{[^}]*z-index:\s*(\d+)/);
+    expect(toggleMatch).not.toBeNull();
+    expect(Number(toggleMatch![1])).toBe(101);
+  });
+
+  test("sidebar z-index is 100", () => {
+    const html = renderPlanPage("# T", "e1", 3000);
+    const sidebarMatch = html.match(/#feedback-sidebar\s*\{[^}]*z-index:\s*(\d+)/);
+    expect(sidebarMatch).not.toBeNull();
+    expect(Number(sidebarMatch![1])).toBe(100);
+  });
+
+  test("toggle z-index numerically above sidebar z-index", () => {
+    const html = renderPlanPage("# T", "e1", 3000);
+    const toggleMatch = html.match(/#sidebar-toggle\s*\{[^}]*z-index:\s*(\d+)/);
+    const sidebarMatch = html.match(/#feedback-sidebar\s*\{[^}]*z-index:\s*(\d+)/);
+    expect(Number(toggleMatch![1])).toBeGreaterThan(Number(sidebarMatch![1]));
+  });
+
+  test("non-200 response shows error in sidebar history", () => {
+    const html = renderPlanPage("# T", "e1", 3000);
+    // After `if (res.ok)` there must be an else branch with error display
+    expect(html).toContain("!res.ok");
+  });
+
+  test("non-200 error branch does not use alert()", () => {
+    const html = renderPlanPage("# T", "e1", 3000);
+    // Extract just the else-if block for !res.ok (up to the closing brace before catch)
+    const elseStart = html.indexOf("!res.ok");
+    const elseBlock = html.slice(elseStart, html.indexOf("} catch", elseStart));
+    expect(elseBlock).not.toContain("alert(");
+  });
+
   test("strips onerror handlers from markdown", () => {
     const html = renderPlanPage('<img onerror="alert(1)" src=x>', "e1", 3000);
     expect(html).not.toContain("onerror");

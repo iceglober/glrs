@@ -120,7 +120,7 @@ export function renderPlanPage(planMarkdown: string, planId: string, serverPort:
     border-radius: 20px;
     cursor: pointer;
     font-size: 0.85rem;
-    z-index: 99;
+    z-index: 101;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   }
   #sidebar-toggle:hover { background: #1d4ed8; }
@@ -184,6 +184,13 @@ document.getElementById("sidebar-submit").onclick = async function() {
       item.appendChild(label);
       item.appendChild(document.createTextNode(text.length > 80 ? text.substring(0, 80) + "..." : text));
       document.getElementById("sidebar-history").prepend(item);
+    } else if (!res.ok) {
+      const errItem = document.createElement("div");
+      errItem.className = "sidebar-history-item";
+      errItem.style.background = "#fee2e2";
+      errItem.style.color = "#991b1b";
+      errItem.textContent = "Error: server returned " + res.status;
+      document.getElementById("sidebar-history").prepend(errItem);
     }
   } catch (e) {
     alert("Failed to send feedback: " + e.message);
