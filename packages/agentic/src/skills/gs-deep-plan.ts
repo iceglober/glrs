@@ -323,9 +323,9 @@ cat <<'PLAN_EOF' | gs-agentic state plan set --id <epic-id> --stdin
 PLAN_EOF
    \`\`\`
 7. **Verify task state matches plan** — run \`gs-agentic state task list --epic <epic-id> --json\` and confirm every non-cancelled task title matches the revised plan steps.
-8. **Clear incorporated feedback:**
+8. **Resolve incorporated feedback:**
    \`\`\`bash
-   gs-agentic state plan clear-feedback --id <epic-id>
+   gs-agentic state plan resolve-feedback --id <epic-id>
    \`\`\`
 
 The state is the source of truth. Plan file updates follow state changes, not the other way around. **Never save the plan without also updating the task titles.**
