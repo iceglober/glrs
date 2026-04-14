@@ -132,6 +132,7 @@ export function withDbLock<T>(fn: () => T, timeoutMs?: number): T {
     reloadDb();
     return fn();
   } finally {
+    persistDb();
     releaseLock(lockPath);
   }
 }
