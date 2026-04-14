@@ -1,0 +1,90 @@
+import { describe, test, expect } from "bun:test";
+import { renderReviewPage } from "./review-html.js";
+
+describe("renderReviewPage", () => {
+  test("returns valid HTML document", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "<h1>Plan</h1>" }], 3000);
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("</html>");
+  });
+
+  test("renders tab bar with plan IDs", () => {
+    const html = renderReviewPage([
+      { planId: "e1", htmlContent: "<h2>Plan 1</h2>" },
+      { planId: "e2", htmlContent: "<h2>Plan 2</h2>" },
+    ], 3000);
+    expect(html).toContain("e1");
+    expect(html).toContain("e2");
+    // Both should have tab elements
+    expect(html).toContain('data-plan="e1"');
+    expect(html).toContain('data-plan="e2"');
+  });
+
+  test("first tab is active by default", () => {
+    const html = renderReviewPage([
+      { planId: "e1", htmlContent: "<h2>Plan 1</h2>" },
+      { planId: "e2", htmlContent: "<h2>Plan 2</h2>" },
+    ], 3000);
+    // First tab should be active
+    const firstTabMatch = html.match(/class="tab active"[^>]*data-plan="e1"/);
+    expect(firstTabMatch).not.toBeNull();
+  });
+
+  test("plan content rendered inside tab panel", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "<h2>Step 1</h2>" }], 3000);
+    expect(html).toContain("<h2>Step 1</h2>");
+  });
+
+  test("Finish Review button present per tab", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "<p>content</p>" }], 3000);
+    expect(html).toContain("Finish Review");
+    expect(html).toContain('data-plan="e1"');
+  });
+
+  test("first-time dialog markup present", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain("plan.auto-open");
+    expect(html).toContain("first-run-modal");
+  });
+
+  test("first-time dialog has dismiss button", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain("Got it");
+  });
+
+  test("SSE EventSource connection code present", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain("EventSource");
+  });
+
+  test("close-tab event handler calls window.close", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain("window.close()");
+  });
+
+  test("server port embedded in API URLs", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 5555);
+    expect(html).toContain("http://localhost:5555");
+  });
+
+  test("strips script tags from plan content (XSS)", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "<script>alert(1)</script><p>safe</p>" }], 3000);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("<p>safe</p>");
+  });
+
+  test("empty plans array renders empty state", () => {
+    const html = renderReviewPage([], 3000);
+    expect(html).toContain("No plans");
+  });
+
+  test("sidebar feedback textarea present", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain("sidebar-text");
+  });
+
+  test("finish button posts to /api/finish", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain("/api/finish");
+  });
+});
