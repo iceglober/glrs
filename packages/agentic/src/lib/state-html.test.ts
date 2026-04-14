@@ -210,14 +210,47 @@ describe("renderStatePage", () => {
     expect(html).not.toContain('r.split("-")');
   });
 
-  test("seeds selectedRepo from first fetch", () => {
+  test("seeds selectedRepo from first fetch using stateData", () => {
     const html = renderStatePage(3000, { all: true });
-    expect(html).toContain("prev => prev || data.repos[0].repo");
+    expect(html).toContain("prev => prev || stateData.repos[0].repo");
+    expect(html).not.toContain("prev => prev || data.repos[0].repo");
   });
 
   test("repo tabs require more than 1 repo", () => {
     const html = renderStatePage(3000, { all: true });
     // Tab rendering guard uses > 1, not > 0
     expect(html).toContain("isMultiRepo && state.repos.length > 1");
+  });
+
+  test("renderMarkdown uses sanitizeHtml", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("sanitizeHtml(marked.parse(content))");
+  });
+
+  test("sanitizeHtml function is defined", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("function sanitizeHtml(html)");
+  });
+
+  test("sanitizeHtml handles script and on-event attributes", () => {
+    const html = renderStatePage(3000);
+    // The sanitizeHtml function should reference script tag stripping and on* handler stripping
+    expect(html).toContain("sanitizeHtml");
+    // Handles both quoted and unquoted on* handlers (two separate replace calls)
+    const sanitizeSection = html.slice(html.indexOf("function sanitizeHtml"), html.indexOf("function renderMarkdown"));
+    const replaceCount = (sanitizeSection.match(/\.replace\(/g) || []).length;
+    expect(replaceCount).toBeGreaterThanOrEqual(5);
+  });
+
+  test("sanitizeHtml strips iframe tags", () => {
+    const html = renderStatePage(3000);
+    const sanitizeSection = html.slice(html.indexOf("function sanitizeHtml"), html.indexOf("function renderMarkdown"));
+    expect(sanitizeSection).toContain("iframe");
+  });
+
+  test("sanitizeHtml neutralizes javascript: URLs", () => {
+    const html = renderStatePage(3000);
+    const sanitizeSection = html.slice(html.indexOf("function sanitizeHtml"), html.indexOf("function renderMarkdown"));
+    expect(sanitizeSection).toContain("javascript:");
   });
 });

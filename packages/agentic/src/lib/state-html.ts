@@ -417,8 +417,19 @@ function repoLabel(r) {
   return r;
 }
 
+function sanitizeHtml(html) {
+  return html
+    .replace(/<script\\b[^<]*(?:(?!<\\/script>)<[^<]*)*<\\/script>/gi, "")
+    .replace(/<(iframe|object|embed|svg)\\b[^<]*(?:(?!<\\/\\1>)<[^<]*)*<\\/\\1>/gi, "")
+    .replace(/<(iframe|object|embed|svg)\\b[^>]*\\/?>(?!.*<\\/\\1>)/gi, "")
+    .replace(/\\s+on\\w+\\s*=\\s*["'][^"']*["']/gi, "")
+    .replace(/\\s+on\\w+\\s*=\\s*[^\\s>"']+/gi, "")
+    .replace(/\\bhref\\s*=\\s*["']\\s*javascript:[^"']*["']/gi, 'href="#"')
+    .replace(/\\bhref\\s*=\\s*javascript:[^\\s>]*/gi, 'href="#"');
+}
+
 function renderMarkdown(content) {
-  try { return marked.parse(content); } catch { return null; }
+  try { return sanitizeHtml(marked.parse(content)); } catch { return null; }
 }
 
 // ── App ────────────────────────────────────────────────────────────
@@ -449,8 +460,8 @@ function App() {
       setLastUpdate(new Date());
       setError(null);
       // Seed selectedRepo from first load to prevent poll-driven repo switches
-      if (Array.isArray(data.repos) && data.repos.length > 0) {
-        setSelectedRepo(prev => prev || data.repos[0].repo);
+      if (Array.isArray(stateData.repos) && stateData.repos.length > 0) {
+        setSelectedRepo(prev => prev || stateData.repos[0].repo);
       }
     } catch (e) {
       setError(e.message);
