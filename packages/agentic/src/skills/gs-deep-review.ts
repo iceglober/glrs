@@ -1,8 +1,12 @@
 import { REVIEW_PREAMBLE, HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
+import type { SkillEntry } from "./index.js";
 
-export function gsDeepReview(): string {
-  return `---
+export function gsDeepReview(): SkillEntry {
+  return { "SKILL.md": `---
+name: deep-review
 description: Conduct a thorough multi-agent parallel code review of the current branch's changes. Six specialized agents (Security, Data Integrity, Frontend/UX, API Contracts, Test Coverage, Logical Integrity) analyze changes simultaneously and produce a consolidated severity-grouped report. Stores findings in gs-agentic review state. Use when you want a comprehensive review before shipping.
+argument-hint: "[--staged-only] [--base branch]"
+disable-model-invocation: true
 ---
 
 ${HANDOFF_RULE}
@@ -319,5 +323,5 @@ ${buildHandoffBlock({
 })}
 
 Do NOT auto-fix. Wait for the user's choice.
-`;
+` };
 }

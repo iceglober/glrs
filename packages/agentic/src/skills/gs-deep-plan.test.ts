@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { gsDeepPlan } from "./gs-deep-plan.js";
 
 describe("gsDeepPlan", () => {
-  const output = gsDeepPlan();
+  const output = gsDeepPlan()["SKILL.md"];
 
   test("plan mode constraint appears before role definition", () => {
     const constraintIdx = output.indexOf("YOU MUST NEVER ENTER PLAN MODE");

@@ -1,8 +1,12 @@
+import type { SkillEntry } from "./index.js";
 import { TASK_PREAMBLE } from "./preamble.js";
 
-export function gsWork(): string {
-  return `---
+export function gsWork(): SkillEntry {
+  return { "SKILL.md": `---
+name: work
 description: Implement a given task using existing codebase patterns. Use when user says 'implement', 'build this', 'make this change', 'add this feature', 'code this up', or provides ad-hoc task instructions. Reads CLAUDE.md, follows dependency order, typechecks after changes.
+argument-hint: "[task instructions]"
+disable-model-invocation: true
 ---
 
 # Work — Test-Driven Implementation
@@ -137,5 +141,5 @@ After all increments are done:
 - A test passing immediately when you first write it
 - Saying "should work" or "looks correct" without running the test
 - Thinking "this case is different" — it's not
-`;
+` };
 }

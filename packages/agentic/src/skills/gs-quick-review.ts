@@ -1,8 +1,12 @@
 import { REVIEW_PREAMBLE, HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
+import type { SkillEntry } from "./index.js";
 
-export function gsQuickReview(): string {
-  return `---
+export function gsQuickReview(): SkillEntry {
+  return { "SKILL.md": `---
+name: quick-review
 description: Fast single-pass code review for small changesets. Reviews the current diff for correctness, security, and style in one shot — no subagents, no parallelism. Stores findings in gs-agentic review state. Use for quick sanity checks before committing or when a full deep-review would be overkill.
+argument-hint: "[--staged-only]"
+disable-model-invocation: true
 ---
 
 ${HANDOFF_RULE}
@@ -171,5 +175,5 @@ ${buildHandoffBlock({
   ],
   freeText: "the user is giving direction — follow their instructions",
 })}
-`;
+` };
 }

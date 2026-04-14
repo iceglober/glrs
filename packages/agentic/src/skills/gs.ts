@@ -1,8 +1,12 @@
+import type { SkillEntry } from "./index.js";
 import { TASK_PREAMBLE } from "./preamble.js";
 
-export function gs(): string {
-  return `---
+export function gs(): SkillEntry {
+  return { "SKILL.md": `---
+name: gs
 description: General gsag interface — use for any gs-agentic question or action. Use when user says 'whats our next task', 'show me tasks', 'what are we working on', 'gsag help', 'project status', 'what needs to be done', or any natural-language query about the current workflow state.
+argument-hint: "[question or command]"
+disable-model-invocation: true
 ---
 
 # gs — Glorious Workflow Assistant
@@ -62,5 +66,5 @@ Query and manage the task lifecycle directly:
 2. If their request maps to a specific skill above, suggest it
 3. If they're asking about tasks, epics, or progress — query the state and report back
 4. Keep responses concise and actionable
-`;
+` };
 }

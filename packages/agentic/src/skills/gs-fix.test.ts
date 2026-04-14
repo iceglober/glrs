@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { gsFix } from "./gs-fix.js";
 
 describe("gsFix", () => {
-  const output = gsFix();
+  const output = gsFix()["SKILL.md"];
 
   test("includes TDD instructions (failing test first)", () => {
     expect(output).toContain("failing");

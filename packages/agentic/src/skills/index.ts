@@ -62,7 +62,7 @@ export type SkillEntry = Record<string, string>;
  */
 export const GS_SKILL_NAMES: Record<
   string,
-  { canonical: string; generator: () => string }
+  { canonical: string; generator: () => string | SkillEntry }
 > = {
   gs: { canonical: "gs.md", generator: gs },
   "gs-think": { canonical: "think.md", generator: gsThink },
@@ -228,7 +228,9 @@ export function buildCommands(prefix?: string): Record<string, string> {
 
   for (const entry of Object.values(GS_SKILL_NAMES)) {
     const filename = p + entry.canonical;
-    gsCommands[filename] = entry.generator();
+    const output = entry.generator();
+    // Extract SKILL.md content from SkillEntry, or use string directly
+    gsCommands[filename] = typeof output === "string" ? output : output["SKILL.md"];
   }
 
   return { ...STATIC_COMMANDS, ...gsCommands };
@@ -266,9 +268,16 @@ export function buildAllSkills(prefix?: string): Record<string, string> {
   // gs-* skills
   for (const entry of Object.values(GS_SKILL_NAMES)) {
     const dirName = p + entry.canonical.replace(/\.md$/, "");
-    const content = entry.generator();
-    // Wrap string generator output into SkillEntry format
-    result[`${dirName}/SKILL.md`] = content;
+    const output = entry.generator();
+    if (typeof output === "string") {
+      // Legacy string generator — wrap as single SKILL.md
+      result[`${dirName}/SKILL.md`] = output;
+    } else {
+      // SkillEntry — flatten all files into the directory
+      for (const [file, content] of Object.entries(output)) {
+        result[`${dirName}/${file}`] = content;
+      }
+    }
   }
 
   // Static commands (research, spec, product)

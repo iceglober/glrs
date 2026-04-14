@@ -1,8 +1,13 @@
 import { TASK_PREAMBLE, HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
+import type { SkillEntry } from "./index.js";
 
-export function gsDeepPlan(): string {
-  return `---
+export function gsDeepPlan(): SkillEntry {
+  return { "SKILL.md": `---
+name: deep-plan
 description: Create a zero-ambiguity implementation plan with strict TDD methodology. Use when user says 'deep plan', 'plan this', 'create a plan', 'implementation plan', 'break this down', 'plan the work', 'how should we build this'. Saves plan to global store via gs-agentic state, with checkboxes, sequenced work, exact test cases, and dependency order. Creates gs-agentic epics and tasks for every plan step. Do NOT use for implementation (use /work or /build) or strategy evaluation (use /think).
+argument-hint: "[feature description]"
+disable-model-invocation: true
+allowed-tools: Read, Grep, Glob, Bash, Agent
 ---
 
 # ABSOLUTE CONSTRAINTS — Read Before Anything Else
@@ -408,5 +413,5 @@ ${buildHandoffBlock({
 - A step has fewer than 5 test case rows
 - No negative/adversarial tests in a step that touches input validation, data access, or endpoints
 - Skipping Step 7c/7d — every plan MUST have gs-agentic tasks under an epic
-`;
+` };
 }

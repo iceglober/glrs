@@ -12,9 +12,14 @@ import { gsFix } from "./gs-fix.js";
 import { gsWork } from "./gs-work.js";
 import { gsShip } from "./gs-ship.js";
 
+/** Helper to extract SKILL.md content from a generator that returns SkillEntry */
+function md(gen: () => Record<string, string>): string {
+  return gen()["SKILL.md"];
+}
+
 describe("cross-references use canonical names", () => {
   test("gs.ts skill table uses canonical names", () => {
-    const output = gs();
+    const output = md(gs);
     expect(output).toContain("/think");
     expect(output).toContain("/work");
     expect(output).toContain("/fix");
@@ -30,14 +35,14 @@ describe("cross-references use canonical names", () => {
   });
 
   test("gs-think uses /deep-plan not /gs-deep-plan", () => {
-    const output = gsThink();
+    const output = md(gsThink);
     expect(output).toContain("/deep-plan");
     expect(output).not.toContain("/gs-deep-plan");
     expect(output).not.toContain("/gs-work");
   });
 
   test("gs-deep-plan uses canonical cross-refs", () => {
-    const output = gsDeepPlan();
+    const output = md(gsDeepPlan);
     expect(output).toContain("/build");
     expect(output).toContain("/build-loop");
     expect(output).not.toContain("/gs-build");
@@ -45,7 +50,7 @@ describe("cross-references use canonical names", () => {
   });
 
   test("gs-deep-review uses canonical cross-refs", () => {
-    const output = gsDeepReview();
+    const output = md(gsDeepReview);
     expect(output).toContain("deep-plan");
     expect(output).toContain('skill: "qa"');
     expect(output).toContain('skill: "ship"');
@@ -55,14 +60,14 @@ describe("cross-references use canonical names", () => {
   });
 
   test("gs-quick-review uses canonical cross-refs", () => {
-    const output = gsQuickReview();
+    const output = md(gsQuickReview);
     expect(output).toContain("/deep-plan");
     expect(output).not.toContain("/gs-deep-review");
     expect(output).not.toContain("/gs-deep-plan");
   });
 
   test("gs-build uses canonical cross-refs", () => {
-    const output = gsBuild();
+    const output = md(gsBuild);
     expect(output).toContain("/build t3");
     expect(output).toContain("/deep-plan");
     expect(output).toContain('skill: "deep-review"');
@@ -74,7 +79,7 @@ describe("cross-references use canonical names", () => {
   });
 
   test("gs-build-loop uses canonical cross-refs", () => {
-    const output = gsBuildLoop();
+    const output = md(gsBuildLoop);
     expect(output).toContain("/build");
     expect(output).toContain("/deep-plan");
     expect(output).not.toContain("/gs-build");
@@ -82,7 +87,7 @@ describe("cross-references use canonical names", () => {
   });
 
   test("gs-address-feedback uses canonical cross-refs", () => {
-    const output = gsAddressFeedback();
+    const output = md(gsAddressFeedback);
     expect(output).toContain("/ship");
     expect(output).toContain("/deep-review");
     expect(output).toContain("/quick-review");
@@ -92,7 +97,7 @@ describe("cross-references use canonical names", () => {
   });
 
   test("gs-qa uses canonical cross-refs", () => {
-    const output = gsQa();
+    const output = md(gsQa);
     expect(output).toContain("/work");
     expect(output).not.toContain("/gs-work");
   });
@@ -100,7 +105,7 @@ describe("cross-references use canonical names", () => {
   test("no skill uses text-based slash command handoff", () => {
     const skills = [gs, gsThink, gsDeepPlan, gsDeepReview, gsQuickReview, gsBuild, gsBuildLoop, gsAddressFeedback, gsQa, gsFix, gsWork, gsShip];
     for (const skill of skills) {
-      const output = skill();
+      const output = md(skill);
       const matches = output.match(/respond with exactly [`']?\/\w/g);
       if (matches) {
         throw new Error(`Found text-based handoff in skill output: ${matches.join(", ")}. Use Skill tool instead.`);
@@ -111,7 +116,7 @@ describe("cross-references use canonical names", () => {
   test("no skill file contains /gs- slash command references (except gs-agentic CLI)", () => {
     const skills = [gs, gsThink, gsDeepPlan, gsDeepReview, gsQuickReview, gsBuild, gsBuildLoop, gsAddressFeedback, gsQa, gsFix, gsWork, gsShip];
     for (const skill of skills) {
-      const output = skill();
+      const output = md(skill);
       // Find all /gs- references that aren't gs-agentic CLI calls
       const matches = output.match(/\/gs-(?!agentic)/g);
       if (matches) {
@@ -140,7 +145,7 @@ describe("cross-references use canonical names", () => {
 
   test("all handoff skills contain HANDOFF_RULE", () => {
     for (const { name, fn } of HANDOFF_SKILLS) {
-      const output = fn();
+      const output = md(fn);
       if (!output.includes("Skill Handoff Rule")) {
         throw new Error(`${name} is missing HANDOFF_RULE ("Skill Handoff Rule" text)`);
       }
@@ -149,7 +154,7 @@ describe("cross-references use canonical names", () => {
 
   test("all handoff skills use structured dispatch table", () => {
     for (const { name, fn } of HANDOFF_SKILLS) {
-      const output = fn();
+      const output = md(fn);
       if (!output.includes("YOUR ACTION")) {
         throw new Error(`${name} is missing structured dispatch table ("YOUR ACTION" header)`);
       }
@@ -158,7 +163,7 @@ describe("cross-references use canonical names", () => {
 
   test("all handoff skills have constraint block", () => {
     for (const { name, fn } of HANDOFF_SKILLS) {
-      const output = fn();
+      const output = md(fn);
       if (!output.includes("MUST contain ONLY the Skill tool call")) {
         throw new Error(`${name} is missing constraint block`);
       }
@@ -167,7 +172,7 @@ describe("cross-references use canonical names", () => {
 
   test("no handoff skill uses old prose dispatch format", () => {
     for (const { name, fn } of HANDOFF_SKILLS) {
-      const output = fn();
+      const output = md(fn);
       const matches = output.match(/invoke the \w[\w-]* skill using the Skill tool:/g);
       if (matches) {
         throw new Error(`${name} still uses old prose dispatch: ${matches.join(", ")}`);
@@ -177,7 +182,7 @@ describe("cross-references use canonical names", () => {
 
   test("all handoff skills warn against slash command text output", () => {
     for (const { name, fn } of HANDOFF_SKILLS) {
-      const output = fn();
+      const output = md(fn);
       if (!output.includes("slash commands only work when the USER types them")) {
         throw new Error(`${name} is missing slash-command-as-text warning in HANDOFF_RULE`);
       }
@@ -186,7 +191,7 @@ describe("cross-references use canonical names", () => {
 
   test("all handoff skills have Red Flags section", () => {
     for (const { name, fn } of HANDOFF_SKILLS) {
-      const output = fn();
+      const output = md(fn);
       if (!output.includes("Red Flags")) {
         throw new Error(`${name} is missing Red Flags section in HANDOFF_RULE`);
       }
@@ -195,7 +200,7 @@ describe("cross-references use canonical names", () => {
 
   test("dispatch table actions use 'Call Skill tool' format not Skill() pseudo-code", () => {
     for (const { name, fn } of HANDOFF_SKILLS) {
-      const output = fn();
+      const output = md(fn);
       // Catches both Skill("name") and Skill("name", args: "...")
       const pseudoCodeInTable = output.match(/\|\s*Skill\([^)]+\)\s*\|/g);
       if (pseudoCodeInTable) {
@@ -206,7 +211,7 @@ describe("cross-references use canonical names", () => {
 
   test("non-handoff skills do not contain HANDOFF_RULE", () => {
     for (const { name, fn } of NON_HANDOFF_SKILLS) {
-      const output = fn();
+      const output = md(fn);
       if (output.includes("Skill Handoff Rule")) {
         throw new Error(`${name} should NOT contain HANDOFF_RULE — it has no skill-to-skill handoff`);
       }

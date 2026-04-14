@@ -1,8 +1,12 @@
 import { HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
+import type { SkillEntry } from "./index.js";
 
-export function gsBuildLoop(): string {
-  return `---
+export function gsBuildLoop(): SkillEntry {
+  return { "SKILL.md": `---
+name: build-loop
 description: Loop through an epic's tasks, completing one step per iteration. Use when user says 'build-loop', 'execute the plan', 'work through the plan', 'build all the tasks'. Uses gs-agentic state task next to find ready tasks automatically.
+argument-hint: "[epic-id]"
+disable-model-invocation: true
 ---
 
 ${HANDOFF_RULE}
@@ -130,5 +134,5 @@ RULES:
 11. Commit all changes (code + updated plan) with message: \`Plan step N.M: <step title verb phrase>\`
 12. Report: Completed step, verification result, remaining count.
 \`\`\`
-`;
+` };
 }

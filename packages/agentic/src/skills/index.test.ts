@@ -1,5 +1,12 @@
 import { describe, test, expect } from "bun:test";
 import { buildCommands, buildAllSkills, GS_SKILL_NAMES, BUILTIN_COLLISIONS, SKILLS, type SkillEntry } from "./index.js";
+import { gsThink } from "./gs-think.js";
+import { gsDeepPlan } from "./gs-deep-plan.js";
+import { gsBuild } from "./gs-build.js";
+import { gsQa } from "./gs-qa.js";
+import { gsAddressFeedback } from "./gs-address-feedback.js";
+import { gsShip } from "./gs-ship.js";
+import { gsBuildLoop } from "./gs-build-loop.js";
 
 describe("GS_SKILL_NAMES", () => {
   test("has entry for every gs skill (12 total)", () => {
@@ -191,5 +198,56 @@ describe("buildAllSkills", () => {
     // Should be strings with frontmatter
     expect(typeof cmds["think.md"]).toBe("string");
     expect(cmds["think.md"]).toContain("---");
+  });
+});
+
+describe("gs-* generators enhanced frontmatter", () => {
+  test("all 12 gs-* generators return SkillEntry with SKILL.md key", () => {
+    for (const [key, entry] of Object.entries(GS_SKILL_NAMES)) {
+      const result = entry.generator();
+      if (typeof result === "string") {
+        throw new Error(`${key} still returns string, expected SkillEntry`);
+      }
+      expect(result["SKILL.md"]).toBeDefined();
+      expect(result["SKILL.md"]).toStartWith("---");
+    }
+  });
+
+  test("all gs-* skills have disable-model-invocation: true", () => {
+    for (const [key, entry] of Object.entries(GS_SKILL_NAMES)) {
+      const result = entry.generator();
+      const content = typeof result === "string" ? result : result["SKILL.md"];
+      if (!content.includes("disable-model-invocation: true")) {
+        throw new Error(`${key} is missing disable-model-invocation: true`);
+      }
+    }
+  });
+
+  test("gsThink has allowed-tools: Read, Grep, Glob", () => {
+    expect(gsThink()["SKILL.md"]).toContain("allowed-tools: Read, Grep, Glob");
+  });
+
+  test("gsDeepPlan has allowed-tools: Read, Grep, Glob, Bash, Agent", () => {
+    expect(gsDeepPlan()["SKILL.md"]).toContain("allowed-tools: Read, Grep, Glob, Bash, Agent");
+  });
+
+  test("gsBuild has argument-hint", () => {
+    expect(gsBuild()["SKILL.md"]).toContain('argument-hint: "[task-id]"');
+  });
+
+  test("gsShip has argument-hint", () => {
+    expect(gsShip()["SKILL.md"]).toContain('argument-hint: "[PR context]"');
+  });
+
+  test("gsBuildLoop has argument-hint", () => {
+    expect(gsBuildLoop()["SKILL.md"]).toContain('argument-hint: "[epic-id]"');
+  });
+
+  test("gsQa has no argument-hint", () => {
+    expect(gsQa()["SKILL.md"]).not.toContain("argument-hint");
+  });
+
+  test("gsAddressFeedback has no argument-hint", () => {
+    expect(gsAddressFeedback()["SKILL.md"]).not.toContain("argument-hint");
   });
 });
