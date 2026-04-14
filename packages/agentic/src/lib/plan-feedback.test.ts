@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { initState, cleanupState, setPlansDir } from "./state.js";
-import { feedbackPath, loadFeedback, appendFeedback, clearFeedback } from "./plan-feedback.js";
+import { feedbackPath, loadFeedback, appendFeedback, resolveFeedback, listResolvedFeedback } from "./plan-feedback.js";
 
 const TEST_DIR = path.join(os.tmpdir(), "glorious-feedback-test-" + process.pid);
 const TEST_DB_PATH = path.join(TEST_DIR, "state.db");
@@ -57,15 +57,55 @@ describe("appendFeedback", () => {
   });
 });
 
-describe("clearFeedback", () => {
-  test("removes feedback file", () => {
+describe("resolveFeedback", () => {
+  test("archives feedback file as resolved with timestamp", () => {
     appendFeedback("e1", "1.1", "test");
     expect(loadFeedback("e1")).not.toBeNull();
-    clearFeedback("e1");
+    resolveFeedback("e1");
     expect(loadFeedback("e1")).toBeNull();
+    const dir = path.join(TEST_PLANS_DIR, "e1");
+    const files = fs.readdirSync(dir).filter((f) => f.startsWith("feedback-resolved-") && f.endsWith(".md"));
+    expect(files).toHaveLength(1);
   });
 
-  test("no-op when file does not exist", () => {
-    expect(() => clearFeedback("e999")).not.toThrow();
+  test("no-op when feedback file does not exist", () => {
+    expect(() => resolveFeedback("e999")).not.toThrow();
+  });
+
+  test("archived file retains original content", () => {
+    appendFeedback("e1", "1.1", "needs work");
+    resolveFeedback("e1");
+    const dir = path.join(TEST_PLANS_DIR, "e1");
+    const files = fs.readdirSync(dir).filter((f) => f.startsWith("feedback-resolved-"));
+    const content = fs.readFileSync(path.join(dir, files[0]), "utf-8");
+    expect(content).toContain("## Step 1.1\nneeds work");
+  });
+});
+
+describe("listResolvedFeedback", () => {
+  test("returns empty array for nonexistent entity", () => {
+    expect(listResolvedFeedback("e999")).toEqual([]);
+  });
+
+  test("returns sorted archived files after multiple resolve cycles", async () => {
+    appendFeedback("e1", "1.1", "first");
+    resolveFeedback("e1");
+    await new Promise((r) => setTimeout(r, 5));
+    appendFeedback("e1", "2.1", "second");
+    resolveFeedback("e1");
+    const files = listResolvedFeedback("e1");
+    expect(files).toHaveLength(2);
+    expect(files[0] < files[1]).toBe(true);
+    for (const f of files) {
+      expect(f).toMatch(/^feedback-resolved-.*\.md$/);
+    }
+  });
+
+  test("ignores non-matching files", () => {
+    const dir = path.join(TEST_PLANS_DIR, "e1");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "notes.md"), "irrelevant");
+    fs.writeFileSync(path.join(dir, "v1.md"), "plan version");
+    expect(listResolvedFeedback("e1")).toEqual([]);
   });
 });
