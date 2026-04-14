@@ -5,7 +5,7 @@ import { list } from "./commands/list.js";
 import { del } from "./commands/delete.js";
 import { cleanup } from "./commands/cleanup.js";
 import { go } from "./commands/go.js";
-import { initHooks } from "./commands/init-hooks.js";
+import { initHooks, scaffoldClaudeHooks } from "./commands/init-hooks.js";
 import { root } from "./commands/root.js";
 
 import { upgrade } from "./commands/upgrade.js";
@@ -70,6 +70,7 @@ const cli = subcommands({
     skills: installSkills,
     config,
     plugin,
+    "claude-hooks": scaffoldClaudeHooks,
     state,
     upgrade,
   },
