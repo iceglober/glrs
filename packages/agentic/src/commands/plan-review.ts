@@ -1,9 +1,8 @@
 import { command, subcommands, option, optional, string, number as cmdNumber } from "cmd-ts";
 import { loadPlan } from "../lib/state.js";
 import { startPlanReviewServer } from "../lib/plan-server.js";
-import { getSetting } from "../lib/settings.js";
-import { info, bold, dim, warn } from "../lib/fmt.js";
-import { spawn } from "node:child_process";
+import { openBrowser } from "../lib/open-browser.js";
+import { info, bold, dim } from "../lib/fmt.js";
 
 const review = command({
   name: "review",
@@ -25,14 +24,7 @@ const review = command({
       port: args.port ?? undefined,
     });
 
-    if (getSetting("plan.auto-open") !== "false") {
-      const openCmd = process.platform === "darwin" ? "open" : "xdg-open";
-      const child = spawn(openCmd, [server.url], { stdio: "ignore", detached: true });
-      child.unref();
-      child.on("error", () => {
-        warn(`Could not open browser automatically. Visit: ${server.url}`);
-      });
-    }
+    openBrowser(server.url, "plan.auto-open");
 
     info(`Plan review server running at ${bold(server.url)}`);
     console.log(dim("Press Ctrl+C to stop.\n"));

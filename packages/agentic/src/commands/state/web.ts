@@ -1,8 +1,7 @@
 import { command, option, optional, number as cmdNumber, flag } from "cmd-ts";
 import { startStateServer } from "../../lib/state-server.js";
-import { getSetting } from "../../lib/settings.js";
+import { openBrowser } from "../../lib/open-browser.js";
 import { info, bold, dim } from "../../lib/fmt.js";
-import { execFile } from "node:child_process";
 
 export const web = command({
   name: "web",
@@ -26,10 +25,7 @@ export const web = command({
       all: !args.local,
     });
 
-    if (getSetting("state.auto-open") !== "false") {
-      const openCmd = process.platform === "darwin" ? "open" : "xdg-open";
-      execFile(openCmd, [server.url]);
-    }
+    openBrowser(server.url, "state.auto-open");
 
     info(`State dashboard running at ${bold(server.url)}`);
     console.log(dim("Press Ctrl+C to stop.\n"));
