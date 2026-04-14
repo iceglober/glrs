@@ -1,9 +1,11 @@
-import { REVIEW_PREAMBLE } from "./preamble.js";
+import { REVIEW_PREAMBLE, HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
 
 export function gsQuickReview(): string {
   return `---
 description: Fast single-pass code review for small changesets. Reviews the current diff for correctness, security, and style in one shot — no subagents, no parallelism. Stores findings in gs-agentic review state. Use for quick sanity checks before committing or when a full deep-review would be overkill.
 ---
+
+${HANDOFF_RULE}
 
 # Quick Review
 
@@ -143,6 +145,31 @@ End with one of:
 - **SHIP IT** — No critical or high findings.
 - **NEEDS FIXES** — Has findings that should be addressed before merging.
 
-If **NEEDS FIXES**, ask the user how to proceed (same as /deep-review).
+**If SHIP IT:**
+
+${buildHandoffBlock({
+  question: "Review clean — no critical or high findings. What's next?",
+  header: "Next step",
+  options: [
+    { label: "QA (Recommended)", description: "Run QA against the task's acceptance criteria", action: 'Skill("qa")' },
+    { label: "Ship it", description: "Typecheck, commit, push, and create a PR", action: 'Skill("ship")' },
+    { label: "Done for now", description: "Stop here — come back later", action: "stop" },
+  ],
+  freeText: "the user is giving direction — follow their instructions",
+})}
+
+**If NEEDS FIXES:**
+
+${buildHandoffBlock({
+  question: "Review found issues that need addressing. What's next?",
+  header: "Next step",
+  options: [
+    { label: "Plan the fixes (Recommended)", description: "Create a structured fix plan with /deep-plan", action: 'Skill("deep-plan", args: "<one-line summary of each CRITICAL and HIGH finding>")' },
+    { label: "QA anyway", description: "Run QA to see full acceptance criteria status", action: 'Skill("qa")' },
+    { label: "Ship anyway", description: "Skip unresolved findings — typecheck, commit, push, and create a PR", action: 'Skill("ship")' },
+    { label: "Done for now", description: "Stop here — address findings later", action: "stop" },
+  ],
+  freeText: "the user is giving direction — follow their instructions",
+})}
 `;
 }
