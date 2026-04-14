@@ -9,6 +9,7 @@ import {
   computeInstallPlan,
   executeInstall,
   formatInstallResult,
+  autoSyncSkills,
   type Manifest,
   type InstallPlan,
   type InstallResult,
@@ -391,5 +392,179 @@ describe("promptScope", () => {
       selectFn: async () => null,
     });
     expect(result).toBe("project");
+  });
+});
+
+describe("autoSyncSkills", () => {
+  let tmpHome: string;
+  let tmpProject: string;
+
+  beforeEach(() => {
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "gs-autosync-home-"));
+    tmpProject = fs.mkdtempSync(path.join(os.tmpdir(), "gs-autosync-proj-"));
+  });
+
+  function writeManifestTo(dir: string, manifest: Partial<Manifest> & { commands: string[]; skills: string[] }) {
+    const claudeDir = path.join(dir, ".claude");
+    fs.mkdirSync(path.join(claudeDir, "commands"), { recursive: true });
+    fs.mkdirSync(path.join(claudeDir, "skills"), { recursive: true });
+    fs.writeFileSync(
+      path.join(claudeDir, ".glorious-skills.json"),
+      JSON.stringify(manifest, null, 2),
+    );
+    // Write dummy command files so they exist on disk
+    for (const cmd of manifest.commands) {
+      fs.writeFileSync(path.join(claudeDir, "commands", cmd), "old content");
+    }
+    for (const skill of manifest.skills) {
+      const p = path.join(claudeDir, "skills", skill);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, "old content");
+    }
+  }
+
+  function readManifestFrom(dir: string): Manifest {
+    const p = path.join(dir, ".claude", ".glorious-skills.json");
+    if (!fs.existsSync(p)) return { commands: [], skills: [] };
+    return JSON.parse(fs.readFileSync(p, "utf-8"));
+  }
+
+  test("skips when auto-update is false", () => {
+    const result = autoSyncSkills({
+      getSettingFn: (key) => key === "skills.auto-update" ? "false" : undefined,
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("should not be called"); },
+    });
+    expect(result.userSynced).toBe(false);
+    expect(result.projectSynced).toBe(false);
+  });
+
+  test("auto-installs to user scope on first run (no manifest)", () => {
+    const result = autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    expect(result.userSynced).toBe(true);
+    const m = readManifestFrom(tmpHome);
+    expect(m.commands.length).toBeGreaterThan(0);
+    expect(m.version).toBeDefined();
+  });
+
+  test("syncs user scope when version mismatch", () => {
+    writeManifestTo(tmpHome, {
+      version: "0.0.1",
+      prefix: "",
+      commands: ["think.md"],
+      skills: ["browser.md"],
+    });
+    const result = autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    expect(result.userSynced).toBe(true);
+    const m = readManifestFrom(tmpHome);
+    expect(m.version).not.toBe("0.0.1");
+    expect(m.commands.length).toBeGreaterThan(1);
+  });
+
+  test("skips user scope when version matches", () => {
+    // First install to get the current version stamp
+    autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    // Second call should skip
+    const result = autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    expect(result.userSynced).toBe(false);
+  });
+
+  test("syncs project scope when previously installed with old version", () => {
+    writeManifestTo(tmpProject, {
+      version: "0.0.1",
+      prefix: "",
+      commands: ["think.md"],
+      skills: ["browser.md"],
+    });
+    const result = autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => tmpProject,
+    });
+    expect(result.projectSynced).toBe(true);
+    const m = readManifestFrom(tmpProject);
+    expect(m.version).not.toBe("0.0.1");
+  });
+
+  test("skips project scope when no manifest exists", () => {
+    const result = autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => tmpProject,
+    });
+    // User scope gets auto-installed, project scope skipped
+    expect(result.projectSynced).toBe(false);
+  });
+
+  test("preserves prefix from previous install", () => {
+    writeManifestTo(tmpHome, {
+      version: "0.0.1",
+      prefix: "gs-",
+      commands: ["gs-think.md"],
+      skills: ["browser.md"],
+    });
+    autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    const m = readManifestFrom(tmpHome);
+    expect(m.prefix).toBe("gs-");
+    // Should have gs- prefixed command files
+    expect(m.commands).toContain("gs-think.md");
+  });
+
+  test("handles gitRoot failure gracefully", () => {
+    const result = autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("not a git repo"); },
+    });
+    // User scope still works
+    expect(result.userSynced).toBe(true);
+    expect(result.projectSynced).toBe(false);
+  });
+
+  test("never throws on any error", () => {
+    // Pass a homeDirFn that returns a path with no write permission
+    expect(() => autoSyncSkills({
+      getSettingFn: () => { throw new Error("boom"); },
+      homeDirFn: () => "/nonexistent/path",
+      gitRootFn: () => { throw new Error("no git"); },
+    })).not.toThrow();
+  });
+
+  test("synced manifest has current version", () => {
+    writeManifestTo(tmpHome, {
+      version: "0.0.1",
+      prefix: "",
+      commands: ["think.md"],
+      skills: ["browser.md"],
+    });
+    autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    const m = readManifestFrom(tmpHome);
+    // Version should now match the running CLI version (not 0.0.1)
+    expect(m.version).toBeDefined();
+    expect(m.version).not.toBe("0.0.1");
   });
 });
