@@ -102,7 +102,7 @@ describe("listResolvedFeedback", () => {
   test("returns sorted archived files after multiple resolve cycles", async () => {
     appendFeedback("e1", "1.1", "first");
     resolveFeedback("e1");
-    await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 20));
     appendFeedback("e1", "2.1", "second");
     resolveFeedback("e1");
     const files = listResolvedFeedback("e1");

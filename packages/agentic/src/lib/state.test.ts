@@ -2608,7 +2608,7 @@ describe("exportEpicTrace", () => {
     const epic = createEpic({ title: "Feedback Epic", description: "fb" });
     appendFeedback(epic.id, "1.1", "first round");
     resolveFeedback(epic.id);
-    await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 20));
     appendFeedback(epic.id, "2.1", "active feedback");
 
     const trace = exportEpicTrace(epic.id);
