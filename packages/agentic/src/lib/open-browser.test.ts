@@ -28,14 +28,23 @@ describe("openBrowser", () => {
     expect(called).toBe(true);
   });
 
-  test("skips exec when setting is 'false'", async () => {
+  test("skips exec when setting is 'false' and logs hint", async () => {
     const { openBrowser } = await import("./open-browser.js");
     setSetting("plan.auto-open", "false");
     let called = false;
     const fakeExec = (() => { called = true; }) as any;
-    const result = openBrowser("http://localhost:3000", "plan.auto-open", { exec: fakeExec });
-    expect(result).toBe(false);
-    expect(called).toBe(false);
+    const logged: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => { logged.push(args.join(" ")); };
+    try {
+      const result = openBrowser("http://localhost:3000", "plan.auto-open", { exec: fakeExec });
+      expect(result).toBe(false);
+      expect(called).toBe(false);
+      expect(logged.some((l) => l.includes("Browser auto-open disabled"))).toBe(true);
+      expect(logged.some((l) => l.includes("plan.auto-open"))).toBe(true);
+    } finally {
+      console.log = origLog;
+    }
   });
 
   test("uses 'open' command on darwin", async () => {
