@@ -87,4 +87,30 @@ describe("renderReviewPage", () => {
     const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
     expect(html).toContain("/api/finish");
   });
+
+  test("SSE handler fetches individual plan endpoint", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain('/api/plans/" + encodeURIComponent(data.planId)');
+  });
+
+  test("SSE handler uses htmlContent not planContent", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    // Extract the new-plan handler section
+    const sseSection = html.slice(html.indexOf("new-plan"), html.indexOf("close-tab"));
+    expect(sseSection).toContain("htmlContent");
+    expect(sseSection).not.toContain("planContent");
+  });
+
+  test("dynamic finish button uses addEventListener not inline onclick", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    const sseSection = html.slice(html.indexOf("new-plan"), html.indexOf("close-tab"));
+    expect(sseSection).toContain("addEventListener");
+    expect(sseSection).not.toContain('onclick="finishReview');
+  });
+
+  test("escapeHtml escapes single quotes in planId", () => {
+    const html = renderReviewPage([{ planId: "e1'test", htmlContent: "" }], 3000);
+    expect(html).toContain("e1&#39;test");
+    expect(html).not.toContain("e1'test");
+  });
 });

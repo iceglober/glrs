@@ -335,23 +335,29 @@ document.getElementById("sidebar-toggle").onclick = function() {
 var es = new EventSource(API + "/api/events?planId=_browser");
 es.addEventListener("new-plan", function(e) {
   var data = JSON.parse(e.data);
-  // Fetch updated plan list and add tab
-  fetch(API + "/api/plans").then(function(res) { return res.json(); }).then(function(json) {
-    var newPlan = json.plans.find(function(p) { return p.planId === data.planId; });
-    if (newPlan && !document.querySelector('.tab[data-plan="' + data.planId + '"]')) {
+  // Fetch individual plan (returns sanitized htmlContent)
+  fetch(API + "/api/plans/" + encodeURIComponent(data.planId)).then(function(res) { return res.json(); }).then(function(newPlan) {
+    if (newPlan && newPlan.htmlContent && !document.querySelector('.tab[data-plan="' + data.planId + '"]')) {
       var tab = document.createElement("button");
       tab.className = "tab";
       tab.dataset.plan = data.planId;
       tab.textContent = data.planId;
-      tab.onclick = function() { switchTab(data.planId); };
+      tab.addEventListener("click", function() { switchTab(data.planId); });
       document.querySelector(".tab-bar").appendChild(tab);
 
       var panel = document.createElement("div");
       panel.className = "panel";
       panel.dataset.plan = data.planId;
-      panel.innerHTML = newPlan.planContent +
-        '<div style="margin-top:2rem;padding-top:1rem;border-top:2px solid #e0e0e0;">' +
-        '<button class="finish-btn" data-plan="' + data.planId + '" onclick="finishReview(\\'' + data.planId + '\\')">Finish Review</button></div>';
+      panel.innerHTML = newPlan.htmlContent;
+      var btnWrap = document.createElement("div");
+      btnWrap.style.cssText = "margin-top:2rem;padding-top:1rem;border-top:2px solid #e0e0e0;";
+      var finBtn = document.createElement("button");
+      finBtn.className = "finish-btn";
+      finBtn.dataset.plan = data.planId;
+      finBtn.textContent = "Finish Review";
+      finBtn.addEventListener("click", function() { finishReview(data.planId); });
+      btnWrap.appendChild(finBtn);
+      panel.appendChild(btnWrap);
       document.querySelector(".tab-bar").parentNode.appendChild(panel);
     }
   });
