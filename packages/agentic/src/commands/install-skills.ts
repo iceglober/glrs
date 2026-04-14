@@ -39,7 +39,7 @@ function readManifest(claudeDir: string): Manifest {
     return {
       version: data?.version,
       prefix: data?.prefix,
-      format: data?.format,
+      format: data?.format === "skills" || data?.format === "commands" ? data.format : undefined,
       commands: Array.isArray(data?.commands) ? data.commands : [],
       skills: Array.isArray(data?.skills) ? data.skills : [],
     };
@@ -66,6 +66,10 @@ function installFiles(
 
   for (const name of Object.keys(files)) {
     const dest = path.join(baseDir, name);
+    // Guard against path traversal (e.g., "../../etc/passwd")
+    if (!path.resolve(dest).startsWith(path.resolve(baseDir))) {
+      throw new Error(`Path traversal detected: "${name}" escapes base directory`);
+    }
     fs.mkdirSync(path.dirname(dest), { recursive: true });
 
     if (fs.existsSync(dest)) {
@@ -220,7 +224,31 @@ export function executeInstall(plan: InstallPlan): InstallResult {
 
   // Remove stale files from previous install
   const cmdRemoved = removeStaleFiles(plan.commands, plan.previousManifest.commands, commandsDir);
-  const skillRemoved = removeStaleFiles(plan.skills, plan.previousManifest.skills, skillsDir);
+  let skillRemoved = removeStaleFiles(plan.skills, plan.previousManifest.skills, skillsDir);
+
+  // Format migration cleanup: when migrating from commands→skills format,
+  // old flat skill files (e.g., "browser.md") won't match new directory paths
+  // (e.g., "browser/SKILL.md"). Explicitly remove orphaned flat files.
+  if (plan.format === "skills" && plan.previousManifest.format !== "skills") {
+    for (const oldSkill of plan.previousManifest.skills) {
+      // Only clean up flat files (no "/" = old format); directory entries are handled above
+      if (!oldSkill.includes("/")) {
+        const dest = path.join(skillsDir, oldSkill);
+        if (fs.existsSync(dest)) {
+          fs.unlinkSync(dest);
+          skillRemoved++;
+        }
+      }
+    }
+    // Also clean up old commands dir files during migration
+    for (const oldCmd of plan.previousManifest.commands) {
+      const dest = path.join(commandsDir, oldCmd);
+      if (fs.existsSync(dest)) {
+        fs.unlinkSync(dest);
+        skillRemoved++;
+      }
+    }
+  }
 
   // Install files
   const cmdResult = installFiles(plan.commands, commandsDir, plan.force);

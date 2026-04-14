@@ -21,6 +21,10 @@ export interface ClaudeHookConfig {
 /**
  * Generate a PostToolUse hook config that runs a formatter after Write/Edit.
  * The formatter command is run in the project root.
+ *
+ * SECURITY: The formatter string is written directly to settings.local.json
+ * and will be executed by Claude Code on every file write. Only pass trusted
+ * values — use detectFormatter() to get safe, hardcoded commands.
  */
 export function generateFormatterHook(formatter: string): ClaudeHookConfig {
   return {

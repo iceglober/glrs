@@ -44,7 +44,7 @@ function formatTask(task: Task, indent: number): void {
  * Produce a single-line compact summary of each epic.
  * Format: "e1: Title [3/7 done, 2 ready, 1 blocked] | e2: ..."
  */
-function compactSummary(epicFilter?: string): string {
+export function compactSummary(epicFilter?: string): string {
   let epics = listEpics();
   if (epicFilter) epics = epics.filter((e) => e.id === epicFilter);
 
