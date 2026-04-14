@@ -6,6 +6,7 @@ import { marked } from "marked";
 import { getSetting, setSetting } from "./settings.js";
 import { appendFeedback, loadFeedback } from "./plan-feedback.js";
 import { renderReviewPage } from "./review-html.js";
+import { sanitizeHtml } from "./sanitize-html.js";
 
 export interface ReviewServer {
   url: string;
@@ -30,18 +31,6 @@ export const PORT_FILE_PATH = path.join(os.homedir(), ".glorious", "plan-review.
 
 /** SSE connections keyed by planId. */
 type SSEConnection = { res: http.ServerResponse; planId: string };
-
-/** Strip dangerous HTML (same logic as plan-html.ts). */
-function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    .replace(/<(iframe|object|embed|svg)\b[^<]*(?:(?!<\/\1>)<[^<]*)*<\/\1>/gi, "")
-    .replace(/<(iframe|object|embed|svg)\b[^>]*\/?>(?!.*<\/\1>)/gi, "")
-    .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, "")
-    .replace(/\s+on\w+\s*=\s*[^\s>"']+/gi, "")
-    .replace(/\bhref\s*=\s*["']\s*javascript:[^"']*["']/gi, 'href="#"')
-    .replace(/\bhref\s*=\s*javascript:[^\s>]*/gi, 'href="#"');
-}
 
 function parseBody(req: http.IncomingMessage, maxSize: number = 1024 * 1024): Promise<any> {
   return new Promise((resolve, reject) => {
