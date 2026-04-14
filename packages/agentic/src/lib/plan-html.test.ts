@@ -137,7 +137,7 @@ describe("renderPlanPage", () => {
   test("non-200 response shows error in sidebar history", () => {
     const html = renderPlanPage("# T", "e1", 3000);
     // After `if (res.ok)` there must be an else branch with error display
-    expect(html).toContain("!res.ok");
+    expect(html).toContain("Error: server returned");
   });
 
   test("non-200 error branch does not use alert()", () => {
@@ -181,5 +181,38 @@ describe("renderPlanPage", () => {
   test("port 0 embedded in API URL", () => {
     const html = renderPlanPage("# T", "e1", 0);
     expect(html).toContain("http://localhost:0/api/feedback");
+  });
+
+  test("strips unquoted onerror handler", () => {
+    const html = renderPlanPage('<img onerror=alert(1) src=x>', "e1", 3000);
+    expect(html).not.toContain("onerror");
+  });
+
+  test("strips iframe tags", () => {
+    const html = renderPlanPage('<iframe src="evil.com"></iframe>', "e1", 3000);
+    expect(html).not.toContain("<iframe");
+  });
+
+  test("strips svg with onload", () => {
+    const html = renderPlanPage('<svg onload=alert(1)>', "e1", 3000);
+    expect(html).not.toContain("<svg");
+    expect(html).not.toContain("onload");
+  });
+
+  test("neutralizes javascript: href", () => {
+    const html = renderPlanPage('<a href="javascript:alert(1)">click</a>', "e1", 3000);
+    expect(html).not.toContain("javascript:");
+  });
+
+  test("preserves safe content after stripping dangerous tags", () => {
+    const html = renderPlanPage('**bold** <script>bad</script>', "e1", 3000);
+    expect(html).toContain("<strong>bold</strong>");
+    expect(html).not.toContain("<script>bad</script>");
+  });
+
+  test("redundant else-if replaced with else", () => {
+    const html = renderPlanPage("# T", "e1", 3000);
+    expect(html).not.toContain("else if (!res.ok)");
+    expect(html).toContain("} else {");
   });
 });

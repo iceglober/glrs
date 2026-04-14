@@ -1,10 +1,15 @@
 import { marked } from "marked";
 
-/** Strip dangerous HTML from marked output (script tags and on* event handlers). */
+/** Strip dangerous HTML from marked output (script tags, dangerous elements, on* handlers, javascript: URLs). */
 function sanitizeHtml(html: string): string {
   return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, "");
+    .replace(/<(iframe|object|embed|svg)\b[^<]*(?:(?!<\/\1>)<[^<]*)*<\/\1>/gi, "")
+    .replace(/<(iframe|object|embed|svg)\b[^>]*\/?>(?!.*<\/\1>)/gi, "")
+    .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, "")
+    .replace(/\s+on\w+\s*=\s*[^\s>"']+/gi, "")
+    .replace(/\bhref\s*=\s*["']\s*javascript:[^"']*["']/gi, 'href="#"')
+    .replace(/\bhref\s*=\s*javascript:[^\s>]*/gi, 'href="#"');
 }
 
 /** Render plan markdown into a self-contained HTML review page with floating feedback sidebar. */
@@ -184,7 +189,7 @@ document.getElementById("sidebar-submit").onclick = async function() {
       item.appendChild(label);
       item.appendChild(document.createTextNode(text.length > 80 ? text.substring(0, 80) + "..." : text));
       document.getElementById("sidebar-history").prepend(item);
-    } else if (!res.ok) {
+    } else {
       const errItem = document.createElement("div");
       errItem.className = "sidebar-history-item";
       errItem.style.background = "#fee2e2";
