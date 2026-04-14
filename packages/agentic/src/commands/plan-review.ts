@@ -1,8 +1,8 @@
 import { command, subcommands, option, optional, string, number as cmdNumber } from "cmd-ts";
 import { loadPlan } from "../lib/state.js";
-import { startPlanReviewServer } from "../lib/plan-server.js";
+import { startReviewServer, findRunningServer, registerPlan, waitForFinish, type ReviewServer } from "../lib/review-server.js";
 import { openBrowser } from "../lib/open-browser.js";
-import { info, bold, dim } from "../lib/fmt.js";
+import { info, ok, bold, dim } from "../lib/fmt.js";
 
 const review = command({
   name: "review",
@@ -18,28 +18,37 @@ const review = command({
       process.exit(1);
     }
 
-    const server = await startPlanReviewServer({
-      planId: args.id,
-      planContent: content,
-      port: args.port ?? undefined,
-    });
+    const existing = await findRunningServer();
+    let serverUrl: string;
+    let server: ReviewServer | null = null;
 
-    openBrowser(server.url, "plan.auto-open");
+    if (existing) {
+      serverUrl = existing.url;
+      await registerPlan(serverUrl, args.id, content);
+      openBrowser(serverUrl, "plan.auto-open");
+      info(`Plan added to existing review session at ${bold(serverUrl)}`);
+    } else {
+      server = await startReviewServer({ port: args.port ?? undefined });
+      serverUrl = server.url;
+      await registerPlan(serverUrl, args.id, content);
+      openBrowser(serverUrl, "plan.auto-open");
+      info(`Plan review server running at ${bold(serverUrl)}`);
+    }
 
-    info(`Plan review server running at ${bold(server.url)}`);
-    console.log(dim("Press Ctrl+C to stop.\n"));
     console.log(dim(`Feedback will be saved for ${args.id}. Read it later with:`));
     console.log(dim(`  gs-agentic state plan feedback --id ${args.id}\n`));
 
     const shutdown = () => {
-      server.close();
+      server?.close();
       process.exit(0);
     };
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
 
-    // Keep process alive
-    await new Promise(() => {});
+    await waitForFinish(serverUrl, args.id);
+    ok(`Review complete — feedback saved for ${args.id}`);
+    server?.close();
+    process.exit(0);
   },
 });
 
