@@ -18,11 +18,11 @@ export function renderReviewPage(
   }
 
   const tabBar = plans.map((p, i) =>
-    `<button class="tab${i === 0 ? " active" : ""}" data-plan="${escapeHtml(p.planId)}" onclick="switchTab('${escapeHtml(p.planId)}')">${escapeHtml(p.planId)}</button>`
+    `<button class="tab${i === 0 ? " active" : ""}" role="tab" aria-selected="${i === 0 ? "true" : "false"}" aria-controls="panel-${escapeHtml(p.planId)}" data-plan="${escapeHtml(p.planId)}" onclick="switchTab('${escapeHtml(p.planId)}')">${escapeHtml(p.planId)}</button>`
   ).join("");
 
   const panels = plans.map((p, i) =>
-    `<div class="panel${i === 0 ? " active" : ""}" data-plan="${escapeHtml(p.planId)}">
+    `<div class="panel${i === 0 ? " active" : ""}" id="panel-${escapeHtml(p.planId)}" role="tabpanel" aria-labelledby="tab-${escapeHtml(p.planId)}" data-plan="${escapeHtml(p.planId)}">
       ${sanitizeHtml(p.htmlContent)}
       <div style="margin-top:2rem;padding-top:1rem;border-top:2px solid #e0e0e0;">
         <button class="finish-btn" data-plan="${escapeHtml(p.planId)}" onclick="finishReview('${escapeHtml(p.planId)}')">Finish Review</button>
@@ -215,7 +215,7 @@ export function renderReviewPage(
 </style>
 </head>
 <body>
-<div class="tab-bar">${tabBar}</div>
+<div class="tab-bar" role="tablist">${tabBar}</div>
 ${panels}
 
 <div id="feedback-sidebar">
@@ -226,9 +226,9 @@ ${panels}
 </div>
 <button id="sidebar-toggle">Feedback</button>
 
-<div id="first-run-modal">
+<div id="first-run-modal" role="dialog" aria-modal="true" aria-labelledby="first-run-title">
   <div id="first-run-dialog">
-    <h2>Plan Review</h2>
+    <h2 id="first-run-title">Plan Review</h2>
     <p>This page opens automatically when you run <code>gsag plan review</code>.</p>
     <p>To disable auto-open, run:</p>
     <pre><code>gsag config set plan.auto-open false</code></pre>
@@ -242,11 +242,23 @@ var activePlanId = "${escapeHtml(plans[0].planId)}";
 
 // Tab switching
 function switchTab(planId) {
-  document.querySelectorAll(".tab, .panel").forEach(function(el) { el.classList.remove("active"); });
-  document.querySelector('.tab[data-plan="' + planId + '"]').classList.add("active");
+  document.querySelectorAll(".tab").forEach(function(el) { el.classList.remove("active"); el.setAttribute("aria-selected", "false"); });
+  document.querySelectorAll(".panel").forEach(function(el) { el.classList.remove("active"); });
+  var activeTab = document.querySelector('.tab[data-plan="' + planId + '"]');
+  activeTab.classList.add("active");
+  activeTab.setAttribute("aria-selected", "true");
   document.querySelector('.panel[data-plan="' + planId + '"]').classList.add("active");
   activePlanId = planId;
 }
+
+// Arrow key navigation between tabs
+document.querySelector(".tab-bar").addEventListener("keydown", function(e) {
+  var tabs = Array.from(document.querySelectorAll(".tab"));
+  var idx = tabs.indexOf(document.activeElement);
+  if (idx < 0) return;
+  if (e.key === "ArrowRight") { e.preventDefault(); var next = tabs[(idx + 1) % tabs.length]; next.focus(); switchTab(next.dataset.plan); }
+  if (e.key === "ArrowLeft") { e.preventDefault(); var prev = tabs[(idx - 1 + tabs.length) % tabs.length]; prev.focus(); switchTab(prev.dataset.plan); }
+});
 
 // Finish review
 function finishReview(planId) {
@@ -379,10 +391,16 @@ fetch(API + "/api/first-run").then(function(res) { return res.json(); }).then(fu
   }
 });
 
-document.getElementById("first-run-dismiss").onclick = function() {
+function dismissFirstRun() {
   fetch(API + "/api/first-run-dismiss", { method: "POST" });
   document.getElementById("first-run-modal").classList.remove("visible");
-};
+}
+document.getElementById("first-run-dismiss").onclick = dismissFirstRun;
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Escape" && document.getElementById("first-run-modal").classList.contains("visible")) {
+    dismissFirstRun();
+  }
+});
 </script>
 </body>
 </html>`;

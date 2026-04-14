@@ -125,4 +125,43 @@ describe("renderReviewPage", () => {
     expect(html).toContain("e1&#39;test");
     expect(html).not.toContain("e1'test");
   });
+
+  test("tab-bar has role=tablist", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain('role="tablist"');
+  });
+
+  test("tabs have role=tab and aria-selected", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }, { planId: "e2", htmlContent: "" }], 3000);
+    expect(html).toContain('role="tab"');
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain('aria-selected="false"');
+  });
+
+  test("panels have role=tabpanel", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain('role="tabpanel"');
+  });
+
+  test("modal has role=dialog and aria-modal", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+  });
+
+  test("JS contains arrow key handler", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain("ArrowLeft");
+    expect(html).toContain("ArrowRight");
+  });
+
+  test("JS contains Escape key handler for modal", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain("Escape");
+  });
+
+  test("switchTab updates aria-selected", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    expect(html).toContain('setAttribute("aria-selected"');
+  });
 });
