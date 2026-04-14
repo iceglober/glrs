@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import readline from "node:readline";
 import { buildCommands, SKILLS, BUILTIN_COLLISIONS } from "../skills/index.js";
-import { ok, info, warn, yellow } from "../lib/fmt.js";
+import { ok, okErr, info, warn, yellow } from "../lib/fmt.js";
 import { VERSION } from "../lib/version.js";
 import { getSetting } from "../lib/settings.js";
 import { gitRoot } from "../lib/git.js";
@@ -34,7 +34,13 @@ export interface Manifest {
 function readManifest(claudeDir: string): Manifest {
   const p = path.join(claudeDir, MANIFEST_FILE);
   try {
-    return JSON.parse(fs.readFileSync(p, "utf-8"));
+    const data = JSON.parse(fs.readFileSync(p, "utf-8"));
+    return {
+      version: data?.version,
+      prefix: data?.prefix,
+      commands: Array.isArray(data?.commands) ? data.commands : [],
+      skills: Array.isArray(data?.skills) ? data.skills : [],
+    };
   } catch {
     return { commands: [], skills: [] };
   }
@@ -273,15 +279,14 @@ function syncScope(claudeDir: string, scope: "user" | "project"): boolean {
   const manifest = readManifest(claudeDir);
   if (manifest.version === VERSION) return false;
 
-  const prefix = manifest.prefix || undefined;
+  const prefix = manifest.prefix ?? undefined;
   const plan = computeInstallPlan({ claudeDir, prefix, force: false, scope });
   const result = executeInstall(plan);
 
   if (result.created > 0 || result.updated > 0 || result.removed > 0) {
-    ok(`skills synced to v${VERSION} (${result.target})`);
-    return true;
+    okErr(`skills synced to v${VERSION} (${result.target})`);
   }
-  return false;
+  return true;
 }
 
 /**
