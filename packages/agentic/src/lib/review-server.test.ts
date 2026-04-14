@@ -118,6 +118,56 @@ describe("review server — plan registration", () => {
     expect(res.status).toBe(400);
   });
 
+  test("POST /api/plans rejects planId with special chars", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    const res = await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1;rm -rf", planContent: "# Plan" }),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json() as { error: string };
+    expect(json.error).toContain("Invalid planId");
+  });
+
+  test("POST /api/plans rejects path traversal planId", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    const res = await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "../etc/passwd", planContent: "# Plan" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("POST /api/plans accepts planId with dots", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    const res = await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1.1", planContent: "# Plan" }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test("POST /api/plans rejects empty planId", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    const res = await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "", planContent: "# Plan" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   test("POST /api/plans rejects missing planContent", async () => {
     const { startReviewServer } = await importModule();
     const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });

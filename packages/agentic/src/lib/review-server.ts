@@ -40,6 +40,7 @@ function parseBody(req: http.IncomingMessage, maxSize: number = 1024 * 1024): Pr
       body += chunk.toString();
       if (body.length > maxSize && !exceeded) {
         exceeded = true;
+        req.destroy();
         reject(new Error("Request body too large"));
       }
     });
@@ -102,6 +103,11 @@ export function startReviewServer(opts?: ReviewServerOpts): Promise<ReviewServer
           if (!data.planId || typeof data.planId !== "string") {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Missing planId" }));
+            return;
+          }
+          if (!/^[a-zA-Z0-9._-]+$/.test(data.planId)) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Invalid planId format" }));
             return;
           }
           if (!data.planContent || typeof data.planContent !== "string") {
