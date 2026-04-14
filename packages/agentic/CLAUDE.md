@@ -24,7 +24,7 @@ src/
 │   ├── ready.ts          # gsag ready — show tasks ready to work on
 │   ├── state/            # gsag state — task state management (internal)
 │   │   ├── index.ts      # Subcommand group (task, epic, plan, review, qa, log, web)
-│   │   ├── task.ts       # create, show, current, next, transition, update, cancel, list
+│   │   ├── task.ts       # create, show, current, next, transition, update, cancel, list; epic: create, show, list, export
 │   │   ├── task.test.ts  # CLI integration tests for task commands
 │   │   ├── plan.ts       # show, set (--file/--content/--stdin), add-task, history, feedback, resolve-feedback
 │   │   ├── review.ts     # create, add-item, resolve, list, summary
