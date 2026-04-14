@@ -157,4 +157,29 @@ describe("renderPlanPage", () => {
     const html = renderPlanPage("**bold** text", "e1", 3000);
     expect(html).toContain("<strong>bold</strong>");
   });
+
+  test("sidebar textarea element present", () => {
+    const html = renderPlanPage("# T", "e1", 3000);
+    expect(html).toContain('id="sidebar-text"');
+  });
+
+  test("sidebar-text is a textarea", () => {
+    const html = renderPlanPage("# T", "e1", 3000);
+    expect(html).toContain('<textarea id="sidebar-text"');
+  });
+
+  test("serverPort embedded in API URL", () => {
+    const html = renderPlanPage("# T", "e1", 9876);
+    expect(html).toContain("http://localhost:9876/api/feedback");
+  });
+
+  test("different port value embedded in API URL", () => {
+    const html = renderPlanPage("# T", "e1", 4444);
+    expect(html).toContain("http://localhost:4444/api/feedback");
+  });
+
+  test("port 0 embedded in API URL", () => {
+    const html = renderPlanPage("# T", "e1", 0);
+    expect(html).toContain("http://localhost:0/api/feedback");
+  });
 });
