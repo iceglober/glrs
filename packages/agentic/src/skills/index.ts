@@ -183,7 +183,7 @@ export const BUILTIN_COLLISIONS = new Set([
 ]);
 
 /** Non-gs commands that are always installed with their original names. */
-const STATIC_COMMANDS: Record<string, string> = {
+const STATIC_COMMANDS: Record<string, string | SkillEntry> = {
   // Research
   "research.md": research(),
   "research-local.md": researchLocal(),
@@ -233,7 +233,13 @@ export function buildCommands(prefix?: string): Record<string, string> {
     gsCommands[filename] = typeof output === "string" ? output : output["SKILL.md"];
   }
 
-  return { ...STATIC_COMMANDS, ...gsCommands };
+  // Flatten STATIC_COMMANDS: extract SKILL.md from SkillEntry values
+  const staticFlat: Record<string, string> = {};
+  for (const [k, v] of Object.entries(STATIC_COMMANDS)) {
+    staticFlat[k] = typeof v === "string" ? v : v["SKILL.md"];
+  }
+
+  return { ...staticFlat, ...gsCommands };
 }
 
 /**
@@ -244,7 +250,7 @@ export const COMMANDS: Record<string, string> = buildCommands();
 
 /** Skills — activate automatically when relevant */
 export const SKILLS: Record<string, string> = {
-  "browser.md": browser(),
+  "browser.md": (() => { const b = browser(); return typeof b === "string" ? b : b["SKILL.md"]; })(),
   ...Object.fromEntries(
     Object.entries(writingSkills()).map(([f, c]) => [`writing-skills/${f}`, c]),
   ),
@@ -283,11 +289,25 @@ export function buildAllSkills(prefix?: string): Record<string, string> {
   // Static commands (research, spec, product)
   for (const [filename, content] of Object.entries(STATIC_COMMANDS)) {
     const dirName = filename.replace(/\.md$/, "");
-    result[`${dirName}/SKILL.md`] = content;
+    if (typeof content === "string") {
+      result[`${dirName}/SKILL.md`] = content;
+    } else {
+      // SkillEntry — flatten all files into the directory
+      for (const [file, fileContent] of Object.entries(content)) {
+        result[`${dirName}/${file}`] = fileContent;
+      }
+    }
   }
 
-  // Browser — single file skill
-  result["browser/SKILL.md"] = browser();
+  // Browser — single/multi file skill
+  const browserOutput = browser();
+  if (typeof browserOutput === "string") {
+    result["browser/SKILL.md"] = browserOutput;
+  } else {
+    for (const [file, content] of Object.entries(browserOutput)) {
+      result[`browser/${file}`] = content;
+    }
+  }
 
   // Writing-skills — multi-file skill (already a Record<string, string>)
   for (const [file, content] of Object.entries(writingSkills())) {

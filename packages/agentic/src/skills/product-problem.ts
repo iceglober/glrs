@@ -1,7 +1,10 @@
-export function productProblem(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productProblem(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-problem
 description: Use when synthesizing research outputs into a problem definition, when bridging discovery research to requirements, or when the team needs a crisp problem statement before writing a PRD
+disable-model-invocation: true
 ---
 
 # Product Problem Definition
@@ -142,5 +145,5 @@ If the total output exceeds 2 pages, you haven't synthesized — you've summariz
 | "I found relevant info while reading research — I should include it" | If it's not in the research files, it's not in the problem definition. |
 | "The user might want to choose between options" | You're the synthesizer. Present the synthesis, not a menu. |
 | "System-centric language is more precise" | Precise about the wrong thing. Customers don't care about systems. |
-| "Two metrics would be more robust" | One metric that's wrong gets fixed. Five metrics hide the real one. |`;
+| "Two metrics would be more robust" | One metric that's wrong gets fixed. Five metrics hide the real one. |` };
 }

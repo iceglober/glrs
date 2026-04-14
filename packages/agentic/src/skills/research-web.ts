@@ -1,6 +1,10 @@
-export function researchWeb(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function researchWeb(): SkillEntry {
+  return { "SKILL.md": `---
+name: research-web
 description: Multi-agent research orchestrator. Decomposes a research question into parallel agent workstreams, launches them, monitors progress, and synthesizes results. Use when user says 'research this topic', 'I need to understand', 'deep dive into', 'investigate the market for', 'what do we know about'. Provide the research topic and context.
+disable-model-invocation: true
 ---
 
 # /research-web — Multi-Agent Research Orchestrator
@@ -117,5 +121,5 @@ Once ALL research agents are complete:
 4. **Source integrity.** Every number needs an inline URL.
 5. **Monitor proactively** using escalating intervals. Don't wait for the user to ask.
 6. **Keep check-in reports concise.**
-`;
+` };
 }

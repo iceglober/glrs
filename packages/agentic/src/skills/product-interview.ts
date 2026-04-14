@@ -1,7 +1,10 @@
-export function productInterview(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productInterview(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-interview
 description: Use when research is complete and you need stakeholder answers for gaps tagged [USER] in research docs, when filling specific unknowns that only the user can answer, or when conducting a focused 10-15 minute interview after autonomous research
+disable-model-invocation: true
 ---
 
 # Product Interview — Targeted Gap-Filler
@@ -140,5 +143,5 @@ Do NOT ask "is there anything else?" — that opens the door to a 30-minute tang
 | "Interview notes should be a separate artifact" | Research docs are the source of truth. Update them directly. |
 | "I should confirm what research found" | Only confirm [UNVERIFIED] items. Don't re-ask things tagged [VERIFIED]. |
 | "The user might have context beyond the [USER] tags" | If they do, they'll volunteer it. Don't fish with vague questions. |
-| "A thorough interview takes 45 minutes" | A thorough interview after good research takes 10-15. You did the research. |`;
+| "A thorough interview takes 45 minutes" | A thorough interview after good research takes 10-15. You did the research. |` };
 }

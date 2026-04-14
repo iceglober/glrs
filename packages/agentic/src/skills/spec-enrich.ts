@@ -1,6 +1,10 @@
-export function specEnrich(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function specEnrich(): SkillEntry {
+  return { "SKILL.md": `---
+name: spec-enrich
 description: Autonomous spec enrichment from codebase. Reads a product spec, researches the current repo to resolve unknowns, and produces an updated spec version — no user input needed. Use when user says 'enrich this spec from code', 'what can the codebase tell us', 'auto-resolve unknowns', 'research the repo for this spec'. Provide the spec file path.
+disable-model-invocation: true
 ---
 
 # /spec-enrich — Codebase-Driven Spec Enrichment
@@ -196,5 +200,5 @@ Run \\\`/spec-refine [new file path]\\\` to resolve remaining unknowns with the 
 6. **Version, don't overwrite.** Always write a new file.
 7. **The codebase is truth.** If the code contradicts the spec's assumption, the code wins. Update the spec accordingly and flag the discrepancy.
 8. **Proceed without approval.** This skill is autonomous by design. Present the plan and immediately start researching.
-`;
+` };
 }

@@ -1,7 +1,10 @@
-export function productResearchBenchmarks(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productResearchBenchmarks(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-research-benchmarks
 description: Use when researching industry benchmarks, KPIs, SLAs, or performance expectations for a product domain, when the user needs numbers to set targets, or when a discovery doc needs quantitative context
+disable-model-invocation: true
 ---
 
 # Product Research — Benchmarks
@@ -161,5 +164,5 @@ FOR EACH gap:
 | "The user wants numbers, not gaps" | The user wants REAL numbers. Gaps with honest [NO DATA] are more useful than fiction. |
 | "I can extrapolate from adjacent domains" | Extrapolation is estimation. Flag it explicitly as [EXTRAPOLATED FROM: domain] or cut it. |
 | "This vendor's SLA IS the industry standard" | One vendor's SLA is one vendor's SLA. It becomes a standard only with multiple sources. |
-| "I should recommend which tier to target" | You are a researcher, not a strategist. Present the data. The CTO decides. |`;
+| "I should recommend which tier to target" | You are a researcher, not a strategist. Present the data. The CTO decides. |` };
 }

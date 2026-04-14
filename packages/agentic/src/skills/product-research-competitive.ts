@@ -1,7 +1,10 @@
-export function productResearchCompetitive(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productResearchCompetitive(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-research-competitive
 description: Use when analyzing competitors for a product idea, when comparing features against market alternatives, or when identifying competitive gaps to exploit
+disable-model-invocation: true
 ---
 
 # Product Research — Competitive Analysis
@@ -165,5 +168,5 @@ Features competitors have that we're not planning. For each, note: is this a del
 | "I'll write a narrative comparison — tables are limiting" | Tables force specificity. Narratives hide vagueness. Use tables. |
 | "I should note their funding/valuation" | Funding is market research. Compare features, not balance sheets. |
 | "I'll recommend best practices from competitors" | You're here to find gaps, not copy competitors. |
-| "Only 2 direct competitors exist" | Did you search for indirect competitors and incumbents? The manual process we're replacing IS a competitor. |`;
+| "Only 2 direct competitors exist" | Did you search for indirect competitors and incumbents? The manual process we're replacing IS a competitor. |` };
 }

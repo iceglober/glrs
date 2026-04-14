@@ -1,5 +1,8 @@
-export function browser(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function browser(): SkillEntry {
+  return { "SKILL.md": `---
+name: browser
 description: Browse the web, interact with pages, fill forms, and extract data using a real browser via Playwright CLI. Use when user says 'open this page', 'browse to', 'fill out the form', 'scrape this site', 'take a screenshot', 'test this URL', 'check this website'. Do NOT use for web research across multiple sources (use /research-web instead).
 ---
 
@@ -111,5 +114,5 @@ The CLI runs headed by default. Pass \\\`--headless\\\` to \\\`open\\\`:
 \\\`\\\`\\\`bash
 playwright-cli open --headless "https://example.com"
 \\\`\\\`\\\`
-`;
+` };
 }

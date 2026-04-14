@@ -1,7 +1,10 @@
-export function productResearchTechnical(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productResearchTechnical(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-research-technical
 description: Use when researching technical feasibility by reading the codebase, when mapping existing capabilities and integration points, or when the team needs to know what exists before designing a solution
+disable-model-invocation: true
 ---
 
 # Product Research — Technical
@@ -147,5 +150,5 @@ Questions that only an engineer can answer by making a decision. Tag each:
 | "Adding recommendations can't hurt" | Recommendations disguised as research become invisible assumptions. |
 | "The team will want to know best practices" | The team wants to know what their codebase does. They know best practices. |
 | "I should mention security considerations" | Only if the code already has security mechanisms to document. Don't import concerns from training data. |
-| "I'll just quickly sketch the integration approach" | That's architecture. Deliver the map, not the route. |`;
+| "I'll just quickly sketch the integration approach" | That's architecture. Deliver the map, not the route. |` };
 }

@@ -1,7 +1,10 @@
-export function productEvaluate(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productEvaluate(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-evaluate
 description: Use when evaluating a product artifact for quality, when the orchestrator needs to decide if an artifact needs rework, or when scoring a discovery doc, problem definition, PRD, or acceptance criteria against quality standards
+disable-model-invocation: true
 ---
 
 # Product Evaluate
@@ -159,5 +162,5 @@ After outputting the evaluation: STOP. Do not fix anything. Do not ask what to d
 | "I should explain what good looks like" | Point to the criterion. The skill that fixes it knows what good looks like. |
 | "Overall strong with room for improvement" | Diplomatic noise. Score it. List the findings. Stop. |
 | "I'll give it a pass and mention areas to watch" | "Areas to watch" is a soft fail pretending to be a pass. Score honestly. |
-| "The feedback might seem harsh" | Harsh feedback that's specific and actionable is a gift. Vague approval is waste. |`;
+| "The feedback might seem harsh" | Harsh feedback that's specific and actionable is a gift. Vague approval is waste. |` };
 }

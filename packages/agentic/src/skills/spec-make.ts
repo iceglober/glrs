@@ -1,6 +1,10 @@
-export function specMake(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function specMake(): SkillEntry {
+  return { "SKILL.md": `---
+name: spec-make
 description: Create a tight, actionable product spec from research output or a feature description. Strips narrative, defines terms, surfaces unknowns, questions KPIs. Use when user says 'create a spec', 'turn this into requirements', 'write a product spec', 'spec this out', 'spec from description'. Provide a research directory path OR a feature description.
+disable-model-invocation: true
 ---
 
 # /spec-make — Create Product Spec
@@ -100,5 +104,5 @@ Write to: \\\`[research-dir]/spec-[scope-slug].md\\\` (Mode A) or \\\`specs/spec
 5. **Scope is a weapon.** Enforce it aggressively — out-of-scope items get fenced, not deleted.
 6. **Assumptions are risks.** Surface them, don't hide them.
 7. **KPIs earn their place.** Measurable, actionable, attributable to this scope.
-`;
+` };
 }
