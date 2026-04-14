@@ -8,10 +8,10 @@
  * Each test gets an isolated temp directory simulating a git repo with
  * its own .claude/ and a fake $HOME with its own ~/.claude/.
  */
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { COMMANDS } from "../src/skills/index.js";
 
 const CLI = path.resolve(import.meta.dir, "../dist/index.js");
@@ -29,6 +29,14 @@ function setup(): Env {
   const homeDir = path.join(base, "home");
   fs.mkdirSync(projectDir, { recursive: true });
   fs.mkdirSync(homeDir, { recursive: true });
+
+  // Disable auto-sync so explicit install tests are isolated from autoSyncSkills()
+  const settingsDir = path.join(homeDir, ".glorious");
+  fs.mkdirSync(settingsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(settingsDir, "settings.json"),
+    JSON.stringify({ "skills.auto-update": "false" }),
+  );
 
   // Init a bare git repo so gitRoot() works
   execSync("git init", { cwd: projectDir, stdio: "pipe" });
@@ -324,5 +332,164 @@ describe("e2e: gsag skills", () => {
 
   test("--user --project errors", () => {
     expect(() => run(env, "--user --project")).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// autoSyncSkills e2e tests
+// ---------------------------------------------------------------------------
+
+/** Setup WITHOUT auto-sync disabled — auto-sync fires on every CLI invocation. */
+function setupAutoSync(): Env {
+  const base = fs.mkdtempSync("/tmp/gs-e2e-autosync-");
+  const projectDir = path.join(base, "repo");
+  const homeDir = path.join(base, "home");
+  fs.mkdirSync(projectDir, { recursive: true });
+  fs.mkdirSync(homeDir, { recursive: true });
+
+  // NO settings.json → auto-sync defaults to enabled
+
+  execSync("git init", { cwd: projectDir, stdio: "pipe" });
+  execSync("git commit --allow-empty -m init", {
+    cwd: projectDir,
+    stdio: "pipe",
+    env: {
+      ...process.env,
+      HOME: homeDir,
+      GIT_AUTHOR_NAME: "test",
+      GIT_AUTHOR_EMAIL: "test@test.com",
+      GIT_COMMITTER_NAME: "test",
+      GIT_COMMITTER_EMAIL: "test@test.com",
+    },
+  });
+
+  return {
+    projectDir,
+    homeDir,
+    projectClaude: path.join(projectDir, ".claude"),
+    userClaude: path.join(homeDir, ".claude"),
+  };
+}
+
+/** Run any CLI command and capture both stdout and stderr. */
+function runCapture(env: Env, args: string): { stdout: string; stderr: string } {
+  const result = spawnSync("node", [CLI, ...args.split(/\s+/)], {
+    cwd: env.projectDir,
+    encoding: "utf-8",
+    env: { ...process.env, HOME: env.homeDir },
+  });
+  return { stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+describe("e2e: autoSyncSkills", () => {
+  let env: Env;
+
+  beforeEach(() => {
+    env = setupAutoSync();
+  });
+
+  afterEach(() => {
+    const base = path.dirname(env.projectDir);
+    if (fs.existsSync(base)) fs.rmSync(base, { recursive: true });
+  });
+
+  test("auto-installs to user scope on first CLI invocation", () => {
+    const { stderr } = runCapture(env, "config list");
+    expect(stderr).toContain("skills synced");
+    // User scope manifest created
+    const m = manifest(env.userClaude);
+    expect(m.commands.length).toBeGreaterThan(0);
+    // Files on disk
+    const cmds = installedFiles(env.userClaude, "commands");
+    expect(cmds).toContain("work.md");
+  });
+
+  test("does not auto-install when skills.auto-update is false", () => {
+    // Write settings to disable auto-sync
+    const settingsDir = path.join(env.homeDir, ".glorious");
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(settingsDir, "settings.json"),
+      JSON.stringify({ "skills.auto-update": "false" }),
+    );
+
+    const { stderr } = runCapture(env, "config list");
+    expect(stderr).not.toContain("skills synced");
+    // No user scope manifest
+    expect(fs.existsSync(path.join(env.userClaude, ".glorious-skills.json"))).toBe(false);
+  });
+
+  test("does not sync when version already matches", () => {
+    // First run triggers auto-sync
+    runCapture(env, "config list");
+    // Second run should skip — version already matches
+    const { stderr } = runCapture(env, "config list");
+    expect(stderr).not.toContain("skills synced");
+  });
+
+  test("syncs project scope when manifest version is stale", () => {
+    // Install to project scope explicitly (with auto-sync disabled to isolate)
+    const settingsDir = path.join(env.homeDir, ".glorious");
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(settingsDir, "settings.json"),
+      JSON.stringify({ "skills.auto-update": "false" }),
+    );
+    run(env, "--project");
+
+    // Change project manifest version to stale
+    const manifestPath = path.join(env.projectClaude, ".glorious-skills.json");
+    const m = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    m.version = "0.0.1";
+    fs.writeFileSync(manifestPath, JSON.stringify(m, null, 2));
+
+    // Re-enable auto-sync by removing the settings file
+    fs.unlinkSync(path.join(settingsDir, "settings.json"));
+
+    // Run any command — auto-sync should fire for project scope
+    const { stderr } = runCapture(env, "config list");
+    expect(stderr).toContain("skills synced");
+    expect(stderr).toContain(".claude/");
+
+    // Project manifest version should be updated
+    const m2 = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    expect(m2.version).not.toBe("0.0.1");
+  });
+
+  test("preserves prefix during user scope auto-sync", () => {
+    // Install to user scope with prefix (with auto-sync disabled to isolate)
+    const settingsDir = path.join(env.homeDir, ".glorious");
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(settingsDir, "settings.json"),
+      JSON.stringify({ "skills.auto-update": "false" }),
+    );
+    run(env, "--user --prefix gs-");
+
+    // Change user manifest version to stale
+    const manifestPath = path.join(env.userClaude, ".glorious-skills.json");
+    const m = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    expect(m.prefix).toBe("gs-");
+    m.version = "0.0.1";
+    fs.writeFileSync(manifestPath, JSON.stringify(m, null, 2));
+
+    // Re-enable auto-sync
+    fs.unlinkSync(path.join(settingsDir, "settings.json"));
+
+    // Run any command — auto-sync fires (version mismatch triggers syncScope)
+    // Note: "skills synced" only prints when files actually change. Since the same
+    // binary installed them, file content is identical — no stderr output expected.
+    runCapture(env, "config list");
+
+    // Manifest version updated from stale "0.0.1" to current
+    const m2 = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    expect(m2.version).not.toBe("0.0.1");
+
+    // Prefix preserved
+    expect(m2.prefix).toBe("gs-");
+
+    // Files still have gs- prefix
+    const cmds = installedFiles(env.userClaude, "commands");
+    expect(cmds).toContain("gs-work.md");
   });
 });
