@@ -9,7 +9,7 @@ import { initHooks } from "./commands/init-hooks.js";
 import { root } from "./commands/root.js";
 
 import { upgrade } from "./commands/upgrade.js";
-import { installSkills } from "./commands/install-skills.js";
+import { installSkills, autoSyncSkills } from "./commands/install-skills.js";
 import { state } from "./commands/state/index.js";
 import { status } from "./commands/status.js";
 import { ready } from "./commands/ready.js";
@@ -38,6 +38,7 @@ if (args[0] === "wt" && args.length === 1) {
 }
 
 checkForUpdate();
+autoSyncSkills();
 
 // Initialize SQLite state (safe even outside git — getRepo returns null)
 try { await initState(); } catch {}
