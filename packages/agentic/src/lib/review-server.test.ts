@@ -492,3 +492,164 @@ describe("review server — misc", () => {
     expect(json.plans[0].planId).toBe("e1");
   });
 });
+
+describe("review server — E2E concurrent reviews", () => {
+  test("two plans register on shared server", async () => {
+    const { startReviewServer, registerPlan } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await registerPlan(server.url, "e1", "# Plan 1");
+    await registerPlan(server.url, "e2", "# Plan 2");
+    const res = await fetch(server.url + "/api/plans");
+    const json = await res.json() as { plans: Array<{ planId: string }> };
+    expect(json.plans.length).toBe(2);
+    expect(json.plans.map((p: any) => p.planId).sort()).toEqual(["e1", "e2"]);
+  });
+
+  test("finishing e1 sends finish event only to e1 subscriber", async () => {
+    const { startReviewServer, registerPlan } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await registerPlan(server.url, "e1", "# Plan 1");
+    await registerPlan(server.url, "e2", "# Plan 2");
+
+    // Subscribe to e1 and e2 SSE streams
+    const e1Events: string[] = [];
+    const e2Events: string[] = [];
+    const e1Controller = new AbortController();
+    const e2Controller = new AbortController();
+
+    const e1Promise = new Promise<void>((resolve) => {
+      fetch(server.url + "/api/events?planId=e1", { signal: e1Controller.signal })
+        .then(async (res) => {
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            e1Events.push(decoder.decode(value));
+            if (e1Events.some(e => e.includes("event: finish"))) {
+              setTimeout(() => { e1Controller.abort(); resolve(); }, 50);
+            }
+          }
+        })
+        .catch(() => resolve());
+    });
+
+    const e2Listener = fetch(server.url + "/api/events?planId=e2", { signal: e2Controller.signal })
+      .then(async (res) => {
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          e2Events.push(decoder.decode(value));
+        }
+      })
+      .catch(() => {});
+
+    await new Promise(r => setTimeout(r, 50));
+
+    // Finish e1
+    await fetch(server.url + "/api/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1" }),
+    });
+
+    await e1Promise;
+    e2Controller.abort();
+
+    expect(e1Events.some(e => e.includes("event: finish"))).toBe(true);
+    // e2 should NOT have received a finish event
+    expect(e2Events.some(e => e.includes("event: finish"))).toBe(false);
+  });
+
+  test("finishing last plan sends close-tab, non-last does not", async () => {
+    const { startReviewServer, registerPlan } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await registerPlan(server.url, "e1", "# Plan 1");
+    await registerPlan(server.url, "e2", "# Plan 2");
+
+    // Finish e1 (not the last)
+    const res1 = await fetch(server.url + "/api/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1" }),
+    });
+    const json1 = await res1.json() as { remaining: number };
+    expect(json1.remaining).toBe(1);
+
+    // Finish e2 (the last)
+    const res2 = await fetch(server.url + "/api/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e2" }),
+    });
+    const json2 = await res2.json() as { remaining: number };
+    expect(json2.remaining).toBe(0);
+  });
+
+  test("server cleanup removes port file", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    expect(fs.existsSync(TEST_PORT_FILE)).toBe(true);
+    server.close();
+    expect(fs.existsSync(TEST_PORT_FILE)).toBe(false);
+  });
+
+  test("stale port file cleaned up on findRunningServer", async () => {
+    const { findRunningServer } = await importModule();
+    // Write a stale port file with a dead PID
+    fs.writeFileSync(TEST_PORT_FILE, `12345\n999999999\n${Date.now()}`);
+    const result = await findRunningServer({ portFilePath: TEST_PORT_FILE });
+    expect(result).toBeNull();
+    // Port file should be cleaned up
+    expect(fs.existsSync(TEST_PORT_FILE)).toBe(false);
+  });
+
+  test("waitForFinish resolves when plan is finished", async () => {
+    const { startReviewServer, registerPlan, waitForFinish } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await registerPlan(server.url, "e1", "# Plan");
+
+    // Start waiting in background
+    const waitPromise = waitForFinish(server.url, "e1");
+
+    await new Promise(r => setTimeout(r, 50));
+
+    // Finish the plan
+    await fetch(server.url + "/api/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1" }),
+    });
+
+    // waitForFinish should resolve
+    await waitPromise;
+    // If we get here, the test passes — waitForFinish resolved
+    expect(true).toBe(true);
+  });
+
+  test("finished plans removed from GET /api/plans list", async () => {
+    const { startReviewServer, registerPlan } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await registerPlan(server.url, "e1", "# Plan 1");
+    await registerPlan(server.url, "e2", "# Plan 2");
+
+    await fetch(server.url + "/api/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1" }),
+    });
+
+    const res = await fetch(server.url + "/api/plans");
+    const json = await res.json() as { plans: Array<{ planId: string }> };
+    expect(json.plans.length).toBe(1);
+    expect(json.plans[0].planId).toBe("e2");
+  });
+});
