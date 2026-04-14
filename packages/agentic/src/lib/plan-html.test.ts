@@ -75,10 +75,34 @@ describe("renderPlanPage", () => {
     expect(html).not.toContain("feedback-btn");
   });
 
-  test("general feedback section still present", () => {
+  test("sidebar element present in output", () => {
     const html = renderPlanPage("# Test", "e1", 3000);
-    expect(html).toContain("general-feedback");
-    expect(html).toContain("General Feedback");
+    expect(html).toContain('id="feedback-sidebar"');
+  });
+
+  test("section indicator present", () => {
+    const html = renderPlanPage("# Test", "e1", 3000);
+    expect(html).toContain('id="sidebar-section"');
+  });
+
+  test("toggle button present", () => {
+    const html = renderPlanPage("# Test", "e1", 3000);
+    expect(html).toContain('id="sidebar-toggle"');
+  });
+
+  test("old general-feedback section removed", () => {
+    const html = renderPlanPage("# Test", "e1", 3000);
+    expect(html).not.toContain('id="general-feedback"');
+  });
+
+  test("IntersectionObserver code present", () => {
+    const html = renderPlanPage("# Test", "e1", 3000);
+    expect(html).toContain("IntersectionObserver");
+  });
+
+  test("sidebar history container present", () => {
+    const html = renderPlanPage("# Test", "e1", 3000);
+    expect(html).toContain('id="sidebar-history"');
   });
 
   test("strips script tags from markdown", () => {
