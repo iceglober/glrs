@@ -359,10 +359,12 @@ export async function registerPlan(serverUrl: string, planId: string, planConten
   }
 }
 
-/** Wait for a plan's finish signal via SSE. Resolves when the finish event fires for the given planId. */
+/** Wait for a plan's finish signal via SSE. Resolves when the finish event fires.
+ *  Rejects if the stream closes without a finish event (server died). */
 export function waitForFinish(serverUrl: string, planId: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const controller = new AbortController();
+    let receivedFinish = false;
     fetch(serverUrl + "/api/events?planId=" + encodeURIComponent(planId), {
       signal: controller.signal,
     })
@@ -372,11 +374,16 @@ export function waitForFinish(serverUrl: string, planId: string): Promise<void> 
         while (true) {
           const { done, value } = await reader.read();
           if (done) {
-            resolve();
+            if (receivedFinish) {
+              resolve();
+            } else {
+              reject(new Error("Review server disconnected before review was finished"));
+            }
             return;
           }
           const text = decoder.decode(value);
           if (text.includes("event: finish")) {
+            receivedFinish = true;
             controller.abort();
             resolve();
             return;
@@ -384,8 +391,10 @@ export function waitForFinish(serverUrl: string, planId: string): Promise<void> 
         }
       })
       .catch((err) => {
-        if (err.name === "AbortError") {
+        if (err.name === "AbortError" && receivedFinish) {
           resolve();
+        } else if (err.name === "AbortError") {
+          reject(new Error("Review server disconnected before review was finished"));
         } else {
           reject(err);
         }

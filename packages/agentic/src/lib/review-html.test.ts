@@ -108,6 +108,18 @@ describe("renderReviewPage", () => {
     expect(sseSection).not.toContain('onclick="finishReview');
   });
 
+  test("finishReview has .catch handler", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    const finishSection = html.slice(html.indexOf("function finishReview"), html.indexOf("// Section tracking"));
+    expect(finishSection).toContain(".catch(");
+  });
+
+  test("catch handler creates error element in panel", () => {
+    const html = renderReviewPage([{ planId: "e1", htmlContent: "" }], 3000);
+    const finishSection = html.slice(html.indexOf("function finishReview"), html.indexOf("// Section tracking"));
+    expect(finishSection).toContain("Failed to finish review");
+  });
+
   test("escapeHtml escapes single quotes in planId", () => {
     const html = renderReviewPage([{ planId: "e1'test", htmlContent: "" }], 3000);
     expect(html).toContain("e1&#39;test");

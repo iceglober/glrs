@@ -652,4 +652,18 @@ describe("review server — E2E concurrent reviews", () => {
     expect(json.plans.length).toBe(1);
     expect(json.plans[0].planId).toBe("e2");
   });
+
+  test("waitForFinish rejects on stream close without finish event", async () => {
+    const { startReviewServer, registerPlan, waitForFinish } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await registerPlan(server.url, "e1", "# Plan");
+
+    // Start waiting, then close server (simulates server death)
+    const waitPromise = waitForFinish(server.url, "e1");
+    await new Promise(r => setTimeout(r, 50));
+    server.close();
+
+    await expect(waitPromise).rejects.toThrow("disconnected");
+  });
 });

@@ -2,7 +2,7 @@ import { command, subcommands, option, optional, string, number as cmdNumber } f
 import { loadPlan } from "../lib/state.js";
 import { startReviewServer, findRunningServer, registerPlan, waitForFinish, type ReviewServer } from "../lib/review-server.js";
 import { openBrowser } from "../lib/open-browser.js";
-import { info, ok, bold, dim } from "../lib/fmt.js";
+import { info, ok, warn, bold, dim } from "../lib/fmt.js";
 
 const review = command({
   name: "review",
@@ -45,8 +45,12 @@ const review = command({
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
 
-    await waitForFinish(serverUrl, args.id);
-    ok(`Review complete — feedback saved for ${args.id}`);
+    try {
+      await waitForFinish(serverUrl, args.id);
+      ok(`Review complete — feedback saved for ${args.id}`);
+    } catch {
+      warn("Review server disconnected — check if feedback was saved");
+    }
     server?.close();
     process.exit(0);
   },

@@ -273,6 +273,12 @@ function finishReview(planId) {
         window.close();
       }
     }
+  }).catch(function(err) {
+    var errDiv = document.createElement("div");
+    errDiv.style.cssText = "margin:1rem 0;padding:0.75rem;background:#fee2e2;color:#991b1b;border-radius:6px;";
+    errDiv.textContent = "Failed to finish review: " + err.message;
+    var panel = document.querySelector('.panel[data-plan="' + planId + '"]');
+    if (panel) panel.prepend(errDiv);
   });
 }
 
