@@ -1,7 +1,11 @@
+import { HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
+
 export function gsBuildLoop(): string {
   return `---
 description: Loop through an epic's tasks, completing one step per iteration. Use when user says 'build-loop', 'execute the plan', 'work through the plan', 'build all the tasks'. Uses gs-agentic state task next to find ready tasks automatically.
 ---
+
+${HANDOFF_RULE}
 
 # Build Loop — Automated Plan Executor
 
@@ -90,23 +94,18 @@ RULES:
 
 ## Epic Complete
 
-When all tasks in the epic are done, use the AskUserQuestion tool:
+When all tasks in the epic are done:
 
-\`\`\`
-question: "All tasks complete! What would you like to do next?"
-header: "Next step"
-options:
-  1. label: "Deep review (Recommended)", description: "Thorough multi-agent parallel code review"
-  2. label: "Quick review", description: "Fast single-pass code review of the diff"
-  3. label: "Ship it", description: "Typecheck, review, commit, push, and create a PR"
-  4. label: "Done for now", description: "Stop here — come back later"
-\`\`\`
-
-Based on the user's response:
-- **Deep review**: invoke the deep-review skill using the Skill tool: Skill("deep-review")
-- **Quick review**: invoke the quick-review skill using the Skill tool: Skill("quick-review")
-- **Ship it**: invoke the ship skill using the Skill tool: Skill("ship")
-- **Done for now**: summarize what was built, then stop
+${buildHandoffBlock({
+  question: "All tasks complete! What would you like to do next?",
+  header: "Next step",
+  options: [
+    { label: "Deep review (Recommended)", description: "Thorough multi-agent parallel code review", action: 'Skill("deep-review")' },
+    { label: "Quick review", description: "Fast single-pass code review of the diff", action: 'Skill("quick-review")' },
+    { label: "Ship it", description: "Typecheck, review, commit, push, and create a PR", action: 'Skill("ship")' },
+    { label: "Done for now", description: "Stop here — come back later", action: "summarize what was built, then stop" },
+  ],
+})}
 
 ## Step 3: Plan-file fallback mode
 
