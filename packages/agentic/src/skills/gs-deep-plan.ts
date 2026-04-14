@@ -2,6 +2,115 @@ import { TASK_PREAMBLE, HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
 import type { SkillEntry } from "./index.js";
 
 export function gsDeepPlan(): SkillEntry {
+  const tddMethodology = `# Defense-in-Depth TDD
+
+Every step follows **Red -> Green -> Refactor**, and every feature is tested at multiple layers. A single test at one layer is not enough — bugs slip through layer boundaries.
+
+## Red -> Green -> Refactor (per step)
+
+1. **Red:** Write the test. Run it. Watch it fail. If it passes, the test is wrong — delete and rewrite.
+2. **Green:** Write the minimum code to make the test pass. Nothing more.
+3. **Refactor:** Clean up while tests stay green. This is a separate commit.
+
+## Test Layers — Every Plan Step Must Specify Which Layers Apply
+
+For each step, explicitly assign tests to one or more of these layers:
+
+| Layer | What it proves | Example |
+|-------|---------------|---------|
+| **Unit** | Pure logic works in isolation. No DB, no network, no side effects. Mock collaborators. | \`calculateRetryDelay(3) === 8000\` |
+| **Integration** | Components work together through real infrastructure (DB, queues, external services via test doubles). | Insert row → query returns it with correct joins |
+| **Contract/API** | HTTP endpoints accept correct input and return correct output shapes. Tests hit the running server. | \`POST /v1/webhooks\` returns 201 with \`{ id, url, active }\` |
+| **Behavioral/E2E** | Full user-visible workflow produces the right outcome end-to-end. | Create subscription → trigger event → delivery record exists with status \`success\` |
+
+**Layer assignment rules:**
+- Every step with pure logic (transforms, calculations, validation) MUST have **Unit** tests
+- Every step that touches the database MUST have **Integration** tests
+- Every step that adds/modifies an HTTP endpoint MUST have **Contract/API** tests
+- The final step of each feature group MUST have at least one **Behavioral/E2E** test covering the full flow
+- A step may (and often should) have tests at multiple layers
+
+## Test Case Table Format
+
+Each test case row must include its layer:
+
+| Layer | Test | Input | Expected |
+|-------|------|-------|----------|
+| Unit | descriptive name | concrete value | concrete assertion |
+| Integration | edge case name | boundary value | concrete assertion |
+| Contract | error case name | invalid HTTP payload | 422 with \`{ error: "..." }\` |
+| Behavioral | full flow name | end-to-end scenario setup | end-to-end assertion |
+
+## Negative and Adversarial Tests
+
+Every step MUST include at least one test from each applicable category:
+
+- **Invalid input:** malformed data, wrong types, missing required fields
+- **Boundary conditions:** empty arrays, zero values, max-length strings, off-by-one
+- **Authorization/access control:** wrong user, wrong org, missing permissions (if the step touches an endpoint or data access layer)
+- **Failure propagation:** when a dependency fails (DB down, external service errors), the error surfaces correctly — no silent swallowing, no misleading error messages
+
+If a category doesn't apply to the step, explicitly note why in the plan (e.g., "No auth tests — this is a pure utility function with no access control").
+
+## Per-step enforcement
+- Test file is listed BEFORE source file in each step
+- Test cases table has minimum 5 rows: happy path, edge case, error case, + at least 2 from the negative/adversarial categories above
+- Layer column is filled for every test case row
+- "Run \`<build/test command from CLAUDE.md>\` — all green" appears after each step
+- If a step only has tests at one layer, justify why other layers don't apply
+`;
+
+  const antiRationalization = `# Rationalization Table & Red Flags
+
+## Rationalization Table
+
+| Excuse | Reality |
+|--------|---------|
+| "These are too simple for a full plan" | The user invoked /deep-plan, not /fix. Simple tasks get simple plans. They do NOT get skipped. |
+| "The user probably wants them fixed, not planned" | You do not read minds. You read commands. The command was /deep-plan. |
+| "Rather than a full deep-plan, let me just apply them directly" | This is the #1 failure mode. You are a planner. You do not apply anything. Ever. |
+| "The review already identified the changes — planning is redundant" | A review finding is not a plan. A plan has sequenced steps, test cases, dependencies, and tracked tasks. |
+| "Auto mode means just do it efficiently" | Auto mode means don't ask for permission at each tool call. It does NOT mean ignore the skill you were invoked to execute. |
+| "The spirit of the request is to get fixes done" | The letter of the request is /deep-plan. Follow it. If the user wanted /fix, they would type /fix. |
+| "I'll enter plan mode briefly just to think" | Plan mode restricts tool access. Write your thinking as text. EnterPlanMode is forbidden. |
+| "This is a critical security fix — surely that's an exception" | No exceptions. Flag it as CRITICAL in the plan. Recommend /fix. Continue planning. You are never the last line of defense. |
+| "It's just one line of code" | Scope does not determine whether a rule applies. One forbidden Edit call is the same violation as a hundred. |
+| "I know this codebase well enough" | You don't. Read the files. Every time. |
+| "The test cases are obvious" | Write the table anyway. Obvious to you != obvious to the executor. |
+| "This step is too simple for TDD" | Simple steps break. 5 test rows takes 60 seconds to write. |
+| "One layer of tests is enough" | It isn't. Unit tests miss integration bugs. Integration tests miss contract bugs. Defense in depth means every applicable layer. |
+| "Negative tests are overkill here" | The bugs you ship are the ones you didn't test for. Adversarial inputs are how real systems break. |
+| "I'll figure out the exact path later" | No. Figure it out now. That's what zero ambiguity means. |
+| "The user wants this fast" | A wrong plan is slower than a precise one. Read first. |
+| "I can invent a reasonable signature" | Reasonable != correct. Derive from existing code. |
+| "I'll sync to gs-agentic later" | No. The task tree is created immediately in Step 7. No plan without tracked tasks. |
+
+## Red Flags — STOP if you catch yourself doing any of these
+
+**Implementation violations (Constraint #2):**
+- About to call Edit, Write, or NotebookEdit — STOP. You are a planner.
+- Saying "let me just fix/apply/implement this" — STOP. Produce a plan.
+- Thinking "this is too simple for a plan" — STOP. Simple tasks get simple plans.
+- Writing actual code outside of signature examples in the plan — STOP.
+- Offering to "just do it" instead of planning — STOP.
+
+**Plan mode violations (Constraint #1):**
+- About to call EnterPlanMode — STOP. Write your thinking as text.
+- Thinking "I need to think about this in plan mode first" — STOP. Think in your response text.
+
+**Quality violations:**
+- Writing a file path you haven't confirmed exists (or confirmed doesn't exist)
+- Using a function name you haven't seen in the codebase
+- Writing "TBD", "TODO", "figure out", or any hedge word in the plan
+- Producing a test case with no concrete input/output values
+- Skipping the file change table
+- Not saving the plan to the global store via \`gs-agentic state plan set --stdin\`
+- A step has tests at only one layer with no justification for why other layers don't apply
+- A step has fewer than 5 test case rows
+- No negative/adversarial tests in a step that touches input validation, data access, or endpoints
+- Skipping Step 7c/7d — every plan MUST have gs-agentic tasks under an epic
+`;
+
   return { "SKILL.md": `---
 name: deep-plan
 description: Create a zero-ambiguity implementation plan with strict TDD methodology. Use when user says 'deep plan', 'plan this', 'create a plan', 'implementation plan', 'break this down', 'plan the work', 'how should we build this'. Saves plan to global store via gs-agentic state, with checkboxes, sequenced work, exact test cases, and dependency order. Creates gs-agentic epics and tasks for every plan step. Do NOT use for implementation (use /work or /build) or strategy evaluation (use /think).
@@ -151,60 +260,7 @@ Break into numbered steps. Each step:
 
 ### Step 4: Defense-in-Depth TDD
 
-Every step follows **Red -> Green -> Refactor**, and every feature is tested at multiple layers. A single test at one layer is not enough — bugs slip through layer boundaries.
-
-#### Red -> Green -> Refactor (per step)
-
-1. **Red:** Write the test. Run it. Watch it fail. If it passes, the test is wrong — delete and rewrite.
-2. **Green:** Write the minimum code to make the test pass. Nothing more.
-3. **Refactor:** Clean up while tests stay green. This is a separate commit.
-
-#### Test Layers — Every Plan Step Must Specify Which Layers Apply
-
-For each step, explicitly assign tests to one or more of these layers:
-
-| Layer | What it proves | Example |
-|-------|---------------|---------|
-| **Unit** | Pure logic works in isolation. No DB, no network, no side effects. Mock collaborators. | \`calculateRetryDelay(3) === 8000\` |
-| **Integration** | Components work together through real infrastructure (DB, queues, external services via test doubles). | Insert row → query returns it with correct joins |
-| **Contract/API** | HTTP endpoints accept correct input and return correct output shapes. Tests hit the running server. | \`POST /v1/webhooks\` returns 201 with \`{ id, url, active }\` |
-| **Behavioral/E2E** | Full user-visible workflow produces the right outcome end-to-end. | Create subscription → trigger event → delivery record exists with status \`success\` |
-
-**Layer assignment rules:**
-- Every step with pure logic (transforms, calculations, validation) MUST have **Unit** tests
-- Every step that touches the database MUST have **Integration** tests
-- Every step that adds/modifies an HTTP endpoint MUST have **Contract/API** tests
-- The final step of each feature group MUST have at least one **Behavioral/E2E** test covering the full flow
-- A step may (and often should) have tests at multiple layers
-
-#### Test Case Table Format (updated)
-
-Each test case row must include its layer:
-
-| Layer | Test | Input | Expected |
-|-------|------|-------|----------|
-| Unit | descriptive name | concrete value | concrete assertion |
-| Integration | edge case name | boundary value | concrete assertion |
-| Contract | error case name | invalid HTTP payload | 422 with \`{ error: "..." }\` |
-| Behavioral | full flow name | end-to-end scenario setup | end-to-end assertion |
-
-#### Negative and Adversarial Tests
-
-Every step MUST include at least one test from each applicable category:
-
-- **Invalid input:** malformed data, wrong types, missing required fields
-- **Boundary conditions:** empty arrays, zero values, max-length strings, off-by-one
-- **Authorization/access control:** wrong user, wrong org, missing permissions (if the step touches an endpoint or data access layer)
-- **Failure propagation:** when a dependency fails (DB down, external service errors), the error surfaces correctly — no silent swallowing, no misleading error messages
-
-If a category doesn't apply to the step, explicitly note why in the plan (e.g., "No auth tests — this is a pure utility function with no access control").
-
-#### Per-step enforcement:
-- Test file is listed BEFORE source file in each step
-- Test cases table has minimum 5 rows: happy path, edge case, error case, + at least 2 from the negative/adversarial categories above
-- Layer column is filled for every test case row
-- "Run \`<build/test command from CLAUDE.md>\` — all green" appears after each step
-- If a step only has tests at one layer, justify why other layers don't apply
+Read \`references/tdd-methodology.md\` for the complete TDD methodology: Red-Green-Refactor rules, the 4 test layers (Unit, Integration, Contract/API, Behavioral/E2E), test case table format, negative/adversarial test requirements, and per-step enforcement rules. Apply everything in that reference to every plan step.
 
 ### Step 5: Dependency graph
 
@@ -366,52 +422,14 @@ ${buildHandoffBlock({
   freeText: "the user is giving plan feedback — incorporate their feedback by going back to Step 8 (Handle plan updates). You MUST update both the plan markdown AND the task titles/dependencies in gs-agentic state. Then ask this question again.",
 })}
 
-## Rationalization Table
+## Reference map
 
-| Excuse | Reality |
-|--------|---------|
-| "These are too simple for a full plan" | The user invoked /deep-plan, not /fix. Simple tasks get simple plans. They do NOT get skipped. |
-| "The user probably wants them fixed, not planned" | You do not read minds. You read commands. The command was /deep-plan. |
-| "Rather than a full deep-plan, let me just apply them directly" | This is the #1 failure mode. You are a planner. You do not apply anything. Ever. |
-| "The review already identified the changes — planning is redundant" | A review finding is not a plan. A plan has sequenced steps, test cases, dependencies, and tracked tasks. |
-| "Auto mode means just do it efficiently" | Auto mode means don't ask for permission at each tool call. It does NOT mean ignore the skill you were invoked to execute. |
-| "The spirit of the request is to get fixes done" | The letter of the request is /deep-plan. Follow it. If the user wanted /fix, they would type /fix. |
-| "I'll enter plan mode briefly just to think" | Plan mode restricts tool access. Write your thinking as text. EnterPlanMode is forbidden. |
-| "This is a critical security fix — surely that's an exception" | No exceptions. Flag it as CRITICAL in the plan. Recommend /fix. Continue planning. You are never the last line of defense. |
-| "It's just one line of code" | Scope does not determine whether a rule applies. One forbidden Edit call is the same violation as a hundred. |
-| "I know this codebase well enough" | You don't. Read the files. Every time. |
-| "The test cases are obvious" | Write the table anyway. Obvious to you != obvious to the executor. |
-| "This step is too simple for TDD" | Simple steps break. 5 test rows takes 60 seconds to write. |
-| "One layer of tests is enough" | It isn't. Unit tests miss integration bugs. Integration tests miss contract bugs. Defense in depth means every applicable layer. |
-| "Negative tests are overkill here" | The bugs you ship are the ones you didn't test for. Adversarial inputs are how real systems break. |
-| "I'll figure out the exact path later" | No. Figure it out now. That's what zero ambiguity means. |
-| "The user wants this fast" | A wrong plan is slower than a precise one. Read first. |
-| "I can invent a reasonable signature" | Reasonable != correct. Derive from existing code. |
-| "I'll sync to gs-agentic later" | No. The task tree is created immediately in Step 7. No plan without tracked tasks. |
+- **references/tdd-methodology.md** — read when writing Step 4 (TDD) of any plan. Contains Red-Green-Refactor rules, test layer table, test case format, negative test requirements, per-step enforcement.
+- **references/anti-rationalization.md** — read when you feel tempted to skip any step or constraint. Contains rationalization table and red flags checklist.
 
-## Red Flags — STOP if you catch yourself doing any of these
-
-**Implementation violations (Constraint #2):**
-- About to call Edit, Write, or NotebookEdit — STOP. You are a planner.
-- Saying "let me just fix/apply/implement this" — STOP. Produce a plan.
-- Thinking "this is too simple for a plan" — STOP. Simple tasks get simple plans.
-- Writing actual code outside of signature examples in the plan — STOP.
-- Offering to "just do it" instead of planning — STOP.
-
-**Plan mode violations (Constraint #1):**
-- About to call EnterPlanMode — STOP. Write your thinking as text.
-- Thinking "I need to think about this in plan mode first" — STOP. Think in your response text.
-
-**Quality violations:**
-- Writing a file path you haven't confirmed exists (or confirmed doesn't exist)
-- Using a function name you haven't seen in the codebase
-- Writing "TBD", "TODO", "figure out", or any hedge word in the plan
-- Producing a test case with no concrete input/output values
-- Skipping the file change table
-- Not saving the plan to the global store via \`gs-agentic state plan set --stdin\`
-- A step has tests at only one layer with no justification for why other layers don't apply
-- A step has fewer than 5 test case rows
-- No negative/adversarial tests in a step that touches input validation, data access, or endpoints
-- Skipping Step 7c/7d — every plan MUST have gs-agentic tasks under an epic
-` };
+Read \`references/anti-rationalization.md\` now. If you catch yourself thinking any excuse from that table, stop and correct course.
+` ,
+    "references/tdd-methodology.md": tddMethodology,
+    "references/anti-rationalization.md": antiRationalization,
+  };
 }
