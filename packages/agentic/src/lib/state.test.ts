@@ -2571,6 +2571,39 @@ describe("exportEpicTrace", () => {
     expect(() => exportEpicTrace("e999")).toThrow("Epic e999 not found");
   });
 
+  test("reviews scoped to epic — other epic reviews excluded", () => {
+    const epicA = createEpic({ title: "Epic A", description: "a" });
+    const taskA = createTask({ title: "Task A", epic: epicA.id });
+    const reviewA = createReview({ taskId: taskA.id, source: "test", commitSha: "abc" });
+    addReviewItem({ reviewId: reviewA.id, body: "item A", severity: "HIGH" });
+
+    const epicB = createEpic({ title: "Epic B", description: "b" });
+    const taskB = createTask({ title: "Task B", epic: epicB.id });
+    const reviewB = createReview({ taskId: taskB.id, source: "test", commitSha: "def" });
+    addReviewItem({ reviewId: reviewB.id, body: "item B1", severity: "MEDIUM" });
+    addReviewItem({ reviewId: reviewB.id, body: "item B2", severity: "LOW" });
+
+    const traceA = exportEpicTrace(epicA.id);
+    expect(traceA.reviews.total).toBe(1);
+
+    const traceB = exportEpicTrace(epicB.id);
+    expect(traceB.reviews.total).toBe(2);
+  });
+
+  test("reviews aggregate across multiple tasks in same epic", () => {
+    const epic = createEpic({ title: "Multi Task", description: "mt" });
+    const t1 = createTask({ title: "T1", epic: epic.id });
+    const t2 = createTask({ title: "T2", epic: epic.id });
+    const r1 = createReview({ taskId: t1.id, source: "test", commitSha: "aaa" });
+    const r2 = createReview({ taskId: t2.id, source: "test", commitSha: "bbb" });
+    addReviewItem({ reviewId: r1.id, body: "r1 item", severity: "HIGH" });
+    addReviewItem({ reviewId: r2.id, body: "r2 item", severity: "HIGH" });
+
+    const trace = exportEpicTrace(epic.id);
+    expect(trace.reviews.total).toBe(2);
+    expect(trace.reviews.open).toBe(2);
+  });
+
   test("includes active and resolved feedback", async () => {
     const epic = createEpic({ title: "Feedback Epic", description: "fb" });
     appendFeedback(epic.id, "1.1", "first round");

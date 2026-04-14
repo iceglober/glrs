@@ -1621,7 +1621,22 @@ export function exportEpicTrace(epicId: string): EpicTrace {
     notes: loadTaskNotes(t.id),
   }));
 
-  const reviews = reviewSummary({ taskId: undefined });
+  const reviews: ReviewSummaryResult = { total: 0, open: 0, fixed: 0, pushedBack: 0, wontFix: 0, acknowledged: 0, bySeverity: {} };
+  for (const entry of taskEntries) {
+    const taskReview = reviewSummary({ taskId: entry.task.id });
+    reviews.total += taskReview.total;
+    reviews.open += taskReview.open;
+    reviews.fixed += taskReview.fixed;
+    reviews.pushedBack += taskReview.pushedBack;
+    reviews.wontFix += taskReview.wontFix;
+    reviews.acknowledged += taskReview.acknowledged;
+    for (const [sev, statuses] of Object.entries(taskReview.bySeverity)) {
+      if (!reviews.bySeverity[sev]) reviews.bySeverity[sev] = {};
+      for (const [status, cnt] of Object.entries(statuses)) {
+        reviews.bySeverity[sev][status] = (reviews.bySeverity[sev][status] ?? 0) + cnt;
+      }
+    }
+  }
 
   return {
     exportedAt: new Date().toISOString(),
