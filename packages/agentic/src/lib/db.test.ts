@@ -387,6 +387,78 @@ describe("db", () => {
     expect(result).toBe(42);
   });
 
+  test("withDbLock persists writes even if callback does not call persistDb", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    persistDb(TEST_DB_PATH);
+    const now = new Date().toISOString();
+
+    withDbLock(() => {
+      // Write WITHOUT calling persistDb — the finally block should persist
+      const d = getDbSync();
+      d.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        ["test/repo", "e_persist", "Auto-persisted", now, now]);
+    });
+
+    // Reload from disk and check the row exists
+    reloadDb();
+    const result = getDbSync().exec("SELECT id FROM epics WHERE id = 'e_persist'");
+    expect(result[0]?.values[0]?.[0]).toBe("e_persist");
+  });
+
+  test("withDbLock persists writes made before callback throws", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    persistDb(TEST_DB_PATH);
+    const now = new Date().toISOString();
+
+    try {
+      withDbLock(() => {
+        const d = getDbSync();
+        d.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+          ["test/repo", "e_throw", "Before-throw", now, now]);
+        throw new Error("intentional");
+      });
+    } catch {}
+
+    reloadDb();
+    const result = getDbSync().exec("SELECT id FROM epics WHERE id = 'e_throw'");
+    expect(result[0]?.values[0]?.[0]).toBe("e_throw");
+  });
+
+  test("withDbLock double persist is idempotent", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    persistDb(TEST_DB_PATH);
+    const now = new Date().toISOString();
+
+    withDbLock(() => {
+      const d = getDbSync();
+      d.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        ["test/repo", "e_double", "Double-persist", now, now]);
+      persistDb(TEST_DB_PATH); // explicit persist inside callback
+    });
+    // finally block also persists — should not error
+    reloadDb();
+    const result = getDbSync().exec("SELECT id FROM epics WHERE id = 'e_double'");
+    expect(result[0]?.values[0]?.[0]).toBe("e_double");
+  });
+
+  test("withDbLock with read-only callback does not corrupt db", async () => {
+    const db = await getDb(TEST_DB_PATH);
+    const now = new Date().toISOString();
+    db.run("INSERT INTO epics (repo, id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ["test/repo", "e_readonly", "Existing", now, now]);
+    persistDb(TEST_DB_PATH);
+
+    withDbLock(() => {
+      // Read-only — no writes
+      const d = getDbSync();
+      d.exec("SELECT COUNT(*) FROM epics");
+    });
+
+    reloadDb();
+    const result = getDbSync().exec("SELECT id FROM epics WHERE id = 'e_readonly'");
+    expect(result[0]?.values[0]?.[0]).toBe("e_readonly");
+  });
+
   test("getDb works after closeDb (sqlModule cached)", async () => {
     await getDb(TEST_DB_PATH);
     closeDb();

@@ -1,16 +1,20 @@
 import { marked } from "marked";
 
-/** Strip dangerous HTML from marked output (script tags and on* event handlers). */
+/** Strip dangerous HTML from marked output (script tags, dangerous elements, on* handlers, javascript: URLs). */
 function sanitizeHtml(html: string): string {
   return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, "");
+    .replace(/<(iframe|object|embed|svg)\b[^<]*(?:(?!<\/\1>)<[^<]*)*<\/\1>/gi, "")
+    .replace(/<(iframe|object|embed|svg)\b[^>]*\/?>(?!.*<\/\1>)/gi, "")
+    .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, "")
+    .replace(/\s+on\w+\s*=\s*[^\s>"']+/gi, "")
+    .replace(/\bhref\s*=\s*["']\s*javascript:[^"']*["']/gi, 'href="#"')
+    .replace(/\bhref\s*=\s*javascript:[^\s>]*/gi, 'href="#"');
 }
 
-/** Render plan markdown into a self-contained HTML review page with per-step feedback buttons. */
+/** Render plan markdown into a self-contained HTML review page with floating feedback sidebar. */
 export function renderPlanPage(planMarkdown: string, planId: string, serverPort: number): string {
-  const rawHtml = sanitizeHtml(marked(planMarkdown) as string);
-  const html = injectFeedbackButtons(rawHtml);
+  const html = sanitizeHtml(marked(planMarkdown) as string);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -49,80 +53,48 @@ export function renderPlanPage(planMarkdown: string, planId: string, serverPort:
   ul, ol { padding-left: 1.5rem; }
   li { margin: 0.25rem 0; }
   input[type="checkbox"] { margin-right: 0.5rem; }
-  .feedback-btn {
-    display: inline-block;
-    margin: 0.5rem 0;
-    padding: 0.3rem 0.75rem;
-    font-size: 0.8rem;
-    background: #e8f4fd;
-    border: 1px solid #b8d9f0;
-    border-radius: 4px;
-    color: #1a6fa8;
-    cursor: pointer;
+  .feedback-sent { color: #16a34a; font-size: 0.85rem; margin: 0.25rem 0; }
+  @media (min-width: 1300px) {
+    body { margin-left: max(1.5rem, calc((100vw - 860px - 320px) / 2)); margin-right: auto; }
   }
-  .feedback-btn:hover { background: #d0ebfa; }
-  .feedback-form {
-    display: none;
-    margin: 0.5rem 0 1rem;
-    padding: 0.75rem;
+  #feedback-sidebar {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    width: 280px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    padding: 1rem;
     background: #f8f9fa;
     border: 1px solid #e0e0e0;
-    border-radius: 4px;
-  }
-  .feedback-form.open { display: block; }
-  .feedback-form textarea {
-    width: 100%;
-    min-height: 80px;
-    padding: 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 3px;
-    font-family: inherit;
-    font-size: 0.9rem;
-    resize: vertical;
-  }
-  .feedback-form .submit-btn {
-    margin-top: 0.5rem;
-    padding: 0.4rem 1rem;
-    background: #2563eb;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     font-size: 0.85rem;
+    z-index: 100;
   }
-  .feedback-form .submit-btn:hover { background: #1d4ed8; }
-  .feedback-form .cancel-btn {
-    margin-top: 0.5rem;
-    margin-left: 0.5rem;
-    padding: 0.4rem 1rem;
-    background: #e5e7eb;
-    color: #374151;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.85rem;
+  #sidebar-section {
+    font-size: 0.75rem;
+    color: #666;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e0e0e0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .feedback-sent { color: #16a34a; font-size: 0.85rem; margin: 0.25rem 0; }
-  #general-feedback {
-    margin-top: 3rem;
-    padding: 1.5rem;
-    background: #f0f7ff;
-    border: 1px solid #b8d9f0;
-    border-radius: 6px;
-  }
-  #general-feedback h2 { margin-top: 0; border: none; }
-  #general-feedback textarea {
+  #feedback-sidebar textarea {
     width: 100%;
     min-height: 100px;
     padding: 0.5rem;
     border: 1px solid #ccc;
     border-radius: 3px;
     font-family: inherit;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     resize: vertical;
   }
-  #general-feedback .submit-btn {
+  #sidebar-submit {
     margin-top: 0.5rem;
+    width: 100%;
     padding: 0.4rem 1rem;
     background: #2563eb;
     color: white;
@@ -131,102 +103,112 @@ export function renderPlanPage(planMarkdown: string, planId: string, serverPort:
     cursor: pointer;
     font-size: 0.85rem;
   }
-  #general-feedback .submit-btn:hover { background: #1d4ed8; }
+  #sidebar-submit:hover { background: #1d4ed8; }
+  .sidebar-history-item {
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.5rem;
+    background: #eef6ee;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    color: #374151;
+    word-break: break-word;
+  }
+  #sidebar-toggle {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 0.5rem 1rem;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    z-index: 101;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  #sidebar-toggle:hover { background: #1d4ed8; }
+  @media (max-width: 1299px) {
+    #feedback-sidebar { display: none; }
+    #feedback-sidebar.open { display: block; }
+    #sidebar-toggle { display: block; }
+  }
+  @media (min-width: 1300px) {
+    #sidebar-toggle { display: none; }
+  }
 </style>
 </head>
 <body>
 ${html}
-<div id="general-feedback">
-  <h2>General Feedback</h2>
-  <textarea id="general-text" placeholder="Overall comments on the plan..."></textarea>
-  <br>
-  <button class="submit-btn" onclick="submitGeneral()">Submit</button>
+<div id="feedback-sidebar">
+  <div id="sidebar-section">Reading: Introduction</div>
+  <textarea id="sidebar-text" placeholder="Your feedback..."></textarea>
+  <button id="sidebar-submit">Submit Feedback</button>
+  <div id="sidebar-history"></div>
 </div>
+<button id="sidebar-toggle">Feedback</button>
 <script>
 const API = "http://localhost:${serverPort}/api/feedback";
 
-function toggleForm(btn) {
-  const form = btn.nextElementSibling;
-  form.classList.toggle("open");
-  if (form.classList.contains("open")) {
-    form.querySelector("textarea").focus();
-  }
-}
+// Section tracking via IntersectionObserver
+const headings = document.querySelectorAll("h1, h2, h3, h4");
+const sectionLabel = document.getElementById("sidebar-section");
+let currentSection = "Introduction";
 
-async function submitFeedback(btn, step) {
-  const form = btn.closest(".feedback-form");
-  const textarea = form.querySelector("textarea");
+const observer = new IntersectionObserver(function(entries) {
+  for (const e of entries) {
+    if (e.isIntersecting) {
+      currentSection = e.target.textContent.trim();
+      sectionLabel.textContent = "Reading: " + currentSection;
+    }
+  }
+}, { rootMargin: "-10% 0px -80% 0px" });
+
+headings.forEach(function(h) { observer.observe(h); });
+
+// Submit feedback tagged with current section
+document.getElementById("sidebar-submit").onclick = async function() {
+  const textarea = document.getElementById("sidebar-text");
   const text = textarea.value.trim();
   if (!text) return;
+  const stepMatch = currentSection.match(/(\\d+\\.\\d+)/);
+  const step = stepMatch ? stepMatch[1] : "General";
   try {
     const res = await fetch(API, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ step, text }),
+      body: JSON.stringify({ step: step, text: text }),
     });
     if (res.ok) {
       textarea.value = "";
-      form.classList.remove("open");
-      const msg = document.createElement("div");
-      msg.className = "feedback-sent";
-      msg.textContent = "Feedback sent for step " + step;
-      form.parentElement.insertBefore(msg, form.nextSibling);
+      const item = document.createElement("div");
+      item.className = "sidebar-history-item";
+      const label = document.createElement("strong");
+      label.textContent = step + ": ";
+      item.appendChild(label);
+      item.appendChild(document.createTextNode(text.length > 80 ? text.substring(0, 80) + "..." : text));
+      document.getElementById("sidebar-history").prepend(item);
+    } else {
+      const errItem = document.createElement("div");
+      errItem.className = "sidebar-history-item";
+      errItem.style.background = "#fee2e2";
+      errItem.style.color = "#991b1b";
+      errItem.textContent = "Error: server returned " + res.status;
+      document.getElementById("sidebar-history").prepend(errItem);
     }
   } catch (e) {
     alert("Failed to send feedback: " + e.message);
   }
-}
+};
 
-function cancelFeedback(btn) {
-  const form = btn.closest(".feedback-form");
-  form.classList.remove("open");
-}
-
-async function submitGeneral() {
-  const textarea = document.getElementById("general-text");
-  const text = textarea.value.trim();
-  if (!text) return;
-  try {
-    const res = await fetch(API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ step: "General", text }),
-    });
-    if (res.ok) {
-      textarea.value = "";
-      const msg = document.createElement("div");
-      msg.className = "feedback-sent";
-      msg.textContent = "General feedback sent";
-      document.getElementById("general-feedback").appendChild(msg);
-    }
-  } catch (e) {
-    alert("Failed to send feedback: " + e.message);
-  }
-}
+// Toggle sidebar on narrow screens
+document.getElementById("sidebar-toggle").onclick = function() {
+  document.getElementById("feedback-sidebar").classList.toggle("open");
+};
 </script>
 </body>
 </html>`;
-}
-
-/** Post-process marked HTML to inject feedback buttons after step headings. */
-function injectFeedbackButtons(html: string): string {
-  // Match h2/h3/h4 tags whose content contains a step number pattern (N.M)
-  return html.replace(
-    /(<h[234][^>]*>)(.*?)(<\/h[234]>)/gi,
-    (match, openTag, content, closeTag) => {
-      const stepMatch = content.match(/(\d+\.\d+)/);
-      if (!stepMatch) return match;
-      const step = stepMatch[1];
-      return `${openTag}${content}${closeTag}
-<button class="feedback-btn" data-step="${step}" onclick="toggleForm(this)">Comment on ${step}</button>
-<div class="feedback-form">
-  <textarea placeholder="Your feedback on step ${step}..."></textarea>
-  <br>
-  <button class="submit-btn" onclick="submitFeedback(this, '${step}')">Submit</button>
-  <button class="cancel-btn" onclick="cancelFeedback(this)">Cancel</button>
-</div>`;
-    },
-  );
 }
 
 function escapeHtml(s: string): string {

@@ -402,6 +402,40 @@ describe("saveTask", () => {
     const loaded = loadTask("t1")!;
     expect(loaded.updatedAt).not.toBe(firstUpdatedAt);
   });
+
+  test("preserves child steps when updating task", () => {
+    const task = createTask({ title: "Parent" });
+    createStep({ title: "Child Step", task: "t1" });
+    task.title = "Updated Parent";
+    saveTask(task);
+    const step = loadStep("s1");
+    expect(step).not.toBeNull();
+    expect(step!.task).toBe("t1");
+    expect(step!.title).toBe("Child Step");
+  });
+
+  test("preserves multiple child steps when updating task", () => {
+    const task = createTask({ title: "Parent" });
+    createStep({ title: "Step A", task: "t1" });
+    createStep({ title: "Step B", task: "t1" });
+    createStep({ title: "Step C", task: "t1" });
+    task.branch = "feat/test";
+    saveTask(task);
+    const steps = listSteps({ task: "t1" });
+    expect(steps).toHaveLength(3);
+  });
+
+  test("updates all fields correctly", () => {
+    const task = createTask({ title: "Original" });
+    task.branch = "feat/x";
+    task.pr = "https://github.com/test/pr/1";
+    task.description = "Updated desc";
+    saveTask(task);
+    const loaded = loadTask("t1")!;
+    expect(loaded.branch).toBe("feat/x");
+    expect(loaded.pr).toBe("https://github.com/test/pr/1");
+    expect(loaded.description).toBe("Updated desc");
+  });
 });
 
 // ── Phase transitions ────────────────────────────────────────────────
@@ -2385,5 +2419,93 @@ describe("ephemeral notes", () => {
     const count = pruneEphemeralNotes("t1");
     expect(count).toBe(3);
     expect(loadTaskNotes("t1")).toHaveLength(1);
+  });
+});
+
+// ── Cross-repo stateSummary and dependenciesMet ─────────────────────
+
+describe("stateSummary cross-repo", () => {
+  function insertOtherRepoData() {
+    const db = getDbSync();
+    const now = new Date().toISOString();
+    const otherRepo = "github.com/other/repo";
+    // Insert an epic in the other repo
+    db.run(
+      `INSERT INTO epics (repo, id, title, description, phase, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [otherRepo, "e1", "Other Epic", "", "understand", now, now],
+    );
+    // Insert an active task with no deps (should be "ready")
+    db.run(
+      `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [otherRepo, "t1", "e1", "Ready Task", "", "understand", "[]", now, now],
+    );
+    // Insert a done task
+    db.run(
+      `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [otherRepo, "t2", "e1", "Done Task", "", "done", "[]", now, now],
+    );
+    // Insert a blocked task (depends on t1 which is not done)
+    db.run(
+      `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [otherRepo, "t3", "e1", "Blocked Task", "", "design", '["t1"]', now, now],
+    );
+    return otherRepo;
+  }
+
+  test("counts cross-repo active epics correctly", () => {
+    insertOtherRepoData();
+    // Also create a local epic to have both repos
+    createEpic({ title: "Local Epic" });
+    const s = stateSummary({ all: true });
+    // Both epics should be counted as active (other has non-terminal children, local has no children → stored phase)
+    expect(s.totalEpics).toBe(2);
+    expect(s.activeEpics).toBe(2);
+  });
+
+  test("counts cross-repo ready tasks correctly", () => {
+    insertOtherRepoData();
+    const s = stateSummary({ all: true });
+    // t1 is ready (no deps, non-terminal), t3 is blocked (dep on t1 not done)
+    expect(s.readyTasks).toBe(1);
+  });
+
+  test("counts cross-repo blocked tasks correctly", () => {
+    insertOtherRepoData();
+    const s = stateSummary({ all: true });
+    // t1 is active+ready, t3 is active+blocked → 2 active, 1 blocked
+    expect(s.activeTasks).toBe(2);
+    expect(s.blockedTasks).toBe(1);
+  });
+});
+
+describe("dependenciesMet with repoId", () => {
+  test("resolves deps in specified repo", () => {
+    const db = getDbSync();
+    const now = new Date().toISOString();
+    const otherRepo = "github.com/other/repo";
+    db.run(
+      `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [otherRepo, "t1", null, "Done", "", "done", "[]", now, now],
+    );
+    db.run(
+      `INSERT INTO tasks (repo, id, epic, title, description, phase, dependencies, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [otherRepo, "t2", null, "Depends on t1", "", "design", '["t1"]', now, now],
+    );
+    const task = { dependencies: ["t1"] } as Task;
+    expect(dependenciesMet(task, otherRepo)).toBe(true);
+  });
+
+  test("without repoId uses current repo (backward compat)", () => {
+    const dep = createTask({ title: "Dep" });
+    transitionTask(dep.id, "done" as Phase, { force: true, actor: "test" });
+    const task = createTask({ title: "Main" });
+    task.dependencies = [dep.id];
+    saveTask(task);
+    expect(dependenciesMet(task)).toBe(true);
+  });
+
+  test("empty deps returns true regardless of repoId", () => {
+    const task = { dependencies: [] } as unknown as Task;
+    expect(dependenciesMet(task, "any/repo")).toBe(true);
   });
 });

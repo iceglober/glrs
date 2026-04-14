@@ -417,8 +417,19 @@ function repoLabel(r) {
   return r;
 }
 
+function sanitizeHtml(html) {
+  return html
+    .replace(/<script\\b[^<]*(?:(?!<\\/script>)<[^<]*)*<\\/script>/gi, "")
+    .replace(/<(iframe|object|embed|svg)\\b[^<]*(?:(?!<\\/\\1>)<[^<]*)*<\\/\\1>/gi, "")
+    .replace(/<(iframe|object|embed|svg)\\b[^>]*\\/?>(?!.*<\\/\\1>)/gi, "")
+    .replace(/\\s+on\\w+\\s*=\\s*["'][^"']*["']/gi, "")
+    .replace(/\\s+on\\w+\\s*=\\s*[^\\s>"']+/gi, "")
+    .replace(/\\bhref\\s*=\\s*["']\\s*javascript:[^"']*["']/gi, 'href="#"')
+    .replace(/\\bhref\\s*=\\s*javascript:[^\\s>]*/gi, 'href="#"');
+}
+
 function renderMarkdown(content) {
-  try { return marked.parse(content); } catch { return null; }
+  try { return sanitizeHtml(marked.parse(content)); } catch { return null; }
 }
 
 // ── App ────────────────────────────────────────────────────────────
@@ -449,8 +460,8 @@ function App() {
       setLastUpdate(new Date());
       setError(null);
       // Seed selectedRepo from first load to prevent poll-driven repo switches
-      if (Array.isArray(data.repos) && data.repos.length > 0) {
-        setSelectedRepo(prev => prev || data.repos[0].repo);
+      if (Array.isArray(stateData.repos) && stateData.repos.length > 0) {
+        setSelectedRepo(prev => prev || stateData.repos[0].repo);
       }
     } catch (e) {
       setError(e.message);
@@ -688,7 +699,7 @@ function Sidebar({ epics, standalone, selectedEpic, onSelectEpic, filter, onFilt
   return h\`
     <div class="sidebar">
       <div class="sidebar-title">gsag state</div>
-      \${repoName && h\`<div style=\${css("font-size:0.75rem;color:#888;margin-bottom:0.75rem;padding:0.25rem 0.4rem;background:rgba(255,255,255,0.05);border-radius:4px")}>\${repoName}</div>\`}
+      \${repoName && h\`<div style=\${{fontSize:"0.75rem",color:"#888",marginBottom:"0.75rem",padding:"0.25rem 0.4rem",background:"rgba(255,255,255,0.05)",borderRadius:"4px"}}>\${repoName}</div>\`}
       <\${SidebarSearch} value=\${filter} onChange=\${onFilter} />
       \${active.length > 0 && h\`
         <div class="sidebar-group-label">Active (\${active.length})</div>
@@ -836,13 +847,13 @@ function TimelineEntry({ entry }) {
 // ── Epic Detail ───────────────────────────────────────────────────
 
 function EpicDetail({ epic, selectedTask, onSelectTask }) {
+  const [showDone, setShowDone] = React.useState(false);
   if (!epic) return h\`<div class="empty">Epic not found</div>\`;
 
   const tasks = epic.tasks || [];
   const active = tasks.filter(t => t.phase !== "done" && t.phase !== "cancelled");
   const done = tasks.filter(t => t.phase === "done");
   const cancelled = tasks.filter(t => t.phase === "cancelled");
-  const [showDone, setShowDone] = React.useState(false);
 
   // Sort active by phase order
   active.sort((a, b) => PHASES.indexOf(a.phase) - PHASES.indexOf(b.phase));
