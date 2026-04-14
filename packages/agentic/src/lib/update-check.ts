@@ -136,6 +136,31 @@ function tryAutoUpgrade(tag: string): boolean {
 }
 
 /**
+ * Check if installed skills need migration to v3 skills format.
+ * Returns a message string if upgrade is needed, null otherwise.
+ * Never throws.
+ */
+export function checkSkillsUpgrade(opts?: {
+  homeDirFn?: () => string;
+}): string | null {
+  try {
+    const homeDir = opts?.homeDirFn?.() ?? os.homedir();
+    const manifestPath = path.join(homeDir, ".claude", ".glorious-skills.json");
+    if (!fs.existsSync(manifestPath)) return null;
+
+    const data = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    // Already migrated
+    if (data.format === "skills") return null;
+    // No commands installed (empty manifest)
+    if (!Array.isArray(data.commands) || data.commands.length === 0) return null;
+
+    return `gsag v3 skills format available — run 'gsag skills --force' to upgrade`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Check if a newer version is available. Uses a 24h cache.
  * Auto-upgrades for minor/patch bumps. Warns for major bumps.
  * Never throws — all errors are silently swallowed.
