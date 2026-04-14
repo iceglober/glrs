@@ -27,8 +27,21 @@ export function appendFeedback(id: string, step: string, text: string): void {
   fs.appendFileSync(p, `## Step ${step}\n${text}\n\n`);
 }
 
-/** Remove the feedback file for an entity. No-op if it doesn't exist. */
-export function clearFeedback(id: string): void {
+/** Archive the feedback file as resolved with a timestamp. No-op if none exists. */
+export function resolveFeedback(id: string): void {
   const p = feedbackPath(id);
-  if (fs.existsSync(p)) fs.unlinkSync(p);
+  if (!fs.existsSync(p)) return;
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const suffix = Math.random().toString(36).slice(2, 7);
+  const dest = path.join(path.dirname(p), `feedback-resolved-${ts}-${suffix}.md`);
+  fs.renameSync(p, dest);
+}
+
+/** List resolved feedback files for an entity, sorted oldest-first. */
+export function listResolvedFeedback(id: string): string[] {
+  const dir = path.join(plansDir(), id);
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter((f) => f.startsWith("feedback-resolved-") && f.endsWith(".md"))
+    .sort();
 }

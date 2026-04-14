@@ -1,6 +1,6 @@
 import { command, subcommands, option, flag, optional, string } from "cmd-ts";
 import { loadTask, loadEpic, loadPlan, savePlan, savePlanFromFile, listPlanVersions, createTask, saveTask, parseSyncInput, syncCreateEpicWithTasks } from "../../lib/state.js";
-import { loadFeedback, clearFeedback as clearFeedbackFile } from "../../lib/plan-feedback.js";
+import { loadFeedback, resolveFeedback as resolveFeedbackFile } from "../../lib/plan-feedback.js";
 import { ok, bold, dim } from "../../lib/fmt.js";
 
 // ── gs-agentic state plan show ──────────────────────────────────────────────
@@ -167,17 +167,17 @@ const feedback = command({
   },
 });
 
-// ── gs-agentic state plan clear-feedback ──────────────────────────────────
+// ── gs-agentic state plan resolve-feedback ────────────────────────────────
 
-const clearFeedback = command({
-  name: "clear-feedback",
-  description: "Clear plan feedback for a task or epic",
+const resolveFeedback = command({
+  name: "resolve-feedback",
+  description: "Archive plan feedback as resolved for a task or epic",
   args: {
     id: option({ type: string, long: "id", short: "i", description: "Task or Epic ID" }),
   },
   handler: (args) => {
-    clearFeedbackFile(args.id);
-    ok(`feedback cleared for ${bold(args.id)}`);
+    resolveFeedbackFile(args.id);
+    ok(`feedback resolved for ${bold(args.id)}`);
   },
 });
 
@@ -240,6 +240,6 @@ export const statePlan = subcommands({
     sync,
     history,
     feedback,
-    "clear-feedback": clearFeedback,
+    "resolve-feedback": resolveFeedback,
   },
 });
