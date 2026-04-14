@@ -288,7 +288,9 @@ export function startReviewServer(opts?: ReviewServerOpts): Promise<ReviewServer
       // Write port file
       const dir = path.dirname(portFilePath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(portFilePath, `${addr.port}\n${process.pid}\n${Date.now()}`);
+      const tmpPath = portFilePath + ".tmp";
+      fs.writeFileSync(tmpPath, `${addr.port}\n${process.pid}\n${Date.now()}`);
+      fs.renameSync(tmpPath, portFilePath);
 
       resolve({
         url,

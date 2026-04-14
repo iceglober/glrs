@@ -51,6 +51,13 @@ describe("review server — port file", () => {
     expect(fs.existsSync(TEST_PORT_FILE)).toBe(false);
   });
 
+  test("no .tmp file left after server start", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    expect(fs.existsSync(TEST_PORT_FILE + ".tmp")).toBe(false);
+  });
+
   test("findRunningServer returns null when no port file", async () => {
     const { findRunningServer } = await importModule();
     const result = await findRunningServer({ portFilePath: TEST_PORT_FILE });
