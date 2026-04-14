@@ -56,12 +56,21 @@ describe("all preambles reference gs-agentic state", () => {
 describe("HANDOFF_RULE", () => {
   test("contains authority language", () => {
     expect(HANDOFF_RULE).toContain("MUST");
-    expect(HANDOFF_RULE).toContain("Do NOT");
     expect(HANDOFF_RULE).toContain("IMMEDIATE");
   });
 
-  test("forbids text before tool call", () => {
-    expect(HANDOFF_RULE).toContain("Do NOT output any text before the Skill tool call");
+  test("warns against slash command text output", () => {
+    expect(HANDOFF_RULE).toContain("slash commands only work when the USER types them");
+  });
+
+  test("has Red Flags section", () => {
+    expect(HANDOFF_RULE).toContain("Red Flags");
+    expect(HANDOFF_RULE).toContain("forward slash");
+  });
+
+  test("shows correct vs wrong examples with consistent formatting", () => {
+    expect(HANDOFF_RULE).toContain("CORRECT:");
+    expect(HANDOFF_RULE).toContain("WRONG —");
   });
 
   test("contains section header", () => {
@@ -87,11 +96,14 @@ describe("buildHandoffBlock", () => {
 
   test("produces dispatch table with YOUR ACTION header", () => {
     expect(basic).toContain("YOUR ACTION");
-    expect(basic).toContain('Skill("build")');
+    expect(basic).toContain('Call Skill tool');
+    expect(basic).toContain('skill: "build"');
   });
 
-  test("includes constraint block", () => {
-    expect(basic).toContain("Do NOT output any text before the Skill tool call");
+  test("includes constraint block with correct/wrong examples", () => {
+    expect(basic).toContain("MUST contain ONLY the Skill tool call");
+    expect(basic).toContain("WRONG:");
+    expect(basic).toContain("CORRECT:");
   });
 
   test("handles freeText option", () => {
@@ -115,6 +127,30 @@ describe("buildHandoffBlock", () => {
       header: "Next",
       options: [{ label: "Plan", description: "Plan fixes", action: 'Skill("deep-plan", args: "fix summary")' }],
     });
-    expect(withArgs).toContain('Skill("deep-plan", args: "fix summary")');
+    expect(withArgs).toContain('Call Skill tool → skill: "deep-plan", args: "fix summary"');
+  });
+
+  test("handles production args strings with special characters", () => {
+    const withProdArgs = buildHandoffBlock({
+      question: "What next?",
+      header: "Next",
+      options: [{ label: "Plan", description: "Plan fixes", action: 'Skill("deep-plan", args: "<one-line summary of each CRITICAL and HIGH finding: severity, file:line, description>")' }],
+    });
+    expect(withProdArgs).toContain('Call Skill tool → skill: "deep-plan", args: "<one-line summary of each CRITICAL and HIGH finding: severity, file:line, description>"');
+  });
+
+  test("constraint WRONG example uses first Skill action contextually", () => {
+    expect(basic).toContain("`/build`");
+    expect(basic).not.toContain("`/deep-review`");
+  });
+
+  test("throws on unrecognized Skill() format", () => {
+    expect(() =>
+      buildHandoffBlock({
+        question: "What next?",
+        header: "Next",
+        options: [{ label: "Bad", description: "Bad format", action: "Skill('single-quotes')" }],
+      }),
+    ).toThrow("Unrecognized Skill() format");
   });
 });

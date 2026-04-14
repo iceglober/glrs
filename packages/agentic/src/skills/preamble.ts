@@ -93,15 +93,24 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
  */
 export const HANDOFF_RULE = `## Skill Handoff Rule
 
-When this skill tells you to call \`Skill("name")\`, your IMMEDIATE next action MUST be that Skill tool call.
-- Do NOT summarize what you are about to do
-- Do NOT ask for confirmation
-- Do NOT output any text before the Skill tool call
-- The Skill tool call MUST be the ONLY content in your response`;
+When this skill tells you to call the Skill tool, your IMMEDIATE next action MUST be that Skill tool call — no text, no summary, no confirmation.
+
+CORRECT: Use the Skill tool with the parameter shown in the dispatch table. Your response body must be EMPTY — no text at all, only the tool call.
+
+WRONG — these do NOTHING and the user sees a dead message:
+- Outputting \`/skill-name\` as text — slash commands only work when the USER types them, not when you output them
+- Outputting \`Skill("name")\` as text — this is not a tool call, it is just characters on screen
+- Writing any words before, after, or instead of the tool call
+
+### Red Flags — STOP if you are about to:
+- Type a forward slash followed by a command name — that is text, not a tool call
+- Write any words before the tool call — delete them, send only the tool call
+- Summarize what happened before dispatching — the next skill will handle that`;
 
 export interface HandoffOption {
   label: string;
   description: string;
+  /** Use `Skill("name")` or `Skill("name", args: "...")` format — buildHandoffBlock normalizes to tool-call display format. Non-Skill actions (e.g. "stop") pass through as-is. */
   action: string;
 }
 
@@ -129,9 +138,22 @@ options:
 ${optLines}
 \`\`\``;
 
-  // Build dispatch table
+  // Build dispatch table with explicit tool call format
   const tableRows = opts.options
-    .map((o) => `| "${o.label}" | ${o.action} |`)
+    .map((o) => {
+      // Normalize Skill("name") and Skill("name", args: "...") to explicit tool-call format
+      let action = o.action;
+      if (action.startsWith("Skill(")) {
+        const m = action.match(
+          /^Skill\("([^"]+)"(?:,\s*args:\s*"([^"]*)")?\)$/,
+        );
+        if (!m) throw new Error(`Unrecognized Skill() format: ${action}`);
+        action = m[2]
+          ? `Call Skill tool → skill: "${m[1]}", args: "${m[2]}"`
+          : `Call Skill tool → skill: "${m[1]}"`;
+      }
+      return `| "${o.label}" | ${action} |`;
+    })
     .join("\n");
 
   const freeTextRow = opts.freeText
@@ -140,12 +162,21 @@ ${optLines}
 
   const dispatchBlock = `## DISPATCH — Execute IMMEDIATELY after user responds
 
-| User selects | YOUR ACTION |
+| User selects | YOUR ACTION (tool call, not text) |
 |---|---|
 ${tableRows}${freeTextRow}`;
 
-  // Constraint block
-  const constraint = `**CONSTRAINT:** Your response after the user answers MUST contain ONLY the action above — no summary, no preamble, no explanation. Do NOT output any text before the Skill tool call.`;
+  // Constraint block — use first Skill action for contextual WRONG example
+  const firstSkillOpt = opts.options.find((o) => o.action.startsWith("Skill("));
+  const exampleSlash = firstSkillOpt
+    ? `/${firstSkillOpt.action.match(/^Skill\("([^"]+)"/)?.[1] ?? "skill-name"}`
+    : "/skill-name";
+
+  const constraint = `**CONSTRAINT:** Your response after the user answers MUST contain ONLY the Skill tool call — no text whatsoever.
+
+WRONG: outputting \`${exampleSlash}\` or any slash command as text (does nothing)
+WRONG: any words before or instead of the tool call
+CORRECT: a single Skill tool call as the entire response`;
 
   return `${askBlock}
 

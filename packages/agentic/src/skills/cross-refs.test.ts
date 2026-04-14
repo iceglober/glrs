@@ -47,8 +47,8 @@ describe("cross-references use canonical names", () => {
   test("gs-deep-review uses canonical cross-refs", () => {
     const output = gsDeepReview();
     expect(output).toContain("deep-plan");
-    expect(output).toContain('Skill("qa")');
-    expect(output).toContain('Skill("ship")');
+    expect(output).toContain('skill: "qa"');
+    expect(output).toContain('skill: "ship"');
     expect(output).not.toContain("/gs-deep-plan");
     expect(output).not.toContain("/gs-qa");
     expect(output).not.toContain("/gs-ship");
@@ -65,9 +65,9 @@ describe("cross-references use canonical names", () => {
     const output = gsBuild();
     expect(output).toContain("/build t3");
     expect(output).toContain("/deep-plan");
-    expect(output).toContain('Skill("deep-review")');
-    expect(output).toContain('Skill("quick-review")');
-    expect(output).toContain('Skill("ship")');
+    expect(output).toContain('skill: "deep-review"');
+    expect(output).toContain('skill: "quick-review"');
+    expect(output).toContain('skill: "ship"');
     expect(output).not.toContain("/gs-build t3");
     expect(output).not.toContain("/gs-deep-plan");
     expect(output).not.toContain("/gs-ship");
@@ -159,7 +159,7 @@ describe("cross-references use canonical names", () => {
   test("all handoff skills have constraint block", () => {
     for (const { name, fn } of HANDOFF_SKILLS) {
       const output = fn();
-      if (!output.includes("Do NOT output any text before the Skill tool call")) {
+      if (!output.includes("MUST contain ONLY the Skill tool call")) {
         throw new Error(`${name} is missing constraint block`);
       }
     }
@@ -171,6 +171,35 @@ describe("cross-references use canonical names", () => {
       const matches = output.match(/invoke the \w[\w-]* skill using the Skill tool:/g);
       if (matches) {
         throw new Error(`${name} still uses old prose dispatch: ${matches.join(", ")}`);
+      }
+    }
+  });
+
+  test("all handoff skills warn against slash command text output", () => {
+    for (const { name, fn } of HANDOFF_SKILLS) {
+      const output = fn();
+      if (!output.includes("slash commands only work when the USER types them")) {
+        throw new Error(`${name} is missing slash-command-as-text warning in HANDOFF_RULE`);
+      }
+    }
+  });
+
+  test("all handoff skills have Red Flags section", () => {
+    for (const { name, fn } of HANDOFF_SKILLS) {
+      const output = fn();
+      if (!output.includes("Red Flags")) {
+        throw new Error(`${name} is missing Red Flags section in HANDOFF_RULE`);
+      }
+    }
+  });
+
+  test("dispatch table actions use 'Call Skill tool' format not Skill() pseudo-code", () => {
+    for (const { name, fn } of HANDOFF_SKILLS) {
+      const output = fn();
+      // Catches both Skill("name") and Skill("name", args: "...")
+      const pseudoCodeInTable = output.match(/\|\s*Skill\([^)]+\)\s*\|/g);
+      if (pseudoCodeInTable) {
+        throw new Error(`${name} dispatch table still uses Skill() pseudo-code: ${pseudoCodeInTable.join(", ")}. Use "Call Skill tool → skill:" format.`);
       }
     }
   });
