@@ -762,13 +762,13 @@ export function deriveEpicPhase(epicId: string, repoId?: string): Phase {
 
 // ── Dependency checking ─────────────────────────────────────────────
 
-export function dependenciesMet(task: Task): boolean {
+export function dependenciesMet(task: Task, repoId?: string): boolean {
   if (task.dependencies.length === 0) return true;
   const db = getDbSync();
   for (const depId of task.dependencies) {
     const result = db.exec(
       "SELECT phase FROM tasks WHERE repo = ? AND id = ?",
-      [repo(), depId],
+      [repoId ?? repo(), depId],
     );
     if (!result[0]?.values.length) return false;
     if (result[0].values[0][0] !== "done") return false;
@@ -1133,14 +1133,14 @@ export function stateSummary(opts?: { all?: boolean }): {
 
   const totalEpics = epics.length;
   const activeEpics = epics.filter((e) => {
-    const phase = deriveEpicPhase(e.id);
+    const phase = deriveEpicPhase(e.id, (e as any).repo);
     return !isTerminal(phase);
   }).length;
 
   const totalTasks = tasks.length;
   const nonTerminal = tasks.filter((t) => !isTerminal(t.phase));
   const activeTasks = nonTerminal.length;
-  const readyList = nonTerminal.filter((t) => dependenciesMet(t));
+  const readyList = nonTerminal.filter((t) => dependenciesMet(t, (t as any).repo));
   const readyTasks = readyList.length;
   const blockedTasks = activeTasks - readyTasks;
 
