@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -150,6 +150,10 @@ describe("executeInstall", () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gs-skills-test-"));
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true });
   });
 
   function makePlan(overrides: Partial<InstallPlan> = {}): InstallPlan {
@@ -404,6 +408,11 @@ describe("autoSyncSkills", () => {
     tmpProject = fs.mkdtempSync(path.join(os.tmpdir(), "gs-autosync-proj-"));
   });
 
+  afterEach(() => {
+    if (fs.existsSync(tmpHome)) fs.rmSync(tmpHome, { recursive: true });
+    if (fs.existsSync(tmpProject)) fs.rmSync(tmpProject, { recursive: true });
+  });
+
   function writeManifestTo(dir: string, manifest: Partial<Manifest> & { commands: string[]; skills: string[] }) {
     const claudeDir = path.join(dir, ".claude");
     fs.mkdirSync(path.join(claudeDir, "commands"), { recursive: true });
@@ -542,12 +551,36 @@ describe("autoSyncSkills", () => {
   });
 
   test("never throws on any error", () => {
-    // Pass a homeDirFn that returns a path with no write permission
+    // getSettingFn throws — outer catch swallows and returns default result
     expect(() => autoSyncSkills({
       getSettingFn: () => { throw new Error("boom"); },
       homeDirFn: () => "/nonexistent/path",
       gitRootFn: () => { throw new Error("no git"); },
     })).not.toThrow();
+  });
+
+  test("returns synced=true when version differs but file content identical", () => {
+    // First install to get current skill content with current version
+    autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    // Rewrite manifest with stale version but keep files as-is
+    const manifestPath = path.join(tmpHome, ".claude", ".glorious-skills.json");
+    const m = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    m.version = "0.0.1-stale";
+    fs.writeFileSync(manifestPath, JSON.stringify(m));
+    // Run again — files are identical, but version is stale
+    const result = autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    expect(result.userSynced).toBe(true);
+    // Manifest version should be updated
+    const m2 = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    expect(m2.version).not.toBe("0.0.1-stale");
   });
 
   test("synced manifest has current version", () => {
