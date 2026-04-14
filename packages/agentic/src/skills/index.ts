@@ -45,6 +45,17 @@ import { gsAddressFeedback } from "./gs-address-feedback.js";
 import { gs } from "./gs.js";
 
 /**
+ * A SkillEntry represents a skill directory's file contents.
+ * Keys are relative paths within the skill directory (e.g. "SKILL.md",
+ * "references/agent-prompts.md"). Every SkillEntry MUST have a "SKILL.md" key.
+ *
+ * During the v3 migration, generators transition from returning `string` to
+ * returning `SkillEntry`. The buildCommands() wrapper extracts SKILL.md content
+ * for backward compatibility with the legacy .claude/commands/ flat-file format.
+ */
+export type SkillEntry = Record<string, string>;
+
+/**
  * Mapping of gs-* skill internal keys to their canonical short filenames
  * and generator functions. The canonical name is what gets installed by default
  * (no prefix). With a prefix like "gs-", the installed name becomes "gs-think.md" etc.
@@ -236,3 +247,43 @@ export const SKILLS: Record<string, string> = {
     Object.entries(writingSkills()).map(([f, c]) => [`writing-skills/${f}`, c]),
   ),
 };
+
+/**
+ * Build a unified skills map in SKILL.md directory format.
+ * All skills are output as `<name>/SKILL.md` (with optional reference files).
+ *
+ * During v3 migration, generators still return strings. This function wraps
+ * each string into a SkillEntry with a single "SKILL.md" key. Once generators
+ * are migrated to return SkillEntry directly (steps 1.2/1.3), this function
+ * will pass through their multi-file entries as-is.
+ *
+ * @param prefix Optional prefix for gs-* skill directory names
+ */
+export function buildAllSkills(prefix?: string): Record<string, string> {
+  const p = prefix || "";
+  const result: Record<string, string> = {};
+
+  // gs-* skills
+  for (const entry of Object.values(GS_SKILL_NAMES)) {
+    const dirName = p + entry.canonical.replace(/\.md$/, "");
+    const content = entry.generator();
+    // Wrap string generator output into SkillEntry format
+    result[`${dirName}/SKILL.md`] = content;
+  }
+
+  // Static commands (research, spec, product)
+  for (const [filename, content] of Object.entries(STATIC_COMMANDS)) {
+    const dirName = filename.replace(/\.md$/, "");
+    result[`${dirName}/SKILL.md`] = content;
+  }
+
+  // Browser — single file skill
+  result["browser/SKILL.md"] = browser();
+
+  // Writing-skills — multi-file skill (already a Record<string, string>)
+  for (const [file, content] of Object.entries(writingSkills())) {
+    result[`writing-skills/${file}`] = content;
+  }
+
+  return result;
+}

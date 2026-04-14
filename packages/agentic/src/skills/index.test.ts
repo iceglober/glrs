@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { buildCommands, GS_SKILL_NAMES, BUILTIN_COLLISIONS, SKILLS } from "./index.js";
+import { buildCommands, buildAllSkills, GS_SKILL_NAMES, BUILTIN_COLLISIONS, SKILLS, type SkillEntry } from "./index.js";
 
 describe("GS_SKILL_NAMES", () => {
   test("has entry for every gs skill (12 total)", () => {
@@ -114,5 +114,82 @@ describe("SKILLS", () => {
   test("contains writing-skills", () => {
     const wsKeys = Object.keys(SKILLS).filter((k) => k.startsWith("writing-skills/"));
     expect(wsKeys.length).toBeGreaterThan(0);
+  });
+});
+
+describe("buildAllSkills", () => {
+  test("returns directory-prefixed keys matching <name>/SKILL.md or <name>/<subpath>", () => {
+    const skills = buildAllSkills();
+    for (const key of Object.keys(skills)) {
+      expect(key).toContain("/");
+      // Must have at least one slash separating directory from filename
+      const parts = key.split("/");
+      expect(parts.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  test("has SKILL.md for each gs-* skill", () => {
+    const skills = buildAllSkills();
+    expect(skills["think/SKILL.md"]).toBeDefined();
+    expect(skills["work/SKILL.md"]).toBeDefined();
+    expect(skills["fix/SKILL.md"]).toBeDefined();
+    expect(skills["qa/SKILL.md"]).toBeDefined();
+    expect(skills["ship/SKILL.md"]).toBeDefined();
+    expect(skills["build/SKILL.md"]).toBeDefined();
+    expect(skills["build-loop/SKILL.md"]).toBeDefined();
+    expect(skills["deep-plan/SKILL.md"]).toBeDefined();
+    expect(skills["deep-review/SKILL.md"]).toBeDefined();
+    expect(skills["quick-review/SKILL.md"]).toBeDefined();
+    expect(skills["address-feedback/SKILL.md"]).toBeDefined();
+    expect(skills["gs/SKILL.md"]).toBeDefined();
+  });
+
+  test("has SKILL.md for static skills as directories", () => {
+    const skills = buildAllSkills();
+    expect(skills["research/SKILL.md"]).toBeDefined();
+    expect(skills["spec-make/SKILL.md"]).toBeDefined();
+    expect(skills["product-manager/SKILL.md"]).toBeDefined();
+    expect(skills["research-local/SKILL.md"]).toBeDefined();
+  });
+
+  test("with gs- prefix prefixes gs-* skill dirs", () => {
+    const skills = buildAllSkills("gs-");
+    expect(skills["gs-think/SKILL.md"]).toBeDefined();
+    expect(skills["gs-work/SKILL.md"]).toBeDefined();
+    // Non-gs skills unchanged
+    expect(skills["research/SKILL.md"]).toBeDefined();
+    expect(skills["spec-make/SKILL.md"]).toBeDefined();
+  });
+
+  test("includes browser and writing-skills as directories", () => {
+    const skills = buildAllSkills();
+    expect(skills["browser/SKILL.md"]).toBeDefined();
+    expect(skills["writing-skills/SKILL.md"]).toBeDefined();
+    expect(skills["writing-skills/testing-skills-with-subagents.md"]).toBeDefined();
+  });
+
+  test("empty prefix same as no prefix", () => {
+    const noPrefix = buildAllSkills();
+    const emptyPrefix = buildAllSkills("");
+    expect(Object.keys(noPrefix).sort()).toEqual(Object.keys(emptyPrefix).sort());
+  });
+
+  test("all SKILL.md values contain frontmatter", () => {
+    const skills = buildAllSkills();
+    const skillMdKeys = Object.keys(skills).filter((k) => k.endsWith("/SKILL.md"));
+    expect(skillMdKeys.length).toBeGreaterThan(0);
+    for (const key of skillMdKeys) {
+      expect(skills[key]).toStartWith("---");
+    }
+  });
+
+  test("deprecated buildCommands still returns flat format", () => {
+    const cmds = buildCommands();
+    expect(cmds["think.md"]).toBeDefined();
+    expect(cmds["work.md"]).toBeDefined();
+    expect(cmds["deep-plan.md"]).toBeDefined();
+    // Should be strings with frontmatter
+    expect(typeof cmds["think.md"]).toBe("string");
+    expect(cmds["think.md"]).toContain("---");
   });
 });
