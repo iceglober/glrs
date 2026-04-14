@@ -1,7 +1,11 @@
+import { HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
+
 export function gsBuild(): string {
   return `---
 description: Implement a specific gs-agentic task. Use when user says 'build t3', 'implement this task', 'work on t5', or provides a specific task ID. Reads the task's plan and context, then implements with TDD methodology. Updates task state on completion.
 ---
+
+${HANDOFF_RULE}
 
 # Build — Implement a Specific Task
 
@@ -145,43 +149,33 @@ After all test cases are implemented:
    **Remaining tasks in epic:** {count} (if applicable)
    \`\`\`
 
-5. **Ask what's next** using the AskUserQuestion tool:
+5. **Ask what's next:**
 
-   **If tasks remain in the epic**, use these options:
+   **If tasks remain in the epic:**
 
-   \`\`\`
-   question: "Task complete. What would you like to do next?"
-   header: "Next step"
-   options:
-     1. label: "Keep building (Recommended)", description: "Claim and build the next task in the epic"
-     2. label: "Deep review", description: "Thorough multi-agent parallel code review"
-     3. label: "Quick review", description: "Fast single-pass code review of the diff"
-     4. label: "Done for now", description: "Stop here — come back later"
-   \`\`\`
+${buildHandoffBlock({
+  question: "Task complete. What would you like to do next?",
+  header: "Next step",
+  options: [
+    { label: "Keep building (Recommended)", description: "Claim and build the next task in the epic", action: 'Skill("build")' },
+    { label: "Deep review", description: "Thorough multi-agent parallel code review", action: 'Skill("deep-review")' },
+    { label: "Quick review", description: "Fast single-pass code review of the diff", action: 'Skill("quick-review")' },
+    { label: "Done for now", description: "Stop here — come back later", action: "summarize what was built, then stop" },
+  ],
+})}
 
-   Based on the user's response:
-   - **Keep building**: invoke the build skill using the Skill tool: Skill("build")
-   - **Deep review**: invoke the deep-review skill using the Skill tool: Skill("deep-review")
-   - **Quick review**: invoke the quick-review skill using the Skill tool: Skill("quick-review")
-   - **Done for now**: summarize what was built, then stop
+   **If all tasks in the epic are complete** (or no epic):
 
-   **If all tasks in the epic are complete** (or no epic), use these options:
-
-   \`\`\`
-   question: "All tasks complete! What would you like to do next?"
-   header: "Next step"
-   options:
-     1. label: "Deep review (Recommended)", description: "Thorough multi-agent parallel code review"
-     2. label: "Quick review", description: "Fast single-pass code review of the diff"
-     3. label: "Ship it", description: "Typecheck, commit, push, and create a PR"
-     4. label: "Done for now", description: "Stop here — come back later"
-   \`\`\`
-
-   Based on the user's response:
-   - **Deep review**: invoke the deep-review skill using the Skill tool: Skill("deep-review")
-   - **Quick review**: invoke the quick-review skill using the Skill tool: Skill("quick-review")
-   - **Ship it**: invoke the ship skill using the Skill tool: Skill("ship")
-   - **Done for now**: summarize what was built, then stop
+${buildHandoffBlock({
+  question: "All tasks complete! What would you like to do next?",
+  header: "Next step",
+  options: [
+    { label: "Deep review (Recommended)", description: "Thorough multi-agent parallel code review", action: 'Skill("deep-review")' },
+    { label: "Quick review", description: "Fast single-pass code review of the diff", action: 'Skill("quick-review")' },
+    { label: "Ship it", description: "Typecheck, commit, push, and create a PR", action: 'Skill("ship")' },
+    { label: "Done for now", description: "Stop here — come back later", action: "summarize what was built, then stop" },
+  ],
+})}
 
 ## Common rationalizations — all invalid
 

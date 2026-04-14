@@ -70,7 +70,7 @@ src/
 │   ├── state-server.test.ts # State server tests
 │   ├── settings.ts           # User settings (~/.glorious/settings.json)
 │   ├── settings.test.ts      # Settings tests
-│   ├── fmt.ts            # Terminal formatting (bold, dim, colors)
+│   ├── fmt.ts            # Terminal formatting (bold, dim, colors, ok/okErr/info/warn)
 │   ├── version.ts        # VERSION constant
 │   └── update-check.ts   # Update checker
 └── skills/
