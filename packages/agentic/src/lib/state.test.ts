@@ -402,6 +402,40 @@ describe("saveTask", () => {
     const loaded = loadTask("t1")!;
     expect(loaded.updatedAt).not.toBe(firstUpdatedAt);
   });
+
+  test("preserves child steps when updating task", () => {
+    const task = createTask({ title: "Parent" });
+    createStep({ title: "Child Step", task: "t1" });
+    task.title = "Updated Parent";
+    saveTask(task);
+    const step = loadStep("s1");
+    expect(step).not.toBeNull();
+    expect(step!.task).toBe("t1");
+    expect(step!.title).toBe("Child Step");
+  });
+
+  test("preserves multiple child steps when updating task", () => {
+    const task = createTask({ title: "Parent" });
+    createStep({ title: "Step A", task: "t1" });
+    createStep({ title: "Step B", task: "t1" });
+    createStep({ title: "Step C", task: "t1" });
+    task.branch = "feat/test";
+    saveTask(task);
+    const steps = listSteps({ task: "t1" });
+    expect(steps).toHaveLength(3);
+  });
+
+  test("updates all fields correctly", () => {
+    const task = createTask({ title: "Original" });
+    task.branch = "feat/x";
+    task.pr = "https://github.com/test/pr/1";
+    task.description = "Updated desc";
+    saveTask(task);
+    const loaded = loadTask("t1")!;
+    expect(loaded.branch).toBe("feat/x");
+    expect(loaded.pr).toBe("https://github.com/test/pr/1");
+    expect(loaded.description).toBe("Updated desc");
+  });
 });
 
 // ── Phase transitions ────────────────────────────────────────────────

@@ -309,11 +309,9 @@ export function saveStep(step: Step): void {
   const db = getDbSync();
   const now = new Date().toISOString();
   db.run(
-    `INSERT OR REPLACE INTO steps (repo, id, task, title, description, phase, sort_order, plan, plan_version, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `UPDATE steps SET task=?, title=?, description=?, phase=?, sort_order=?, plan=?, plan_version=?, updated_at=?
+     WHERE repo=? AND id=?`,
     [
-      repo(),
-      step.id,
       step.task,
       step.title,
       step.description,
@@ -321,8 +319,9 @@ export function saveStep(step: Step): void {
       step.sortOrder,
       step.plan,
       step.planVersion,
-      step.createdAt,
       now,
+      repo(),
+      step.id,
     ],
   );
   persistDb();
@@ -490,11 +489,9 @@ export function saveTask(task: Task): void {
   const db = getDbSync();
   const now = new Date().toISOString();
   db.run(
-    `INSERT OR REPLACE INTO tasks (repo, id, epic, title, description, phase, dependencies, branch, worktree, pr, external_id, plan, plan_version, qa_status, qa_summary, qa_timestamp, claimed_by, claimed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `UPDATE tasks SET epic=?, title=?, description=?, phase=?, dependencies=?, branch=?, worktree=?, pr=?, external_id=?, plan=?, plan_version=?, qa_status=?, qa_summary=?, qa_timestamp=?, claimed_by=?, claimed_at=?, updated_at=?
+     WHERE repo=? AND id=?`,
     [
-      repo(),
-      task.id,
       task.epic,
       task.title,
       task.description,
@@ -511,8 +508,9 @@ export function saveTask(task: Task): void {
       task.qaResult?.timestamp ?? null,
       task.claimedBy,
       task.claimedAt,
-      task.createdAt,
       now,
+      repo(),
+      task.id,
     ],
   );
   persistDb();
