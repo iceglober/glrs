@@ -650,4 +650,67 @@ describe("autoSyncSkills", () => {
     expect(m.version).toBeDefined();
     expect(m.version).not.toBe("0.0.1");
   });
+
+  // --- Format migration tests (Step 1.5) ---
+
+  test("migrates from commands format to skills format on sync", () => {
+    writeManifestTo(tmpHome, {
+      version: "0.0.1",
+      prefix: "",
+      commands: ["think.md"],
+      skills: ["browser.md"],
+    });
+    autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    const m = readManifestFrom(tmpHome);
+    // Should now be in skills format
+    expect(m.format).toBe("skills");
+    // Skills should have directory-format keys
+    expect(m.skills.some((s: string) => s.includes("/SKILL.md"))).toBe(true);
+    // Commands should be empty
+    expect(m.commands).toEqual([]);
+  });
+
+  test("triggers re-sync when version matches but format is missing", () => {
+    // Install once to get current version
+    autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    // Tamper manifest to remove format field (simulating old v2 manifest with current version)
+    const manifestPath = path.join(tmpHome, ".claude", ".glorious-skills.json");
+    const m = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    delete m.format;
+    fs.writeFileSync(manifestPath, JSON.stringify(m));
+    // Run again — should trigger because format is missing
+    const result = autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    expect(result.userSynced).toBe(true);
+    // Format should now be restored
+    const m2 = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    expect(m2.format).toBe("skills");
+  });
+
+  test("does not re-sync when version AND format both match", () => {
+    // Install once
+    autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    // Second call should skip (version + format both match)
+    const result = autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    expect(result.userSynced).toBe(false);
+  });
 });
