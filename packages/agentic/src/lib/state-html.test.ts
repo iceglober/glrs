@@ -253,4 +253,38 @@ describe("renderStatePage", () => {
     const sanitizeSection = html.slice(html.indexOf("function sanitizeHtml"), html.indexOf("function renderMarkdown"));
     expect(sanitizeSection).toContain("javascript:");
   });
+
+  test("no css() function calls in output", () => {
+    const html = renderStatePage(3000);
+    // css() was an undefined function — replaced with inline style objects
+    expect(html).not.toMatch(/\bcss\s*\(/);
+  });
+
+  test("useState before conditional return in EpicDetail", () => {
+    const html = renderStatePage(3000);
+    const epicDetailStart = html.indexOf("function EpicDetail");
+    const body = html.slice(epicDetailStart, epicDetailStart + 500);
+    const useStateIdx = body.indexOf("useState");
+    const earlyReturnIdx = body.indexOf("if (!epic)");
+    expect(useStateIdx).toBeGreaterThan(-1);
+    expect(earlyReturnIdx).toBeGreaterThan(-1);
+    expect(useStateIdx).toBeLessThan(earlyReturnIdx);
+  });
+
+  test("repo name uses inline style object not css()", () => {
+    const html = renderStatePage(3000);
+    // camelCase CSS property indicates style object, not css() string
+    expect(html).toContain("fontSize");
+  });
+
+  test("EpicDetail still has early return for missing epic", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("if (!epic)");
+    expect(html).toContain("Epic not found");
+  });
+
+  test("multi-repo mode still references repoName", () => {
+    const html = renderStatePage(3000, { all: true });
+    expect(html).toContain("repoName");
+  });
 });
