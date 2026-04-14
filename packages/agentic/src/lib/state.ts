@@ -3,6 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { gitRoot, gitSafe } from "./git.js";
 import { getDb, getDbSync, persistDb, withDbLock, getRepo, closeDb, resetDb, resetRepoCache, DB_PATH } from "./db.js";
+import { loadFeedback, listResolvedFeedback } from "./plan-feedback.js";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -1580,3 +1581,57 @@ export function reviewSummary(opts?: { taskId?: string; repoId?: string }): Revi
   return summary;
 }
 
+// ── Epic trace export (for RL) ──────────────────────────────────────
+
+export interface EpicTrace {
+  exportedAt: string;
+  epic: Epic;
+  plans: { version: number; content: string }[];
+  feedback: {
+    active: string | null;
+    resolved: { filename: string; content: string }[];
+  };
+  tasks: {
+    task: Task;
+    notes: TaskNote[];
+  }[];
+  reviews: ReviewSummaryResult;
+}
+
+export function exportEpicTrace(epicId: string): EpicTrace {
+  const epic = loadEpic(epicId);
+  if (!epic) throw new Error(`Epic ${epicId} not found`);
+
+  const versions = listPlanVersions(epicId);
+  const plans = versions.map((v) => ({
+    version: v,
+    content: loadPlanVersion(epicId, v) ?? "",
+  }));
+
+  const activeFeedback = loadFeedback(epicId);
+  const resolvedFiles = listResolvedFeedback(epicId);
+  const resolvedFeedback = resolvedFiles.map((filename) => ({
+    filename,
+    content: fs.readFileSync(path.join(plansDir(), epicId, filename), "utf-8"),
+  }));
+
+  const tasks = listTasks({ epic: epicId });
+  const taskEntries = tasks.map((t) => ({
+    task: t,
+    notes: loadTaskNotes(t.id),
+  }));
+
+  const reviews = reviewSummary({ taskId: undefined });
+
+  return {
+    exportedAt: new Date().toISOString(),
+    epic,
+    plans,
+    feedback: {
+      active: activeFeedback,
+      resolved: resolvedFeedback,
+    },
+    tasks: taskEntries,
+    reviews,
+  };
+}
