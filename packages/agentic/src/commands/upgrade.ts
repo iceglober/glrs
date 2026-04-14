@@ -198,6 +198,6 @@ export const upgrade = command({
 
     ok(`updated to v${latest.version}`);
     console.log("");
-    info("run `gs-agentic skills` to update your Claude Code slash commands");
+    info("skills will auto-sync on next run");
   },
 });

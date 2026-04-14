@@ -4,7 +4,9 @@ import path from "node:path";
 import os from "node:os";
 import readline from "node:readline";
 import { buildCommands, SKILLS, BUILTIN_COLLISIONS } from "../skills/index.js";
-import { ok, info, warn, yellow } from "../lib/fmt.js";
+import { ok, okErr, info, warn, yellow } from "../lib/fmt.js";
+import { VERSION } from "../lib/version.js";
+import { getSetting } from "../lib/settings.js";
 import { gitRoot } from "../lib/git.js";
 import { select } from "../lib/select.js";
 
@@ -23,6 +25,8 @@ export function resolveClaudeDir(
 }
 
 export interface Manifest {
+  version?: string;
+  prefix?: string;
   commands: string[];
   skills: string[];
 }
@@ -30,7 +34,13 @@ export interface Manifest {
 function readManifest(claudeDir: string): Manifest {
   const p = path.join(claudeDir, MANIFEST_FILE);
   try {
-    return JSON.parse(fs.readFileSync(p, "utf-8"));
+    const data = JSON.parse(fs.readFileSync(p, "utf-8"));
+    return {
+      version: data?.version,
+      prefix: data?.prefix,
+      commands: Array.isArray(data?.commands) ? data.commands : [],
+      skills: Array.isArray(data?.skills) ? data.skills : [],
+    };
   } catch {
     return { commands: [], skills: [] };
   }
@@ -207,8 +217,10 @@ export function executeInstall(plan: InstallPlan): InstallResult {
   const cmdResult = installFiles(plan.commands, commandsDir, plan.force);
   const skillResult = installFiles(plan.skills, skillsDir, plan.force);
 
-  // Update manifest
+  // Update manifest with version stamp and prefix for auto-sync
   writeManifest(plan.claudeDir, {
+    version: VERSION,
+    prefix: plan.prefix || "",
     commands: Object.keys(plan.commands),
     skills: Object.keys(plan.skills),
   });
@@ -260,6 +272,61 @@ export function formatInstallResult(result: InstallResult): string[] {
   }
 
   return lines;
+}
+
+/** Sync a single scope if its manifest version doesn't match the current VERSION. */
+function syncScope(claudeDir: string, scope: "user" | "project"): boolean {
+  const manifest = readManifest(claudeDir);
+  if (manifest.version === VERSION) return false;
+
+  const prefix = manifest.prefix ?? undefined;
+  const plan = computeInstallPlan({ claudeDir, prefix, force: false, scope });
+  const result = executeInstall(plan);
+
+  if (result.created > 0 || result.updated > 0 || result.removed > 0) {
+    okErr(`skills synced to v${VERSION} (${result.target})`);
+  }
+  return true;
+}
+
+/**
+ * Auto-sync skills when CLI version doesn't match installed manifest version.
+ * - User scope: auto-installs on first run (no manifest) or syncs on version mismatch
+ * - Project scope: syncs only if previously installed (manifest exists with commands)
+ * - Never throws — all errors silently swallowed
+ * - Controlled by `skills.auto-update` setting (default: "true")
+ */
+export function autoSyncSkills(opts?: {
+  getSettingFn?: (key: string) => string | undefined;
+  homeDirFn?: () => string;
+  gitRootFn?: () => string;
+}): { userSynced: boolean; projectSynced: boolean } {
+  const result = { userSynced: false, projectSynced: false };
+  try {
+    const getSettingFn = opts?.getSettingFn ?? getSetting;
+    if (getSettingFn("skills.auto-update") === "false") return result;
+
+    const homeDir = opts?.homeDirFn?.() ?? os.homedir();
+    const rootFn = opts?.gitRootFn ?? gitRoot;
+
+    // User scope — sync if stale, auto-install if first run
+    const userDir = path.join(homeDir, ".claude");
+    result.userSynced = syncScope(userDir, "user");
+
+    // Project scope — sync only if previously installed
+    try {
+      const projectDir = path.join(rootFn(), ".claude");
+      const projectManifest = readManifest(projectDir);
+      if (projectManifest.commands.length > 0) {
+        result.projectSynced = syncScope(projectDir, "project");
+      }
+    } catch {
+      // Not in a git repo — skip project scope
+    }
+  } catch {
+    // Never crash the CLI for a skill sync
+  }
+  return result;
 }
 
 type Scope = "project" | "user";

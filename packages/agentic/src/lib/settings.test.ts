@@ -88,4 +88,36 @@ describe("settingsHelp", () => {
   test("state.auto-open has default value", () => {
     expect(getSetting("state.auto-open")).toBe("true");
   });
+
+  test("includes skills.auto-update setting", () => {
+    const help = settingsHelp();
+    const skillsUpdate = help.find(h => h.key === "skills.auto-update");
+    expect(skillsUpdate).toBeDefined();
+    expect(skillsUpdate!.default).toBe("true");
+  });
+});
+
+describe("skills.auto-update", () => {
+  test("defaults to true", () => {
+    expect(getSetting("skills.auto-update")).toBe("true");
+  });
+
+  test("can be set to false", () => {
+    setSetting("skills.auto-update", "false");
+    expect(getSetting("skills.auto-update")).toBe("false");
+  });
+
+  test("unset reverts to default true", () => {
+    setSetting("skills.auto-update", "false");
+    unsetSetting("skills.auto-update");
+    expect(getSetting("skills.auto-update")).toBe("true");
+  });
+
+  test("listSettings shows skills.auto-update", () => {
+    const list = listSettings();
+    const entry = list.find(s => s.key === "skills.auto-update");
+    expect(entry).toBeDefined();
+    expect(entry!.value).toBe("true");
+    expect(entry!.source).toBe("default");
+  });
 });

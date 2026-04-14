@@ -27,6 +27,9 @@ ${bold("COMMANDS")}
                  Default: no prefix (short canonical names).
       Falls back to project scope when stdin is not a TTY.
 
+      Skills auto-sync when the CLI version changes. Disable with:
+        gs-agentic config set skills.auto-update false
+
       Engineering skills (default names shown; use --prefix gs- for gs-* names):
         /gs                General workflow assistant
         /think             Product strategy session before building
@@ -111,8 +114,9 @@ ${bold("COMMANDS")}
       Reset a config value to its default.
 
       Available settings:
-        plan.auto-open    Open browser automatically in plan review (default: true)
-        state.auto-open   Open browser automatically in state web (default: true)
+        plan.auto-open      Open browser automatically in plan review (default: true)
+        skills.auto-update  Sync skills automatically when CLI version changes (default: true)
+        state.auto-open     Open browser automatically in state web (default: true)
 
   ${bold("State Management")} ${dim("(task lifecycle & review tracking)")}
 
