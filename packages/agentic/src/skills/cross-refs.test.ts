@@ -119,4 +119,68 @@ describe("cross-references use canonical names", () => {
       }
     }
   });
+
+  // ── Standardized handoff format ────────────────────────────────────
+
+  const HANDOFF_SKILLS = [
+    { name: "gs-deep-plan", fn: gsDeepPlan },
+    { name: "gs-build", fn: gsBuild },
+    { name: "gs-build-loop", fn: gsBuildLoop },
+    { name: "gs-deep-review", fn: gsDeepReview },
+    { name: "gs-quick-review", fn: gsQuickReview },
+  ];
+
+  const NON_HANDOFF_SKILLS = [
+    { name: "gs-think", fn: gsThink },
+    { name: "gs-fix", fn: gsFix },
+    { name: "gs-work", fn: gsWork },
+    { name: "gs-qa", fn: gsQa },
+    { name: "gs-ship", fn: gsShip },
+  ];
+
+  test("all handoff skills contain HANDOFF_RULE", () => {
+    for (const { name, fn } of HANDOFF_SKILLS) {
+      const output = fn();
+      if (!output.includes("Skill Handoff Rule")) {
+        throw new Error(`${name} is missing HANDOFF_RULE ("Skill Handoff Rule" text)`);
+      }
+    }
+  });
+
+  test("all handoff skills use structured dispatch table", () => {
+    for (const { name, fn } of HANDOFF_SKILLS) {
+      const output = fn();
+      if (!output.includes("YOUR ACTION")) {
+        throw new Error(`${name} is missing structured dispatch table ("YOUR ACTION" header)`);
+      }
+    }
+  });
+
+  test("all handoff skills have constraint block", () => {
+    for (const { name, fn } of HANDOFF_SKILLS) {
+      const output = fn();
+      if (!output.includes("Do NOT output any text before the Skill tool call")) {
+        throw new Error(`${name} is missing constraint block`);
+      }
+    }
+  });
+
+  test("no handoff skill uses old prose dispatch format", () => {
+    for (const { name, fn } of HANDOFF_SKILLS) {
+      const output = fn();
+      const matches = output.match(/invoke the \w[\w-]* skill using the Skill tool:/g);
+      if (matches) {
+        throw new Error(`${name} still uses old prose dispatch: ${matches.join(", ")}`);
+      }
+    }
+  });
+
+  test("non-handoff skills do not contain HANDOFF_RULE", () => {
+    for (const { name, fn } of NON_HANDOFF_SKILLS) {
+      const output = fn();
+      if (output.includes("Skill Handoff Rule")) {
+        throw new Error(`${name} should NOT contain HANDOFF_RULE — it has no skill-to-skill handoff`);
+      }
+    }
+  });
 });
