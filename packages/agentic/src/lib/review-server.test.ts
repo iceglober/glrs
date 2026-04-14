@@ -396,13 +396,74 @@ describe("review server — first-run", () => {
 });
 
 describe("review server — misc", () => {
-  test("GET / returns HTML", async () => {
+  test("GET / returns tabbed HTML with registered plan", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# Test Plan" }),
+    });
+    const res = await fetch(server.url + "/");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    const body = await res.text();
+    expect(body).toContain("e1");
+    expect(body).toContain("Finish Review");
+  });
+
+  test("GET / with two plans shows both tabs", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# Plan 1" }),
+    });
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e2", planContent: "# Plan 2" }),
+    });
+    const res = await fetch(server.url + "/");
+    const body = await res.text();
+    expect(body).toContain('data-plan="e1"');
+    expect(body).toContain('data-plan="e2"');
+  });
+
+  test("GET / with no plans shows empty state", async () => {
     const { startReviewServer } = await importModule();
     const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
     servers.push(server);
     const res = await fetch(server.url + "/");
+    const body = await res.text();
+    expect(body).toContain("No plans");
+  });
+
+  test("GET /api/plans/:id returns individual plan", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# Test Plan" }),
+    });
+    const res = await fetch(server.url + "/api/plans/e1");
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/html");
+    const json = await res.json() as { planId: string; htmlContent: string };
+    expect(json.planId).toBe("e1");
+    expect(json.htmlContent).toContain("Test Plan");
+  });
+
+  test("GET /api/plans/:id returns 404 for unknown plan", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    const res = await fetch(server.url + "/api/plans/nonexistent");
+    expect(res.status).toBe(404);
   });
 
   test("unknown route returns 404", async () => {

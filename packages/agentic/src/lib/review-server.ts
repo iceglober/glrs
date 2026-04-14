@@ -5,6 +5,7 @@ import os from "node:os";
 import { marked } from "marked";
 import { getSetting, setSetting } from "./settings.js";
 import { appendFeedback, loadFeedback } from "./plan-feedback.js";
+import { renderReviewPage } from "./review-html.js";
 
 export interface ReviewServer {
   url: string;
@@ -100,7 +101,7 @@ export function startReviewServer(opts?: ReviewServerOpts): Promise<ReviewServer
               htmlContent: sanitizeHtml(marked(p.planContent) as string),
             }));
           const addr = server.address() as { port: number };
-          const html = renderMinimalPage(planData, addr.port);
+          const html = renderReviewPage(planData, addr.port);
           res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
           res.end(html);
           return;
@@ -140,6 +141,24 @@ export function startReviewServer(opts?: ReviewServerOpts): Promise<ReviewServer
               planId: p.planId,
               planContent: p.planContent,
             })),
+          }));
+          return;
+        }
+
+        // GET /api/plans/:id — get individual plan HTML
+        const planMatch = req.url?.match(/^\/api\/plans\/([a-zA-Z0-9_-]+)$/);
+        if (req.method === "GET" && planMatch) {
+          const planId = decodeURIComponent(planMatch[1]);
+          const plan = plans.find(p => p.planId === planId && !p.finished);
+          if (!plan) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Plan not found" }));
+            return;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            planId: plan.planId,
+            htmlContent: sanitizeHtml(marked(plan.planContent) as string),
           }));
           return;
         }
@@ -385,46 +404,3 @@ export function waitForFinish(serverUrl: string, planId: string): Promise<void> 
   });
 }
 
-/** Minimal placeholder page — will be replaced by review-html.ts in step 2.1/2.2. */
-function renderMinimalPage(plans: Array<{ planId: string; htmlContent: string }>, serverPort: number): string {
-  const planTabs = plans.map((p, i) =>
-    `<div class="tab${i === 0 ? " active" : ""}" data-plan="${escapeHtml(p.planId)}">${escapeHtml(p.planId)}</div>`
-  ).join("");
-
-  const planPanels = plans.map((p, i) =>
-    `<div class="panel${i === 0 ? " active" : ""}" data-plan="${escapeHtml(p.planId)}">${p.htmlContent}</div>`
-  ).join("");
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Plan Review</title>
-<style>
-body { font-family: -apple-system, sans-serif; margin: 2rem; }
-.tab-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-.tab { padding: 0.5rem 1rem; cursor: pointer; border: 1px solid #ddd; border-radius: 4px; }
-.tab.active { background: #2563eb; color: white; }
-.panel { display: none; }
-.panel.active { display: block; }
-</style>
-</head>
-<body>
-<div class="tab-bar">${planTabs}</div>
-${planPanels}
-<script>
-document.querySelectorAll(".tab").forEach(t => {
-  t.onclick = () => {
-    document.querySelectorAll(".tab,.panel").forEach(e => e.classList.remove("active"));
-    t.classList.add("active");
-    document.querySelector('.panel[data-plan="'+t.dataset.plan+'"]').classList.add("active");
-  };
-});
-</script>
-</body>
-</html>`;
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
