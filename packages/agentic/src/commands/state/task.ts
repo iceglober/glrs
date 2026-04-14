@@ -25,6 +25,21 @@ import {
 import { gitSafe } from "../../lib/git.js";
 import { ok, warn, bold, dim, cyan, green, yellow, red } from "../../lib/fmt.js";
 
+/**
+ * Strip null, undefined, empty string, and empty array fields from an object.
+ * Used by --format agent for ultra-compact output.
+ */
+function compactify(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null || value === undefined) continue;
+    if (value === "") continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    result[key] = value;
+  }
+  return result;
+}
+
 /** Resolve --id: explicit value → last-touched → error */
 function resolveId(explicit?: string): string {
   if (explicit) return explicit;
@@ -72,6 +87,7 @@ const show = command({
   args: {
     id: option({ type: optional(string), long: "id", short: "i", description: "Task ID (defaults to last-touched)" }),
     json: flag({ long: "json", description: "Output as JSON" }),
+    format: option({ type: optional(string), long: "format", description: "Output format: json (full), agent (compact, skip empty fields)" }),
     withSpec: flag({ long: "with-spec", description: "Include spec content" }),
     fields: option({ type: optional(string), long: "fields", description: "Comma-separated field names to include" }),
   },
@@ -84,7 +100,12 @@ const show = command({
       process.exit(1);
     }
 
-    if (args.json) {
+    if (args.format === "agent") {
+      console.log(JSON.stringify(compactify(full as Record<string, unknown>)));
+      return;
+    }
+
+    if (args.json || args.format === "json") {
       console.log(JSON.stringify(full));
       return;
     }
@@ -124,6 +145,7 @@ const current = command({
   description: "Show the task for the current worktree/branch",
   args: {
     json: flag({ long: "json", description: "Output as JSON" }),
+    format: option({ type: optional(string), long: "format", description: "Output format: json (full), agent (compact, skip empty fields)" }),
     withSpec: flag({ long: "with-spec", description: "Include spec content" }),
     fields: option({ type: optional(string), long: "fields", description: "Comma-separated field names" }),
   },
@@ -140,7 +162,12 @@ const current = command({
     const fieldList = args.fields?.split(",").map((f) => f.trim());
     const full = loadTaskFull(task.id, { withSpec: args.withSpec, fields: fieldList });
 
-    if (args.json) {
+    if (args.format === "agent") {
+      console.log(JSON.stringify(compactify(full as Record<string, unknown>)));
+      return;
+    }
+
+    if (args.json || args.format === "json") {
       console.log(JSON.stringify(full));
       return;
     }
@@ -349,16 +376,23 @@ const list = command({
     epic: option({ type: optional(string), long: "epic", description: "Filter by epic ID" }),
     all: flag({ long: "all", description: "Show tasks across all repos" }),
     json: flag({ long: "json", description: "Output as JSON" }),
+    format: option({ type: optional(string), long: "format", description: "Output format: json (full), agent (compact)" }),
   },
   handler: (args) => {
     const epicFilter = args.epic;
-    let tasks = listTasks({ epic: epicFilter ?? undefined, all: args.all, lean: args.json });
+    const useJson = args.json || args.format === "json" || args.format === "agent";
+    let tasks = listTasks({ epic: epicFilter ?? undefined, all: args.all, lean: useJson });
 
     if (args.phase) {
       tasks = tasks.filter((t) => t.phase === args.phase);
     }
 
-    if (args.json) {
+    if (args.format === "agent") {
+      console.log(JSON.stringify(tasks.map((t) => compactify(t as unknown as Record<string, unknown>))));
+      return;
+    }
+
+    if (args.json || args.format === "json") {
       console.log(JSON.stringify(tasks));
       return;
     }
