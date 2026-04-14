@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import readline from "node:readline";
-import { buildCommands, SKILLS, BUILTIN_COLLISIONS } from "../skills/index.js";
+import { buildCommands, buildAllSkills, SKILLS, BUILTIN_COLLISIONS } from "../skills/index.js";
 import { ok, okErr, info, warn, yellow } from "../lib/fmt.js";
 import { VERSION } from "../lib/version.js";
 import { getSetting } from "../lib/settings.js";
@@ -27,6 +27,7 @@ export function resolveClaudeDir(
 export interface Manifest {
   version?: string;
   prefix?: string;
+  format?: "skills" | "commands";
   commands: string[];
   skills: string[];
 }
@@ -38,6 +39,7 @@ function readManifest(claudeDir: string): Manifest {
     return {
       version: data?.version,
       prefix: data?.prefix,
+      format: data?.format,
       commands: Array.isArray(data?.commands) ? data.commands : [],
       skills: Array.isArray(data?.skills) ? data.skills : [],
     };
@@ -120,6 +122,7 @@ export interface InstallPlan {
   skills: Record<string, string>;
   previousManifest: Manifest;
   prefix: string | undefined;
+  format: "skills" | "commands";
   force: boolean;
   collisions: string[];
   scope: "project" | "user";
@@ -131,6 +134,7 @@ export function computeInstallPlan(opts: {
   prefix: string | undefined;
   force: boolean;
   scope?: "project" | "user";
+  format?: "skills" | "commands";
   readManifestFn?: (dir: string) => Manifest;
   existsFn?: (path: string) => boolean;
   readFileFn?: (path: string) => string;
@@ -140,14 +144,18 @@ export function computeInstallPlan(opts: {
     prefix,
     force,
     scope = "project",
+    format = "skills",
     readManifestFn = readManifest,
     existsFn = fs.existsSync,
     readFileFn = (p: string) => fs.readFileSync(p, "utf-8"),
   } = opts;
 
   const previousManifest = readManifestFn(claudeDir);
-  const commands = buildCommands(prefix || undefined);
-  const skills = { ...SKILLS };
+
+  // In "skills" format, everything goes to .claude/skills/<name>/SKILL.md
+  // In "commands" format (legacy), commands go to .claude/commands/ and skills to .claude/skills/
+  const commands = format === "commands" ? buildCommands(prefix || undefined) : {};
+  const skills = format === "skills" ? buildAllSkills(prefix || undefined) : { ...SKILLS };
 
   let collisions: string[] = [];
   if (!force) {
@@ -188,6 +196,7 @@ export function computeInstallPlan(opts: {
     skills,
     previousManifest,
     prefix,
+    format,
     force,
     collisions,
     scope,
@@ -217,10 +226,11 @@ export function executeInstall(plan: InstallPlan): InstallResult {
   const cmdResult = installFiles(plan.commands, commandsDir, plan.force);
   const skillResult = installFiles(plan.skills, skillsDir, plan.force);
 
-  // Update manifest with version stamp and prefix for auto-sync
+  // Update manifest with version stamp, prefix, and format for auto-sync
   writeManifest(plan.claudeDir, {
     version: VERSION,
     prefix: plan.prefix || "",
+    format: plan.format,
     commands: Object.keys(plan.commands),
     skills: Object.keys(plan.skills),
   });
@@ -277,10 +287,11 @@ export function formatInstallResult(result: InstallResult): string[] {
 /** Sync a single scope if its manifest version doesn't match the current VERSION. */
 function syncScope(claudeDir: string, scope: "user" | "project"): boolean {
   const manifest = readManifest(claudeDir);
-  if (manifest.version === VERSION) return false;
+  // Trigger sync on version mismatch OR format migration (old manifests lack format field)
+  if (manifest.version === VERSION && manifest.format === "skills") return false;
 
   const prefix = manifest.prefix ?? undefined;
-  const plan = computeInstallPlan({ claudeDir, prefix, force: false, scope });
+  const plan = computeInstallPlan({ claudeDir, prefix, force: false, scope, format: "skills" });
   const result = executeInstall(plan);
 
   if (result.created > 0 || result.updated > 0 || result.removed > 0) {
@@ -317,7 +328,7 @@ export function autoSyncSkills(opts?: {
     try {
       const projectDir = path.join(rootFn(), ".claude");
       const projectManifest = readManifest(projectDir);
-      if (projectManifest.commands.length > 0) {
+      if (projectManifest.commands.length > 0 || projectManifest.skills.length > 0) {
         result.projectSynced = syncScope(projectDir, "project");
       }
     } catch {
