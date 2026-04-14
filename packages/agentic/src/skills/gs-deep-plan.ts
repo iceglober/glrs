@@ -1,4 +1,4 @@
-import { TASK_PREAMBLE } from "./preamble.js";
+import { TASK_PREAMBLE, HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
 
 export function gsDeepPlan(): string {
   return `---
@@ -53,6 +53,8 @@ A planner that "sometimes" edits code is a planner that can never be trusted not
 Read, Grep, Glob, Bash (for gs-agentic state commands only), Agent (for parallel research only), TaskCreate, TaskUpdate.
 
 If you are about to call Edit, Write, or NotebookEdit — STOP. You are violating Constraint #2.
+
+${HANDOFF_RULE}
 
 ---
 
@@ -346,22 +348,18 @@ Format the output as a markdown table for the user:
 
 Include a one-line summary: **Epic \`<id>\`: <title> — N tasks created**
 
-Then use the AskUserQuestion tool to ask the user what they want to do next:
+Then ask the user what to do next:
 
-\`\`\`
-question: "What would you like to do next?"
-header: "Next step"
-options:
-  1. label: "Build it (Recommended)", description: "Start implementing — /build-loop will work through tasks in order"
-  2. label: "Review the plan", description: "Open the plan in the browser for review and feedback"
-  3. label: "Done for now", description: "Stop here — come back later to build"
-\`\`\`
-
-Based on the user's response:
-- **Build it**: invoke the build-loop skill using the Skill tool: Skill("build-loop")
-- **Review the plan**: run \`gs-agentic plan review --id <epic-id>\` to open the browser reviewer, then stop
-- **Done for now**: summarize the epic and task IDs, then stop
-- **Other (free text)**: the user is giving plan feedback — incorporate their feedback by going back to Step 8 (Handle plan updates). You MUST update both the plan markdown AND the task titles/dependencies in gs-agentic state. Then ask this question again.
+${buildHandoffBlock({
+  question: "What would you like to do next?",
+  header: "Next step",
+  options: [
+    { label: "Build it (Recommended)", description: "Start implementing — /build-loop will work through tasks in order", action: 'Skill("build-loop")' },
+    { label: "Review the plan", description: "Open the plan in the browser for review and feedback", action: "run \\`gs-agentic plan review --id <epic-id>\\` to open the browser reviewer, then stop" },
+    { label: "Done for now", description: "Stop here — come back later to build", action: "summarize the epic and task IDs, then stop" },
+  ],
+  freeText: "the user is giving plan feedback — incorporate their feedback by going back to Step 8 (Handle plan updates). You MUST update both the plan markdown AND the task titles/dependencies in gs-agentic state. Then ask this question again.",
+})}
 
 ## Rationalization Table
 

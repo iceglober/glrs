@@ -1,9 +1,11 @@
-import { REVIEW_PREAMBLE } from "./preamble.js";
+import { REVIEW_PREAMBLE, HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
 
 export function gsDeepReview(): string {
   return `---
 description: Conduct a thorough multi-agent parallel code review of the current branch's changes. Six specialized agents (Security, Data Integrity, Frontend/UX, API Contracts, Test Coverage, Logical Integrity) analyze changes simultaneously and produce a consolidated severity-grouped report. Stores findings in gs-agentic review state. Use when you want a comprehensive review before shipping.
 ---
+
+${HANDOFF_RULE}
 
 # Deep Review
 
@@ -287,41 +289,34 @@ End with one of:
 - **NEEDS FIXES** -- Has high/critical findings that must be addressed.
 - **STOP** -- Has critical issues that indicate fundamental problems with the approach.
 
-Then use the AskUserQuestion tool based on the verdict:
+Then ask the user what to do next based on the verdict:
 
 **If SHIP IT:**
-\`\`\`
-question: "Review clean — no critical or high findings. What's next?"
-header: "Next step"
-options:
-  1. label: "QA (Recommended)", description: "Run QA against the task's acceptance criteria"
-  2. label: "Ship it", description: "Typecheck, commit, push, and create a PR"
-  3. label: "Done for now", description: "Stop here — come back later"
-\`\`\`
 
-Based on the user's response:
-- **QA**: invoke the qa skill using the Skill tool: Skill("qa")
-- **Ship it**: invoke the ship skill using the Skill tool: Skill("ship")
-- **Done for now**: stop
-- **Other (free text)**: the user is giving direction — follow their instructions
+${buildHandoffBlock({
+  question: "Review clean — no critical or high findings. What's next?",
+  header: "Next step",
+  options: [
+    { label: "QA (Recommended)", description: "Run QA against the task's acceptance criteria", action: 'Skill("qa")' },
+    { label: "Ship it", description: "Typecheck, commit, push, and create a PR", action: 'Skill("ship")' },
+    { label: "Done for now", description: "Stop here — come back later", action: "stop" },
+  ],
+  freeText: "the user is giving direction — follow their instructions",
+})}
 
 **If NEEDS FIXES or STOP:**
-\`\`\`
-question: "Review found issues that need addressing. What's next?"
-header: "Next step"
-options:
-  1. label: "Plan the fixes (Recommended)", description: "Create a structured fix plan with /deep-plan"
-  2. label: "QA anyway", description: "Run QA to see full acceptance criteria status"
-  3. label: "Ship anyway", description: "Skip unresolved CRITICAL/HIGH findings — typecheck, commit, push, and create a PR"
-  4. label: "Done for now", description: "Stop here — address findings later"
-\`\`\`
 
-Based on the user's response:
-- **Plan the fixes**: invoke the deep-plan skill using the Skill tool with a one-line summary of each CRITICAL and HIGH finding (severity, file:line, description) as the argument: Skill("deep-plan", args: "<findings summary>")
-- **QA anyway**: invoke the qa skill using the Skill tool: Skill("qa")
-- **Ship anyway**: invoke the ship skill using the Skill tool: Skill("ship")
-- **Done for now**: stop
-- **Other (free text)**: the user is giving direction — follow their instructions
+${buildHandoffBlock({
+  question: "Review found issues that need addressing. What's next?",
+  header: "Next step",
+  options: [
+    { label: "Plan the fixes (Recommended)", description: "Create a structured fix plan with /deep-plan", action: 'Skill("deep-plan", args: "<one-line summary of each CRITICAL and HIGH finding: severity, file:line, description>")' },
+    { label: "QA anyway", description: "Run QA to see full acceptance criteria status", action: 'Skill("qa")' },
+    { label: "Ship anyway", description: "Skip unresolved CRITICAL/HIGH findings — typecheck, commit, push, and create a PR", action: 'Skill("ship")' },
+    { label: "Done for now", description: "Stop here — address findings later", action: "stop" },
+  ],
+  freeText: "the user is giving direction — follow their instructions",
+})}
 
 Do NOT auto-fix. Wait for the user's choice.
 `;

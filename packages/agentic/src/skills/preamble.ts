@@ -85,6 +85,75 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 - \`gs-agentic state review resolve --item <id> --status <status> --resolution "..." --commit-sha <sha>\` — resolve item
 - \`gs-agentic state review summary --task <id> --json\` — review summary counts`;
 
+// ── Skill handoff ──────────────────────────────────────────────────
+
+/**
+ * Global constraint injected into skills that hand off to other skills
+ * after AskUserQuestion. Uses Authority + Commitment persuasion.
+ */
+export const HANDOFF_RULE = `## Skill Handoff Rule
+
+When this skill tells you to call \`Skill("name")\`, your IMMEDIATE next action MUST be that Skill tool call.
+- Do NOT summarize what you are about to do
+- Do NOT ask for confirmation
+- Do NOT output any text before the Skill tool call
+- The Skill tool call MUST be the ONLY content in your response`;
+
+export interface HandoffOption {
+  label: string;
+  description: string;
+  action: string;
+}
+
+/**
+ * Build a standardized AskUserQuestion + dispatch block for skill handoffs.
+ * Produces: AskUserQuestion YAML, dispatch table, constraint block.
+ */
+export function buildHandoffBlock(opts: {
+  question: string;
+  header: string;
+  options: HandoffOption[];
+  freeText?: string;
+}): string {
+  // Build AskUserQuestion YAML
+  const optLines = opts.options
+    .map((o, i) => `  ${i + 1}. label: "${o.label}", description: "${o.description}"`)
+    .join("\n");
+
+  const askBlock = `Use the AskUserQuestion tool:
+
+\`\`\`
+question: "${opts.question}"
+header: "${opts.header}"
+options:
+${optLines}
+\`\`\``;
+
+  // Build dispatch table
+  const tableRows = opts.options
+    .map((o) => `| "${o.label}" | ${o.action} |`)
+    .join("\n");
+
+  const freeTextRow = opts.freeText
+    ? `\n| Other (free text) | ${opts.freeText} |`
+    : "";
+
+  const dispatchBlock = `## DISPATCH — Execute IMMEDIATELY after user responds
+
+| User selects | YOUR ACTION |
+|---|---|
+${tableRows}${freeTextRow}`;
+
+  // Constraint block
+  const constraint = `**CONSTRAINT:** Your response after the user answers MUST contain ONLY the action above — no summary, no preamble, no explanation. Do NOT output any text before the Skill tool call.`;
+
+  return `${askBlock}
+
+${dispatchBlock}
+
+${constraint}`;
+}
+
 /**
  * Build preamble — for gs-build, gs-build-loop.
  * Fetches full task with plan for implementation context.
