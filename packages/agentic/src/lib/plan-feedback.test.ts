@@ -58,7 +58,7 @@ describe("appendFeedback", () => {
 });
 
 describe("resolveFeedback", () => {
-  test("archives feedback file as resolved with timestamp", () => {
+  test("archives feedback file as resolved with timestamp and random suffix", () => {
     appendFeedback("e1", "1.1", "test");
     expect(loadFeedback("e1")).not.toBeNull();
     resolveFeedback("e1");
@@ -66,6 +66,18 @@ describe("resolveFeedback", () => {
     const dir = path.join(TEST_PLANS_DIR, "e1");
     const files = fs.readdirSync(dir).filter((f) => f.startsWith("feedback-resolved-") && f.endsWith(".md"));
     expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/^feedback-resolved-.*-[a-z0-9]+\.md$/);
+  });
+
+  test("two rapid resolves produce distinct filenames", () => {
+    appendFeedback("e1", "1.1", "first");
+    resolveFeedback("e1");
+    appendFeedback("e1", "2.1", "second");
+    resolveFeedback("e1");
+    const dir = path.join(TEST_PLANS_DIR, "e1");
+    const files = fs.readdirSync(dir).filter((f) => f.startsWith("feedback-resolved-") && f.endsWith(".md"));
+    expect(files).toHaveLength(2);
+    expect(files[0]).not.toBe(files[1]);
   });
 
   test("no-op when feedback file does not exist", () => {

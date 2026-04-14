@@ -32,7 +32,8 @@ export function resolveFeedback(id: string): void {
   const p = feedbackPath(id);
   if (!fs.existsSync(p)) return;
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const dest = path.join(path.dirname(p), `feedback-resolved-${ts}.md`);
+  const suffix = Math.random().toString(36).slice(2, 7);
+  const dest = path.join(path.dirname(p), `feedback-resolved-${ts}-${suffix}.md`);
   fs.renameSync(p, dest);
 }
 
