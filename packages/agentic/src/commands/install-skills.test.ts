@@ -10,6 +10,8 @@ import {
   executeInstall,
   formatInstallResult,
   autoSyncSkills,
+  validateSkill,
+  testTriggers,
   type Manifest,
   type InstallPlan,
   type InstallResult,
@@ -712,5 +714,74 @@ describe("autoSyncSkills", () => {
       gitRootFn: () => { throw new Error("no git"); },
     });
     expect(result.userSynced).toBe(false);
+  });
+});
+
+// ── Skill validation tests (Step 6.1) ────────────────────────────────
+
+describe("validateSkill", () => {
+  test("passes valid SKILL.md with name and description", () => {
+    const content = "---\nname: test\ndescription: A test skill\n---\n\n# Test";
+    const result = validateSkill(content);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  test("fails when missing frontmatter", () => {
+    const content = "# No frontmatter";
+    const result = validateSkill(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes("frontmatter"))).toBe(true);
+  });
+
+  test("fails when missing name field", () => {
+    const content = "---\ndescription: A test\n---\n\n# Test";
+    const result = validateSkill(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes("name"))).toBe(true);
+  });
+
+  test("fails when missing description field", () => {
+    const content = "---\nname: test\n---\n\n# Test";
+    const result = validateSkill(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes("description"))).toBe(true);
+  });
+
+  test("fails with malformed frontmatter (no closing ---)", () => {
+    const content = "---\nname: test\ndescription: missing close";
+    const result = validateSkill(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes("malformed"))).toBe(true);
+  });
+});
+
+describe("testTriggers", () => {
+  test("passes when all trigger phrases found", () => {
+    const desc = "Use when user says 'plan this' or 'create a plan'";
+    const result = testTriggers(desc, ["plan this", "create a plan"], []);
+    expect(result.passed).toBe(true);
+    expect(result.failures).toEqual([]);
+  });
+
+  test("fails when trigger phrase missing", () => {
+    const desc = "Use when user says 'plan this'";
+    const result = testTriggers(desc, ["plan this", "missing phrase"], []);
+    expect(result.passed).toBe(false);
+    expect(result.failures.length).toBe(1);
+    expect(result.failures[0]).toContain("missing phrase");
+  });
+
+  test("fails when non-trigger phrase found", () => {
+    const desc = "Use when user says 'plan this' or 'build this'";
+    const result = testTriggers(desc, ["plan this"], ["build this"]);
+    expect(result.passed).toBe(false);
+    expect(result.failures[0]).toContain("build this");
+  });
+
+  test("case-insensitive matching", () => {
+    const desc = "Use when user says 'Plan This'";
+    const result = testTriggers(desc, ["plan this"], []);
+    expect(result.passed).toBe(true);
   });
 });

@@ -394,6 +394,61 @@ async function askYesNo(question: string): Promise<boolean> {
   });
 }
 
+/** Validate a SKILL.md file content for required structure. */
+export function validateSkill(content: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  // Must start with frontmatter
+  if (!content.startsWith("---")) {
+    errors.push("missing frontmatter (must start with ---)");
+  }
+
+  // Extract frontmatter
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) {
+    errors.push("malformed frontmatter (no closing ---)");
+    return { valid: false, errors };
+  }
+
+  const fm = fmMatch[1];
+
+  // Must have name field
+  if (!/^name:/m.test(fm)) {
+    errors.push("missing name field in frontmatter");
+  }
+
+  // Must have description field
+  if (!/^description:/m.test(fm)) {
+    errors.push("missing description field in frontmatter");
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/** Test trigger phrases against a skill description. */
+export function testTriggers(
+  description: string,
+  shouldTrigger: string[],
+  shouldNotTrigger: string[],
+): { passed: boolean; failures: string[] } {
+  const failures: string[] = [];
+  const descLower = description.toLowerCase();
+
+  for (const phrase of shouldTrigger) {
+    if (!descLower.includes(phrase.toLowerCase())) {
+      failures.push(`should trigger on "${phrase}" but description doesn't contain it`);
+    }
+  }
+
+  for (const phrase of shouldNotTrigger) {
+    if (descLower.includes(phrase.toLowerCase())) {
+      failures.push(`should NOT trigger on "${phrase}" but description contains it`);
+    }
+  }
+
+  return { passed: failures.length === 0, failures };
+}
+
 export const installSkills = command({
   name: "skills",
   description:
