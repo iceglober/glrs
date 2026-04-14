@@ -14,19 +14,32 @@ describe("renderPlanPage", () => {
     expect(html).toContain("Step 1.1");
   });
 
-  test("injects feedback button for h3 step heading", () => {
-    const html = renderPlanPage("### Step 1.1 — Create module\n\nText", "e1", 3000);
-    expect(html).toContain('data-step="1.1"');
+  test("step headings render without feedback buttons", () => {
+    const html = renderPlanPage("## 1.1 — Do thing", "e1", 3000);
+    expect(html).toContain("<h2");
+    expect(html).toContain("1.1");
+    expect(html).not.toContain('data-step="1.1"');
+    expect(html).not.toContain("feedback-btn");
   });
 
-  test("injects feedback button for h2 step heading", () => {
-    const html = renderPlanPage("## 1.1 — Create module", "e1", 3000);
-    expect(html).toContain('data-step="1.1"');
+  test("no toggleForm function in output", () => {
+    const html = renderPlanPage("### 1.1 — A", "e1", 3000);
+    expect(html).not.toContain("toggleForm");
   });
 
-  test("no button for non-step headings", () => {
-    const html = renderPlanPage("## Overview\n\nSome text", "e1", 3000);
-    expect(html).not.toContain("data-step");
+  test("no submitFeedback function in output", () => {
+    const html = renderPlanPage("### 1.1 — A", "e1", 3000);
+    expect(html).not.toContain("submitFeedback");
+  });
+
+  test("no cancelFeedback function in output", () => {
+    const html = renderPlanPage("### 1.1 — A", "e1", 3000);
+    expect(html).not.toContain("cancelFeedback");
+  });
+
+  test("no feedback-form CSS class in output", () => {
+    const html = renderPlanPage("### 1.1 — A", "e1", 3000);
+    expect(html).not.toContain(".feedback-form");
   });
 
   test("renders fenced code blocks", () => {
@@ -55,15 +68,14 @@ describe("renderPlanPage", () => {
     expect(html).toContain("<!DOCTYPE html>");
   });
 
-  test("multiple steps get separate buttons", () => {
+  test("multiple step headings have no buttons", () => {
     const md = "### 1.1 — A\n\n### 1.2 — B\n\n### 2.1 — C";
     const html = renderPlanPage(md, "e1", 3000);
-    expect(html).toContain('data-step="1.1"');
-    expect(html).toContain('data-step="1.2"');
-    expect(html).toContain('data-step="2.1"');
+    expect(html).not.toContain("data-step");
+    expect(html).not.toContain("feedback-btn");
   });
 
-  test("general feedback section exists", () => {
+  test("general feedback section still present", () => {
     const html = renderPlanPage("# Test", "e1", 3000);
     expect(html).toContain("general-feedback");
     expect(html).toContain("General Feedback");

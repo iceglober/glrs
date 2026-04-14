@@ -9,8 +9,7 @@ function sanitizeHtml(html: string): string {
 
 /** Render plan markdown into a self-contained HTML review page with per-step feedback buttons. */
 export function renderPlanPage(planMarkdown: string, planId: string, serverPort: number): string {
-  const rawHtml = sanitizeHtml(marked(planMarkdown) as string);
-  const html = injectFeedbackButtons(rawHtml);
+  const html = sanitizeHtml(marked(planMarkdown) as string);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -49,59 +48,6 @@ export function renderPlanPage(planMarkdown: string, planId: string, serverPort:
   ul, ol { padding-left: 1.5rem; }
   li { margin: 0.25rem 0; }
   input[type="checkbox"] { margin-right: 0.5rem; }
-  .feedback-btn {
-    display: inline-block;
-    margin: 0.5rem 0;
-    padding: 0.3rem 0.75rem;
-    font-size: 0.8rem;
-    background: #e8f4fd;
-    border: 1px solid #b8d9f0;
-    border-radius: 4px;
-    color: #1a6fa8;
-    cursor: pointer;
-  }
-  .feedback-btn:hover { background: #d0ebfa; }
-  .feedback-form {
-    display: none;
-    margin: 0.5rem 0 1rem;
-    padding: 0.75rem;
-    background: #f8f9fa;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
-  }
-  .feedback-form.open { display: block; }
-  .feedback-form textarea {
-    width: 100%;
-    min-height: 80px;
-    padding: 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 3px;
-    font-family: inherit;
-    font-size: 0.9rem;
-    resize: vertical;
-  }
-  .feedback-form .submit-btn {
-    margin-top: 0.5rem;
-    padding: 0.4rem 1rem;
-    background: #2563eb;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.85rem;
-  }
-  .feedback-form .submit-btn:hover { background: #1d4ed8; }
-  .feedback-form .cancel-btn {
-    margin-top: 0.5rem;
-    margin-left: 0.5rem;
-    padding: 0.4rem 1rem;
-    background: #e5e7eb;
-    color: #374151;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.85rem;
-  }
   .feedback-sent { color: #16a34a; font-size: 0.85rem; margin: 0.25rem 0; }
   #general-feedback {
     margin-top: 3rem;
@@ -145,43 +91,6 @@ ${html}
 <script>
 const API = "http://localhost:${serverPort}/api/feedback";
 
-function toggleForm(btn) {
-  const form = btn.nextElementSibling;
-  form.classList.toggle("open");
-  if (form.classList.contains("open")) {
-    form.querySelector("textarea").focus();
-  }
-}
-
-async function submitFeedback(btn, step) {
-  const form = btn.closest(".feedback-form");
-  const textarea = form.querySelector("textarea");
-  const text = textarea.value.trim();
-  if (!text) return;
-  try {
-    const res = await fetch(API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ step, text }),
-    });
-    if (res.ok) {
-      textarea.value = "";
-      form.classList.remove("open");
-      const msg = document.createElement("div");
-      msg.className = "feedback-sent";
-      msg.textContent = "Feedback sent for step " + step;
-      form.parentElement.insertBefore(msg, form.nextSibling);
-    }
-  } catch (e) {
-    alert("Failed to send feedback: " + e.message);
-  }
-}
-
-function cancelFeedback(btn) {
-  const form = btn.closest(".feedback-form");
-  form.classList.remove("open");
-}
-
 async function submitGeneral() {
   const textarea = document.getElementById("general-text");
   const text = textarea.value.trim();
@@ -206,27 +115,6 @@ async function submitGeneral() {
 </script>
 </body>
 </html>`;
-}
-
-/** Post-process marked HTML to inject feedback buttons after step headings. */
-function injectFeedbackButtons(html: string): string {
-  // Match h2/h3/h4 tags whose content contains a step number pattern (N.M)
-  return html.replace(
-    /(<h[234][^>]*>)(.*?)(<\/h[234]>)/gi,
-    (match, openTag, content, closeTag) => {
-      const stepMatch = content.match(/(\d+\.\d+)/);
-      if (!stepMatch) return match;
-      const step = stepMatch[1];
-      return `${openTag}${content}${closeTag}
-<button class="feedback-btn" data-step="${step}" onclick="toggleForm(this)">Comment on ${step}</button>
-<div class="feedback-form">
-  <textarea placeholder="Your feedback on step ${step}..."></textarea>
-  <br>
-  <button class="submit-btn" onclick="submitFeedback(this, '${step}')">Submit</button>
-  <button class="cancel-btn" onclick="cancelFeedback(this)">Cancel</button>
-</div>`;
-    },
-  );
 }
 
 function escapeHtml(s: string): string {
