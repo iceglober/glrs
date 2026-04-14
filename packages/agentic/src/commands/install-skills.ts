@@ -5,6 +5,7 @@ import os from "node:os";
 import readline from "node:readline";
 import { buildCommands, SKILLS, BUILTIN_COLLISIONS } from "../skills/index.js";
 import { ok, info, warn, yellow } from "../lib/fmt.js";
+import { VERSION } from "../lib/version.js";
 import { gitRoot } from "../lib/git.js";
 import { select } from "../lib/select.js";
 
@@ -23,6 +24,8 @@ export function resolveClaudeDir(
 }
 
 export interface Manifest {
+  version?: string;
+  prefix?: string;
   commands: string[];
   skills: string[];
 }
@@ -207,8 +210,10 @@ export function executeInstall(plan: InstallPlan): InstallResult {
   const cmdResult = installFiles(plan.commands, commandsDir, plan.force);
   const skillResult = installFiles(plan.skills, skillsDir, plan.force);
 
-  // Update manifest
+  // Update manifest with version stamp and prefix for auto-sync
   writeManifest(plan.claudeDir, {
+    version: VERSION,
+    prefix: plan.prefix || "",
     commands: Object.keys(plan.commands),
     skills: Object.keys(plan.skills),
   });

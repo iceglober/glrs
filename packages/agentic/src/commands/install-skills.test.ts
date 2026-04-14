@@ -231,6 +231,57 @@ describe("executeInstall", () => {
     const tmpPath = path.join(tmpDir, ".glorious-skills.json.tmp");
     expect(fs.existsSync(tmpPath)).toBe(false);
   });
+
+  test("manifest includes version after install", () => {
+    executeInstall(makePlan());
+    const manifestPath = path.join(tmpDir, ".glorious-skills.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    expect(typeof manifest.version).toBe("string");
+    expect(manifest.version.length).toBeGreaterThan(0);
+  });
+
+  test("manifest includes empty prefix when no prefix", () => {
+    executeInstall(makePlan({ prefix: undefined }));
+    const manifestPath = path.join(tmpDir, ".glorious-skills.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    expect(manifest.prefix).toBe("");
+  });
+
+  test("manifest includes gs- prefix when prefix set", () => {
+    executeInstall(makePlan({ prefix: "gs-" }));
+    const manifestPath = path.join(tmpDir, ".glorious-skills.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    expect(manifest.prefix).toBe("gs-");
+  });
+
+  test("install-then-read roundtrip preserves version and prefix", () => {
+    executeInstall(makePlan({ prefix: "gs-" }));
+    // computeInstallPlan reads the manifest internally
+    const plan2 = computeInstallPlan({
+      claudeDir: tmpDir,
+      prefix: "gs-",
+      force: false,
+    });
+    expect(plan2.previousManifest.version).toBeDefined();
+    expect(typeof plan2.previousManifest.version).toBe("string");
+    expect(plan2.previousManifest.prefix).toBe("gs-");
+  });
+
+  test("old manifest without version reads as undefined", () => {
+    // Write an old-format manifest (no version/prefix)
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, ".glorious-skills.json"),
+      JSON.stringify({ commands: ["x.md"], skills: [] }),
+    );
+    const plan = computeInstallPlan({
+      claudeDir: tmpDir,
+      prefix: undefined,
+      force: false,
+    });
+    expect(plan.previousManifest.version).toBeUndefined();
+    expect(plan.previousManifest.prefix).toBeUndefined();
+  });
 });
 
 describe("formatInstallResult", () => {
