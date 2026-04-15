@@ -452,6 +452,281 @@ describe("review server — first-run", () => {
   });
 });
 
+describe("extractTitle", () => {
+  test("parses first h1 heading", async () => {
+    const { extractTitle } = await importModule();
+    expect(extractTitle("# My Plan\n\n## Step 1")).toBe("My Plan");
+  });
+
+  test("returns empty string for no heading", async () => {
+    const { extractTitle } = await importModule();
+    expect(extractTitle("No heading here")).toBe("");
+  });
+
+  test("ignores h2 headings, finds h1", async () => {
+    const { extractTitle } = await importModule();
+    expect(extractTitle("## Not This\n# This One")).toBe("This One");
+  });
+
+  test("trims whitespace from heading", async () => {
+    const { extractTitle } = await importModule();
+    expect(extractTitle("#   Spaced Title  ")).toBe("Spaced Title");
+  });
+
+  test("handles heading with inline code", async () => {
+    const { extractTitle } = await importModule();
+    expect(extractTitle("# Plan for `widget`")).toBe("Plan for `widget`");
+  });
+});
+
+describe("review server — title and version", () => {
+  test("POST /api/plans with explicit title returns it in GET /api/plans", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# X", title: "Custom Title" }),
+    });
+    const res = await fetch(server.url + "/api/plans");
+    const json = await res.json() as { plans: Array<{ planId: string; title: string }> };
+    expect(json.plans[0].title).toBe("Custom Title");
+  });
+
+  test("POST /api/plans without title auto-extracts from content", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# Auto Title\nBody text" }),
+    });
+    const res = await fetch(server.url + "/api/plans");
+    const json = await res.json() as { plans: Array<{ title: string }> };
+    expect(json.plans[0].title).toBe("Auto Title");
+  });
+
+  test("POST /api/plans with version returns it in GET /api/plans", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# X", version: 3 }),
+    });
+    const res = await fetch(server.url + "/api/plans");
+    const json = await res.json() as { plans: Array<{ version: number | null }> };
+    expect(json.plans[0].version).toBe(3);
+  });
+
+  test("POST /api/plans without version returns null", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# X" }),
+    });
+    const res = await fetch(server.url + "/api/plans");
+    const json = await res.json() as { plans: Array<{ version: number | null }> };
+    expect(json.plans[0].version).toBeNull();
+  });
+
+  test("GET /api/plans/:id includes title and version", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# T", title: "T", version: 2 }),
+    });
+    const res = await fetch(server.url + "/api/plans/e1");
+    const json = await res.json() as { planId: string; title: string; version: number };
+    expect(json.title).toBe("T");
+    expect(json.version).toBe(2);
+  });
+
+  test("registerPlan with opts sends title and version", async () => {
+    const { startReviewServer, registerPlan } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await registerPlan(server.url, "e1", "# Plan", { title: "Explicit", version: 5 });
+    const res = await fetch(server.url + "/api/plans");
+    const json = await res.json() as { plans: Array<{ title: string; version: number }> };
+    expect(json.plans[0].title).toBe("Explicit");
+    expect(json.plans[0].version).toBe(5);
+  });
+});
+
+describe("review server — outcome", () => {
+  test("POST /api/finish with outcome approved returns ok", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# Plan" }),
+    });
+    const res = await fetch(server.url + "/api/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", outcome: "approved" }),
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json() as { ok: boolean };
+    expect(json.ok).toBe(true);
+  });
+
+  test("POST /api/finish with outcome changes-requested returns ok", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# Plan" }),
+    });
+    const res = await fetch(server.url + "/api/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", outcome: "changes-requested" }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test("POST /api/finish without outcome defaults to approved in SSE", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# Plan" }),
+    });
+
+    const events: string[] = [];
+    const eventPromise = new Promise<void>((resolve) => {
+      const controller = new AbortController();
+      fetch(server.url + "/api/events?planId=e1", { signal: controller.signal })
+        .then(async (res) => {
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const text = decoder.decode(value);
+            events.push(text);
+            if (text.includes("event: finish")) {
+              controller.abort();
+              resolve();
+            }
+          }
+        })
+        .catch(() => resolve());
+    });
+
+    await new Promise(r => setTimeout(r, 50));
+
+    await fetch(server.url + "/api/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1" }),
+    });
+
+    await eventPromise;
+    const finishEvent = events.find(e => e.includes("event: finish"));
+    expect(finishEvent).toContain('"approved"');
+  });
+
+  test("waitForFinish returns outcome object", async () => {
+    const { startReviewServer, registerPlan, waitForFinish } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await registerPlan(server.url, "e1", "# Plan");
+
+    const waitPromise = waitForFinish(server.url, "e1");
+    await new Promise(r => setTimeout(r, 50));
+
+    await fetch(server.url + "/api/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", outcome: "changes-requested" }),
+    });
+
+    const result = await waitPromise;
+    expect(result.outcome).toBe("changes-requested");
+  });
+
+  test("waitForFinish returns approved outcome by default", async () => {
+    const { startReviewServer, registerPlan, waitForFinish } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await registerPlan(server.url, "e1", "# Plan");
+
+    const waitPromise = waitForFinish(server.url, "e1");
+    await new Promise(r => setTimeout(r, 50));
+
+    await fetch(server.url + "/api/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", outcome: "approved" }),
+    });
+
+    const result = await waitPromise;
+    expect(result.outcome).toBe("approved");
+  });
+
+  test("POST /api/finish with invalid outcome defaults to approved", async () => {
+    const { startReviewServer } = await importModule();
+    const server = await startReviewServer({ portFilePath: TEST_PORT_FILE, plansDir: TEST_PLANS_DIR });
+    servers.push(server);
+    await fetch(server.url + "/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", planContent: "# Plan" }),
+    });
+
+    const events: string[] = [];
+    const eventPromise = new Promise<void>((resolve) => {
+      const controller = new AbortController();
+      fetch(server.url + "/api/events?planId=e1", { signal: controller.signal })
+        .then(async (res) => {
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const text = decoder.decode(value);
+            events.push(text);
+            if (text.includes("event: finish")) {
+              controller.abort();
+              resolve();
+            }
+          }
+        })
+        .catch(() => resolve());
+    });
+
+    await new Promise(r => setTimeout(r, 50));
+
+    await fetch(server.url + "/api/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId: "e1", outcome: "garbage" }),
+    });
+
+    await eventPromise;
+    const finishEvent = events.find(e => e.includes("event: finish"));
+    expect(finishEvent).toContain('"approved"');
+  });
+});
+
 describe("review server — misc", () => {
   test("GET / returns tabbed HTML with registered plan", async () => {
     const { startReviewServer } = await importModule();
@@ -467,7 +742,7 @@ describe("review server — misc", () => {
     expect(res.headers.get("content-type")).toContain("text/html");
     const body = await res.text();
     expect(body).toContain("e1");
-    expect(body).toContain("Finish Review");
+    expect(body).toContain("Approve");
   });
 
   test("GET / with two plans shows both tabs", async () => {
