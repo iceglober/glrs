@@ -41,7 +41,7 @@ instructions + all output into your context window. By the time you run a second
 skill, you're out of context and the pipeline stalls.
 
 Agent tool runs in a subprocess with its own context window. Each research agent
-gets a fresh context, reads its skill file from .claude/commands/, and reports back.
+gets a fresh context, reads its skill file from .claude/skills/, and reports back.
 The main conversation stays clean for orchestration.
 
 DISPATCH TEMPLATE:
@@ -52,7 +52,7 @@ DISPATCH TEMPLATE:
    {the full query or sub-question}
 
    ## Task
-   1. Read .claude/commands/{skill-name}.md and follow every instruction
+   1. Read .claude/skills/{skill-name}/SKILL.md and follow every instruction
    2. {any additional context or constraints}
    3. Report back with your complete findings"
 
@@ -112,7 +112,7 @@ FOR EACH LOCAL WORKSTREAM:
    {sub-question from plan}
 
    ## Task
-   1. Read .claude/commands/research-local.md and follow every instruction
+   1. Read .claude/skills/research-local/SKILL.md and follow every instruction
    2. Focus specifically on: {sub-question}
    3. Report back with your complete findings including all file:line references"
 
@@ -127,7 +127,7 @@ FOR EACH WEB WORKSTREAM:
    {sub-question from plan}
 
    ## Task
-   1. Read .claude/commands/research-web.md and follow every instruction
+   1. Read .claude/skills/research-web/SKILL.md and follow every instruction
    2. Focus specifically on: {sub-question}
    3. Write your output to research/{slug}/{workstream-name}.md
    4. Report back with your complete findings including source URLs"
@@ -143,7 +143,7 @@ FOR EACH AUTO WORKSTREAM (rare):
    {sub-question from plan}
 
    ## Task
-   1. Read .claude/commands/research-auto.md and follow every instruction
+   1. Read .claude/skills/research-auto/SKILL.md and follow every instruction
    2. Focus specifically on: {sub-question}
    3. Report back with your findings and experiment results"
 

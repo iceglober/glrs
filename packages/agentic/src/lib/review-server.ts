@@ -182,6 +182,11 @@ export function startReviewServer(opts?: ReviewServerOpts): Promise<ReviewServer
             res.end(JSON.stringify({ error: "Missing planId" }));
             return;
           }
+          if (!/^[a-zA-Z0-9._-]+$/.test(data.planId)) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Invalid planId format" }));
+            return;
+          }
           if (!data.step || typeof data.step !== "string") {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Missing step" }));
@@ -205,6 +210,11 @@ export function startReviewServer(opts?: ReviewServerOpts): Promise<ReviewServer
           if (!planId) {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Missing planId query param" }));
+            return;
+          }
+          if (!/^[a-zA-Z0-9._-]+$/.test(planId)) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Invalid planId format" }));
             return;
           }
           const content = loadFeedback(planId);
