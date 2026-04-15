@@ -171,6 +171,19 @@ export const BUILTIN_COLLISIONS = new Set([
   "simplify.md",
 ]);
 
+/**
+ * Inject `disable-model-invocation: false` into YAML frontmatter.
+ * Claude Code defaults commands to disable-model-invocation: true,
+ * which prevents the Skill tool from invoking them programmatically.
+ * Our commands are designed to be called via skill handoffs.
+ */
+function enableModelInvocation(content: string): string {
+  return content.replace(
+    /^(---\n[\s\S]*?)\n---/,
+    "$1\ndisable-model-invocation: false\n---",
+  );
+}
+
 /** Non-gs commands that are always installed with their original names. */
 const STATIC_COMMANDS: Record<string, string> = {
   // Research
@@ -217,10 +230,14 @@ export function buildCommands(prefix?: string): Record<string, string> {
 
   for (const entry of Object.values(GS_SKILL_NAMES)) {
     const filename = p + entry.canonical;
-    gsCommands[filename] = entry.generator();
+    gsCommands[filename] = enableModelInvocation(entry.generator());
   }
 
-  return { ...STATIC_COMMANDS, ...gsCommands };
+  const staticEnabled = Object.fromEntries(
+    Object.entries(STATIC_COMMANDS).map(([k, v]) => [k, enableModelInvocation(v)]),
+  );
+
+  return { ...staticEnabled, ...gsCommands };
 }
 
 /**
