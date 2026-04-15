@@ -23,7 +23,15 @@ export interface ReviewServerOpts {
 interface RegisteredPlan {
   planId: string;
   planContent: string;
+  title: string;
+  version: number | null;
   finished: boolean;
+}
+
+/** Extract the first h1 heading from markdown, or empty string if none. */
+export function extractTitle(markdown: string): string {
+  const match = markdown.match(/^#\s+(.+)$/m);
+  return match ? match[1].trim() : "";
 }
 
 /** Default port file path. */
@@ -89,6 +97,8 @@ export function startReviewServer(opts?: ReviewServerOpts): Promise<ReviewServer
             .map(p => ({
               planId: p.planId,
               htmlContent: sanitizeHtml(marked(p.planContent) as string),
+              title: p.title,
+              version: p.version,
             }));
           const addr = server.address() as { port: number };
           const html = renderReviewPage(planData, addr.port);
@@ -116,11 +126,13 @@ export function startReviewServer(opts?: ReviewServerOpts): Promise<ReviewServer
             return;
           }
           // Upsert: replace if already registered
+          const title = (typeof data.title === "string" && data.title) ? data.title : extractTitle(data.planContent) || data.planId;
+          const version = (typeof data.version === "number") ? data.version : null;
           const existing = plans.findIndex(p => p.planId === data.planId);
           if (existing >= 0) {
-            plans[existing] = { planId: data.planId, planContent: data.planContent, finished: false };
+            plans[existing] = { planId: data.planId, planContent: data.planContent, title, version, finished: false };
           } else {
-            plans.push({ planId: data.planId, planContent: data.planContent, finished: false });
+            plans.push({ planId: data.planId, planContent: data.planContent, title, version, finished: false });
           }
           broadcastSSEAll("new-plan", { planId: data.planId });
           res.writeHead(200, { "Content-Type": "application/json" });
@@ -135,13 +147,15 @@ export function startReviewServer(opts?: ReviewServerOpts): Promise<ReviewServer
             plans: plans.filter(p => !p.finished).map(p => ({
               planId: p.planId,
               planContent: p.planContent,
+              title: p.title,
+              version: p.version,
             })),
           }));
           return;
         }
 
         // GET /api/plans/:id — get individual plan HTML
-        const planMatch = req.url?.match(/^\/api\/plans\/([a-zA-Z0-9_-]+)$/);
+        const planMatch = req.url?.match(/^\/api\/plans\/([a-zA-Z0-9._-]+)$/);
         if (req.method === "GET" && planMatch) {
           const planId = decodeURIComponent(planMatch[1]);
           const plan = plans.find(p => p.planId === planId && !p.finished);
@@ -154,6 +168,8 @@ export function startReviewServer(opts?: ReviewServerOpts): Promise<ReviewServer
           res.end(JSON.stringify({
             planId: plan.planId,
             htmlContent: sanitizeHtml(marked(plan.planContent) as string),
+            title: plan.title,
+            version: plan.version,
           }));
           return;
         }
@@ -212,10 +228,13 @@ export function startReviewServer(opts?: ReviewServerOpts): Promise<ReviewServer
             return;
           }
           plan.finished = true;
+          const outcome = (typeof data.outcome === "string" && (data.outcome === "approved" || data.outcome === "changes-requested"))
+            ? data.outcome
+            : "approved";
           const remaining = plans.filter(p => !p.finished).length;
 
           // Notify SSE subscribers for this plan
-          broadcastSSE("finish", { planId: data.planId }, data.planId);
+          broadcastSSE("finish", { planId: data.planId, outcome }, data.planId);
 
           // If last plan, broadcast close-tab to all
           if (remaining === 0) {
@@ -356,51 +375,60 @@ export async function findRunningServer(opts?: { portFilePath?: string }): Promi
 }
 
 /** Register a plan on an existing review server. */
-export async function registerPlan(serverUrl: string, planId: string, planContent: string): Promise<void> {
+export async function registerPlan(
+  serverUrl: string,
+  planId: string,
+  planContent: string,
+  opts?: { title?: string; version?: number },
+): Promise<void> {
   const res = await fetch(serverUrl + "/api/plans", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ planId, planContent }),
+    body: JSON.stringify({ planId, planContent, title: opts?.title, version: opts?.version }),
   });
   if (!res.ok) {
     throw new Error(`Failed to register plan: HTTP ${res.status}`);
   }
 }
 
-/** Wait for a plan's finish signal via SSE. Resolves when the finish event fires.
+/** Wait for a plan's finish signal via SSE. Resolves with the review outcome.
  *  Rejects if the stream closes without a finish event (server died). */
-export function waitForFinish(serverUrl: string, planId: string): Promise<void> {
+export function waitForFinish(serverUrl: string, planId: string): Promise<{ outcome: string }> {
   return new Promise((resolve, reject) => {
     const controller = new AbortController();
-    let receivedFinish = false;
+    let finishResult: { outcome: string } | null = null;
     fetch(serverUrl + "/api/events?planId=" + encodeURIComponent(planId), {
       signal: controller.signal,
     })
       .then(async (res) => {
         const reader = res.body!.getReader();
         const decoder = new TextDecoder();
+        let buffer = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done) {
-            if (receivedFinish) {
-              resolve();
+            if (finishResult) {
+              resolve(finishResult);
             } else {
               reject(new Error("Review server disconnected before review was finished"));
             }
             return;
           }
-          const text = decoder.decode(value);
-          if (text.includes("event: finish")) {
-            receivedFinish = true;
+          buffer += decoder.decode(value);
+          if (buffer.includes("event: finish")) {
+            // Parse the data line after the event line
+            const dataMatch = buffer.match(/event: finish\ndata: (.+)\n/);
+            const outcome = dataMatch ? (() => { try { return JSON.parse(dataMatch[1]).outcome; } catch { return "approved"; } })() : "approved";
+            finishResult = { outcome: outcome || "approved" };
             controller.abort();
-            resolve();
+            resolve(finishResult);
             return;
           }
         }
       })
       .catch((err) => {
-        if (err.name === "AbortError" && receivedFinish) {
-          resolve();
+        if (err.name === "AbortError" && finishResult) {
+          resolve(finishResult);
         } else if (err.name === "AbortError") {
           reject(new Error("Review server disconnected before review was finished"));
         } else {
