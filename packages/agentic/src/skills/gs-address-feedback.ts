@@ -1,8 +1,11 @@
 import { REVIEW_PREAMBLE } from "./preamble.js";
+import type { SkillEntry } from "./index.js";
 
-export function gsAddressFeedback(): string {
-  return `---
+export function gsAddressFeedback(): SkillEntry {
+  return { "SKILL.md": `---
+name: address-feedback
 description: Address PR review feedback — gather all unresolved comments and review items, classify each (fix/pushback/acknowledge/wont-fix), implement fixes, respond on GitHub with evidence. Use when user says 'address feedback', 'handle PR comments', 'resolve review items', 'respond to reviewer'. Reads from both GitHub PR comments and gs-agentic review state.
+disable-model-invocation: true
 ---
 
 # Address Feedback — PR Review Resolution
@@ -207,5 +210,5 @@ Report:
 \`\`\`
 
 If all items are resolved, end with: "All feedback addressed. PR is ready for re-review."
-`;
+` };
 }

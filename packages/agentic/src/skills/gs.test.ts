@@ -4,15 +4,17 @@ import { COMMANDS, GS_SKILL_NAMES } from "./index.js";
 import { TASK_PREAMBLE } from "./preamble.js";
 
 describe("gs", () => {
-  const result = gs();
+  const entry = gs();
+  const result = entry["SKILL.md"];
 
-  test("returns non-empty string", () => {
+  test("returns SkillEntry with SKILL.md key", () => {
+    expect(typeof entry).toBe("object");
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });
 
-  test("has well-formed frontmatter with description", () => {
-    expect(result).toMatch(/^---\ndescription:.*\n---\n/s);
+  test("has well-formed frontmatter with name and description", () => {
+    expect(result).toMatch(/^---\nname:.*\ndescription:.*\n/s);
   });
 
   test("includes $ARGUMENTS placeholder", () => {

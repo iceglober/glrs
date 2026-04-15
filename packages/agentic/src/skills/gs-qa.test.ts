@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { gsQa } from "./gs-qa.js";
 
 describe("gsQa", () => {
-  const output = gsQa();
+  const output = gsQa()["SKILL.md"];
 
   test("uses REVIEW_PREAMBLE (contains review state mutations)", () => {
     expect(output).toContain("state review create");

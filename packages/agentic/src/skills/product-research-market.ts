@@ -1,7 +1,10 @@
-export function productResearchMarket(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productResearchMarket(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-research-market
 description: Use when researching the market for a product area, when the user needs market sizing or pricing intelligence, when evaluating build/buy/partner decisions, or when a discovery doc needs market context
+disable-model-invocation: true
 ---
 
 # Product Research — Market
@@ -113,5 +116,5 @@ Before including ANY claim, check: Does it have a number? Does the number have a
 | "This competitor is well-known, no source needed" | Pricing changes. Funding happens. Revenue shifts. Verify current state. |
 | "More detail is always better" | Every unsourced claim erodes trust in the sourced ones. |
 | "I should explain the market dynamics" | Dynamics without numbers are opinions. Numbers with sources are research. |
-| "Let me check what the user wants first" | The user wants market research. All 4 angles. No menu, no confirmation. |`;
+| "Let me check what the user wants first" | The user wants market research. All 4 angles. No menu, no confirmation. |` };
 }

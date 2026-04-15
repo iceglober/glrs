@@ -4,6 +4,111 @@ import path from "node:path";
 import { gitRoot } from "./git.js";
 import { info, warn } from "./fmt.js";
 
+// ── Claude Code hook config generation ──────────────────────────────
+
+export interface ClaudeHookEntry {
+  matcher: string;
+  hooks: Array<{ type: "command"; command: string }>;
+}
+
+export interface ClaudeHookConfig {
+  hooks: {
+    PreToolUse?: ClaudeHookEntry[];
+    PostToolUse?: ClaudeHookEntry[];
+  };
+}
+
+/**
+ * Generate a PostToolUse hook config that runs a formatter after Write/Edit.
+ * The formatter command is run in the project root.
+ *
+ * SECURITY: The formatter string is written directly to settings.local.json
+ * and will be executed by Claude Code on every file write. Only pass trusted
+ * values — use detectFormatter() to get safe, hardcoded commands.
+ */
+export function generateFormatterHook(formatter: string): ClaudeHookConfig {
+  return {
+    hooks: {
+      PostToolUse: [
+        {
+          matcher: "Write|Edit",
+          hooks: [{ type: "command", command: formatter }],
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * Generate a PreToolUse hook config that warns on dangerous Bash patterns.
+ * Checks for: rm -rf, git push --force, git reset --hard, git checkout -- .
+ */
+export function generateSafetyHook(): ClaudeHookConfig {
+  const script = [
+    'CMD="$TOOL_INPUT"',
+    'case "$CMD" in',
+    '  *"rm -rf"*|*"git push --force"*|*"git push -f"*|*"git reset --hard"*|*"git checkout -- ."*|*"git clean -f"*)',
+    '    echo "WARN: Potentially dangerous command detected. Please confirm." >&2',
+    "    ;;",
+    "esac",
+  ].join("\n");
+
+  return {
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "Bash",
+          hooks: [{ type: "command", command: `bash -c '${script.replace(/'/g, "'\\''")}'` }],
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * Merge multiple Claude Code hook configs into one.
+ * Concatenates hook arrays for each lifecycle event.
+ */
+export function mergeHookConfigs(...configs: ClaudeHookConfig[]): ClaudeHookConfig {
+  const merged: ClaudeHookConfig = { hooks: {} };
+  for (const config of configs) {
+    if (config.hooks.PreToolUse) {
+      merged.hooks.PreToolUse = [
+        ...(merged.hooks.PreToolUse ?? []),
+        ...config.hooks.PreToolUse,
+      ];
+    }
+    if (config.hooks.PostToolUse) {
+      merged.hooks.PostToolUse = [
+        ...(merged.hooks.PostToolUse ?? []),
+        ...config.hooks.PostToolUse,
+      ];
+    }
+  }
+  return merged;
+}
+
+/** Detect the project's formatter by checking for config files. */
+export function detectFormatter(rootDir: string): string | null {
+  const checks: Array<[string, string]> = [
+    [".prettierrc", "npx prettier --write"],
+    [".prettierrc.json", "npx prettier --write"],
+    [".prettierrc.js", "npx prettier --write"],
+    [".prettierrc.cjs", "npx prettier --write"],
+    ["prettier.config.js", "npx prettier --write"],
+    ["prettier.config.cjs", "npx prettier --write"],
+    ["biome.json", "npx @biomejs/biome check --write"],
+    ["biome.jsonc", "npx @biomejs/biome check --write"],
+  ];
+
+  for (const [file, cmd] of checks) {
+    if (fs.existsSync(path.join(rootDir, file))) {
+      return cmd;
+    }
+  }
+  return null;
+}
+
 export interface HookEnv {
   WORKTREE_DIR: string;
   WORKTREE_NAME: string;

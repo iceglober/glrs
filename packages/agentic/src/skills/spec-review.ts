@@ -1,6 +1,10 @@
-export function specReview(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function specReview(): SkillEntry {
+  return { "SKILL.md": `---
+name: spec-review
 description: Spec gap analysis after refinement. Reads the latest spec version, reviews all changes from prior versions, and identifies new gaps, inconsistencies, or opportunities revealed by resolved unknowns. Use when user says 'review this spec', 'audit the spec', 'find gaps', 'check for consistency', 'is this spec ready for engineering'. Provide the spec file path.
+disable-model-invocation: true
 ---
 
 # /spec-review — Spec Gap Analysis
@@ -179,5 +183,5 @@ Updated spec: [file path]
 6. **Respect the pipeline.** This skill audits — it doesn't replace enrichment or refinement. If new unknowns need human input, say so and point to \\\`/spec-refine\\\`.
 7. **Be specific.** "Some requirements may conflict" is useless. "R-12 requires real-time submission but R-27 assumes batch processing" is actionable.
 8. **Proceed autonomously.** Like \\\`/spec-enrich\\\`, this skill runs without waiting for approval. Present findings and the updated spec.
-`;
+` };
 }

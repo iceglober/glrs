@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { gsThink } from "./gs-think.js";
 
 describe("gsThink", () => {
-  const output = gsThink();
+  const output = gsThink()["SKILL.md"];
 
   test("is read-only — no state mutation commands", () => {
     expect(output).not.toContain("state task create");

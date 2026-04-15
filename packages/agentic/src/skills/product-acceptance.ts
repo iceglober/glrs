@@ -1,7 +1,10 @@
-export function productAcceptance(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productAcceptance(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-acceptance
 description: Use when a PRD is complete and the team needs product-level definition of done and acceptance criteria, when deciding what "ready to ship" means, or when defining success metrics for a feature
+disable-model-invocation: true
 ---
 
 # Product Acceptance Criteria
@@ -130,5 +133,5 @@ Keep it short. 5-10 items maximum.
 | "I should add criteria for edge cases" | Edge cases are test cases. Product acceptance is about the common path working. |
 | "This needs a Future Metrics section" | If it's not measurable at launch, it's not acceptance criteria. Cut it. |
 | "The PRD doesn't have numbers so I'll estimate" | Then write [DATA NEEDED]. Estimates become invisible commitments. |
-| "I should specify the monitoring tool" | That's implementation. Name the metric, not the tool. |`;
+| "I should specify the monitoring tool" | That's implementation. Name the metric, not the tool. |` };
 }

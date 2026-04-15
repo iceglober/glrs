@@ -1,6 +1,10 @@
-export function researchLocal(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function researchLocal(): SkillEntry {
+  return { "SKILL.md": `---
+name: research-local
 description: Deep codebase research using parallel Explore subagents. Decomposes a question about the local codebase into research tasks, launches parallel explorations, reviews for gaps, iterates, and synthesizes findings with specific file paths and line numbers. Use when user says 'how does X work in this codebase', 'where is Y implemented', 'trace the data flow for Z', 'what patterns does this repo use', 'explain the architecture of'. Provide the research topic as arguments.
+disable-model-invocation: true
 ---
 
 # /research-local — Deep Codebase Research
@@ -266,5 +270,5 @@ PARALLELIZATION:
 | "I'll just do a quick grep to check" | You are an orchestrator. Every grep is an Explore subagent. |
 | "Decomposition is simple enough to do myself" | The decomposition subagent produces better, non-overlapping questions. |
 | "I'll save time by skipping the review" | Skipping review produces incomplete reports. The 2 minutes are worth it. |
-`;
+` };
 }

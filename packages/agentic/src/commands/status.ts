@@ -40,14 +40,42 @@ function formatTask(task: Task, indent: number): void {
   }
 }
 
+/**
+ * Produce a single-line compact summary of each epic.
+ * Format: "e1: Title [3/7 done, 2 ready, 1 blocked] | e2: ..."
+ */
+export function compactSummary(epicFilter?: string): string {
+  let epics = listEpics();
+  if (epicFilter) epics = epics.filter((e) => e.id === epicFilter);
+
+  if (epics.length === 0) return "No epics";
+
+  return epics
+    .map((e) => {
+      const p = epicProgress(e.id);
+      const parts: string[] = [`${p.done}/${p.total} done`];
+      if (p.ready > 0) parts.push(`${p.ready} ready`);
+      if (p.blocked > 0) parts.push(`${p.blocked} blocked`);
+      if (p.inProgress > 0) parts.push(`${p.inProgress} in-progress`);
+      return `${e.id}: ${e.title} [${parts.join(", ")}]`;
+    })
+    .join(" | ");
+}
+
 export const status = command({
   name: "status",
   description: "Show all tasks and their progress",
   args: {
     json: flag({ long: "json", description: "Output as JSON" }),
+    compact: flag({ long: "compact", description: "Single-line summary (token-efficient)" }),
     epic: option({ type: optional(string), long: "epic", short: "e", description: "Filter to a single epic" }),
   },
   handler: (args) => {
+    if (args.compact) {
+      console.log(compactSummary(args.epic));
+      return;
+    }
+
     let epics = listEpics();
     if (args.epic) epics = epics.filter((e) => e.id === args.epic);
     const allTasks = listTasks({ epic: args.epic ?? undefined });

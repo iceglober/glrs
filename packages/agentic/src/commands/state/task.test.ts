@@ -40,3 +40,37 @@ describe("state task CLI", () => {
     expect(result.stderr).toMatch(/--body|No value/i);
   });
 });
+
+// ── compactify unit tests ────────────────────────────────────────────
+
+import { compactify } from "./task.js";
+
+describe("compactify", () => {
+  test("strips null fields", () => {
+    expect(compactify({ a: null, b: "hi" })).toEqual({ b: "hi" });
+  });
+
+  test("strips undefined fields", () => {
+    expect(compactify({ a: undefined, b: "hi" })).toEqual({ b: "hi" });
+  });
+
+  test("strips empty string fields", () => {
+    expect(compactify({ a: "", b: "hi" })).toEqual({ b: "hi" });
+  });
+
+  test("strips empty array fields", () => {
+    expect(compactify({ a: [], b: [1] })).toEqual({ b: [1] });
+  });
+
+  test("preserves false", () => {
+    expect(compactify({ a: false, b: true })).toEqual({ a: false, b: true });
+  });
+
+  test("preserves zero", () => {
+    expect(compactify({ a: 0, b: 1 })).toEqual({ a: 0, b: 1 });
+  });
+
+  test("preserves non-empty objects", () => {
+    expect(compactify({ a: { nested: true } })).toEqual({ a: { nested: true } });
+  });
+});

@@ -1,6 +1,10 @@
-export function researchAuto(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function researchAuto(): SkillEntry {
+  return { "SKILL.md": `---
+name: research-auto
 description: Autonomous experimentation skill — agent interviews the user, sets up a lab, then explores freely (think, test, reflect) until stopped or a target is hit. Works for any domain where you can measure or evaluate a result. Use when user says 'optimize this', 'experiment with', 'find the best approach', 'iterate on', 'research mode'. Do NOT use for binary validation tests (use /spec-lab instead). Based on ResearcherSkill v1.4.4 by krzysztofdudek.
+disable-model-invocation: true
 ---
 
 # /research-auto — Autonomous Experimentation Skill
@@ -281,5 +285,5 @@ Tools when you're stuck, not a menu to follow. You have complete freedom to inve
 | All branches share the same core assumptions | Anchored — fork from baseline and invert |
 | Global best unchanged for 8+ experiments | Plateau — fork from baseline with inverted assumptions |
 | Dimension always scores neutral (e.g., 5/10) | Dimension unmeasurable — consider metric revision |
-`;
+` };
 }

@@ -10,11 +10,13 @@ import {
   executeInstall,
   formatInstallResult,
   autoSyncSkills,
+  validateSkill,
+  testTriggers,
   type Manifest,
   type InstallPlan,
   type InstallResult,
 } from "./install-skills.js";
-import { buildCommands, SKILLS } from "../skills/index.js";
+import { buildCommands, buildAllSkills, SKILLS } from "../skills/index.js";
 
 describe("resolveClaudeDir", () => {
   test("user scope returns ~/.claude", () => {
@@ -44,7 +46,7 @@ describe("computeInstallPlan", () => {
     readFileFn: () => "",
   };
 
-  test("default plan with no prefix uses canonical short names", () => {
+  test("default format is skills — all skills in skills map, commands empty", () => {
     const plan = computeInstallPlan({
       claudeDir: "/tmp/repo/.claude",
       prefix: undefined,
@@ -52,30 +54,57 @@ describe("computeInstallPlan", () => {
       ...noopFs,
     });
     expect(plan.claudeDir).toBe("/tmp/repo/.claude");
-    // Should have canonical short names
-    expect(plan.commands["think.md"]).toBeDefined();
-    expect(plan.commands["work.md"]).toBeDefined();
-    expect(plan.commands["deep-plan.md"]).toBeDefined();
-    // Should NOT have gs- prefixed names
-    expect(plan.commands["gs-think.md"]).toBeUndefined();
-    expect(plan.commands["gs-work.md"]).toBeUndefined();
-    // Non-gs skills unchanged
-    expect(plan.commands["research.md"]).toBeDefined();
-    expect(plan.commands["spec-make.md"]).toBeDefined();
+    expect(plan.format).toBe("skills");
+    // Commands should be empty in skills format
+    expect(Object.keys(plan.commands)).toEqual([]);
+    // Skills should have directory-format keys
+    expect(plan.skills["think/SKILL.md"]).toBeDefined();
+    expect(plan.skills["work/SKILL.md"]).toBeDefined();
+    expect(plan.skills["deep-plan/SKILL.md"]).toBeDefined();
+    expect(plan.skills["research/SKILL.md"]).toBeDefined();
+    expect(plan.skills["browser/SKILL.md"]).toBeDefined();
     expect(plan.collisions).toEqual([]);
   });
 
-  test("prefix gs- produces legacy names", () => {
+  test("format commands produces legacy flat layout", () => {
+    const plan = computeInstallPlan({
+      claudeDir: "/tmp/repo/.claude",
+      prefix: undefined,
+      force: false,
+      format: "commands",
+      ...noopFs,
+    });
+    expect(plan.format).toBe("commands");
+    expect(plan.commands["think.md"]).toBeDefined();
+    expect(plan.commands["work.md"]).toBeDefined();
+    expect(plan.commands["deep-plan.md"]).toBeDefined();
+    // Non-gs skills unchanged
+    expect(plan.commands["research.md"]).toBeDefined();
+  });
+
+  test("prefix gs- with skills format prefixes skill dirs", () => {
     const plan = computeInstallPlan({
       claudeDir: "/tmp/repo/.claude",
       prefix: "gs-",
       force: false,
       ...noopFs,
     });
+    expect(plan.skills["gs-think/SKILL.md"]).toBeDefined();
+    expect(plan.skills["gs-work/SKILL.md"]).toBeDefined();
+    // Non-gs skills still unprefixed
+    expect(plan.skills["research/SKILL.md"]).toBeDefined();
+  });
+
+  test("prefix gs- with commands format produces legacy names", () => {
+    const plan = computeInstallPlan({
+      claudeDir: "/tmp/repo/.claude",
+      prefix: "gs-",
+      force: false,
+      format: "commands",
+      ...noopFs,
+    });
     expect(plan.commands["gs-think.md"]).toBeDefined();
     expect(plan.commands["gs-work.md"]).toBeDefined();
-    expect(plan.commands["gs-deep-plan.md"]).toBeDefined();
-    // Non-gs skills still unchanged
     expect(plan.commands["research.md"]).toBeDefined();
   });
 
@@ -86,10 +115,10 @@ describe("computeInstallPlan", () => {
       force: false,
       ...noopFs,
     });
-    expect(plan.commands["my-think.md"]).toBeDefined();
-    expect(plan.commands["my-work.md"]).toBeDefined();
+    expect(plan.skills["my-think/SKILL.md"]).toBeDefined();
+    expect(plan.skills["my-work/SKILL.md"]).toBeDefined();
     // Non-gs unchanged
-    expect(plan.commands["research.md"]).toBeDefined();
+    expect(plan.skills["research/SKILL.md"]).toBeDefined();
   });
 
   test("force skips collision detection", () => {
@@ -127,9 +156,28 @@ describe("computeInstallPlan", () => {
     expect(plan.scope).toBe("user");
   });
 
-  test("no collision for previously-installed files", () => {
+  test("no collision for previously-installed files (skills format)", () => {
+    const allSkills = buildAllSkills();
+    const previousManifest: Manifest = {
+      format: "skills",
+      commands: [],
+      skills: Object.keys(allSkills),
+    };
+    const plan = computeInstallPlan({
+      claudeDir: "/tmp/repo/.claude",
+      prefix: undefined,
+      force: false,
+      readManifestFn: () => previousManifest,
+      existsFn: () => true,
+      readFileFn: () => "different content",
+    });
+    expect(plan.collisions).toEqual([]);
+  });
+
+  test("no collision for previously-installed files (commands format)", () => {
     const defaultCommands = buildCommands();
     const previousManifest: Manifest = {
+      format: "commands",
       commands: Object.keys(defaultCommands),
       skills: Object.keys(SKILLS),
     };
@@ -137,6 +185,7 @@ describe("computeInstallPlan", () => {
       claudeDir: "/tmp/repo/.claude",
       prefix: undefined,
       force: false,
+      format: "commands",
       readManifestFn: () => previousManifest,
       existsFn: () => true,
       readFileFn: () => "different content",
@@ -163,6 +212,7 @@ describe("executeInstall", () => {
       skills: { "test-skill.md": "# test skill" },
       previousManifest: { commands: [], skills: [] },
       prefix: undefined,
+      format: "commands",
       force: false,
       collisions: [],
       scope: "project",
@@ -456,7 +506,8 @@ describe("autoSyncSkills", () => {
     });
     expect(result.userSynced).toBe(true);
     const m = readManifestFrom(tmpHome);
-    expect(m.commands.length).toBeGreaterThan(0);
+    // New default: skills format — skills array populated, commands empty
+    expect(m.skills.length).toBeGreaterThan(0);
     expect(m.version).toBeDefined();
   });
 
@@ -475,7 +526,8 @@ describe("autoSyncSkills", () => {
     expect(result.userSynced).toBe(true);
     const m = readManifestFrom(tmpHome);
     expect(m.version).not.toBe("0.0.1");
-    expect(m.commands.length).toBeGreaterThan(1);
+    // After sync: skills format — skills populated
+    expect(m.skills.length).toBeGreaterThan(1);
   });
 
   test("skips user scope when version matches", () => {
@@ -535,8 +587,8 @@ describe("autoSyncSkills", () => {
     });
     const m = readManifestFrom(tmpHome);
     expect(m.prefix).toBe("gs-");
-    // Should have gs- prefixed command files
-    expect(m.commands).toContain("gs-think.md");
+    // Should have gs- prefixed skill directories (skills format)
+    expect(m.skills.some((s: string) => s.startsWith("gs-think/"))).toBe(true);
   });
 
   test("handles gitRoot failure gracefully", () => {
@@ -599,5 +651,200 @@ describe("autoSyncSkills", () => {
     // Version should now match the running CLI version (not 0.0.1)
     expect(m.version).toBeDefined();
     expect(m.version).not.toBe("0.0.1");
+  });
+
+  // --- Format migration tests (Step 1.5) ---
+
+  test("migrates from commands format to skills format on sync", () => {
+    writeManifestTo(tmpHome, {
+      version: "0.0.1",
+      prefix: "",
+      commands: ["think.md"],
+      skills: ["browser.md"],
+    });
+    autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    const m = readManifestFrom(tmpHome);
+    // Should now be in skills format
+    expect(m.format).toBe("skills");
+    // Skills should have directory-format keys
+    expect(m.skills.some((s: string) => s.includes("/SKILL.md"))).toBe(true);
+    // Commands should be empty
+    expect(m.commands).toEqual([]);
+  });
+
+  test("triggers re-sync when version matches but format is missing", () => {
+    // Install once to get current version
+    autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    // Tamper manifest to remove format field (simulating old v2 manifest with current version)
+    const manifestPath = path.join(tmpHome, ".claude", ".glorious-skills.json");
+    const m = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    delete m.format;
+    fs.writeFileSync(manifestPath, JSON.stringify(m));
+    // Run again — should trigger because format is missing
+    const result = autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    expect(result.userSynced).toBe(true);
+    // Format should now be restored
+    const m2 = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    expect(m2.format).toBe("skills");
+  });
+
+  test("does not re-sync when version AND format both match", () => {
+    // Install once
+    autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    // Second call should skip (version + format both match)
+    const result = autoSyncSkills({
+      getSettingFn: () => "true",
+      homeDirFn: () => tmpHome,
+      gitRootFn: () => { throw new Error("no git"); },
+    });
+    expect(result.userSynced).toBe(false);
+  });
+});
+
+// ── Skill validation tests (Step 6.1) ────────────────────────────────
+
+describe("validateSkill", () => {
+  test("passes valid SKILL.md with name and description", () => {
+    const content = "---\nname: test\ndescription: A test skill\n---\n\n# Test";
+    const result = validateSkill(content);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  test("fails when missing frontmatter", () => {
+    const content = "# No frontmatter";
+    const result = validateSkill(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes("frontmatter"))).toBe(true);
+  });
+
+  test("fails when missing name field", () => {
+    const content = "---\ndescription: A test\n---\n\n# Test";
+    const result = validateSkill(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes("name"))).toBe(true);
+  });
+
+  test("fails when missing description field", () => {
+    const content = "---\nname: test\n---\n\n# Test";
+    const result = validateSkill(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes("description"))).toBe(true);
+  });
+
+  test("fails with malformed frontmatter (no closing ---)", () => {
+    const content = "---\nname: test\ndescription: missing close";
+    const result = validateSkill(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes("malformed"))).toBe(true);
+  });
+});
+
+describe("testTriggers", () => {
+  test("passes when all trigger phrases found", () => {
+    const desc = "Use when user says 'plan this' or 'create a plan'";
+    const result = testTriggers(desc, ["plan this", "create a plan"], []);
+    expect(result.passed).toBe(true);
+    expect(result.failures).toEqual([]);
+  });
+
+  test("fails when trigger phrase missing", () => {
+    const desc = "Use when user says 'plan this'";
+    const result = testTriggers(desc, ["plan this", "missing phrase"], []);
+    expect(result.passed).toBe(false);
+    expect(result.failures.length).toBe(1);
+    expect(result.failures[0]).toContain("missing phrase");
+  });
+
+  test("fails when non-trigger phrase found", () => {
+    const desc = "Use when user says 'plan this' or 'build this'";
+    const result = testTriggers(desc, ["plan this"], ["build this"]);
+    expect(result.passed).toBe(false);
+    expect(result.failures[0]).toContain("build this");
+  });
+
+  test("case-insensitive matching", () => {
+    const desc = "Use when user says 'Plan This'";
+    const result = testTriggers(desc, ["plan this"], []);
+    expect(result.passed).toBe(true);
+  });
+});
+
+// ── Path traversal guard tests ────────────────────────────────────────
+
+describe("path traversal guard", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gs-traversal-test-"));
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  test("installFiles throws on path traversal key", () => {
+    const plan: InstallPlan = {
+      claudeDir: tmpDir,
+      commands: {},
+      skills: { "../../etc/passwd": "malicious content" },
+      previousManifest: { commands: [], skills: [] },
+      prefix: undefined,
+      format: "skills",
+      force: false,
+      collisions: [],
+      scope: "project",
+    };
+    expect(() => executeInstall(plan)).toThrow("Path traversal detected");
+  });
+
+  test("installFiles allows nested directory paths", () => {
+    const plan: InstallPlan = {
+      claudeDir: tmpDir,
+      commands: {},
+      skills: { "deep-review/references/agent-prompts.md": "# Prompts" },
+      previousManifest: { commands: [], skills: [] },
+      prefix: undefined,
+      format: "skills",
+      force: false,
+      collisions: [],
+      scope: "project",
+    };
+    const result = executeInstall(plan);
+    expect(result.created).toBe(1);
+    expect(fs.existsSync(path.join(tmpDir, "skills", "deep-review", "references", "agent-prompts.md"))).toBe(true);
+  });
+
+  test("installFiles allows standard SKILL.md paths", () => {
+    const plan: InstallPlan = {
+      claudeDir: tmpDir,
+      commands: {},
+      skills: { "think/SKILL.md": "---\nname: think\n---\n# Think" },
+      previousManifest: { commands: [], skills: [] },
+      prefix: undefined,
+      format: "skills",
+      force: false,
+      collisions: [],
+      scope: "project",
+    };
+    const result = executeInstall(plan);
+    expect(result.created).toBe(1);
+    expect(fs.existsSync(path.join(tmpDir, "skills", "think", "SKILL.md"))).toBe(true);
   });
 });

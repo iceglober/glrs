@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import readline from "node:readline";
-import { buildCommands, SKILLS, BUILTIN_COLLISIONS } from "../skills/index.js";
+import { buildCommands, buildAllSkills, SKILLS, BUILTIN_COLLISIONS } from "../skills/index.js";
 import { ok, okErr, info, warn, yellow } from "../lib/fmt.js";
 import { VERSION } from "../lib/version.js";
 import { getSetting } from "../lib/settings.js";
@@ -27,6 +27,7 @@ export function resolveClaudeDir(
 export interface Manifest {
   version?: string;
   prefix?: string;
+  format?: "skills" | "commands";
   commands: string[];
   skills: string[];
 }
@@ -38,6 +39,7 @@ function readManifest(claudeDir: string): Manifest {
     return {
       version: data?.version,
       prefix: data?.prefix,
+      format: data?.format === "skills" || data?.format === "commands" ? data.format : undefined,
       commands: Array.isArray(data?.commands) ? data.commands : [],
       skills: Array.isArray(data?.skills) ? data.skills : [],
     };
@@ -64,6 +66,10 @@ function installFiles(
 
   for (const name of Object.keys(files)) {
     const dest = path.join(baseDir, name);
+    // Guard against path traversal (e.g., "../../etc/passwd")
+    if (!path.resolve(dest).startsWith(path.resolve(baseDir))) {
+      throw new Error(`Path traversal detected: "${name}" escapes base directory`);
+    }
     fs.mkdirSync(path.dirname(dest), { recursive: true });
 
     if (fs.existsSync(dest)) {
@@ -120,6 +126,7 @@ export interface InstallPlan {
   skills: Record<string, string>;
   previousManifest: Manifest;
   prefix: string | undefined;
+  format: "skills" | "commands";
   force: boolean;
   collisions: string[];
   scope: "project" | "user";
@@ -131,6 +138,7 @@ export function computeInstallPlan(opts: {
   prefix: string | undefined;
   force: boolean;
   scope?: "project" | "user";
+  format?: "skills" | "commands";
   readManifestFn?: (dir: string) => Manifest;
   existsFn?: (path: string) => boolean;
   readFileFn?: (path: string) => string;
@@ -140,14 +148,18 @@ export function computeInstallPlan(opts: {
     prefix,
     force,
     scope = "project",
+    format = "skills",
     readManifestFn = readManifest,
     existsFn = fs.existsSync,
     readFileFn = (p: string) => fs.readFileSync(p, "utf-8"),
   } = opts;
 
   const previousManifest = readManifestFn(claudeDir);
-  const commands = buildCommands(prefix || undefined);
-  const skills = { ...SKILLS };
+
+  // In "skills" format, everything goes to .claude/skills/<name>/SKILL.md
+  // In "commands" format (legacy), commands go to .claude/commands/ and skills to .claude/skills/
+  const commands = format === "commands" ? buildCommands(prefix || undefined) : {};
+  const skills = format === "skills" ? buildAllSkills(prefix || undefined) : { ...SKILLS };
 
   let collisions: string[] = [];
   if (!force) {
@@ -188,6 +200,7 @@ export function computeInstallPlan(opts: {
     skills,
     previousManifest,
     prefix,
+    format,
     force,
     collisions,
     scope,
@@ -211,16 +224,45 @@ export function executeInstall(plan: InstallPlan): InstallResult {
 
   // Remove stale files from previous install
   const cmdRemoved = removeStaleFiles(plan.commands, plan.previousManifest.commands, commandsDir);
-  const skillRemoved = removeStaleFiles(plan.skills, plan.previousManifest.skills, skillsDir);
+  let skillRemoved = removeStaleFiles(plan.skills, plan.previousManifest.skills, skillsDir);
+
+  // Format migration cleanup: when migrating from commands→skills format,
+  // old flat skill files (e.g., "browser.md") won't match new directory paths
+  // (e.g., "browser/SKILL.md"). Explicitly remove orphaned flat files.
+  if (plan.format === "skills" && plan.previousManifest.format !== "skills") {
+    let migrateRemoved = 0;
+    for (const oldSkill of plan.previousManifest.skills) {
+      // Only clean up flat files (no "/" = old format); directory entries are handled above
+      if (!oldSkill.includes("/")) {
+        const dest = path.join(skillsDir, oldSkill);
+        if (!path.resolve(dest).startsWith(path.resolve(skillsDir))) continue; // traversal guard
+        if (fs.existsSync(dest)) {
+          fs.unlinkSync(dest);
+          migrateRemoved++;
+        }
+      }
+    }
+    // Also clean up old commands dir files during migration
+    for (const oldCmd of plan.previousManifest.commands) {
+      const dest = path.join(commandsDir, oldCmd);
+      if (!path.resolve(dest).startsWith(path.resolve(commandsDir))) continue; // traversal guard
+      if (fs.existsSync(dest)) {
+        fs.unlinkSync(dest);
+        migrateRemoved++;
+      }
+    }
+    skillRemoved += migrateRemoved;
+  }
 
   // Install files
   const cmdResult = installFiles(plan.commands, commandsDir, plan.force);
   const skillResult = installFiles(plan.skills, skillsDir, plan.force);
 
-  // Update manifest with version stamp and prefix for auto-sync
+  // Update manifest with version stamp, prefix, and format for auto-sync
   writeManifest(plan.claudeDir, {
     version: VERSION,
     prefix: plan.prefix || "",
+    format: plan.format,
     commands: Object.keys(plan.commands),
     skills: Object.keys(plan.skills),
   });
@@ -277,10 +319,11 @@ export function formatInstallResult(result: InstallResult): string[] {
 /** Sync a single scope if its manifest version doesn't match the current VERSION. */
 function syncScope(claudeDir: string, scope: "user" | "project"): boolean {
   const manifest = readManifest(claudeDir);
-  if (manifest.version === VERSION) return false;
+  // Trigger sync on version mismatch OR format migration (old manifests lack format field)
+  if (manifest.version === VERSION && manifest.format === "skills") return false;
 
   const prefix = manifest.prefix ?? undefined;
-  const plan = computeInstallPlan({ claudeDir, prefix, force: false, scope });
+  const plan = computeInstallPlan({ claudeDir, prefix, force: false, scope, format: "skills" });
   const result = executeInstall(plan);
 
   if (result.created > 0 || result.updated > 0 || result.removed > 0) {
@@ -317,7 +360,7 @@ export function autoSyncSkills(opts?: {
     try {
       const projectDir = path.join(rootFn(), ".claude");
       const projectManifest = readManifest(projectDir);
-      if (projectManifest.commands.length > 0) {
+      if (projectManifest.commands.length > 0 || projectManifest.skills.length > 0) {
         result.projectSynced = syncScope(projectDir, "project");
       }
     } catch {
@@ -381,6 +424,61 @@ async function askYesNo(question: string): Promise<boolean> {
       resolve(answer.trim().toLowerCase().startsWith("y"));
     });
   });
+}
+
+/** Validate a SKILL.md file content for required structure. */
+export function validateSkill(content: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  // Must start with frontmatter
+  if (!content.startsWith("---")) {
+    errors.push("missing frontmatter (must start with ---)");
+  }
+
+  // Extract frontmatter
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) {
+    errors.push("malformed frontmatter (no closing ---)");
+    return { valid: false, errors };
+  }
+
+  const fm = fmMatch[1];
+
+  // Must have name field
+  if (!/^name:/m.test(fm)) {
+    errors.push("missing name field in frontmatter");
+  }
+
+  // Must have description field
+  if (!/^description:/m.test(fm)) {
+    errors.push("missing description field in frontmatter");
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/** Test trigger phrases against a skill description. */
+export function testTriggers(
+  description: string,
+  shouldTrigger: string[],
+  shouldNotTrigger: string[],
+): { passed: boolean; failures: string[] } {
+  const failures: string[] = [];
+  const descLower = description.toLowerCase();
+
+  for (const phrase of shouldTrigger) {
+    if (!descLower.includes(phrase.toLowerCase())) {
+      failures.push(`should trigger on "${phrase}" but description doesn't contain it`);
+    }
+  }
+
+  for (const phrase of shouldNotTrigger) {
+    if (descLower.includes(phrase.toLowerCase())) {
+      failures.push(`should NOT trigger on "${phrase}" but description contains it`);
+    }
+  }
+
+  return { passed: failures.length === 0, failures };
 }
 
 export const installSkills = command({

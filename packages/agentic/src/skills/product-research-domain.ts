@@ -1,7 +1,10 @@
-export function productResearchDomain(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productResearchDomain(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-research-domain
 description: Use when researching an unfamiliar product domain before discovery, when the team needs actionable domain knowledge to build, or when entering a regulated industry with standards and rules the system must encode
+disable-model-invocation: true
 ---
 
 # Product Research — Domain
@@ -137,5 +140,5 @@ FOR EACH SECTION:
 | "Including this can't hurt" | Every irrelevant section erodes trust and buries signal. |
 | "I should explain the basics first" | The noise filter exists. If they already operate here, basics are noise. |
 | "Market context frames the opportunity" | That's market research, not domain research. Separate skill. |
-| "I'll just add a short summary of what they already have" | That's the noise filter talking. If they have it, don't explain it. |`;
+| "I'll just add a short summary of what they already have" | That's the noise filter talking. If they have it, don't explain it. |` };
 }

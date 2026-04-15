@@ -5,7 +5,7 @@ import { list } from "./commands/list.js";
 import { del } from "./commands/delete.js";
 import { cleanup } from "./commands/cleanup.js";
 import { go } from "./commands/go.js";
-import { initHooks } from "./commands/init-hooks.js";
+import { initHooks, scaffoldClaudeHooks } from "./commands/init-hooks.js";
 import { root } from "./commands/root.js";
 
 import { upgrade } from "./commands/upgrade.js";
@@ -15,6 +15,7 @@ import { status } from "./commands/status.js";
 import { ready } from "./commands/ready.js";
 import { plan } from "./commands/plan-review.js";
 import { config } from "./commands/config.js";
+import { plugin } from "./commands/plugin.js";
 import { HELP_TEXT } from "./help.js";
 import { VERSION } from "./lib/version.js";
 import { checkForUpdate } from "./lib/update-check.js";
@@ -38,6 +39,7 @@ if (args[0] === "wt" && args.length === 1) {
 }
 
 checkForUpdate();
+
 autoSyncSkills();
 
 // Initialize SQLite state (safe even outside git — getRepo returns null)
@@ -68,6 +70,8 @@ const cli = subcommands({
     ready,
     skills: installSkills,
     config,
+    plugin,
+    "claude-hooks": scaffoldClaudeHooks,
     state,
     upgrade,
   },

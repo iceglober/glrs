@@ -1,7 +1,10 @@
-export function productEngineeringHandoff(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productEngineeringHandoff(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-engineering-handoff
 description: Use when extracting engineering questions and technical blockers from product docs for engineer review, when bridging product-to-engineering communication, or when the CTO needs an async handoff document
+disable-model-invocation: true
 ---
 
 # Product Engineering Handoff
@@ -138,5 +141,5 @@ The engineer hasn't seen the question yet. Don't pre-answer it.
 | "This question is too vague to extract" | Extract it as-is and tag [NEEDS CLARIFICATION]. Don't rewrite it. |
 | "I should filter to the most important questions" | You don't know what's important to engineering. Extract all, let them triage. |
 | "Adding my analysis makes the handoff more useful" | Adding your analysis makes the handoff your opinion. Engineers want raw questions. |
-| "I'll merge similar questions to reduce noise" | Similar questions often have different blockers. Keep them separate. |`;
+| "I'll merge similar questions to reduce noise" | Similar questions often have different blockers. Keep them separate. |` };
 }

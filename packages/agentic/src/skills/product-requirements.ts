@@ -1,7 +1,10 @@
-export function productRequirements(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productRequirements(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-requirements
 description: Use when producing a tier-1 PRD from problem.md and research outputs, when the user wants outcome-grouped requirements instead of a requirements matrix, or when engineering needs a buildable requirements doc
+disable-model-invocation: true
 ---
 
 # Product Requirements
@@ -276,5 +279,5 @@ Research files are the scope boundary. Full stop.
 | "This AC needs a specific latency target to be testable" | Testable means unambiguous pass/fail. [DATA NEEDED] is unambiguous. 200ms from nowhere is not. |
 | "I'll mark my additions as suggestions" | Suggestions become soft requirements. Out of scope means out. |
 | "The user said comprehensive" | Comprehensive about the researched scope. Not comprehensive about the entire domain. |
-| "I should ask what format they prefer" | The format is defined above. Just write it. |`;
+| "I should ask what format they prefer" | The format is defined above. Just write it. |` };
 }

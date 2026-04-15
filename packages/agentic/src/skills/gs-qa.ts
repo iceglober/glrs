@@ -1,8 +1,11 @@
 import { REVIEW_PREAMBLE } from "./preamble.js";
+import type { SkillEntry } from "./index.js";
 
-export function gsQa(): string {
-  return `---
+export function gsQa(): SkillEntry {
+  return { "SKILL.md": `---
+name: qa
 description: QA the current diff against the task's acceptance criteria. Use when user says 'test this', 'QA the changes', 'check the diff', 'does this meet the criteria', 'verify the implementation'. Builds a test matrix, traces code paths per scenario, reports findings with file references, stores results in review DB.
+disable-model-invocation: true
 ---
 
 # QA — Verification Before Completion
@@ -163,5 +166,5 @@ If there are CRITICAL issues, fix them now:
 5. Update the QA report
 
 If **NEEDS FIXES** with only HIGH/MEDIUM findings, ask the user how to proceed.
-`;
+` };
 }

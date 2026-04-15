@@ -45,13 +45,24 @@ import { gsAddressFeedback } from "./gs-address-feedback.js";
 import { gs } from "./gs.js";
 
 /**
+ * A SkillEntry represents a skill directory's file contents.
+ * Keys are relative paths within the skill directory (e.g. "SKILL.md",
+ * "references/agent-prompts.md"). Every SkillEntry MUST have a "SKILL.md" key.
+ *
+ * During the v3 migration, generators transition from returning `string` to
+ * returning `SkillEntry`. The buildCommands() wrapper extracts SKILL.md content
+ * for backward compatibility with the legacy .claude/commands/ flat-file format.
+ */
+export type SkillEntry = Record<string, string>;
+
+/**
  * Mapping of gs-* skill internal keys to their canonical short filenames
  * and generator functions. The canonical name is what gets installed by default
  * (no prefix). With a prefix like "gs-", the installed name becomes "gs-think.md" etc.
  */
 export const GS_SKILL_NAMES: Record<
   string,
-  { canonical: string; generator: () => string }
+  { canonical: string; generator: () => string | SkillEntry }
 > = {
   gs: { canonical: "gs.md", generator: gs },
   "gs-think": { canonical: "think.md", generator: gsThink },
@@ -185,7 +196,7 @@ function enableModelInvocation(content: string): string {
 }
 
 /** Non-gs commands that are always installed with their original names. */
-const STATIC_COMMANDS: Record<string, string> = {
+const STATIC_COMMANDS: Record<string, string | SkillEntry> = {
   // Research
   "research.md": research(),
   "research-local.md": researchLocal(),
@@ -230,14 +241,20 @@ export function buildCommands(prefix?: string): Record<string, string> {
 
   for (const entry of Object.values(GS_SKILL_NAMES)) {
     const filename = p + entry.canonical;
-    gsCommands[filename] = enableModelInvocation(entry.generator());
+    const output = entry.generator();
+    // Extract SKILL.md content from SkillEntry, then enable model invocation for legacy commands
+    const content = typeof output === "string" ? output : output["SKILL.md"];
+    gsCommands[filename] = enableModelInvocation(content);
   }
 
-  const staticEnabled = Object.fromEntries(
-    Object.entries(STATIC_COMMANDS).map(([k, v]) => [k, enableModelInvocation(v)]),
-  );
+  // Flatten STATIC_COMMANDS: extract SKILL.md from SkillEntry values, enable model invocation
+  const staticFlat: Record<string, string> = {};
+  for (const [k, v] of Object.entries(STATIC_COMMANDS)) {
+    const content = typeof v === "string" ? v : v["SKILL.md"];
+    staticFlat[k] = enableModelInvocation(content);
+  }
 
-  return { ...staticEnabled, ...gsCommands };
+  return { ...staticFlat, ...gsCommands };
 }
 
 /**
@@ -248,8 +265,69 @@ export const COMMANDS: Record<string, string> = buildCommands();
 
 /** Skills — activate automatically when relevant */
 export const SKILLS: Record<string, string> = {
-  "browser.md": browser(),
+  "browser.md": (() => { const b = browser(); return typeof b === "string" ? b : b["SKILL.md"]; })(),
   ...Object.fromEntries(
     Object.entries(writingSkills()).map(([f, c]) => [`writing-skills/${f}`, c]),
   ),
 };
+
+/**
+ * Build a unified skills map in SKILL.md directory format.
+ * All skills are output as `<name>/SKILL.md` (with optional reference files).
+ *
+ * During v3 migration, generators still return strings. This function wraps
+ * each string into a SkillEntry with a single "SKILL.md" key. Once generators
+ * are migrated to return SkillEntry directly (steps 1.2/1.3), this function
+ * will pass through their multi-file entries as-is.
+ *
+ * @param prefix Optional prefix for gs-* skill directory names
+ */
+export function buildAllSkills(prefix?: string): Record<string, string> {
+  const p = prefix || "";
+  const result: Record<string, string> = {};
+
+  // gs-* skills
+  for (const entry of Object.values(GS_SKILL_NAMES)) {
+    const dirName = p + entry.canonical.replace(/\.md$/, "");
+    const output = entry.generator();
+    if (typeof output === "string") {
+      // Legacy string generator — wrap as single SKILL.md
+      result[`${dirName}/SKILL.md`] = output;
+    } else {
+      // SkillEntry — flatten all files into the directory
+      for (const [file, content] of Object.entries(output)) {
+        result[`${dirName}/${file}`] = content;
+      }
+    }
+  }
+
+  // Static commands (research, spec, product)
+  for (const [filename, content] of Object.entries(STATIC_COMMANDS)) {
+    const dirName = filename.replace(/\.md$/, "");
+    if (typeof content === "string") {
+      result[`${dirName}/SKILL.md`] = content;
+    } else {
+      // SkillEntry — flatten all files into the directory
+      for (const [file, fileContent] of Object.entries(content)) {
+        result[`${dirName}/${file}`] = fileContent;
+      }
+    }
+  }
+
+  // Browser — single/multi file skill
+  const browserOutput = browser();
+  if (typeof browserOutput === "string") {
+    result["browser/SKILL.md"] = browserOutput;
+  } else {
+    for (const [file, content] of Object.entries(browserOutput)) {
+      result[`browser/${file}`] = content;
+    }
+  }
+
+  // Writing-skills — multi-file skill (already a Record<string, string>)
+  for (const [file, content] of Object.entries(writingSkills())) {
+    result[`writing-skills/${file}`] = content;
+  }
+
+  return result;
+}

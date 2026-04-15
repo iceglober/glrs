@@ -1,6 +1,10 @@
-export function specLab(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function specLab(): SkillEntry {
+  return { "SKILL.md": `---
+name: spec-lab
 description: Design and run validation experiments against spec unknowns. Binary yes/no hypothesis testing — does X work? Can we do Y? Use when user says 'validate this unknown', 'test if this works', 'run experiments', 'can we prove this', 'lab test'. Do NOT use for open-ended optimization (use /research-auto instead). Provide a spec path or specific unknown to validate.
+disable-model-invocation: true
 ---
 
 # /spec-lab — Validation Experiments
@@ -222,5 +226,5 @@ Updated spec: [file path]
 6. **Version, don't overwrite.** Always write a new spec file.
 7. **Proceed autonomously.** Present the plan and immediately start running. Don't wait for approval.
 8. **Fail fast.** If a validation is clearly going to fail (wrong API, missing feature), log it and move on. Don't burn turns trying to make it work.
-`;
+` };
 }

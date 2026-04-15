@@ -1,8 +1,13 @@
 import { READONLY_PREAMBLE } from "./preamble.js";
+import type { SkillEntry } from "./index.js";
 
-export function gsThink(): string {
-  return `---
+export function gsThink(): SkillEntry {
+  return { "SKILL.md": `---
+name: think
 description: Product strategy session — think through what to build and why before writing code. Use when user says 'should we build', 'is this worth building', 'think through', 'evaluate this feature', 'before we start coding', 'does this make sense'. Validates ideas against existing tasks, asks forcing questions, outputs a verdict (build, redirect, defer, or kill). READ-ONLY — does not create tasks, save plans, or modify state. If validated, user runs /deep-plan next.
+argument-hint: "[feature idea or question]"
+disable-model-invocation: true
+allowed-tools: Read, Grep, Glob
 ---
 
 # Think
@@ -109,5 +114,5 @@ Present your verdict clearly, then stop. Do NOT proceed to implementation, plann
 \`\`\`
 
 **STOP HERE.** Do not create tasks, save plans, or take any action. The user decides what happens next.
-`;
+` };
 }

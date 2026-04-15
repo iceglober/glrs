@@ -1,7 +1,10 @@
-export function productManager(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productManager(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-manager
 description: Use when giving the PM new context to integrate, when refreshing or auditing existing product artifacts, when requesting a targeted update to a specific artifact, or when starting a new product build from a blurb
+disable-model-invocation: true
 ---
 
 # Product Manager — General PM Interface
@@ -239,5 +242,5 @@ DO NOT: Ask the user to classify their own request — that's YOUR job.
 | "I'll skip the cascade — the downstream artifacts are fine" | You don't know that until you re-run and evaluate them. |
 | "The user only asked about one artifact" | They asked about one artifact. Check if the change affects others. |
 | "A full refresh is too expensive" | Stale artifacts produce stale decisions. The refresh exists for a reason. |
-| "I can answer this question without updating artifacts" | If the answer changes the product direction, it needs to be in the artifacts. |`;
+| "I can answer this question without updating artifacts" | If the answer changes the product direction, it needs to be in the artifacts. |` };
 }

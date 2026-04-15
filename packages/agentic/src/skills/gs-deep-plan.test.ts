@@ -2,7 +2,8 @@ import { describe, test, expect } from "bun:test";
 import { gsDeepPlan } from "./gs-deep-plan.js";
 
 describe("gsDeepPlan", () => {
-  const output = gsDeepPlan();
+  const entry = gsDeepPlan();
+  const output = entry["SKILL.md"];
 
   test("plan mode constraint appears before role definition", () => {
     const constraintIdx = output.indexOf("YOU MUST NEVER ENTER PLAN MODE");
@@ -36,31 +37,6 @@ describe("gsDeepPlan", () => {
     );
   });
 
-  test("rationalization table addresses 'too simple' excuse", () => {
-    expect(output).toContain("These are too simple for a full plan");
-  });
-
-  test("rationalization table addresses 'just apply directly' excuse", () => {
-    expect(output).toContain(
-      "Rather than a full deep-plan, let me just apply them directly",
-    );
-  });
-
-  test("rationalization table addresses auto mode excuse", () => {
-    expect(output).toContain(
-      "Auto mode means don't ask for permission at each tool call",
-    );
-  });
-
-  test("red flags section covers implementation violations", () => {
-    expect(output).toContain("About to call Edit, Write, or NotebookEdit");
-    expect(output).toContain("this is too simple for a plan");
-  });
-
-  test("red flags section covers plan mode violations", () => {
-    expect(output).toContain("About to call EnterPlanMode");
-  });
-
   test("contains no-exceptions urgency constraint", () => {
     expect(output).toContain("NO EXCEPTIONS — NOT EVEN FOR URGENCY");
     expect(output).toContain(
@@ -68,9 +44,41 @@ describe("gsDeepPlan", () => {
     );
   });
 
-  test("rationalization table addresses urgency/security exception excuse", () => {
-    expect(output).toContain(
-      "This is a critical security fix — surely that's an exception",
-    );
+  test("SKILL.md has reference map pointing to tdd-methodology and anti-rationalization", () => {
+    expect(output).toContain("## Reference map");
+    expect(output).toContain("references/tdd-methodology.md");
+    expect(output).toContain("references/anti-rationalization.md");
+  });
+
+  // --- Reference file tests ---
+
+  test("has references/tdd-methodology.md with Red-Green-Refactor", () => {
+    const tdd = entry["references/tdd-methodology.md"];
+    expect(tdd).toBeDefined();
+    expect(tdd).toContain("Red -> Green -> Refactor");
+  });
+
+  test("tdd-methodology has all 4 test layers", () => {
+    const tdd = entry["references/tdd-methodology.md"];
+    expect(tdd).toContain("Unit");
+    expect(tdd).toContain("Integration");
+    expect(tdd).toContain("Contract/API");
+    expect(tdd).toContain("Behavioral/E2E");
+  });
+
+  test("has references/anti-rationalization.md with rationalization table", () => {
+    const anti = entry["references/anti-rationalization.md"];
+    expect(anti).toBeDefined();
+    expect(anti).toContain("These are too simple for a full plan");
+    expect(anti).toContain("Rather than a full deep-plan, let me just apply them directly");
+    expect(anti).toContain("Auto mode means don't ask for permission at each tool call");
+    expect(anti).toContain("This is a critical security fix — surely that's an exception");
+  });
+
+  test("anti-rationalization has red flags section", () => {
+    const anti = entry["references/anti-rationalization.md"];
+    expect(anti).toContain("About to call Edit, Write, or NotebookEdit");
+    expect(anti).toContain("About to call EnterPlanMode");
+    expect(anti).toContain("this is too simple for a plan");
   });
 });

@@ -1,7 +1,10 @@
-export function productBuild(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function productBuild(): SkillEntry {
+  return { "SKILL.md": `---
 name: product-build
 description: Use when taking a product idea from blurb to buildable artifacts, when orchestrating the full PM workflow autonomously, or when the user wants research, problem definition, PRD, acceptance criteria, and engineering handoff produced end-to-end
+disable-model-invocation: true
 ---
 
 # Product Build — Full Artifact Suite from Blurb
@@ -278,5 +281,5 @@ DO NOT: Skip the interview — research covers domain, interview covers their sy
 | "Research looks good, I'll skip evaluation" | Your intuition is not a quality gate. Agents self-evaluate via product-evaluate.md. |
 | "I'll skip the interview — research is comprehensive" | Research covers domain. Interview covers their system, constraints, preferences. |
 | "Let me present research findings before continuing" | User sees: blurb assessment, interview, final artifacts. Nothing between. |
-| "I should explain my process" | Execute, don't explain. The artifacts speak for themselves. |`;
+| "I should explain my process" | Execute, don't explain. The artifacts speak for themselves. |` };
 }

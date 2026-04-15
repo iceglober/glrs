@@ -1,8 +1,12 @@
+import type { SkillEntry } from "./index.js";
 import { TASK_PREAMBLE } from "./preamble.js";
 
-export function gsFix(): string {
-  return `---
+export function gsFix(): SkillEntry {
+  return { "SKILL.md": `---
+name: fix
 description: Fix bugs or implement changes for the current glorious task. Use when user says 'fix this bug', 'this is broken', 'something's wrong with', 'patch this', or reports specific errors. Classifies issues as bug/scope-change/new-work, reproduces with a failing test, fixes code, verifies fully.
+argument-hint: "[bug description or error]"
+disable-model-invocation: true
 ---
 
 # Fix — Test-Driven Bug Resolution
@@ -121,5 +125,5 @@ Check for:
 |---|-------|---------------|-----|------|
 | 1 | {description} | Bug | {what changed} | {test name or "N/A"} |
 \`\`\`
-`;
+` };
 }

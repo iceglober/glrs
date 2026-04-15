@@ -1,6 +1,10 @@
-export function specRefine(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function specRefine(): SkillEntry {
+  return { "SKILL.md": `---
+name: spec-refine
 description: Interactive spec refinement. Walk through unknowns with the user, integrate answers, produce an updated spec with fewer unknowns. Use when user says 'refine this spec', 'resolve the unknowns', 'walk me through the questions', 'lets fill in the gaps'. Provide the spec file path.
+disable-model-invocation: true
 ---
 
 # /spec-refine — Interactive Spec Refinement
@@ -103,5 +107,5 @@ Once the user has answered what they can:
 7. **New unknowns are progress.** More specific = more concrete.
 8. **Stay in scope.** Don't pull out-of-scope items back in.
 9. **Keep the pace.** Ask the next question immediately after stating impact.
-`;
+` };
 }

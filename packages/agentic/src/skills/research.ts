@@ -1,6 +1,10 @@
-export function research(): string {
-  return `---
+import type { SkillEntry } from "./index.js";
+
+export function research(): SkillEntry {
+  return { "SKILL.md": `---
+name: research
 description: Research orchestrator — plans workstreams, dispatches parallel research agents (local, web, or auto), reviews results, identifies gaps, and iterates until comprehensive. Use when user says 'research', '/research', 'investigate', 'deep dive', 'explore', 'understand how', 'what do we know about'. Provide the research topic and context.
+disable-model-invocation: true
 ---
 
 # /research — Research Orchestrator
@@ -348,5 +352,5 @@ Total subagent tree can be 30-50+ agents for a complex query. This is by design.
 | "I'll route to AUTO for thoroughness" | AUTO is for experimentation with measurable outcomes. Thoroughness comes from iteration, not AUTO. |
 | "I'll launch agents sequentially to be safe" | Parallel is always faster. All independent workstreams in one message. |
 | "The quality review is overhead" | The quality score tells the user how much to trust the report. 30 seconds well spent. |
-`;
+` };
 }

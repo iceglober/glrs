@@ -1,8 +1,12 @@
 import { TASK_PREAMBLE } from "./preamble.js";
+import type { SkillEntry } from "./index.js";
 
-export function gsShip(): string {
-  return `---
+export function gsShip(): SkillEntry {
+  return { "SKILL.md": `---
+name: ship
 description: Ship the current task's branch — typecheck, review, commit, push, and create a PR. Use when user says 'ship it', 'create a PR', 'push and release', 'land this', 'send for review'. Runs full pre-flight pipeline before pushing. Never force-pushes or pushes to main.
+argument-hint: "[PR context]"
+disable-model-invocation: true
 ---
 
 # Ship
@@ -233,5 +237,5 @@ Repeat until all checks are green. Do NOT leave a PR with failing checks.
 **Review items:** {resolved}/{total} (or "N/A")
 **Items completed:** {done}/{total}
 \`\`\`
-`;
+` };
 }

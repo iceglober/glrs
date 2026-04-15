@@ -1,8 +1,12 @@
 import { HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
+import type { SkillEntry } from "./index.js";
 
-export function gsBuild(): string {
-  return `---
+export function gsBuild(): SkillEntry {
+  return { "SKILL.md": `---
+name: build
 description: Implement a specific gs-agentic task. Use when user says 'build t3', 'implement this task', 'work on t5', or provides a specific task ID. Reads the task's plan and context, then implements with TDD methodology. Updates task state on completion.
+argument-hint: "[task-id]"
+disable-model-invocation: true
 ---
 
 ${HANDOFF_RULE}
@@ -186,5 +190,5 @@ ${buildHandoffBlock({
 | "This is just a flag/config" | If it can break in production, it needs a test. |
 | "No existing tests for this area" | Then you're the one who improves it. Create the test file. |
 | "The plan step doesn't have test cases" | Then define your own. No code without a failing test. |
-`;
+` };
 }
