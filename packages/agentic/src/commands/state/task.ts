@@ -29,7 +29,7 @@ import { ok, warn, bold, dim, cyan, green, yellow, red } from "../../lib/fmt.js"
  * Strip null, undefined, empty string, and empty array fields from an object.
  * Used by --format agent for ultra-compact output.
  */
-function compactify(obj: Record<string, unknown>): Record<string, unknown> {
+export function compactify(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     if (value === null || value === undefined) continue;
