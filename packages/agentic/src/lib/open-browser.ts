@@ -1,6 +1,6 @@
 import { execFile as nodeExecFile } from "node:child_process";
 import { getSetting } from "./settings.js";
-import { warn } from "./fmt.js";
+import { dim, warn } from "./fmt.js";
 
 /**
  * Open a URL in the default browser.
@@ -14,7 +14,10 @@ export function openBrowser(
     exec?: typeof nodeExecFile;
   },
 ): boolean {
-  if (getSetting(settingKey) === "false") return false;
+  if (getSetting(settingKey) === "false") {
+    console.log(dim(`Browser auto-open disabled. To enable: gsag config set ${settingKey} true`));
+    return false;
+  }
 
   const platform = opts?.platform ?? process.platform;
   const exec = opts?.exec ?? nodeExecFile;

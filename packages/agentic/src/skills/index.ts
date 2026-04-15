@@ -182,6 +182,19 @@ export const BUILTIN_COLLISIONS = new Set([
   "simplify.md",
 ]);
 
+/**
+ * Inject `disable-model-invocation: false` into YAML frontmatter.
+ * Claude Code defaults commands to disable-model-invocation: true,
+ * which prevents the Skill tool from invoking them programmatically.
+ * Our commands are designed to be called via skill handoffs.
+ */
+function enableModelInvocation(content: string): string {
+  return content.replace(
+    /^(---\n[\s\S]*?)\n---/,
+    "$1\ndisable-model-invocation: false\n---",
+  );
+}
+
 /** Non-gs commands that are always installed with their original names. */
 const STATIC_COMMANDS: Record<string, string | SkillEntry> = {
   // Research
@@ -229,14 +242,16 @@ export function buildCommands(prefix?: string): Record<string, string> {
   for (const entry of Object.values(GS_SKILL_NAMES)) {
     const filename = p + entry.canonical;
     const output = entry.generator();
-    // Extract SKILL.md content from SkillEntry, or use string directly
-    gsCommands[filename] = typeof output === "string" ? output : output["SKILL.md"];
+    // Extract SKILL.md content from SkillEntry, then enable model invocation for legacy commands
+    const content = typeof output === "string" ? output : output["SKILL.md"];
+    gsCommands[filename] = enableModelInvocation(content);
   }
 
-  // Flatten STATIC_COMMANDS: extract SKILL.md from SkillEntry values
+  // Flatten STATIC_COMMANDS: extract SKILL.md from SkillEntry values, enable model invocation
   const staticFlat: Record<string, string> = {};
   for (const [k, v] of Object.entries(STATIC_COMMANDS)) {
-    staticFlat[k] = typeof v === "string" ? v : v["SKILL.md"];
+    const content = typeof v === "string" ? v : v["SKILL.md"];
+    staticFlat[k] = enableModelInvocation(content);
   }
 
   return { ...staticFlat, ...gsCommands };

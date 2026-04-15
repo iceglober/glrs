@@ -19,6 +19,7 @@ import {
   addTaskNote,
   loadTaskNotes,
   getLastTouched,
+  exportEpicTrace,
   PHASES,
   type Phase,
 } from "../../lib/state.js";
@@ -573,6 +574,23 @@ const notes = command({
 
 // ── Export subcommands ───────────────────────────────────────────────
 
+const epicExport = command({
+  name: "export",
+  description: "Export full epic lifecycle trace as JSON (for RL/analysis)",
+  args: {
+    id: option({ type: string, long: "id", short: "i", description: "Epic ID" }),
+  },
+  handler: (args) => {
+    try {
+      const trace = exportEpicTrace(args.id);
+      console.log(JSON.stringify(trace, null, 2));
+    } catch (e: any) {
+      console.error(e.message);
+      process.exit(1);
+    }
+  },
+});
+
 const stateEpic = subcommands({
   name: "epic",
   description: "Epic management",
@@ -580,6 +598,7 @@ const stateEpic = subcommands({
     create: epicCreate,
     show: epicShow,
     list: epicList,
+    export: epicExport,
   },
 });
 

@@ -121,3 +121,40 @@ describe("skills.auto-update", () => {
     expect(entry!.source).toBe("default");
   });
 });
+
+describe("plan.first-run-seen", () => {
+  test("defaults to false", () => {
+    expect(getSetting("plan.first-run-seen")).toBe("false");
+  });
+
+  test("can be set to true", () => {
+    setSetting("plan.first-run-seen", "true");
+    expect(getSetting("plan.first-run-seen")).toBe("true");
+  });
+
+  test("unset reverts to default false", () => {
+    setSetting("plan.first-run-seen", "true");
+    unsetSetting("plan.first-run-seen");
+    expect(getSetting("plan.first-run-seen")).toBe("false");
+  });
+
+  test("listSettings includes plan.first-run-seen", () => {
+    const list = listSettings();
+    const entry = list.find(s => s.key === "plan.first-run-seen");
+    expect(entry).toBeDefined();
+    expect(entry!.value).toBe("false");
+    expect(entry!.source).toBe("default");
+  });
+
+  test("settingsHelp includes plan.first-run-seen", () => {
+    const help = settingsHelp();
+    const entry = help.find(h => h.key === "plan.first-run-seen");
+    expect(entry).toBeDefined();
+    expect(entry!.description).toBeTruthy();
+  });
+
+  test("setting empty string persists without crash", () => {
+    setSetting("plan.first-run-seen", "");
+    expect(getSetting("plan.first-run-seen")).toBe("");
+  });
+});

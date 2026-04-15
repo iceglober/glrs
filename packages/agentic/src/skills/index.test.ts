@@ -111,6 +111,14 @@ describe("buildCommands", () => {
       expect(content).toContain("---"); // frontmatter
     }
   });
+
+  test("all commands have disable-model-invocation: false in frontmatter", () => {
+    const cmds = buildCommands();
+    for (const [key, content] of Object.entries(cmds)) {
+      const frontmatter = content.split("---")[1];
+      expect(frontmatter).toContain("disable-model-invocation: false");
+    }
+  });
 });
 
 describe("SKILLS", () => {

@@ -39,6 +39,7 @@ if (args[0] === "wt" && args.length === 1) {
 }
 
 checkForUpdate();
+
 autoSyncSkills();
 
 // Initialize SQLite state (safe even outside git — getRepo returns null)

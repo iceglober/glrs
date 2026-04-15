@@ -57,12 +57,15 @@ import {
   closeAndClaimNext,
   pruneEphemeralNotes,
   setLastTouchedPath,
+  exportEpicTrace,
+  listPlanVersions,
   PHASES,
   type Task,
   type Phase,
 } from "./state.js";
 import { gitRoot } from "./git.js";
 import { resetDb, getDbSync, DB_PATH } from "./db.js";
+import { appendFeedback, resolveFeedback } from "./plan-feedback.js";
 
 const TEST_DIR = path.join(os.tmpdir(), "glorious-state-test-" + process.pid);
 const TEST_DB_PATH = path.join(TEST_DIR, "state.db");
@@ -2507,5 +2510,111 @@ describe("dependenciesMet with repoId", () => {
   test("empty deps returns true regardless of repoId", () => {
     const task = { dependencies: [] } as unknown as Task;
     expect(dependenciesMet(task, "any/repo")).toBe(true);
+  });
+});
+
+describe("exportEpicTrace", () => {
+  test("exports epic with all data populated", () => {
+    const epic = createEpic({ title: "Test Epic", description: "desc" });
+    savePlan(epic.id, "# Plan v1");
+    savePlan(epic.id, "# Plan v2");
+    const task = createTask({ title: "Task A", epic: epic.id });
+    addTaskNote({ taskId: task.id, body: "note body", actor: "test" });
+    appendFeedback(epic.id, "1.1", "fix this");
+    resolveFeedback(epic.id);
+    appendFeedback(epic.id, "2.1", "looks good");
+
+    const trace = exportEpicTrace(epic.id);
+    expect(trace.exportedAt).toBeTruthy();
+    expect(trace.epic.id).toBe(epic.id);
+    expect(trace.plans).toHaveLength(2);
+    expect(trace.plans[0].version).toBe(1);
+    expect(trace.plans[1].version).toBe(2);
+    expect(trace.feedback.active).toContain("looks good");
+    expect(trace.feedback.resolved).toHaveLength(1);
+    expect(trace.feedback.resolved[0].content).toContain("fix this");
+    expect(trace.tasks).toHaveLength(1);
+    expect(trace.tasks[0].task.id).toBe(task.id);
+    expect(trace.tasks[0].notes).toHaveLength(1);
+    expect(trace.tasks[0].notes[0].body).toBe("note body");
+  });
+
+  test("exports epic with no tasks", () => {
+    const epic = createEpic({ title: "Empty Epic", description: "no tasks" });
+    const trace = exportEpicTrace(epic.id);
+    expect(trace.epic.id).toBe(epic.id);
+    expect(trace.tasks).toHaveLength(0);
+    expect(trace.plans).toHaveLength(0);
+    expect(trace.feedback.active).toBeNull();
+    expect(trace.feedback.resolved).toHaveLength(0);
+  });
+
+  test("returns correct plan versions", () => {
+    const epic = createEpic({ title: "Plan Epic", description: "plans" });
+    savePlan(epic.id, "version one");
+    savePlan(epic.id, "version two");
+    const trace = exportEpicTrace(epic.id);
+    expect(trace.plans).toHaveLength(2);
+    expect(trace.plans[0].content).toBe("version one");
+    expect(trace.plans[1].content).toBe("version two");
+  });
+
+  test("includes task transitions", () => {
+    const epic = createEpic({ title: "Trans Epic", description: "transitions" });
+    const task = createTask({ title: "Task B", epic: epic.id });
+    transitionTask(task.id, "implement" as Phase, { actor: "test" });
+    const trace = exportEpicTrace(epic.id);
+    expect(trace.tasks[0].task.transitions.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("throws for nonexistent epic", () => {
+    expect(() => exportEpicTrace("e999")).toThrow("Epic e999 not found");
+  });
+
+  test("reviews scoped to epic — other epic reviews excluded", () => {
+    const epicA = createEpic({ title: "Epic A", description: "a" });
+    const taskA = createTask({ title: "Task A", epic: epicA.id });
+    const reviewA = createReview({ taskId: taskA.id, source: "test", commitSha: "abc" });
+    addReviewItem({ reviewId: reviewA.id, body: "item A", severity: "HIGH" });
+
+    const epicB = createEpic({ title: "Epic B", description: "b" });
+    const taskB = createTask({ title: "Task B", epic: epicB.id });
+    const reviewB = createReview({ taskId: taskB.id, source: "test", commitSha: "def" });
+    addReviewItem({ reviewId: reviewB.id, body: "item B1", severity: "MEDIUM" });
+    addReviewItem({ reviewId: reviewB.id, body: "item B2", severity: "LOW" });
+
+    const traceA = exportEpicTrace(epicA.id);
+    expect(traceA.reviews.total).toBe(1);
+
+    const traceB = exportEpicTrace(epicB.id);
+    expect(traceB.reviews.total).toBe(2);
+  });
+
+  test("reviews aggregate across multiple tasks in same epic", () => {
+    const epic = createEpic({ title: "Multi Task", description: "mt" });
+    const t1 = createTask({ title: "T1", epic: epic.id });
+    const t2 = createTask({ title: "T2", epic: epic.id });
+    const r1 = createReview({ taskId: t1.id, source: "test", commitSha: "aaa" });
+    const r2 = createReview({ taskId: t2.id, source: "test", commitSha: "bbb" });
+    addReviewItem({ reviewId: r1.id, body: "r1 item", severity: "HIGH" });
+    addReviewItem({ reviewId: r2.id, body: "r2 item", severity: "HIGH" });
+
+    const trace = exportEpicTrace(epic.id);
+    expect(trace.reviews.total).toBe(2);
+    expect(trace.reviews.open).toBe(2);
+  });
+
+  test("includes active and resolved feedback", async () => {
+    const epic = createEpic({ title: "Feedback Epic", description: "fb" });
+    appendFeedback(epic.id, "1.1", "first round");
+    resolveFeedback(epic.id);
+    await new Promise((r) => setTimeout(r, 20));
+    appendFeedback(epic.id, "2.1", "active feedback");
+
+    const trace = exportEpicTrace(epic.id);
+    expect(trace.feedback.active).toContain("active feedback");
+    expect(trace.feedback.resolved).toHaveLength(1);
+    expect(trace.feedback.resolved[0].filename).toMatch(/^feedback-resolved-/);
+    expect(trace.feedback.resolved[0].content).toContain("first round");
   });
 });
