@@ -86,9 +86,9 @@ HOW TO DISPATCH A SKILL AS AN AGENT:
    Context: {what changed and why this artifact needs updating}
    Output directory: docs/product/{slug}/
 
-   1. Read .claude/commands/{skill-name}.md and follow it
+   1. Read .claude/skills/{skill-name}/SKILL.md and follow it
    2. Write output to docs/product/{slug}/{filename}.md
-   3. Read .claude/commands/product-evaluate.md and evaluate your output
+   3. Read .claude/skills/product-evaluate/SKILL.md and evaluate your output
    4. If NEEDS-WORK or FAIL: revise and re-evaluate (max 2 rounds)
    5. Report: file path, final score"
 
@@ -150,7 +150,7 @@ STEP 1: INVENTORY
 
 STEP 2: EVALUATE ALL (5 parallel Agents)
   Dispatch 5 evaluate Agents in ONE message — one per research artifact.
-  Each agent reads .claude/commands/product-evaluate.md and scores its artifact.
+  Each agent reads .claude/skills/product-evaluate/SKILL.md and scores its artifact.
   Collect scores from all 5.
 
   Then dispatch evaluate agents for downstream artifacts in order:

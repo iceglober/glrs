@@ -32,8 +32,8 @@ The interview never happens. The PRD never gets built.
 
 THE FIX: Every non-interactive step dispatches an Agent tool call.
 - Agents run as subprocesses with their own context window.
-- Agents read the skill file from .claude/commands/ and follow it.
-- Agents self-evaluate using .claude/commands/product-evaluate.md.
+- Agents read the skill file from .claude/skills/ and follow it.
+- Agents self-evaluate using .claude/skills/product-evaluate/SKILL.md.
 - The main conversation stays clean for orchestration.
 
 DISPATCH RULES:
@@ -50,9 +50,9 @@ AGENT PROMPT TEMPLATE (adapt for each step):
    {paste the FULL blurb — every detail the user provided}
 
    ## Task
-   1. Read .claude/commands/{skill-name}.md and follow every instruction
+   1. Read .claude/skills/{skill-name}/SKILL.md and follow every instruction
    2. Write output to docs/product/{slug}/{output-file}.md
-   3. After writing, read .claude/commands/product-evaluate.md
+   3. After writing, read .claude/skills/product-evaluate/SKILL.md
    4. Evaluate your output against those criteria
    5. If NEEDS-WORK or FAIL: revise based on feedback, re-evaluate (max 2 rounds)
    6. Report back: file path, final score, any [USER] gaps found"
@@ -88,9 +88,9 @@ Agent 1 — Market:
    {full blurb}
 
    ## Task
-   1. Read .claude/commands/product-research-market.md and follow it
+   1. Read .claude/skills/product-research-market/SKILL.md and follow it
    2. Write output to docs/product/{slug}/research-market.md
-   3. Read .claude/commands/product-evaluate.md and evaluate your output
+   3. Read .claude/skills/product-evaluate/SKILL.md and evaluate your output
    4. If NEEDS-WORK or FAIL: revise and re-evaluate (max 2 rounds)
    5. Report: file path, final score, [USER] gaps"
 
@@ -133,10 +133,10 @@ Launch ONE agent:
  {full blurb}
 
  ## Task
- 1. Read .claude/commands/product-problem.md and follow it
+ 1. Read .claude/skills/product-problem/SKILL.md and follow it
  2. Read ALL docs/product/{slug}/research-*.md as inputs
  3. Write output to docs/product/{slug}/problem.md
- 4. Read .claude/commands/product-evaluate.md and evaluate
+ 4. Read .claude/skills/product-evaluate/SKILL.md and evaluate
  5. If NEEDS-WORK or FAIL: revise and re-evaluate (max 2 rounds)
  6. Report: file path, final score"
 \`\`\`
@@ -155,10 +155,10 @@ Agent A — Acceptance:
    {full blurb}
 
    ## Task
-   1. Read .claude/commands/product-acceptance.md and follow it
+   1. Read .claude/skills/product-acceptance/SKILL.md and follow it
    2. Read docs/product/{slug}/problem.md and research files as input
    3. Write output to docs/product/{slug}/acceptance.md
-   4. Read .claude/commands/product-evaluate.md and evaluate
+   4. Read .claude/skills/product-evaluate/SKILL.md and evaluate
    5. If NEEDS-WORK or FAIL: revise and re-evaluate (max 2 rounds)"
 
 Agent B — Engineering handoff:
@@ -168,10 +168,10 @@ Agent B — Engineering handoff:
    {full blurb}
 
    ## Task
-   1. Read .claude/commands/product-engineering-handoff.md and follow it
+   1. Read .claude/skills/product-engineering-handoff/SKILL.md and follow it
    2. Read docs/product/{slug}/problem.md and research files as input
    3. Write output to docs/product/{slug}/engineering-handoff.md
-   4. Read .claude/commands/product-evaluate.md and evaluate
+   4. Read .claude/skills/product-evaluate/SKILL.md and evaluate
    5. If NEEDS-WORK or FAIL: revise and re-evaluate (max 2 rounds)"
 \`\`\`
 
@@ -188,10 +188,10 @@ Launch ONE agent:
  {full blurb}
 
  ## Task
- 1. Read .claude/commands/product-requirements.md and follow it
+ 1. Read .claude/skills/product-requirements/SKILL.md and follow it
  2. Read ALL files in docs/product/{slug}/ as inputs
  3. Write output to docs/product/{slug}/prd.md
- 4. Read .claude/commands/product-evaluate.md and evaluate
+ 4. Read .claude/skills/product-evaluate/SKILL.md and evaluate
  5. If NEEDS-WORK or FAIL: revise and re-evaluate (max 2 rounds)"
 \`\`\`
 
@@ -276,7 +276,7 @@ DO NOT: Skip the interview — research covers domain, interview covers their sy
 | "I'll launch agents one at a time to be safe" | Parallel agents in ONE message. Sequential launch wastes 4x the time. |
 | "I'll run this step in the main conversation — it's small" | Every step in main conversation brings you closer to stalling. Agent tool. Always. |
 | "I'll evaluate separately after each agent returns" | Each agent self-evaluates. No separate evaluate step needed. |
-| "I should paste the skill content into the agent prompt" | Agents read .claude/commands/. Don't duplicate 100+ lines into prompts. |
+| "I should paste the skill content into the agent prompt" | Agents read .claude/skills/. Don't duplicate 100+ lines into prompts. |
 | "The interview can run as an agent" | Agents can't talk to users. Interview is Skill tool in main conversation. |
 | "Research looks good, I'll skip evaluation" | Your intuition is not a quality gate. Agents self-evaluate via product-evaluate.md. |
 | "I'll skip the interview — research is comprehensive" | Research covers domain. Interview covers their system, constraints, preferences. |

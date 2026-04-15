@@ -108,6 +108,7 @@ describe("e2e: gsag skills", () => {
     const m = manifest(env.projectClaude);
     expect(m.format).toBe("skills");
     expect(m.skills.length).toBeGreaterThan(0);
+    expect(m.commands.length).toBe(0);
 
     // Files in skills/ directory (v3 format)
     const skills = installedFiles(env.projectClaude, "skills");
