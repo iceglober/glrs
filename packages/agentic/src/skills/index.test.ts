@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { buildCommands, buildAllSkills, GS_SKILL_NAMES, BUILTIN_COLLISIONS, SKILLS, type SkillEntry } from "./index.js";
+import { buildCommands, buildAllSkills, GS_SKILL_NAMES, BUILTIN_COLLISIONS, SKILLS, enableModelInvocation, type SkillEntry } from "./index.js";
 import { gsThink } from "./gs-think.js";
 import { gsDeepPlan } from "./gs-deep-plan.js";
 import { gsBuild } from "./gs-build.js";
@@ -112,11 +112,12 @@ describe("buildCommands", () => {
     }
   });
 
-  test("all commands have disable-model-invocation: false in frontmatter", () => {
+  test("all commands have exactly one disable-model-invocation: false in frontmatter", () => {
     const cmds = buildCommands();
     for (const [key, content] of Object.entries(cmds)) {
       const frontmatter = content.split("---")[1];
       expect(frontmatter).toContain("disable-model-invocation: false");
+      expect(frontmatter).not.toContain("disable-model-invocation: true");
     }
   });
 });
@@ -198,6 +199,18 @@ describe("buildAllSkills", () => {
     }
   });
 
+  test("all SKILL.md values have exactly one disable-model-invocation: false in frontmatter", () => {
+    const skills = buildAllSkills();
+    const skillMdKeys = Object.keys(skills).filter((k) => k.endsWith("/SKILL.md"));
+    for (const key of skillMdKeys) {
+      const frontmatter = skills[key].split("---")[1];
+      expect(frontmatter).toContain("disable-model-invocation: false");
+      expect(frontmatter).not.toContain("disable-model-invocation: true");
+      const count = (frontmatter.match(/disable-model-invocation/g) || []).length;
+      expect(count).toBe(1);
+    }
+  });
+
   test("deprecated buildCommands still returns flat format", () => {
     const cmds = buildCommands();
     expect(cmds["think.md"]).toBeDefined();
@@ -257,5 +270,58 @@ describe("gs-* generators enhanced frontmatter", () => {
 
   test("gsAddressFeedback has no argument-hint", () => {
     expect(gsAddressFeedback()["SKILL.md"]).not.toContain("argument-hint");
+  });
+});
+
+describe("enableModelInvocation", () => {
+  test("replaces existing disable-model-invocation: true with false", () => {
+    const input = `---
+name: test
+disable-model-invocation: true
+---
+# Content`;
+    const result = enableModelInvocation(input);
+    expect(result).toContain("disable-model-invocation: false");
+    expect(result).not.toContain("disable-model-invocation: true");
+    // Exactly one occurrence
+    expect((result.match(/disable-model-invocation/g) || []).length).toBe(1);
+  });
+
+  test("appends when field is absent", () => {
+    const input = `---
+name: test
+description: no dmi field
+---
+# Content`;
+    const result = enableModelInvocation(input);
+    expect(result).toContain("disable-model-invocation: false");
+    expect((result.match(/disable-model-invocation/g) || []).length).toBe(1);
+  });
+
+  test("no-ops when already false", () => {
+    const input = `---
+name: test
+disable-model-invocation: false
+---
+# Content`;
+    const result = enableModelInvocation(input);
+    expect(result).toBe(input);
+  });
+
+  test("is idempotent (applying twice gives same result)", () => {
+    const input = `---
+name: test
+disable-model-invocation: true
+---
+# Content`;
+    const once = enableModelInvocation(input);
+    const twice = enableModelInvocation(once);
+    expect(twice).toBe(once);
+  });
+
+  test("returns content unchanged when no frontmatter", () => {
+    const input = "# No frontmatter here";
+    const result = enableModelInvocation(input);
+    expect(result).toBe(input);
   });
 });
