@@ -110,7 +110,15 @@ export const scaffoldClaudeHooks = command({
       }
     }
 
-    const updated = { ...existing, ...merged };
+    // Deep-merge hooks key to preserve existing hooks from other tools
+    let updated: Record<string, unknown>;
+    if (existing.hooks && typeof existing.hooks === "object" && !Array.isArray(existing.hooks)) {
+      const existingHookConfig = { hooks: existing.hooks } as ClaudeHookConfig;
+      const deepMerged = mergeHookConfigs(existingHookConfig, merged);
+      updated = { ...existing, ...deepMerged };
+    } else {
+      updated = { ...existing, ...merged };
+    }
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.writeFileSync(settingsPath, JSON.stringify(updated, null, 2) + "\n");
     ok(`wrote hooks to ${path.relative(root, settingsPath)}`);
