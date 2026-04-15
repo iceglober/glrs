@@ -1,18 +1,19 @@
 /**
  * E2E tests for `gsag skills` install lifecycle.
  *
- * These run inside a Docker container against the real built binary,
- * exercising every install state: fresh, re-install, update, corrupt,
- * partial, scope-switch, force, and prefix.
+ * These run against the real built binary, exercising every install state:
+ * fresh, re-install, update, corrupt, partial, scope-switch, force, and prefix.
  *
  * Each test gets an isolated temp directory simulating a git repo with
  * its own .claude/ and a fake $HOME with its own ~/.claude/.
+ *
+ * v3 skills format: all files go to .claude/skills/<name>/SKILL.md
  */
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 import { execSync, spawnSync } from "node:child_process";
-import { COMMANDS } from "../src/skills/index.js";
+import { buildAllSkills } from "../src/skills/index.js";
 
 const CLI = path.resolve(import.meta.dir, "../dist/index.js");
 
@@ -73,7 +74,7 @@ function run(env: Env, flags: string = ""): string {
   });
 }
 
-function manifest(claudeDir: string): { commands: string[]; skills: string[] } {
+function manifest(claudeDir: string): { commands: string[]; skills: string[]; format?: string } {
   const p = path.join(claudeDir, ".glorious-skills.json");
   if (!fs.existsSync(p)) return { commands: [], skills: [] };
   return JSON.parse(fs.readFileSync(p, "utf-8"));
@@ -103,19 +104,17 @@ describe("e2e: gsag skills", () => {
     expect(out).toContain("created");
     expect(out).toContain(".claude/");
 
-    // Manifest exists
+    // Manifest exists with skills format
     const m = manifest(env.projectClaude);
-    expect(m.commands.length).toBeGreaterThan(0);
+    expect(m.format).toBe("skills");
     expect(m.skills.length).toBeGreaterThan(0);
 
-    // Files actually on disk
-    const cmds = installedFiles(env.projectClaude, "commands");
-    expect(cmds).toContain("work.md");
-    expect(cmds).toContain("think.md");
-    expect(cmds).toContain("ship.md");
-
+    // Files in skills/ directory (v3 format)
     const skills = installedFiles(env.projectClaude, "skills");
-    expect(skills).toContain("browser.md");
+    expect(skills).toContain(path.join("work", "SKILL.md"));
+    expect(skills).toContain(path.join("think", "SKILL.md"));
+    expect(skills).toContain(path.join("ship", "SKILL.md"));
+    expect(skills).toContain(path.join("browser", "SKILL.md"));
   });
 
   test("fresh install to user scope creates files in HOME", () => {
@@ -124,10 +123,11 @@ describe("e2e: gsag skills", () => {
     expect(out).toContain("~/.claude/");
 
     const m = manifest(env.userClaude);
-    expect(m.commands.length).toBeGreaterThan(0);
+    expect(m.format).toBe("skills");
+    expect(m.skills.length).toBeGreaterThan(0);
 
-    const cmds = installedFiles(env.userClaude, "commands");
-    expect(cmds).toContain("work.md");
+    const skills = installedFiles(env.userClaude, "skills");
+    expect(skills).toContain(path.join("work", "SKILL.md"));
   });
 
   // --- Re-install (idempotent) ---
@@ -143,8 +143,8 @@ describe("e2e: gsag skills", () => {
   test("re-install repairs a tampered file", () => {
     run(env, "--project");
 
-    // Tamper with a file
-    const workPath = path.join(env.projectClaude, "commands", "work.md");
+    // Tamper with a skill file
+    const workPath = path.join(env.projectClaude, "skills", "work", "SKILL.md");
     fs.writeFileSync(workPath, "corrupted content");
 
     const out = run(env, "--project");
@@ -152,32 +152,32 @@ describe("e2e: gsag skills", () => {
 
     // File is repaired to exact source content
     const content = fs.readFileSync(workPath, "utf-8");
-    expect(content).toBe(COMMANDS["work.md"]);
+    const expected = buildAllSkills();
+    expect(content).toBe(expected["work/SKILL.md"]);
   });
 
   test("re-install after skill set change removes stale and adds new", () => {
     run(env, "--project");
 
-    // Simulate a previous version that had an extra command
+    // Simulate a previous version that had an extra skill
     const m = manifest(env.projectClaude);
-    const fakeOldCmd = "deprecated-old-cmd.md";
-    m.commands.push(fakeOldCmd);
+    const fakeOldSkill = "deprecated-old-skill/SKILL.md";
+    m.skills.push(fakeOldSkill);
     fs.writeFileSync(
       path.join(env.projectClaude, ".glorious-skills.json"),
       JSON.stringify(m, null, 2) + "\n",
     );
     // Create the stale file on disk
-    fs.writeFileSync(
-      path.join(env.projectClaude, "commands", fakeOldCmd),
-      "# old command",
-    );
+    const staleDir = path.join(env.projectClaude, "skills", "deprecated-old-skill");
+    fs.mkdirSync(staleDir, { recursive: true });
+    fs.writeFileSync(path.join(staleDir, "SKILL.md"), "# old skill");
 
     const out = run(env, "--project");
     expect(out).toContain("removed");
 
     // Stale file gone
     expect(
-      fs.existsSync(path.join(env.projectClaude, "commands", fakeOldCmd)),
+      fs.existsSync(path.join(staleDir, "SKILL.md")),
     ).toBe(false);
   });
 
@@ -199,7 +199,7 @@ describe("e2e: gsag skills", () => {
 
     // Manifest is now valid again
     const m = manifest(env.projectClaude);
-    expect(m.commands.length).toBeGreaterThan(0);
+    expect(m.skills.length).toBeGreaterThan(0);
   });
 
   test("missing manifest with existing files still installs cleanly", () => {
@@ -231,25 +231,25 @@ describe("e2e: gsag skills", () => {
     expect(out).toContain("all skills up to date");
 
     const m = manifest(env.projectClaude);
-    expect(m.commands.length).toBeGreaterThan(0);
+    expect(m.skills.length).toBeGreaterThan(0);
   });
 
   // --- Partial install (simulating crash mid-install) ---
 
   test("partial install (some files, no manifest) repairs on next run", () => {
-    // Manually create just one command file, no manifest
-    const cmdDir = path.join(env.projectClaude, "commands");
-    fs.mkdirSync(cmdDir, { recursive: true });
-    fs.writeFileSync(path.join(cmdDir, "work.md"), "partial content");
+    // Manually create just one skill file, no manifest
+    const skillDir = path.join(env.projectClaude, "skills", "work");
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, "SKILL.md"), "partial content");
 
     const out = run(env, "--project");
-    // work.md had wrong content → updated; rest → created
+    // work/SKILL.md had wrong content → updated; rest → created
     expect(out).toContain("created");
     expect(out).toContain("updated");
 
     // Manifest now exists
     const m = manifest(env.projectClaude);
-    expect(m.commands.length).toBeGreaterThan(0);
+    expect(m.skills.length).toBeGreaterThan(0);
   });
 
   // --- Scope independence ---
@@ -261,12 +261,12 @@ describe("e2e: gsag skills", () => {
     // Both have manifests
     const pm = manifest(env.projectClaude);
     const um = manifest(env.userClaude);
-    expect(pm.commands.length).toBeGreaterThan(0);
-    expect(um.commands.length).toBeGreaterThan(0);
+    expect(pm.skills.length).toBeGreaterThan(0);
+    expect(um.skills.length).toBeGreaterThan(0);
 
     // Modifying one doesn't affect the other
-    const projectWork = path.join(env.projectClaude, "commands", "work.md");
-    const userWork = path.join(env.userClaude, "commands", "work.md");
+    const projectWork = path.join(env.projectClaude, "skills", "work", "SKILL.md");
+    const userWork = path.join(env.userClaude, "skills", "work", "SKILL.md");
     fs.writeFileSync(projectWork, "tampered");
 
     run(env, "--project");
@@ -283,7 +283,7 @@ describe("e2e: gsag skills", () => {
   test("--force overwrites even when content matches", () => {
     run(env, "--project");
     // Get mtime of a file
-    const workPath = path.join(env.projectClaude, "commands", "work.md");
+    const workPath = path.join(env.projectClaude, "skills", "work", "SKILL.md");
     const mtime1 = fs.statSync(workPath).mtimeMs;
 
     // Small delay to ensure mtime changes
@@ -301,14 +301,14 @@ describe("e2e: gsag skills", () => {
   test("--prefix gs- installs with gs- prefixed names", () => {
     run(env, "--project --prefix gs-");
 
-    const cmds = installedFiles(env.projectClaude, "commands");
-    // gs-* skills should have gs- prefix
-    expect(cmds).toContain("gs-work.md");
-    expect(cmds).toContain("gs-think.md");
-    expect(cmds).toContain("gs-ship.md");
+    const skills = installedFiles(env.projectClaude, "skills");
+    // gs-* skills should have gs- prefix in directory name
+    expect(skills).toContain(path.join("gs-work", "SKILL.md"));
+    expect(skills).toContain(path.join("gs-think", "SKILL.md"));
+    expect(skills).toContain(path.join("gs-ship", "SKILL.md"));
     // Non-gs skills unchanged
-    expect(cmds).toContain("research.md");
-    expect(cmds).toContain("spec-make.md");
+    expect(skills).toContain(path.join("research", "SKILL.md"));
+    expect(skills).toContain(path.join("spec-make", "SKILL.md"));
   });
 
   // --- Non-TTY fallback ---
@@ -398,10 +398,10 @@ describe("e2e: autoSyncSkills", () => {
     expect(stderr).toContain("skills synced");
     // User scope manifest created
     const m = manifest(env.userClaude);
-    expect(m.commands.length).toBeGreaterThan(0);
+    expect(m.skills.length).toBeGreaterThan(0);
     // Files on disk
-    const cmds = installedFiles(env.userClaude, "commands");
-    expect(cmds).toContain("work.md");
+    const skills = installedFiles(env.userClaude, "skills");
+    expect(skills).toContain(path.join("work", "SKILL.md"));
   });
 
   test("does not auto-install when skills.auto-update is false", () => {
@@ -489,7 +489,7 @@ describe("e2e: autoSyncSkills", () => {
     expect(m2.prefix).toBe("gs-");
 
     // Files still have gs- prefix
-    const cmds = installedFiles(env.userClaude, "commands");
-    expect(cmds).toContain("gs-work.md");
+    const skills = installedFiles(env.userClaude, "skills");
+    expect(skills).toContain(path.join("gs-work", "SKILL.md"));
   });
 });
