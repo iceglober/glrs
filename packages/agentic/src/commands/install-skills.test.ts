@@ -785,3 +785,66 @@ describe("testTriggers", () => {
     expect(result.passed).toBe(true);
   });
 });
+
+// ── Path traversal guard tests ────────────────────────────────────────
+
+describe("path traversal guard", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gs-traversal-test-"));
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  test("installFiles throws on path traversal key", () => {
+    const plan: InstallPlan = {
+      claudeDir: tmpDir,
+      commands: {},
+      skills: { "../../etc/passwd": "malicious content" },
+      previousManifest: { commands: [], skills: [] },
+      prefix: undefined,
+      format: "skills",
+      force: false,
+      collisions: [],
+      scope: "project",
+    };
+    expect(() => executeInstall(plan)).toThrow("Path traversal detected");
+  });
+
+  test("installFiles allows nested directory paths", () => {
+    const plan: InstallPlan = {
+      claudeDir: tmpDir,
+      commands: {},
+      skills: { "deep-review/references/agent-prompts.md": "# Prompts" },
+      previousManifest: { commands: [], skills: [] },
+      prefix: undefined,
+      format: "skills",
+      force: false,
+      collisions: [],
+      scope: "project",
+    };
+    const result = executeInstall(plan);
+    expect(result.created).toBe(1);
+    expect(fs.existsSync(path.join(tmpDir, "skills", "deep-review", "references", "agent-prompts.md"))).toBe(true);
+  });
+
+  test("installFiles allows standard SKILL.md paths", () => {
+    const plan: InstallPlan = {
+      claudeDir: tmpDir,
+      commands: {},
+      skills: { "think/SKILL.md": "---\nname: think\n---\n# Think" },
+      previousManifest: { commands: [], skills: [] },
+      prefix: undefined,
+      format: "skills",
+      force: false,
+      collisions: [],
+      scope: "project",
+    };
+    const result = executeInstall(plan);
+    expect(result.created).toBe(1);
+    expect(fs.existsSync(path.join(tmpDir, "skills", "think", "SKILL.md"))).toBe(true);
+  });
+});

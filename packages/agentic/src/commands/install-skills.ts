@@ -230,24 +230,28 @@ export function executeInstall(plan: InstallPlan): InstallResult {
   // old flat skill files (e.g., "browser.md") won't match new directory paths
   // (e.g., "browser/SKILL.md"). Explicitly remove orphaned flat files.
   if (plan.format === "skills" && plan.previousManifest.format !== "skills") {
+    let migrateRemoved = 0;
     for (const oldSkill of plan.previousManifest.skills) {
       // Only clean up flat files (no "/" = old format); directory entries are handled above
       if (!oldSkill.includes("/")) {
         const dest = path.join(skillsDir, oldSkill);
+        if (!path.resolve(dest).startsWith(path.resolve(skillsDir))) continue; // traversal guard
         if (fs.existsSync(dest)) {
           fs.unlinkSync(dest);
-          skillRemoved++;
+          migrateRemoved++;
         }
       }
     }
     // Also clean up old commands dir files during migration
     for (const oldCmd of plan.previousManifest.commands) {
       const dest = path.join(commandsDir, oldCmd);
+      if (!path.resolve(dest).startsWith(path.resolve(commandsDir))) continue; // traversal guard
       if (fs.existsSync(dest)) {
         fs.unlinkSync(dest);
-        skillRemoved++;
+        migrateRemoved++;
       }
     }
+    skillRemoved += migrateRemoved;
   }
 
   // Install files
