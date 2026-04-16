@@ -11,6 +11,8 @@ import { gsQa } from "./gs-qa.js";
 import { gsFix } from "./gs-fix.js";
 import { gsWork } from "./gs-work.js";
 import { gsShip } from "./gs-ship.js";
+import { gsPlanLoop } from "./gs-plan-loop.js";
+import { gsAutoLoop } from "./gs-auto-loop.js";
 
 /** Helper to extract SKILL.md content from a generator that returns SkillEntry */
 function md(gen: () => Record<string, string>): string {
@@ -103,7 +105,7 @@ describe("cross-references use canonical names", () => {
   });
 
   test("no skill uses text-based slash command handoff", () => {
-    const skills = [gs, gsThink, gsDeepPlan, gsDeepReview, gsQuickReview, gsBuild, gsBuildLoop, gsAddressFeedback, gsQa, gsFix, gsWork, gsShip];
+    const skills = [gs, gsThink, gsDeepPlan, gsDeepReview, gsQuickReview, gsBuild, gsBuildLoop, gsAddressFeedback, gsQa, gsFix, gsWork, gsShip, gsPlanLoop, gsAutoLoop];
     for (const skill of skills) {
       const output = md(skill);
       const matches = output.match(/respond with exactly [`']?\/\w/g);
@@ -114,7 +116,7 @@ describe("cross-references use canonical names", () => {
   });
 
   test("no skill file contains /gs- slash command references (except gs-agentic CLI)", () => {
-    const skills = [gs, gsThink, gsDeepPlan, gsDeepReview, gsQuickReview, gsBuild, gsBuildLoop, gsAddressFeedback, gsQa, gsFix, gsWork, gsShip];
+    const skills = [gs, gsThink, gsDeepPlan, gsDeepReview, gsQuickReview, gsBuild, gsBuildLoop, gsAddressFeedback, gsQa, gsFix, gsWork, gsShip, gsPlanLoop, gsAutoLoop];
     for (const skill of skills) {
       const output = md(skill);
       // Find all /gs- references that aren't gs-agentic CLI calls
@@ -141,6 +143,8 @@ describe("cross-references use canonical names", () => {
     { name: "gs-work", fn: gsWork },
     { name: "gs-qa", fn: gsQa },
     { name: "gs-ship", fn: gsShip },
+    { name: "gs-plan-loop", fn: gsPlanLoop },
+    { name: "gs-auto-loop", fn: gsAutoLoop },
   ];
 
   test("all handoff skills contain HANDOFF_RULE", () => {

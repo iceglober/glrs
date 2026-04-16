@@ -43,6 +43,7 @@ import { gsDeepReview } from "./gs-deep-review.js";
 import { gsQuickReview } from "./gs-quick-review.js";
 import { gsAddressFeedback } from "./gs-address-feedback.js";
 import { gsPlanLoop } from "./gs-plan-loop.js";
+import { gsAutoLoop } from "./gs-auto-loop.js";
 import { gs } from "./gs.js";
 
 /**
@@ -86,6 +87,10 @@ export const GS_SKILL_NAMES: Record<
   "gs-plan-loop": {
     canonical: "plan-loop.md",
     generator: gsPlanLoop,
+  },
+  "gs-auto-loop": {
+    canonical: "auto-loop.md",
+    generator: gsAutoLoop,
   },
 };
 
