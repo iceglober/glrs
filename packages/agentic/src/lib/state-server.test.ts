@@ -294,4 +294,84 @@ describe("state server", () => {
     expect(Array.isArray(json.recentTransitions)).toBe(true);
     expect(json.recentTransitions.length).toBeGreaterThan(0);
   });
+
+  // --- POST /api/task ---
+
+  test("POST /api/task creates task with title", async () => {
+    const s = await start();
+    const res = await fetch(s.url + "/api/task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Build KPI dashboard" }),
+    });
+    expect(res.status).toBe(201);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const json = await res.json() as any;
+    expect(json.id).toBeDefined();
+    expect(json.title).toBe("Build KPI dashboard");
+    expect(json.phase).toBe("understand");
+  });
+
+  test("POST /api/task with description", async () => {
+    const s = await start();
+    const res = await fetch(s.url + "/api/task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Fix bug", description: "Login page crashes" }),
+    });
+    expect(res.status).toBe(201);
+    const json = await res.json() as any;
+    expect(json.title).toBe("Fix bug");
+    expect(json.description).toBe("Login page crashes");
+  });
+
+  test("POST /api/task with empty title returns 400", async () => {
+    const s = await start();
+    const res = await fetch(s.url + "/api/task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "" }),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json() as any;
+    expect(json.error).toContain("title");
+  });
+
+  test("POST /api/task with missing title returns 400", async () => {
+    const s = await start();
+    const res = await fetch(s.url + "/api/task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: "no title" }),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json() as any;
+    expect(json.error).toContain("title");
+  });
+
+  test("POST /api/task with invalid JSON returns 400", async () => {
+    const s = await start();
+    const res = await fetch(s.url + "/api/task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "NOT JSON {{{",
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json() as any;
+    expect(json.error).toBeDefined();
+  });
+
+  test("POST /api/task created task appears in GET /api/state", async () => {
+    const s = await start();
+    await fetch(s.url + "/api/task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "New work request" }),
+    });
+    const res = await fetch(s.url + "/api/state");
+    const json = await res.json() as any;
+    expect(json.standalone.length).toBe(1);
+    expect(json.standalone[0].title).toBe("New work request");
+    expect(json.standalone[0].phase).toBe("understand");
+  });
 });
