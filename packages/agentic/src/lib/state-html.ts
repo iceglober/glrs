@@ -385,6 +385,45 @@ export function renderStatePage(serverPort: number, opts?: { all?: boolean }): s
   .shortcut-row { display: flex; justify-content: space-between; padding: 0.3rem 0; font-size: 0.85rem; }
   .shortcut-key { font-family: monospace; color: var(--accent); }
   h2 { font-size: 1.2rem; margin-bottom: 0.5rem; font-weight: 600; }
+  .submit-form { margin-bottom: 1.25rem; }
+  .submit-textarea {
+    width: 100%;
+    min-height: 60px;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.85rem;
+    resize: vertical;
+    outline: none;
+  }
+  .submit-textarea:focus { border-color: var(--accent); }
+  .submit-textarea::placeholder { color: var(--text-dim); }
+  .submit-btn {
+    margin-top: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .submit-btn:hover { opacity: 0.9; }
+  .submit-btn:disabled { opacity: 0.4; cursor: default; }
+  .verify-badge {
+    display: inline-block;
+    padding: 0.1rem 0.4rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.65rem;
+    font-weight: 600;
+    background: hsla(25,65%,60%,0.2);
+    color: var(--phase-verify);
+    margin-left: 0.25rem;
+  }
 </style>
 </head>
 <body>
@@ -602,6 +641,7 @@ function App() {
                 standalone=\${standalone}
                 transitions=\${transitions}
                 onSelectEpic=\${selectEpic}
+                onRefresh=\${fetchData}
               />\`
           }
         </div>
@@ -737,9 +777,54 @@ function EpicNavItem({ epic, selected, onClick }) {
   \`;
 }
 
+// ── Submit Form ──────────────────────────────────────────────────
+
+function SubmitForm({ onCreated }) {
+  const [text, setText] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+
+  const handleSubmit = async () => {
+    const trimmed = text.trim();
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    try {
+      const lines = trimmed.split("\\n");
+      const title = lines[0];
+      const description = lines.slice(1).join("\\n").trim();
+      const body = { title };
+      if (description) body.description = description;
+      const res = await fetch(API + "/api/task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setText("");
+        if (onCreated) onCreated();
+      }
+    } catch {}
+    setSubmitting(false);
+  };
+
+  return h\`
+    <div class="submit-form">
+      <textarea
+        class="submit-textarea"
+        placeholder="Describe work to be done... (first line = title)"
+        value=\${text}
+        onInput=\${(e) => setText(e.target.value)}
+        onKeyDown=\${(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit(); }}
+      />
+      <button class="submit-btn" onClick=\${handleSubmit} disabled=\${submitting || !text.trim()}>
+        \${submitting ? "Submitting..." : "Submit"}
+      </button>
+    </div>
+  \`;
+}
+
 // ── Dashboard View ────────────────────────────────────────────────
 
-function DashboardView({ epics, standalone, transitions, onSelectEpic }) {
+function DashboardView({ epics, standalone, transitions, onSelectEpic, onRefresh }) {
   const active = epics.filter(e => {
     const p = e.derivedPhase || e.phase;
     return p !== "done" && p !== "cancelled";
@@ -760,6 +845,7 @@ function DashboardView({ epics, standalone, transitions, onSelectEpic }) {
 
   return h\`
     <div>
+      <\${SubmitForm} onCreated=\${onRefresh} />
       \${active.length > 0 && h\`
         <div class="section-heading">Active Epics</div>
         \${active.map(epic => h\`<\${EpicRow} key=\${epic.id} epic=\${epic} onClick=\${() => onSelectEpic(epic.id)} />\`)}
@@ -890,6 +976,7 @@ function TaskRow({ task, selected, onClick, dimmed }) {
       <\${PhasePill} phase=\${task.phase} />
       <span class="task-row-id">\${task.id}</span>
       <span class="task-row-title">\${task.title}</span>
+      \${task.phase === "verify" && h\`<span class="verify-badge">awaiting review</span>\`}
       \${task.claimedBy && h\`<span class="claim-tag">\${task.claimedBy}</span>\`}
       \${task.branch && h\`<span class="task-row-branch">\${task.branch}</span>\`}
       \${task.pr && h\`<a class="task-row-pr" href=\${task.pr} target="_blank" onClick=\${(e) => e.stopPropagation()} style=\${{color:"var(--phase-done)"}}>PR</a>\`}

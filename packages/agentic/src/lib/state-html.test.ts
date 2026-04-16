@@ -287,4 +287,31 @@ describe("renderStatePage", () => {
     const html = renderStatePage(3000, { all: true });
     expect(html).toContain("repoName");
   });
+
+  // SubmitForm component
+  test("contains SubmitForm component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("SubmitForm");
+  });
+
+  test("submit form has textarea", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("submit-textarea");
+  });
+
+  test("submit form has submit button", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("submit-btn");
+  });
+
+  test("submit form POSTs to /api/task", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("/api/task");
+    expect(html).toContain("POST");
+  });
+
+  test("verify badge class defined", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("verify-badge");
+  });
 });
