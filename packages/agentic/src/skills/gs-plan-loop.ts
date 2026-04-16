@@ -22,7 +22,7 @@ ${AUTO_PREAMBLE}
 ## Step 1: Find unplanned work requests
 
 \`\`\`bash
-gs-agentic state task list --phase understand --format agent
+gs-agentic state task list --phase understand --json
 \`\`\`
 
 Filter the results for tasks that are:
@@ -33,13 +33,14 @@ If no matching tasks found: report "No pending work requests — waiting for sub
 
 ## Step 2: Claim the work request
 
-Pick the first unclaimed standalone \`understand\` task and claim it:
+Pick the first unclaimed standalone \`understand\` task and transition it to \`design\`:
 
 \`\`\`bash
-gs-agentic state task transition --id <task-id> --phase design --claim plan-loop --actor plan-loop
+gs-agentic state task transition --id <task-id> --phase design --actor plan-loop
 \`\`\`
 
-If the claim fails (another agent claimed it first), go back to Step 1 and try the next one.
+This atomically moves the task out of \`understand\`, so other plan-loop agents won't pick it up.
+If the transition fails (already transitioned by another agent), go back to Step 1 and try the next one.
 
 Read the task's title and description — these are the user's work request prompt.
 
@@ -66,7 +67,7 @@ RULES:
    \`gs-agentic state task note --id <task-id> --body "Planned as epic <epic-id>"\`
 6. Report: "Work request <task-id> planned as <epic-id> with N tasks."
 7. Check for more work requests:
-   \`gs-agentic state task list --phase understand --format agent\`
+   \`gs-agentic state task list --phase understand --json\`
    If there are more unclaimed standalone tasks, claim the next one and repeat from step 1.
    If none remain, report "All work requests planned." and stop.
 \`\`\`

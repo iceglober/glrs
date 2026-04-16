@@ -28,10 +28,10 @@ If \`$ARGUMENTS\` contains an epic ID (e.g. \`e1\`, \`e2\`):
 
 ### Option B: Auto-detect
 
-1. Run \`gs-agentic state task current --format agent\` to find the current task.
+1. Run \`gs-agentic state task current --json\` to find the current task.
 2. If a task is found with an \`epic\` field → use that epic ID.
 3. If no task found:
-   - Run \`gs-agentic state epic list --format agent\` — if exactly one active epic exists, use it.
+   - Run \`gs-agentic state epic list --json\` — if exactly one active epic exists, use it.
    - If no epic found → report "No active epics. Submit work via the dashboard or run /deep-plan first." and stop.
 
 ## Step 2: Claim and execute
@@ -48,7 +48,7 @@ Read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
 ### Find and claim the next task
 
 \`\`\`bash
-gs-agentic state task next --epic <epic-id> --claim auto-loop --format agent --with-spec
+gs-agentic state task next --epic <epic-id> --claim auto-loop --json --with-spec
 \`\`\`
 
 - If exit code 1 (no ready tasks): check if all tasks are done or in verify. Report "All tasks complete or awaiting review." and stop.
@@ -65,7 +65,7 @@ TASK: <task-id> — "<task-title>"
 EPIC: <epic-id>
 
 RULES:
-1. Run \`gs-agentic state task show --id <task-id> --format agent --with-spec\` to get full details.
+1. Run \`gs-agentic state task show --id <task-id> --json --with-spec\` to get full details.
 2. If the task has a plan, read it: \`gs-agentic state plan show --id <task-id>\`
 3. Read the epic plan for overall context: \`gs-agentic state plan show --id <epic-id>\`
 4. Find the matching step in the plan — read ALL files listed in that step.
@@ -79,7 +79,7 @@ IMPLEMENT:
 10. If still failing after 2 retries:
     - Add note: \`gs-agentic state task note --id <task-id> --body "FAILED: <error summary>"\`
     - Cancel task: \`gs-agentic state task transition --id <task-id> --phase cancelled --actor auto-loop\`
-    - Claim next: \`gs-agentic state task next --epic <epic-id> --claim auto-loop --format agent --with-spec\`
+    - Claim next: \`gs-agentic state task next --epic <epic-id> --claim auto-loop --json --with-spec\`
     - If next task exists, repeat from step 1. Otherwise stop.
 
 REVIEW:
@@ -102,7 +102,7 @@ COMPLETE:
     \`gs-agentic state task transition --id <task-id> --phase verify --actor auto-loop\`
 16. Commit all changes: \`<task title>\`
 17. Claim next task:
-    \`gs-agentic state task next --epic <epic-id> --claim auto-loop --format agent --with-spec\`
+    \`gs-agentic state task next --epic <epic-id> --claim auto-loop --json --with-spec\`
 18. If next task exists, repeat from step 1 with the new task.
 19. If no tasks remain: report progress and stop.
     \`gs-agentic status --compact --epic <epic-id>\`

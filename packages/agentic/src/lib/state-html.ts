@@ -545,7 +545,7 @@ function App() {
   // Keyboard navigation
   React.useEffect(() => {
     const handler = (e) => {
-      if (e.target.tagName === "INPUT") return;
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
       if (e.key === "?") { setShowShortcuts(prev => !prev); e.preventDefault(); }
       if (e.key === "Escape") {
         if (showShortcuts) setShowShortcuts(false);

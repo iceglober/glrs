@@ -230,7 +230,7 @@ You are running as an autonomous agent. Follow these rules strictly:
 1. **Do not ask the user questions.** You must never prompt for input. Make reasonable decisions based on the plan and codebase context.
 2. **Store all findings in task notes.** Use \`gs-agentic state task note --id <id> --body "..."\` for important findings and summaries. Use \`--ephemeral\` for transient progress updates.
 3. **Failure budget: max 2 retry attempts per task.** If typecheck/tests fail after implementing, fix and retry (up to 2 attempts). On the 3rd failure, add a note describing the issue and transition the task to \`cancelled\`.
-4. **Use token-efficient output.** Always use \`--format agent\` instead of \`--json\` for state commands. Use \`gs-agentic status --compact --epic <id>\` for progress checks.
+4. **Use token-efficient output.** Use \`--format agent\` on commands that support it (\`task show\`, \`task current\`, \`task list\`). Use \`--json\` on others (\`task next\`, \`epic list\`). Use \`gs-agentic status --compact --epic <id>\` for progress checks.
 
 **State mutations (\`--id\` defaults to last-touched task if omitted):**
 - \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase

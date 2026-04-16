@@ -21,8 +21,8 @@ describe("gs-plan-loop skill", () => {
     expect(content).toContain("--phase understand");
   });
 
-  test("references --claim plan-loop", () => {
-    expect(content).toContain("--claim plan-loop");
+  test("references --actor plan-loop for claiming", () => {
+    expect(content).toContain("--actor plan-loop");
   });
 
   test("invokes /loop", () => {
