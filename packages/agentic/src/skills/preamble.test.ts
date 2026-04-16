@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { READONLY_PREAMBLE, TASK_PREAMBLE, REVIEW_PREAMBLE, BUILD_PREAMBLE, HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
+import { READONLY_PREAMBLE, TASK_PREAMBLE, REVIEW_PREAMBLE, BUILD_PREAMBLE, AUTO_PREAMBLE, HANDOFF_RULE, buildHandoffBlock } from "./preamble.js";
 
 describe("TASK_PREAMBLE", () => {
   test("contains plan sync recipe with ref format", () => {
@@ -45,9 +45,52 @@ describe("READONLY_PREAMBLE", () => {
   });
 });
 
+describe("AUTO_PREAMBLE", () => {
+  test("contains task lookup command", () => {
+    expect(AUTO_PREAMBLE).toContain("gs-agentic state task");
+  });
+
+  test("contains autonomous directive", () => {
+    expect(AUTO_PREAMBLE).toContain("autonomous");
+  });
+
+  test("contains no-question rule", () => {
+    expect(AUTO_PREAMBLE).toMatch(/do not.*(ask|AskUserQuestion)/i);
+  });
+
+  test("contains note storage directive", () => {
+    expect(AUTO_PREAMBLE).toContain("task note");
+  });
+
+  test("contains --claim mutations", () => {
+    expect(AUTO_PREAMBLE).toContain("--claim");
+  });
+
+  test("contains --format agent directive", () => {
+    expect(AUTO_PREAMBLE).toContain("--format agent");
+  });
+
+  test("contains --compact directive", () => {
+    expect(AUTO_PREAMBLE).toContain("--compact");
+  });
+
+  test("contains failure budget", () => {
+    expect(AUTO_PREAMBLE).toMatch(/retr(y|ies)|attempt/i);
+  });
+
+  test("does not contain HANDOFF_RULE or AskUserQuestion", () => {
+    expect(AUTO_PREAMBLE).not.toContain("Skill Handoff Rule");
+    expect(AUTO_PREAMBLE).not.toContain("AskUserQuestion");
+  });
+
+  test("does not contain READONLY markers", () => {
+    expect(AUTO_PREAMBLE).not.toContain("must not modify");
+  });
+});
+
 describe("all preambles reference gs-agentic state", () => {
   test("each preamble mentions gs-agentic state", () => {
-    for (const preamble of [READONLY_PREAMBLE, TASK_PREAMBLE, REVIEW_PREAMBLE, BUILD_PREAMBLE]) {
+    for (const preamble of [READONLY_PREAMBLE, TASK_PREAMBLE, REVIEW_PREAMBLE, BUILD_PREAMBLE, AUTO_PREAMBLE]) {
       expect(preamble).toContain("gs-agentic state");
     }
   });

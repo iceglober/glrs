@@ -9,8 +9,8 @@ import { gsShip } from "./gs-ship.js";
 import { gsBuildLoop } from "./gs-build-loop.js";
 
 describe("GS_SKILL_NAMES", () => {
-  test("has entry for every gs skill (12 total)", () => {
-    expect(Object.keys(GS_SKILL_NAMES).length).toBe(12);
+  test("has entry for every gs skill (14 total)", () => {
+    expect(Object.keys(GS_SKILL_NAMES).length).toBe(14);
   });
 
   test("contains all expected skill keys", () => {

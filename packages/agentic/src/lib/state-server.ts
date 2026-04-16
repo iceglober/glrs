@@ -10,6 +10,7 @@ import {
   stateSummary,
   listRecentTransitions,
   listReviewItems,
+  createTask,
   type Task,
 } from "./state.js";
 
@@ -27,7 +28,7 @@ export function startStateServer(opts?: {
     const port = opts?.port ?? 0;
     let cachedHtml: string | null = null;
 
-    const server = http.createServer((req, res) => {
+    const server = http.createServer(async (req, res) => {
       try {
         if (req.method === "GET" && req.url === "/") {
           if (!cachedHtml) {
@@ -84,6 +85,32 @@ export function startStateServer(opts?: {
           }
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ content }));
+          return;
+        }
+
+        // POST /api/task — create a new task (web submission)
+        if (req.method === "POST" && req.url === "/api/task") {
+          let data: any;
+          try {
+            data = await parseBody(req);
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Invalid request body" }));
+            return;
+          }
+          if (!data.title || typeof data.title !== "string" || data.title.trim() === "") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "title is required" }));
+            return;
+          }
+          const task = createTask({
+            title: data.title.trim(),
+            description: typeof data.description === "string" ? data.description.trim() : undefined,
+            phase: "understand",
+            actor: "web",
+          });
+          res.writeHead(201, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ id: task.id, title: task.title, description: task.description, phase: task.phase }));
           return;
         }
 
@@ -163,6 +190,30 @@ function buildStatePayload(opts?: { all?: boolean }) {
     standalone: allTasks.filter((t) => !t.epic).map((t) => enrichTask(t)),
     recentTransitions,
   };
+}
+
+function parseBody(req: http.IncomingMessage, maxSize: number = 1024 * 1024): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    let exceeded = false;
+    req.on("data", (chunk: Buffer) => {
+      body += chunk.toString();
+      if (body.length > maxSize && !exceeded) {
+        exceeded = true;
+        req.destroy();
+        reject(new Error("Request body too large"));
+      }
+    });
+    req.on("end", () => {
+      if (exceeded) return;
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new Error("Invalid JSON"));
+      }
+    });
+    req.on("error", reject);
+  });
 }
 
 function enrichTask(task: Task, repoId?: string) {

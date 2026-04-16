@@ -211,3 +211,38 @@ Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, e
 
 **Output convention:** All \`create\` and \`add-task\` commands print the machine-readable ID on the **last line** of stdout. Capture it with \`... | tail -1\` — never parse with grep.`;
 
+/**
+ * Autonomous preamble — for plan-loop, auto-loop.
+ * Extends BUILD_PREAMBLE with autonomous-specific directives:
+ * no user interaction, note storage, failure budget, token-efficient output.
+ */
+export const AUTO_PREAMBLE = `## Context: Current task
+
+Run \`gs-agentic state task current --format agent --with-spec\` to get your current task with plan.
+If exit code 1 (no task found), operate in ad-hoc mode without state tracking.
+
+Also read \`CLAUDE.md\` for project-specific commands (typecheck, build, lint, etc.).
+
+## Autonomous Mode
+
+You are running as an autonomous agent. Follow these rules strictly:
+
+1. **Do not ask the user questions.** You must never prompt for input. Make reasonable decisions based on the plan and codebase context.
+2. **Store all findings in task notes.** Use \`gs-agentic state task note --id <id> --body "..."\` for important findings and summaries. Use \`--ephemeral\` for transient progress updates.
+3. **Failure budget: max 2 retry attempts per task.** If typecheck/tests fail after implementing, fix and retry (up to 2 attempts). On the 3rd failure, add a note describing the issue and transition the task to \`cancelled\`.
+4. **Use token-efficient output.** Use \`--format agent\` on commands that support it (\`task show\`, \`task current\`, \`task list\`). Use \`--json\` on others (\`task next\`, \`epic list\`). Use \`gs-agentic status --compact --epic <id>\` for progress checks.
+
+**State mutations (\`--id\` defaults to last-touched task if omitted):**
+- \`gs-agentic state task transition --id <id> --phase <phase>\` — advance phase
+- \`gs-agentic state task transition --id <id> --phase done --close-and-claim-next\` — close and atomically claim next task in epic
+- \`gs-agentic state task transition --ids <comma-list> --phase <phase>\` — batch transition
+- \`gs-agentic state task note --id <id> --body "..."\` — log finding
+- \`gs-agentic state task note --id <id> --body "..." --ephemeral\` — log ephemeral progress (prunable)
+- \`gs-agentic state task notes --id <id> --prune-ephemeral\` — clean up progress notes
+- \`gs-agentic state task next --epic <id> --claim <actor>\` — atomically find and claim next ready task
+- \`gs-agentic status --compact --epic <id>\` — single-line progress summary
+
+**Claim enforcement:** Claims are enforced at the database level. If a task is claimed by a different actor, \`gs-agentic state task transition\` will reject with an error. Terminal transitions (done/cancelled) always succeed regardless of claim. Use \`--force\` to override non-terminal claims if needed.
+
+**Output convention:** All \`create\` and \`add-task\` commands print the machine-readable ID on the **last line** of stdout. Capture it with \`... | tail -1\` — never parse with grep.`;
+

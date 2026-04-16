@@ -44,6 +44,8 @@ If the user's request maps to a specific workflow, suggest the right skill:
 | \`/quick-review\` | Fast single-pass code review |
 | \`/ship\` | Typecheck, review, commit, push, create PR |
 | \`/address-feedback\` | Resolve PR review feedback |
+| \`/plan-loop\` | Autonomous planning — poll for work requests, research + plan |
+| \`/auto-loop\` | Autonomous implementation — claim, build, review, QA, verify |
 
 ## State commands
 
