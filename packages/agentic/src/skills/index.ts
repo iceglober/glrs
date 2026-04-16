@@ -42,6 +42,7 @@ import { gsBuildLoop } from "./gs-build-loop.js";
 import { gsDeepReview } from "./gs-deep-review.js";
 import { gsQuickReview } from "./gs-quick-review.js";
 import { gsAddressFeedback } from "./gs-address-feedback.js";
+import { gsPlanLoop } from "./gs-plan-loop.js";
 import { gs } from "./gs.js";
 
 /**
@@ -81,6 +82,10 @@ export const GS_SKILL_NAMES: Record<
   "gs-address-feedback": {
     canonical: "address-feedback.md",
     generator: gsAddressFeedback,
+  },
+  "gs-plan-loop": {
+    canonical: "plan-loop.md",
+    generator: gsPlanLoop,
   },
 };
 
