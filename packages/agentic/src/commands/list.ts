@@ -19,7 +19,7 @@ export const list = command({
         return;
       }
       console.log(
-        dim("No worktrees registered. Create one with: gs-agentic wt create <name>"),
+        dim("No worktrees registered. Create one with: gs-agentic wt new"),
       );
       return;
     }

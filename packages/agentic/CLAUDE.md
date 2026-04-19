@@ -32,12 +32,13 @@ src/
 │   │   ├── log.ts        # Transition history
 │   │   └── web.ts        # gsag state web — open state dashboard in browser
 │   ├── go.ts             # gsag wt (bare) — interactive worktree picker
-│   ├── create.ts         # gsag wt create
+│   ├── create.ts         # gsag wt new (aliases: create) — auto-named, origin-default-based
 │   ├── checkout.ts       # gsag wt checkout
 │   ├── list.ts           # gsag wt list (global, registry-based)
 │   ├── delete.ts         # gsag wt delete (interactive multi-select or by name)
 │   ├── cleanup.ts        # gsag wt cleanup
 │   ├── root.ts           # gsag wt root
+│   ├── path.ts           # gsag wt path — print a worktree's absolute path (for shell eval)
 │   ├── plan-review.ts    # gsag plan review — open plan in browser with feedback
 │   ├── install-skills.ts      # gsag skills (interactive scope picker, --user/--project/--prefix)
 │   ├── install-skills.test.ts # Unit tests for install-skills
@@ -172,6 +173,13 @@ src/
 - `initState()` must be called before any state operations (done in index.ts)
 
 ## Recent changes
+
+### v4.0.0 — Worktree global store
+
+- **Storage**: worktrees now live at `~/.glorious/worktrees/<repo>/<name>/` (overridable via `GLORIOUS_DIR`). Previously created as siblings of the repo.
+- **`wt create` → `wt new`** (`create` kept as alias). Positional arg is now an optional repo name for outside-the-repo creation; worktree names are auto-generated (`wt-YYMMDD-HHMMSS-xxx`).
+- **New `wt path`** prints a worktree's absolute path for shell eval (`cd $(gs-agentic wt path <name>)`).
+- Always fetches `origin/<default>` and bases new branches off the remote ref, never the local one.
 
 ### v3.0.0 — Skills-Native Architecture Overhaul
 

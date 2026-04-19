@@ -48,35 +48,35 @@ export function gitRoot(): string {
   return path.dirname(commonDir);
 }
 
-/** Detect the default branch (main/master). */
+/** Detect the default branch (main/master) for the current repo. */
 export function defaultBranch(): string {
-  // Try symbolic ref first
-  const ref = gitSafe(
-    "symbolic-ref",
-    "refs/remotes/origin/HEAD",
-  );
-  if (ref) {
-    return ref.replace("refs/remotes/origin/", "");
-  }
+  return defaultBranchIn(process.cwd());
+}
 
-  // Fall back to checking common names on remote
+/** Detect the default branch (main/master) for a specific repo path. */
+export function defaultBranchIn(repoPath: string): string {
+  const ref = gitInSafe(repoPath, "symbolic-ref", "refs/remotes/origin/HEAD");
+  if (ref) return ref.replace("refs/remotes/origin/", "");
+
   for (const name of ["main", "master"]) {
     if (
-      gitSafe("show-ref", "--verify", `refs/remotes/origin/${name}`) !== null
+      gitInSafe(
+        repoPath,
+        "show-ref",
+        "--verify",
+        `refs/remotes/origin/${name}`,
+      ) !== null
     ) {
       return name;
     }
   }
-
-  // No remote -- check local branches
   for (const name of ["main", "master"]) {
     if (
-      gitSafe("show-ref", "--verify", `refs/heads/${name}`) !== null
+      gitInSafe(repoPath, "show-ref", "--verify", `refs/heads/${name}`) !== null
     ) {
       return name;
     }
   }
-
   throw new Error(
     "Cannot detect default branch. Set it with: git remote set-head origin <branch>",
   );

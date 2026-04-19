@@ -1,9 +1,26 @@
 import fs from "node:fs";
-import { git, gitSafe, defaultBranch, gitRoot } from "./git.js";
+import path from "node:path";
+import {
+  defaultBranchIn,
+  gitIn,
+  gitInSafe,
+  gitRoot,
+} from "./git.js";
 import { worktreePath, repoName } from "./config.js";
 import { registerWorktree } from "./registry.js";
 import { runHook } from "./hooks.js";
 import { ok, info, warn, bold } from "./fmt.js";
+
+export interface CreateOptions {
+  /** Branch/worktree slug. Auto-generated if omitted. */
+  name?: string;
+  /** Base branch to fork from. Defaults to the remote default branch. */
+  from?: string;
+  /** Absolute path to the source repo (for creating from outside one). */
+  repoPath?: string;
+  /** Override the repo name used for storage. Defaults to basename(repoPath). */
+  repo?: string;
+}
 
 export interface CreateResult {
   wtPath: string;
@@ -11,46 +28,81 @@ export interface CreateResult {
   base: string;
 }
 
+/**
+ * Generate a short, ordered slug: wt-YYMMDD-HHMMSS-xxx
+ * The trailing 3-char suffix prevents collisions when invoked
+ * in rapid succession (e.g. scripted).
+ */
+export function autoName(
+  now: Date = new Date(),
+  suffix: string = randomSuffix(),
+): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const yy = now.getFullYear().toString().slice(2);
+  const mm = pad(now.getMonth() + 1);
+  const dd = pad(now.getDate());
+  const hh = pad(now.getHours());
+  const mi = pad(now.getMinutes());
+  const ss = pad(now.getSeconds());
+  return `wt-${yy}${mm}${dd}-${hh}${mi}${ss}-${suffix}`;
+}
+
+function randomSuffix(): string {
+  return Math.random().toString(36).slice(2, 5).padEnd(3, "0");
+}
+
 /** Create a worktree with a new branch. Does NOT spawn a shell. */
-export function createWorktree(
-  name: string,
-  from?: string,
-): CreateResult {
-  const base = from ?? defaultBranch();
-  const wtPath = worktreePath(name);
+export function createWorktree(opts: CreateOptions = {}): CreateResult {
+  const srcRepo = opts.repoPath ?? gitRoot();
+  const repo = opts.repo ?? path.basename(srcRepo);
+  const name = opts.name ?? autoName();
+  const wtPath = worktreePath(name, repo);
 
   if (fs.existsSync(wtPath)) {
     throw new Error(`Worktree already exists: ${wtPath}`);
   }
+  fs.mkdirSync(path.dirname(wtPath), { recursive: true });
+
+  const base = opts.from ?? defaultBranchIn(srcRepo);
 
   info(`fetching origin/${base}...`);
-  git("fetch", "origin", base, "--quiet");
+  gitIn(srcRepo, "fetch", "origin", base, "--quiet");
 
-  // Delete stale branch if it exists (leftover from a previously removed worktree)
-  const branchExists = gitSafe("show-ref", "--verify", `refs/heads/${name}`) !== null;
+  // Reset stale local branch if one exists
+  const branchExists =
+    gitInSafe(srcRepo, "show-ref", "--verify", `refs/heads/${name}`) !== null;
   if (branchExists) {
     warn(`branch ${bold(name)} already exists, resetting to origin/${base}`);
-    git("branch", "-D", name);
+    gitIn(srcRepo, "branch", "-D", name);
   }
 
-  info(`creating worktree ${bold(name)} from ${base}...`);
-  git("worktree", "add", "-b", name, wtPath, `origin/${base}`, "--quiet");
+  info(`creating worktree ${bold(name)} from origin/${base}...`);
+  gitIn(
+    srcRepo,
+    "worktree",
+    "add",
+    "-b",
+    name,
+    wtPath,
+    `origin/${base}`,
+    "--quiet",
+  );
 
-  // Set upstream tracking (best-effort)
+  // Best-effort upstream tracking
   try {
-    git("-C", wtPath, "branch", "--set-upstream-to", `origin/${base}`, name);
+    gitIn(wtPath, "branch", "--set-upstream-to", `origin/${base}`, name);
   } catch {}
 
   runHook("post_create", {
     WORKTREE_DIR: wtPath,
     WORKTREE_NAME: name,
     BASE_BRANCH: base,
-    REPO_ROOT: gitRoot(),
+    REPO_ROOT: srcRepo,
   });
 
   registerWorktree({
-    repo: repoName(),
-    repoPath: gitRoot(),
+    repo,
+    repoPath: srcRepo,
     wtPath,
     branch: name,
     createdAt: new Date().toISOString(),
@@ -62,11 +114,12 @@ export function createWorktree(
 
 /** Create a worktree or return the existing path if it already exists. */
 export function ensureWorktree(name: string, from?: string): string {
-  const wtPath = worktreePath(name);
+  const repo = repoName();
+  const wtPath = worktreePath(name, repo);
   if (fs.existsSync(wtPath)) {
     info(`worktree already exists at ${bold(wtPath)}, reusing...`);
     registerWorktree({
-      repo: repoName(),
+      repo,
       repoPath: gitRoot(),
       wtPath,
       branch: name,
@@ -74,5 +127,6 @@ export function ensureWorktree(name: string, from?: string): string {
     });
     return wtPath;
   }
-  return createWorktree(name, from).wtPath;
+  return createWorktree({ name, from }).wtPath;
 }
+
