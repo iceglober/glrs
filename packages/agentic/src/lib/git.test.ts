@@ -4,14 +4,7 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import { gitRoot } from "./git.js";
 import { repoName } from "./config.js";
-
-const GIT_ENV = {
-  ...process.env,
-  GIT_AUTHOR_NAME: "test",
-  GIT_AUTHOR_EMAIL: "test@test.com",
-  GIT_COMMITTER_NAME: "test",
-  GIT_COMMITTER_EMAIL: "test@test.com",
-};
+import { TEST_GIT_ENV as GIT_ENV } from "./test-utils.js";
 
 describe("gitRoot from a linked worktree", () => {
   let tmpBase: string;

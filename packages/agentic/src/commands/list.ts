@@ -1,15 +1,28 @@
 import path from "node:path";
-import { command } from "cmd-ts";
-import { gitSafe, gitInSafe, gitRoot, listWorktrees } from "../lib/git.js";
+import { command, flag } from "cmd-ts";
+import { currentBranchIn, gitSafe, gitInSafe, gitRoot, listWorktrees } from "../lib/git.js";
 import { loadRegistry, type RegistryEntry } from "../lib/registry.js";
+import { go } from "./go.js";
 import { bold, dim } from "../lib/fmt.js";
 
 export const list = command({
   name: "list",
   aliases: ["ls"],
   description: "List all worktrees across repos",
-  args: {},
-  handler: () => {
+  args: {
+    interactive: flag({
+      long: "interactive",
+      short: "i",
+      description:
+        "Interactively pick a worktree to switch into (same as `wt switch`).",
+    }),
+  },
+  handler: async ({ interactive }) => {
+    if (interactive) {
+      await go();
+      return;
+    }
+
     const entries = loadRegistry();
 
     if (entries.length === 0) {
@@ -34,11 +47,16 @@ export const list = command({
     for (const [repo, repoEntries] of byRepo) {
       console.log(`\n${bold(repo)} ${dim(repoEntries[0].repoPath)}`);
       for (const entry of repoEntries) {
+        const current = currentBranchIn(entry.wtPath);
+        const branchCol =
+          current && current !== entry.branch
+            ? `${entry.branch} ${dim(`→ ${current}`)}`
+            : current ?? entry.branch;
         const commit =
           gitInSafe(entry.wtPath, "rev-parse", "--short", "HEAD") ??
           dim("?");
         console.log(
-          `  ${pad(entry.branch, 35)} ${pad(commit, 10)} ${dim(entry.wtPath)}`,
+          `  ${pad(branchCol, 45)} ${pad(commit, 10)} ${dim(entry.wtPath)}`,
         );
       }
     }

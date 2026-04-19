@@ -1,5 +1,10 @@
-import { describe, it, expect } from "bun:test";
-import { autoName } from "./worktree.js";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { execSync } from "node:child_process";
+import { autoName, assertPrimaryClone } from "./worktree.js";
+import { TEST_GIT_ENV as GIT_ENV } from "./test-utils.js";
 
 describe("autoName", () => {
   it("produces a wt-YYMMDD-HHMMSS-<suffix> slug", () => {
@@ -22,5 +27,52 @@ describe("autoName", () => {
     const fixed = new Date("2026-04-19T13:07:42");
     const a = autoName(fixed);
     expect(a).toMatch(/^wt-260419-130742-[a-z0-9]{3}$/);
+  });
+});
+
+describe("assertPrimaryClone", () => {
+  let tmpBase: string;
+  let primaryRoot: string;
+  let worktreePath: string;
+
+  beforeEach(() => {
+    tmpBase = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "gs-primaryclone-")),
+    );
+    primaryRoot = path.join(tmpBase, "kn-eng");
+    fs.mkdirSync(primaryRoot, { recursive: true });
+    execSync("git init", { cwd: primaryRoot, stdio: "pipe" });
+    execSync("git commit --allow-empty -m init", {
+      cwd: primaryRoot,
+      stdio: "pipe",
+      env: GIT_ENV,
+    });
+
+    worktreePath = path.join(tmpBase, "worktrees", "wt-A");
+    execSync(`git worktree add -b feature-A "${worktreePath}"`, {
+      cwd: primaryRoot,
+      stdio: "pipe",
+      env: GIT_ENV,
+    });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpBase, { recursive: true, force: true });
+  });
+
+  it("accepts the primary clone", () => {
+    expect(() => assertPrimaryClone(primaryRoot)).not.toThrow();
+  });
+
+  it("rejects a linked worktree with a helpful error", () => {
+    expect(() => assertPrimaryClone(worktreePath)).toThrow(
+      /Refusing to create a nested worktree/,
+    );
+  });
+
+  it("is a no-op when given a non-git directory (deferred to later git call)", () => {
+    const plain = path.join(tmpBase, "plain-dir");
+    fs.mkdirSync(plain);
+    expect(() => assertPrimaryClone(plain)).not.toThrow();
   });
 });

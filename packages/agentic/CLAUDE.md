@@ -31,14 +31,17 @@ src/
 │   │   ├── qa.ts         # QA report
 │   │   ├── log.ts        # Transition history
 │   │   └── web.ts        # gsag state web — open state dashboard in browser
-│   ├── go.ts             # gsag wt (bare) — interactive worktree picker
-│   ├── create.ts         # gsag wt new (aliases: create) — auto-named, origin-default-based
+│   ├── go.ts             # gsag wt (bare) — interactive worktree picker (shows current HEAD branch)
+│   ├── create.ts         # gsag wt new (aliases: create) — auto-named, origin-default-based, cross-repo name resolution
 │   ├── checkout.ts       # gsag wt checkout
-│   ├── list.ts           # gsag wt list (global, registry-based)
+│   ├── list.ts           # gsag wt list (global, registry-based) — supports -i for interactive pick
+│   ├── switch.ts         # gsag wt switch (alias: sw) — explicit interactive picker
 │   ├── delete.ts         # gsag wt delete (interactive multi-select or by name)
 │   ├── cleanup.ts        # gsag wt cleanup
 │   ├── root.ts           # gsag wt root
 │   ├── path.ts           # gsag wt path — print a worktree's absolute path (for shell eval)
+│   ├── protect.ts        # gsag wt protect — install global post-checkout hook warning on nested worktrees
+│   ├── protect.test.ts   # Protect hook body tests
 │   ├── plan-review.ts    # gsag plan review — open plan in browser with feedback
 │   ├── install-skills.ts      # gsag skills (interactive scope picker, --user/--project/--prefix)
 │   ├── install-skills.test.ts # Unit tests for install-skills
@@ -52,12 +55,18 @@ src/
 │   ├── migrate.test.ts   # Migration tests
 │   ├── state.ts          # Epic/Task/Review model, CRUD, phase validation, queries
 │   ├── state.test.ts     # State module tests
-│   ├── git.ts            # Git wrappers (git, gitRoot, listWorktrees)
-│   ├── worktree.ts       # createWorktree, ensureWorktree (auto-registers)
+│   ├── git.ts            # Git wrappers (git, gitRoot, listWorktrees, currentBranchIn)
+│   ├── git.test.ts       # gitRoot from linked worktree tests
+│   ├── worktree.ts       # createWorktree, ensureWorktree (auto-registers), assertPrimaryClone
+│   ├── worktree.test.ts  # autoName + assertPrimaryClone tests
 │   ├── registry.ts       # Global worktree registry (~/.glorious/worktrees.json)
+│   ├── repo-index.ts     # Repo name → path index (~/.glorious/repos.json) + scan-roots fallback
+│   ├── repo-index.test.ts # Repo index tests
 │   ├── select.ts         # Interactive terminal pickers (select, multiSelect)
 │   ├── config.ts         # worktreePath, repoName, isProtected
-│   ├── hooks.ts          # runHook (non-fatal, per-command resilient)
+│   ├── hooks.ts          # runHook (REPO_ROOT-resolved, non-fatal, per-command resilient)
+│   ├── hooks.test.ts     # Hook config + runHook tests
+│   ├── test-utils.ts     # Shared TEST_GIT_ENV for git-spawning tests
 │   ├── slug.ts           # slugify
 │   ├── open-browser.ts       # Open URL in default browser (execFile, setting-gated)
 │   ├── open-browser.test.ts  # Open browser tests
@@ -173,6 +182,14 @@ src/
 - `initState()` must be called before any state operations (done in index.ts)
 
 ## Recent changes
+
+### v4.1.0 — Worktree UX polish & nested-worktree guards
+
+- **`wt switch` / `wt ls -i`** — explicit and flag-based interactive pickers.
+- **Checked-out branch** shown per row in `wt list` and pickers (`registered → current` when they diverge).
+- **Cross-repo resolution**: `wt new <name>` from outside a git repo now resolves via worktree registry → repo index (`~/.glorious/repos.json`, auto-populated on every gsag invocation) → `repo.scan-roots` filesystem scan (default `~/repos:~/code:~/src`).
+- **Nested-worktree prevention**: `createWorktree` refuses if `srcRepo` is itself a linked worktree. `wt protect` installs a global `post-checkout` hook that warns even when raw `git worktree add` is used.
+- **Fix**: `runHook` no longer shells out to `gitRoot()` — resolves its path from the passed `REPO_ROOT`, so outside-the-repo flows don't crash.
 
 ### v4.0.0 — Worktree global store
 

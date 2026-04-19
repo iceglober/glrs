@@ -51,9 +51,31 @@ function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 5).padEnd(3, "0");
 }
 
+/**
+ * Refuse to create a worktree from a linked worktree. Nested worktrees break
+ * path resolution (storage lands under `<worktree>/<name>/` instead of
+ * `<repo>/<name>/`) and leave stale branch metadata attached to the wrong
+ * clone. `git rev-parse --git-common-dir` returns an absolute path outside
+ * `srcRepo` whenever srcRepo is itself a linked worktree.
+ */
+export function assertPrimaryClone(srcRepo: string): void {
+  const commonDir = gitInSafe(srcRepo, "rev-parse", "--git-common-dir");
+  if (!commonDir) return; // not a git repo yet — let the later git call error
+  if (!path.isAbsolute(commonDir)) return; // relative (e.g. ".git") → primary clone
+  const primary = path.dirname(commonDir);
+  if (path.resolve(primary) === path.resolve(srcRepo)) return;
+  throw new Error(
+    `Refusing to create a nested worktree.\n` +
+      `  '${srcRepo}' is itself a worktree of '${primary}'.\n` +
+      `  Create worktrees from the primary clone, or pass a repo name:\n` +
+      `    gs-agentic wt new <repo>`,
+  );
+}
+
 /** Create a worktree with a new branch. Does NOT spawn a shell. */
 export function createWorktree(opts: CreateOptions = {}): CreateResult {
   const srcRepo = opts.repoPath ?? gitRoot();
+  assertPrimaryClone(srcRepo);
   const repo = opts.repo ?? path.basename(srcRepo);
   const name = opts.name ?? autoName();
   const wtPath = worktreePath(name, repo);

@@ -90,6 +90,12 @@ export interface WorktreeEntry {
   branch: string | null; // null = detached
 }
 
+/** Current checked-out branch in a worktree, or null if detached/unavailable. */
+export function currentBranchIn(wtPath: string): string | null {
+  const out = gitInSafe(wtPath, "branch", "--show-current");
+  return out && out.length > 0 ? out : null;
+}
+
 /** Parse `git worktree list --porcelain` output into structured entries. */
 export function listWorktrees(): WorktreeEntry[] {
   const raw = git("worktree", "list", "--porcelain");

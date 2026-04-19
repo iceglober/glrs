@@ -71,18 +71,32 @@ ${bold("COMMANDS")}
   wt
       Interactive worktree picker — select a worktree to open a shell in.
 
+  wt switch (alias: sw)
+      Same as bare ${cyan("wt")} — interactive picker that opens a shell in the
+      selected worktree. Useful when ${cyan("wt")} alone is ambiguous in scripts.
+
   wt new [repo] [--from <branch>]
       Create a new worktree from the latest origin default branch (fetched
       automatically). The branch/worktree name is auto-generated
-      (wt-YYMMDD-HHMMSS-xxx). With no args, uses the current repo; pass a repo
-      name to create from outside a git repo (looked up in the global
-      registry). --from overrides the base branch.
+      (wt-YYMMDD-HHMMSS-xxx). With no args, uses the current repo; pass a
+      repo name to create from outside a git repo. --from overrides the
+      base branch.
+
+      When a repo name is passed, it's resolved in this order:
+        1. Worktree registry (populated when you create worktrees)
+        2. Repo index (${cyan("~/.glorious/repos.json")}, auto-populated whenever
+           gsag runs inside any git repo)
+        3. Scan roots (${cyan("repo.scan-roots")}; default ~/repos:~/code:~/src)
+      Configure scan roots with:
+        gs-agentic config set repo.scan-roots ~/repos:~/work
 
   wt checkout <branch>
       Create a worktree from an existing remote branch.
 
-  wt list
-      Show all worktrees across all repos, grouped by repository.
+  wt list (alias: ls) [-i | --interactive]
+      Show all worktrees across all repos, grouped by repository. Each row
+      shows the currently checked-out branch (falls back to the registered
+      branch if HEAD is unavailable). ${cyan("-i")} opens the interactive picker.
 
   wt path [<name>|<repo>/<name>]
       Print a worktree's absolute path on stdout. With no arg, prints a
@@ -102,6 +116,16 @@ ${bold("COMMANDS")}
 
   wt hooks
       Create .glorious/hooks/ with a post_create template.
+
+  wt protect [--force]
+      Install a global git post-checkout hook at ~/.glorious/git-hooks/ that
+      warns whenever ${cyan("any")} git worktree is created inside another git repo
+      (gsag-managed or not). Sets ${cyan("core.hooksPath")} globally. If hooksPath
+      is already set elsewhere, prints merge instructions instead (or pass
+      --force to replace — your existing global hooks will be bypassed).
+
+      gsag itself refuses to create nested worktrees before calling git; this
+      hook is the belt to that suspenders, catching raw ${cyan("git worktree add")}.
 
   upgrade
       Check for a newer version and self-update.
@@ -128,6 +152,8 @@ ${bold("COMMANDS")}
         plan.auto-open      Open browser automatically in plan review (default: true)
         skills.auto-update  Sync skills automatically when CLI version changes (default: true)
         state.auto-open     Open browser automatically in state web (default: true)
+        repo.scan-roots     Colon-separated paths to scan when resolving 'wt new <repo>'
+                            outside a git repo (default: ~/repos:~/code:~/src)
 
   ${bold("State Management")} ${dim("(task lifecycle & review tracking)")}
 

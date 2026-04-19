@@ -4,6 +4,7 @@ import { spawnShell } from "../lib/git.js";
 import { info } from "../lib/fmt.js";
 import { createWorktree } from "../lib/worktree.js";
 import { loadRegistry } from "../lib/registry.js";
+import { findRepoByScan, lookupRepo } from "../lib/repo-index.js";
 
 export const create = command({
   name: "new",
@@ -15,7 +16,7 @@ export const create = command({
       type: optional(string),
       displayName: "repo",
       description:
-        "Optional repo name. Required when running outside a git repo; looked up in the worktree registry.",
+        "Optional repo name. Required when running outside a git repo; looked up in the worktree registry, the repo index, or under repo.scan-roots.",
     }),
     from: option({
       type: optional(string),
@@ -37,23 +38,38 @@ export const create = command({
 });
 
 /**
- * Locate the source repo path. If a repo name is given, look it up in the
- * registry (works from outside a git repo). Otherwise use the current repo.
+ * Locate the source repo path. Resolution order:
+ *   1. No name → use current repo (createWorktree falls back to gitRoot()).
+ *   2. Worktree registry (existing — fast, populated when creating worktrees).
+ *   3. Repo index (~/.glorious/repos.json — populated on every gsag
+ *      invocation inside a git repo).
+ *   4. Scan `repo.scan-roots` (default: ~/repos, ~/code, ~/src) for a
+ *      matching directory; remember the match for next time.
  */
 function resolveRepoPath(repo: string | undefined): string | undefined {
-  if (!repo) return undefined; // createWorktree falls back to gitRoot()
+  if (!repo) return undefined;
 
-  const entries = loadRegistry();
-  const match = entries.find((e) => e.repo === repo);
-  if (!match) {
-    throw new Error(
-      `No registered repo named '${repo}'. Run 'gs-agentic wt new' from inside the repo once to register it.`,
-    );
+  const wt = loadRegistry().find((e) => e.repo === repo);
+  if (wt) {
+    if (!fs.existsSync(wt.repoPath)) {
+      throw new Error(
+        `Registered repo '${repo}' points to ${wt.repoPath}, which no longer exists.`,
+      );
+    }
+    return wt.repoPath;
   }
-  if (!fs.existsSync(match.repoPath)) {
-    throw new Error(
-      `Registered repo '${repo}' points to ${match.repoPath}, which no longer exists.`,
-    );
-  }
-  return match.repoPath;
+
+  const indexed = lookupRepo(repo);
+  if (indexed) return indexed;
+
+  const scanned = findRepoByScan(repo);
+  if (scanned) return scanned;
+
+  throw new Error(
+    `No repo named '${repo}' found.\n` +
+      `  Looked in worktree registry, ~/.glorious/repos.json, and scan roots.\n` +
+      `  Fix: run 'gs-agentic wt new' from inside the repo once, or add the\n` +
+      `  repo's parent directory to repo.scan-roots:\n` +
+      `    gs-agentic config set repo.scan-roots ~/repos:~/work`,
+  );
 }
