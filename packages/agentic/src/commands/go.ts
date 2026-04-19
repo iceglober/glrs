@@ -9,7 +9,7 @@ export async function go(): Promise<void> {
 
   if (entries.length === 0) {
     warn(
-      "no worktrees registered — create one with: gs-agentic wt create <name>",
+      "no worktrees registered — create one with: gs-agentic wt new",
     );
     return;
   }

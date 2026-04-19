@@ -7,6 +7,7 @@ import { cleanup } from "./commands/cleanup.js";
 import { go } from "./commands/go.js";
 import { initHooks, scaffoldClaudeHooks } from "./commands/init-hooks.js";
 import { root } from "./commands/root.js";
+import { wtPath } from "./commands/path.js";
 
 import { upgrade } from "./commands/upgrade.js";
 import { installSkills, autoSyncSkills } from "./commands/install-skills.js";
@@ -49,13 +50,14 @@ const wt = subcommands({
   name: "wt",
   description: "Worktree management — create, list, and clean up git worktrees",
   cmds: {
-    create,
+    new: create,
     checkout,
     list,
     delete: del,
     cleanup,
     hooks: initHooks,
     root,
+    path: wtPath,
   },
 });
 

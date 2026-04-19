@@ -65,19 +65,30 @@ ${bold("COMMANDS")}
 
   ${bold("Worktree management")} ${dim("(gs-agentic wt ...)")}
 
+  All worktrees live at ~/.glorious/worktrees/<repo>/<name>/ and are tracked
+  globally — create, list, and switch from any directory.
+
   wt
       Interactive worktree picker — select a worktree to open a shell in.
-      Works from any directory. Worktrees are tracked globally across repos.
 
-  wt create <name> [--from <branch>]
-      Create a new worktree with a fresh branch forked from <branch>
-      (defaults to main/master). Opens a shell inside the worktree.
+  wt new [repo] [--from <branch>]
+      Create a new worktree from the latest origin default branch (fetched
+      automatically). The branch/worktree name is auto-generated
+      (wt-YYMMDD-HHMMSS-xxx). With no args, uses the current repo; pass a repo
+      name to create from outside a git repo (looked up in the global
+      registry). --from overrides the base branch.
 
   wt checkout <branch>
       Create a worktree from an existing remote branch.
 
   wt list
       Show all worktrees across all repos, grouped by repository.
+
+  wt path [<name>|<repo>/<name>]
+      Print a worktree's absolute path on stdout. With no arg, prints a
+      tab-separated <repo>/<name>\\t<path> listing (for fzf piping).
+      Shell shortcut:
+        gswt() { cd "$(gs-agentic wt path "$1")"; }
 
   wt delete [name] [--force]
       Remove worktrees and their branches. Without a name, opens an
@@ -230,6 +241,7 @@ ${bold("FLAGS")}
 
 ${bold("ENVIRONMENT")}
 
-  GLORIOUS_DIR Override where worktrees are stored. By default, worktrees
-               are created as siblings of the repo.
+  GLORIOUS_DIR Override the worktree storage root. By default, worktrees
+               live at ~/.glorious/worktrees/<repo>/<name>/. If set,
+               worktrees live at $GLORIOUS_DIR/<repo>/<name>/ instead.
 `.trimStart();

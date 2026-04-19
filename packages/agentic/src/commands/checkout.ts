@@ -1,6 +1,7 @@
-import { command, positional, string } from "cmd-ts";
 import fs from "node:fs";
-import { git, gitSafe, gitRoot } from "../lib/git.js";
+import path from "node:path";
+import { command, positional, string } from "cmd-ts";
+import { gitIn, gitInSafe, gitRoot } from "../lib/git.js";
 import { worktreePath, repoName } from "../lib/config.js";
 import { registerWorktree } from "../lib/registry.js";
 import { runHook } from "../lib/hooks.js";
@@ -17,19 +18,22 @@ export const checkout = command({
     }),
   },
   handler: ({ branch }) => {
-    const wtPath = worktreePath(branch);
+    const repoPath = gitRoot();
+    const repo = repoName();
+    const wtPath = worktreePath(branch, repo);
 
     if (fs.existsSync(wtPath)) {
       ok(`worktree already exists: ${wtPath}`);
       return;
     }
+    fs.mkdirSync(path.dirname(wtPath), { recursive: true });
 
     info(`fetching origin/${branch}...`);
-    git("fetch", "origin", branch, "--quiet");
+    gitIn(repoPath, "fetch", "origin", branch, "--quiet");
 
     info(`creating worktree for ${bold(branch)}...`);
-    // Try tracking checkout first, fall back to plain
-    const tracked = gitSafe(
+    const tracked = gitInSafe(
+      repoPath,
       "worktree",
       "add",
       "--track",
@@ -40,19 +44,19 @@ export const checkout = command({
       "--quiet",
     );
     if (tracked === null) {
-      git("worktree", "add", wtPath, branch, "--quiet");
+      gitIn(repoPath, "worktree", "add", wtPath, branch, "--quiet");
     }
 
     runHook("post_create", {
       WORKTREE_DIR: wtPath,
       WORKTREE_NAME: branch,
       BASE_BRANCH: branch,
-      REPO_ROOT: gitRoot(),
+      REPO_ROOT: repoPath,
     });
 
     registerWorktree({
-      repo: repoName(),
-      repoPath: gitRoot(),
+      repo,
+      repoPath,
       wtPath,
       branch,
       createdAt: new Date().toISOString(),
