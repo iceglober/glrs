@@ -1,7 +1,6 @@
 import { execaSync } from "execa";
 import fs from "node:fs";
 import path from "node:path";
-import { gitRoot } from "./git.js";
 import { info, warn } from "./fmt.js";
 
 // ── Claude Code hook config generation ──────────────────────────────
@@ -118,7 +117,7 @@ export interface HookEnv {
 
 /** Run a hook script if it exists and is executable. Non-fatal on failure. */
 export function runHook(name: string, env: HookEnv): void {
-  const hookFile = path.join(gitRoot(), ".glorious", "hooks", name);
+  const hookFile = path.join(env.REPO_ROOT, ".glorious", "hooks", name);
   if (!fs.existsSync(hookFile)) return;
 
   const stat = fs.statSync(hookFile);

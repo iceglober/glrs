@@ -1,7 +1,7 @@
 import { loadRegistry, type RegistryEntry } from "../lib/registry.js";
 import { select, type Group } from "../lib/select.js";
-import { spawnShell } from "../lib/git.js";
-import { warn, info, bold } from "../lib/fmt.js";
+import { currentBranchIn, spawnShell } from "../lib/git.js";
+import { warn, info, bold, dim } from "../lib/fmt.js";
 
 /** Interactive worktree picker — select a worktree to open a shell in. */
 export async function go(): Promise<void> {
@@ -25,11 +25,14 @@ export async function go(): Promise<void> {
   for (const [repo, repoEntries] of byRepo) {
     groups.push({
       title: repo,
-      choices: repoEntries.map((e) => ({
-        label: e.branch,
-        value: e,
-        hint: e.wtPath,
-      })),
+      choices: repoEntries.map((e) => {
+        const current = currentBranchIn(e.wtPath);
+        const label =
+          current && current !== e.branch
+            ? `${e.branch} ${dim(`→ ${current}`)}`
+            : e.branch;
+        return { label, value: e, hint: e.wtPath };
+      }),
     });
   }
 

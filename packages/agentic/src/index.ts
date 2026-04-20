@@ -8,6 +8,8 @@ import { go } from "./commands/go.js";
 import { initHooks, scaffoldClaudeHooks } from "./commands/init-hooks.js";
 import { root } from "./commands/root.js";
 import { wtPath } from "./commands/path.js";
+import { switchCmd } from "./commands/switch.js";
+import { protect } from "./commands/protect.js";
 
 import { upgrade } from "./commands/upgrade.js";
 import { installSkills, autoSyncSkills } from "./commands/install-skills.js";
@@ -21,6 +23,10 @@ import { HELP_TEXT } from "./help.js";
 import { VERSION } from "./lib/version.js";
 import { checkForUpdate } from "./lib/update-check.js";
 import { initState } from "./lib/state.js";
+import { gitRoot } from "./lib/git.js";
+import { rememberRepo } from "./lib/repo-index.js";
+import fs from "node:fs";
+import path from "node:path";
 
 // Intercept --help / -h / no-args before cmd-ts to show our full manual
 const args = process.argv.slice(2);
@@ -46,6 +52,27 @@ autoSyncSkills();
 // Initialize SQLite state (safe even outside git — getRepo returns null)
 try { await initState(); } catch {}
 
+// Best-effort: if we're inside a git repo (or linked worktree), record the
+// primary clone so future `wt new <repo>` invocations from elsewhere can
+// resolve by name without scanning the filesystem.
+// Fast-path: skip spawning git entirely when no ancestor has a `.git` entry.
+if (hasGitAncestor(process.cwd())) {
+  try {
+    const top = gitRoot();
+    rememberRepo(path.basename(top), top);
+  } catch {}
+}
+
+function hasGitAncestor(start: string): boolean {
+  let dir = start;
+  while (true) {
+    if (fs.existsSync(path.join(dir, ".git"))) return true;
+    const parent = path.dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
+}
+
 const wt = subcommands({
   name: "wt",
   description: "Worktree management — create, list, and clean up git worktrees",
@@ -53,9 +80,11 @@ const wt = subcommands({
     new: create,
     checkout,
     list,
+    switch: switchCmd,
     delete: del,
     cleanup,
     hooks: initHooks,
+    protect,
     root,
     path: wtPath,
   },

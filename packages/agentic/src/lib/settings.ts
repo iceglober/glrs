@@ -21,6 +21,7 @@ const DEFAULTS: Record<string, string> = {
   "plan.first-run-seen": "false",
   "skills.auto-update": "true",
   "state.auto-open": "true",
+  "repo.scan-roots": "~/repos:~/code:~/src",
 };
 
 function load(): Record<string, string> {
@@ -87,5 +88,6 @@ export function settingsHelp(): Array<{ key: string; default: string; descriptio
     { key: "plan.first-run-seen", default: "false", description: "Whether the first-run auto-open info dialog has been shown" },
     { key: "skills.auto-update", default: "true", description: "Automatically sync skills when CLI version changes" },
     { key: "state.auto-open", default: "true", description: "Automatically open browser when running state web" },
+    { key: "repo.scan-roots", default: "~/repos:~/code:~/src", description: "Colon-separated paths to scan when resolving 'wt new <repo>' from outside a git repo" },
   ];
 }

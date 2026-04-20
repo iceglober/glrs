@@ -40,11 +40,13 @@ export function spawnShell(cwd: string): void {
 /** Get the root of the main worktree (resolves through linked worktrees). */
 export function gitRoot(): string {
   const commonDir = git("rev-parse", "--git-common-dir");
-  if (commonDir === ".git" || commonDir.endsWith("/.git")) {
+  const path = require("node:path");
+  // In the primary clone, git returns a relative path (e.g. ".git").
+  // In a linked worktree, it returns the absolute path to the primary
+  // clone's .git directory — its parent is the primary clone root.
+  if (!path.isAbsolute(commonDir)) {
     return git("rev-parse", "--show-toplevel");
   }
-  // We're in a linked worktree -- resolve main from commondir
-  const path = require("node:path");
   return path.dirname(commonDir);
 }
 
@@ -86,6 +88,12 @@ export interface WorktreeEntry {
   path: string;
   commit: string;
   branch: string | null; // null = detached
+}
+
+/** Current checked-out branch in a worktree, or null if detached/unavailable. */
+export function currentBranchIn(wtPath: string): string | null {
+  const out = gitInSafe(wtPath, "branch", "--show-current");
+  return out && out.length > 0 ? out : null;
 }
 
 /** Parse `git worktree list --porcelain` output into structured entries. */

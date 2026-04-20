@@ -7,6 +7,7 @@ import {
   generateSafetyHook,
   mergeHookConfigs,
   detectFormatter,
+  runHook,
 } from "./hooks.js";
 
 describe("generateFormatterHook", () => {
@@ -115,5 +116,61 @@ describe("detectFormatter", () => {
     fs.writeFileSync(path.join(tmpDir, ".prettierrc"), "{}");
     fs.writeFileSync(path.join(tmpDir, "biome.json"), "{}");
     expect(detectFormatter(tmpDir)).toContain("prettier");
+  });
+});
+
+describe("runHook (resolves REPO_ROOT, not cwd)", () => {
+  let tmpBase: string;
+  let repoRoot: string;
+  let nonRepoDir: string;
+  const originalCwd = process.cwd();
+
+  beforeEach(() => {
+    tmpBase = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "gs-runhook-")),
+    );
+    repoRoot = path.join(tmpBase, "repo");
+    nonRepoDir = path.join(tmpBase, "not-a-repo");
+    fs.mkdirSync(repoRoot, { recursive: true });
+    fs.mkdirSync(nonRepoDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpBase, { recursive: true, force: true });
+  });
+
+  test("no-op without hook file, even when cwd is outside any git repo", () => {
+    process.chdir(nonRepoDir);
+    expect(() =>
+      runHook("post_create", {
+        WORKTREE_DIR: "/tmp/wt",
+        WORKTREE_NAME: "wt",
+        BASE_BRANCH: "main",
+        REPO_ROOT: repoRoot,
+      }),
+    ).not.toThrow();
+  });
+
+  test("executes hook found under REPO_ROOT, not cwd", () => {
+    const hookDir = path.join(repoRoot, ".glorious", "hooks");
+    fs.mkdirSync(hookDir, { recursive: true });
+    const marker = path.join(tmpBase, "hook-ran");
+    fs.writeFileSync(
+      path.join(hookDir, "post_create"),
+      `#!/bin/bash\necho "$WORKTREE_NAME" > "${marker}"\n`,
+      { mode: 0o755 },
+    );
+
+    process.chdir(nonRepoDir);
+    runHook("post_create", {
+      WORKTREE_DIR: "/tmp/wt",
+      WORKTREE_NAME: "my-worktree",
+      BASE_BRANCH: "main",
+      REPO_ROOT: repoRoot,
+    });
+
+    expect(fs.existsSync(marker)).toBe(true);
+    expect(fs.readFileSync(marker, "utf-8").trim()).toBe("my-worktree");
   });
 });
