@@ -15,8 +15,9 @@ Part of the `glorious` ecosystem — installs alongside other `glorious-*` tools
   - Local: `notify` (OS notifications for question tool), `autopilot`
   - npm-delivered: [`opencode-hashline`](https://www.npmjs.com/package/opencode-hashline) (installed automatically into `~/.config/opencode/node_modules/`)
 - **MCP server wiring** — `serena` (AST code intel), `memory` (cross-session SQLite), `git` (structured blame/log). `playwright` and `linear` defined but disabled — flip a flag to enable.
-- **Claude Code parity** — tool-parity table so agents fall back gracefully on Claude Code (no `tsc_check`? use `pnpm typecheck`. No Serena? use `grep`.)
+- **Claude Code parity** — tool-parity table so agents fall back gracefully on Claude Code (no `tsc_check`? use the project's typecheck command via bash. No Serena? use `grep`.)
 - **Hashline edit system** — line-reference prefixes that validate content hashes before every edit. No more stale-line errors.
+- **Tracker/host-agnostic commands** — `/autopilot`, `/review`, `/ship` detect and use whatever issue tracker (Linear, GitHub, Jira, Atlassian, …) and git host (GitHub, GitLab, Bitbucket, Gitea) you have configured. No hardcoding, no "Linear-only" surprises.
 
 ## Install
 
@@ -90,11 +91,22 @@ After install, launch OpenCode in any repo:
 opencode
 ```
 
-Default agent is `orchestrator` — for most tasks, just describe what you want and it classifies + dispatches (five-phase flow for substantial work, direct action for trivial edits). Switch to the `plan` or `build` primary agent with Tab. Slash commands (`/ship`, `/autopilot`, `/review`, etc.) are available from any agent; they load prompts from `~/.claude/commands/`.
+Default agent is `orchestrator`. For most tasks, just describe what you want — it classifies the request and runs the five-phase flow (intent → plan → execute → verify → handoff) for substantial work, or acts directly for trivial edits. Switch to the `plan` or `build` primary agent with Tab when you want tighter scope.
+
+Slash commands are available from any agent; they load prompts from `~/.claude/commands/`:
+- `/autopilot <arg>` — self-driving run. Pass a ticket ref (any tracker), a task description, or a question.
+- `/review [target]` — adversarial read-only review of a PR, current branch, commit range, or file.
+- `/ship <plan-path>` — finalize, commit, push, and open a PR/MR. Human-gated via the `question` tool at each step.
+- `/research <topic>` — deep codebase exploration via parallel subagents.
+- `/init-deep` — generate hierarchical `AGENTS.md` files for the current repo.
 
 ### Claude Code
 
-Works identically — Claude Code reads from `~/.claude/agents/`, `~/.claude/commands/`, and `~/.claude/skills/` natively. The only difference is some OpenCode-specific tools (e.g., `tsc_check`) aren't available; agents fall back to their bash equivalents automatically (see `~/.config/opencode/AGENTS.md` → "Tool parity" section).
+Claude Code reads agents, commands, and skills from `~/.claude/` natively — no config needed. A few differences from OpenCode:
+
+- OpenCode's primary-agent modes (`orchestrator`, `plan`, `build`) don't exist in Claude Code. Use the Task tool to delegate: `@orchestrator`, `@plan`, `@build`. Most sessions just invoke `@orchestrator` and let it drive.
+- OpenCode-native tools (`tsc_check`, `eslint_check`, `ast_grep`, `hashline_edit`) aren't available. Agents fall back to the bash equivalents (`pnpm typecheck` / `npm run lint` / `grep` / standard `edit`) automatically. See `~/.config/opencode/AGENTS.md` → "Tool parity" section for the full mapping.
+- The `question` tool (OS-notification prompts) maps to Claude Code's `AskUserQuestion`.
 
 ### Enabling Linear / Playwright MCPs
 
@@ -116,10 +128,19 @@ The installer's doctor step reports which of these are missing.
 - **Context isolation via subagents.** Large searches, planning, QA runs happen in subagent contexts so the orchestrator's context stays lean.
 - **Human gate = `/ship`.** Agents commit freely, but never push or open PRs until you explicitly run `/ship`. Hard rules: no force push, no push to main/master, no merging without explicit user consent.
 - **Question tool > free-text asks.** When an agent needs clarification, it fires an OS notification via the `question` tool so users who stepped away actually see it.
+- **Probe, don't prescribe.** Commands detect whatever tracker/host/language toolchain you have and adapt. Agents don't assume `pnpm` or `gh` or Linear — they discover from `package.json`, `git remote`, configured MCPs.
 
 ## Repo-specific extensions
 
 This repo is intentionally generic. Project-specific skills / commands / agents belong in your repo's `.claude/` and `.opencode/` directories — OpenCode and Claude Code both merge project config over global. Drop a skill at `.claude/skills/my-domain/SKILL.md` and it's available in that project only.
+
+## Roadmap
+
+See [open issues](https://github.com/iceglober/glorious-opencode/issues) tagged `review-followup` for the known-good follow-up work: automated install/uninstall test matrix, orphan detection on update, `--doctor` subcommand, `.manifest` location refactor, etc.
+
+## Contributing
+
+Pull requests welcome. Before submitting, read [`AGENTS.md`](./AGENTS.md) — it covers the two-plugin model (local `.ts` vs npm-delivered), the per-file symlink discipline, and the portability rules the installer scripts follow (POSIX-bash-portable, dry-run honored everywhere, never clobber existing user config).
 
 ## License
 
