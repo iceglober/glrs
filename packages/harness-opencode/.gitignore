@@ -1,0 +1,7 @@
+# Install-time artifacts (never checked in)
+.manifest
+
+# Editor / OS junk
+.DS_Store
+*.swp
+*~
