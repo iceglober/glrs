@@ -10,3 +10,8 @@ home/.config/opencode/node_modules
 .DS_Store
 *.swp
 *~
+
+# Orchestrator / subagent scratch (plans, memory, todo traces). Agents in
+# this repo write to .agent/ per their own convention; it's never part of a
+# PR's payload.
+.agent/

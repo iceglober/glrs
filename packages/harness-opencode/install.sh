@@ -124,9 +124,7 @@ SRC_OC="${SRC_ROOT}/home/.config/opencode"
 # -------- prereq check --------
 step "Checking prerequisites"
 missing=()
-for cmd in git; do
-  if command -v "$cmd" >/dev/null 2>&1; then ok "$cmd"; else err "$cmd (required)"; missing+=("$cmd"); fi
-done
+if command -v git >/dev/null 2>&1; then ok "git"; else err "git (required)"; missing+=("git"); fi
 for cmd in node npx uvx; do
   if command -v "$cmd" >/dev/null 2>&1; then ok "$cmd"; else warn "$cmd not found — some MCP servers will not work"; fi
 done
@@ -156,7 +154,8 @@ link_file() {
     return
   fi
   if [[ -e "$dst" ]]; then
-    local bak="${dst}.bak.$(date +%s)"
+    local bak
+    bak="${dst}.bak.$(date +%s)"
     warn "  ! $dst exists as a real file; backing up to ${bak}"
     run mv "$dst" "$bak"
     run ln -s "$src" "$dst"
