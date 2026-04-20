@@ -12,7 +12,7 @@ Three directories are touched:
 
 1. `~/.glorious/opencode/` — the git checkout (this is where updates land)
 2. `~/.claude/agents/`, `~/.claude/commands/`, `~/.claude/skills/` — per-file symlinks back to the checkout
-3. `~/.config/opencode/{AGENTS.md, opencode.json, tools/, plugins/}` — per-file symlinks back to the checkout
+3. `~/.config/opencode/{AGENTS.md, opencode.json, tools/, plugins/, commands/}` — per-file symlinks back to the checkout. Note: slash commands are linked into *both* `~/.claude/commands/` (Claude Code) and `~/.config/opencode/commands/` (OpenCode). OpenCode does not read `~/.claude/commands/`.
 
 Nothing else is modified. Existing files are preserved (the installer backs them up before replacing; for `opencode.json` specifically, it will never overwrite — it prints a diff command instead).
 
@@ -175,4 +175,5 @@ This removes only the symlinks recorded in `.manifest`. Real files you added (e.
 | `opencode.json was not created by this installer — not touching it` | Diff the installer's version: `diff ~/.glorious/opencode/home/.config/opencode/opencode.json ~/.config/opencode/opencode.json`. Merge manually, or rename your existing one and re-run the installer. |
 | Agents don't load in Claude Code | Confirm `~/.claude/agents/` contains symlinks to the repo. Claude Code caches — restart the session. |
 | Agents don't load in OpenCode | Confirm `~/.config/opencode/opencode.json` references the agent prompts correctly. `opencode debug config` will show the resolved config. |
+| Slash commands (`/ship`, `/fresh`, …) missing in OpenCode | Confirm `~/.config/opencode/commands/` exists and contains symlinks. OpenCode does not read `~/.claude/commands/`. Re-run `install.sh` to create the links. |
 | "permission denied" on install.sh | Run with `bash install.sh` instead of `./install.sh`, or `chmod +x install.sh` first. |

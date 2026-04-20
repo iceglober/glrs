@@ -186,6 +186,19 @@ for f in "${SRC_CLAUDE}/commands/"*.md; do
   MANIFEST_ENTRIES+=("$dst")
 done
 
+# OpenCode does NOT read ~/.claude/commands — it discovers slash commands from
+# ~/.config/opencode/commands/ (plural). Claude Code reads ~/.claude/commands.
+# To get the same /ship, /autopilot, /review, /init-deep, /research, /fresh
+# surface in both runtimes, we link each command .md into both locations.
+step "Linking commands → ${OC_DIR}/commands/"
+for f in "${SRC_CLAUDE}/commands/"*.md; do
+  [[ -e "$f" ]] || continue
+  name="$(basename "$f")"
+  dst="${OC_DIR}/commands/${name}"
+  link_file "$f" "$dst"
+  MANIFEST_ENTRIES+=("$dst")
+done
+
 step "Linking skills → ${CLAUDE_DIR}/skills/"
 for d in "${SRC_CLAUDE}/skills/"*/; do
   [[ -d "$d" ]] || continue

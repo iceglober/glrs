@@ -53,6 +53,7 @@ Both methods produce the same layout:
 ├── opencode.json   ← symlink (IF you had no existing one; see below)
 ├── package.json    ← symlink (dependencies for npm-delivered plugins)
 ├── node_modules/   ← created by `npm install` / `bun install` at install time
+├── commands/       ← symlinks (OpenCode reads slash commands from here — plural)
 ├── tools/          ← symlinks …
 └── plugins/        ← symlinks …
 ```
@@ -97,7 +98,7 @@ opencode
 
 Default agent is `orchestrator`. For most tasks, just describe what you want — it classifies the request and runs the five-phase flow (intent → plan → execute → verify → handoff) for substantial work, or acts directly for trivial edits. Switch to the `plan` or `build` primary agent with Tab when you want tighter scope.
 
-Slash commands are available from any agent; they load prompts from `~/.claude/commands/`:
+Slash commands are available from any agent. Command prompts live in the repo at `home/.claude/commands/` and are symlinked into both `~/.claude/commands/` (for Claude Code) and `~/.config/opencode/commands/` (for OpenCode — this is the directory OpenCode scans for slash commands):
 - `/autopilot <arg>` — self-driving run. Pass a ticket ref (any tracker), a task description, or a question.
 - `/review [target]` — adversarial read-only review of a PR, current branch, commit range, or file.
 - `/ship <plan-path>` — finalize, commit, push, and open a PR/MR. Human-gated via the `question` tool at each step.
