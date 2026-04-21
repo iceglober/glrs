@@ -85,7 +85,7 @@ If you were using the previous `install.sh`-based harness (the `~/.glorious/open
 
 ## Privacy
 
-The plugin checks `registry.npmjs.org` once per day to see if a newer version is available. No analytics, no telemetry, no identifiers beyond what `fetch()` sends. Opt out: `export GLRS_DEV_UPDATE_CHECK=0`.
+The plugin checks `registry.npmjs.org` once per day to see if a newer version is available. No analytics, no telemetry, no identifiers beyond what `fetch()` sends. Opt out: `export HARNESS_OPENCODE_UPDATE_CHECK=0`.
 
 ## Prerequisites
 

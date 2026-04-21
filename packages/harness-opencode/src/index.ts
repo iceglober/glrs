@@ -41,13 +41,13 @@ function getUpdateCheckStatePath(): string {
     process.env["XDG_CACHE_HOME"] ?? path.join(os.homedir(), ".cache");
   return path.join(
     cacheHome,
-    "glrs-dev",
+    "harness-opencode",
     "update-check.json",
   );
 }
 
 async function checkForUpdate(client: any): Promise<void> {
-  if (process.env["GLRS_DEV_UPDATE_CHECK"] === "0") return;
+  if (process.env["HARNESS_OPENCODE_UPDATE_CHECK"] === "0") return;
 
   const statePath = getUpdateCheckStatePath();
 

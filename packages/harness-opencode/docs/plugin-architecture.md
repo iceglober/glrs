@@ -63,7 +63,7 @@ All escape hatches use `as unknown as Config` or `(config as any)` at the call s
 
 The plugin checks `registry.npmjs.org/@glrs-dev/harness-opencode/latest` once per day (rate-limited via `~/.cache/glrs-dev/update-check.json`). If a newer version is available, it emits a TUI toast via `client.tui.showToast`.
 
-Opt out: `export GLRS_DEV_UPDATE_CHECK=0`.
+Opt out: `export HARNESS_OPENCODE_UPDATE_CHECK=0`.
 
 ## Memory MCP path resolution
 
