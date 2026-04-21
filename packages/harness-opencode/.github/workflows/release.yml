@@ -5,14 +5,17 @@ on:
     types: [published]
 
 # Only publish from the canonical repo — forked PRs never trigger this.
-# The NPM_TOKEN secret is protected by an environment-protection rule
-# requiring maintainer approval.
+# Secrets are protected by an environment-protection rule requiring
+# maintainer approval on the `npm-publish` environment.
 jobs:
   publish:
     runs-on: ubuntu-latest
     environment: npm-publish
     # Extra guard: only run on the canonical repo, not forks.
     if: github.repository == 'iceglober/glorious-opencode'
+    permissions:
+      contents: read
+      packages: write  # required for GitHub Packages publish
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,7 +37,33 @@ jobs:
       - name: Test
         run: bun test
 
+      # ── Publish to npm (primary registry, zero-friction for users) ──────────
+      # Users install with: bun add @glorious/harness-opencode
+      # No auth required on the user side.
+      - name: Setup Node for npm publish
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
       - name: Publish to npm
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # ── Publish to GitHub Packages (mirror, visible on repo page) ───────────
+      # Users install with: bun add @glorious/harness-opencode
+      # but must first configure the registry:
+      #   echo "@glorious:registry=https://npm.pkg.github.com" >> ~/.npmrc
+      # This is why npm is the primary registry — GitHub Packages requires
+      # per-user auth even for public packages.
+      - name: Setup Node for GitHub Packages publish
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+
+      - name: Publish to GitHub Packages
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
