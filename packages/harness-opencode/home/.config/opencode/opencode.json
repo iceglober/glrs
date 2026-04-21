@@ -19,11 +19,8 @@
     },
     "memory": {
       "type": "local",
-      "command": ["npx", "-y", "@modelcontextprotocol/server-memory"],
-      "enabled": true,
-      "environment": {
-        "MEMORY_FILE_PATH": ".agent/memory.json"
-      }
+      "command": ["bash", "-c", "exec bash \"$HOME/.config/opencode/bin/memory-mcp-launcher.sh\""],
+      "enabled": true
     },
     "git": {
       "type": "local",
