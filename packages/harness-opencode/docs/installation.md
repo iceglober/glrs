@@ -12,7 +12,7 @@ Three directories are touched:
 
 1. `~/.glorious/opencode/` — the git checkout (this is where updates land)
 2. `~/.claude/agents/`, `~/.claude/commands/`, `~/.claude/skills/` — per-file symlinks back to the checkout
-3. `~/.config/opencode/{AGENTS.md, opencode.json, tools/, plugins/}` — per-file symlinks back to the checkout
+3. `~/.config/opencode/{AGENTS.md, opencode.json, tools/, plugins/, commands/}` — per-file symlinks back to the checkout. Note: slash commands are linked into *both* `~/.claude/commands/` (Claude Code) and `~/.config/opencode/commands/` (OpenCode). OpenCode does not read `~/.claude/commands/`.
 
 Nothing else is modified. Existing files are preserved (the installer backs them up before replacing). For `opencode.json` specifically, the installer merges missing keys from our shipped version into yours non-destructively — user values win, we only add what's absent, and a timestamped `.bak` sibling is written before every mutation. See [permissions.md](permissions.md) for the default `permission.external_directory` entry we ship and how to opt out.
 
@@ -176,4 +176,5 @@ This removes only the symlinks recorded in `.manifest`. Real files you added (e.
 | Installer merged into my `opencode.json` and I want to undo it | A `.bak.<epoch>-<pid>` sibling was written before every mutation: `ls ~/.config/opencode/opencode.json.bak.*`. Restore with `mv ~/.config/opencode/opencode.json.bak.<stamp> ~/.config/opencode/opencode.json`. |
 | Agents don't load in Claude Code | Confirm `~/.claude/agents/` contains symlinks to the repo. Claude Code caches — restart the session. |
 | Agents don't load in OpenCode | Confirm `~/.config/opencode/opencode.json` references the agent prompts correctly. `opencode debug config` will show the resolved config. |
+| Slash commands (`/ship`, `/fresh`, …) missing in OpenCode | Confirm `~/.config/opencode/commands/` exists and contains symlinks. OpenCode does not read `~/.claude/commands/`. Re-run `install.sh` to create the links. |
 | "permission denied" on install.sh | Run with `bash install.sh` instead of `./install.sh`, or `chmod +x install.sh` first. |

@@ -335,6 +335,19 @@ for f in "${SRC_CLAUDE}/commands/"*.md; do
   MANIFEST_ENTRIES+=("$dst")
 done
 
+# OpenCode does NOT read ~/.claude/commands — it discovers slash commands from
+# ~/.config/opencode/commands/ (plural). Claude Code reads ~/.claude/commands.
+# To get the same /ship, /autopilot, /review, /init-deep, /research, /fresh
+# surface in both runtimes, we link each command .md into both locations.
+step "Linking commands → ${OC_DIR}/commands/"
+for f in "${SRC_CLAUDE}/commands/"*.md; do
+  [[ -e "$f" ]] || continue
+  name="$(basename "$f")"
+  dst="${OC_DIR}/commands/${name}"
+  link_file "$f" "$dst"
+  MANIFEST_ENTRIES+=("$dst")
+done
+
 step "Linking skills → ${CLAUDE_DIR}/skills/"
 for d in "${SRC_CLAUDE}/skills/"*/; do
   [[ -d "$d" ]] || continue
@@ -388,6 +401,23 @@ for base in "opencode.json" "AGENTS.md" "package.json"; do
   elif [[ -L "$dst" && "$(readlink "$dst")" == "$src" ]]; then
     say "  ${c_dim}= $dst (already linked)${c_reset}"
     MANIFEST_ENTRIES+=("$dst")
+  elif [[ "$base" == "package.json" ]] && ! grep -q '"opencode-hashline"' "$dst" 2>/dev/null; then
+    # package.json is installer-managed scaffolding (plugin dependencies only),
+    # not user-facing config. If the existing file is missing opencode-hashline,
+    # adopt the managed one automatically — otherwise `bun install` runs against
+    # a manifest that doesn't include hashline, and the one-line install silently
+    # produces a broken setup. Users with genuine custom deps here are unlikely
+    # (the file only exists to host opencode-ai plugin deps) but we still back up.
+    bak="${dst}.bak.$(date +%s)"
+    warn "  ! $dst exists but is missing \"opencode-hashline\" — backing up to ${bak} and adopting managed version"
+    run mv "$dst" "$bak"
+    run ln -s "$src" "$dst"
+    MANIFEST_ENTRIES+=("$dst")
+    # Wipe the lockfile so `bun install` resolves fresh against the new manifest
+    # instead of pinning whatever the old package.json happened to lock.
+    for lockfile in "${OC_DIR}/bun.lock" "${OC_DIR}/bun.lockb" "${OC_DIR}/package-lock.json"; do
+      [[ -e "$lockfile" ]] && run rm -f "$lockfile"
+    done
   else
     warn "  ! $dst exists and was not created by this installer."
     warn "    Not touching it. Compare with: diff '$src' '$dst'"
