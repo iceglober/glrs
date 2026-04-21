@@ -35,5 +35,16 @@
     "external_directory": {
       "~/.glorious/worktrees/**": "allow"
     }
+  },
+  "mcp": {
+    "memory": {
+      "type": "local",
+      "command": [
+        "bash",
+        "-c",
+        "exec bash \"$HOME/.config/opencode/bin/memory-mcp-launcher.sh\""
+      ],
+      "enabled": true
+    }
   }
 }

@@ -14,7 +14,7 @@ Part of the `glorious` ecosystem — installs alongside other `glorious-*` tools
 - **OpenCode plugins**
   - Local: `notify` (OS notifications for question tool), `autopilot`, `auto-update` (opportunistic self-update at session start — see [docs/installation.md#auto-update](docs/installation.md#auto-update))
   - npm-delivered: [`opencode-hashline`](https://www.npmjs.com/package/opencode-hashline) (installed automatically into `~/.config/opencode/node_modules/`)
-- **MCP server wiring** — `serena` (AST code intel), `memory` (cross-session SQLite), `git` (structured blame/log). `playwright` and `linear` defined but disabled — flip a flag to enable.
+- **MCP server wiring** — `serena` (AST code intel), `memory` (per-repo JSON memory, worktree-shared), `git` (structured blame/log). `playwright` and `linear` defined but disabled — flip a flag to enable.
 - **Claude Code parity** — tool-parity table so agents fall back gracefully on Claude Code (no `tsc_check`? use the project's typecheck command via bash. No Serena? use `grep`.)
 - **Hashline edit system** — line-reference prefixes that validate content hashes before every edit. No more stale-line errors.
 - **Tracker/host-agnostic commands** — `/autopilot`, `/review`, `/ship` detect and use whatever issue tracker (Linear, GitHub, Jira, Atlassian, …) and git host (GitHub, GitLab, Bitbucket, Gitea) you have configured. No hardcoding, no "Linear-only" surprises.

@@ -171,11 +171,22 @@ _run "scenario-2-heavily-customized" 0 "yes" ""
 # Scenario 3: user has external_directory with own glob → ours appended alongside. Exit 0.
 _run "scenario-3-has-external-directory-object" 0 "yes" ""
 
-# Scenario 4: scalar-vs-object collision → no mutation, warning to stderr, exit 0.
-_run "scenario-4-scalar-collision" 0 "no" "WARN: scalar-vs-object"
+# Scenario 4: scalar-vs-object collision on external_directory → scalar key is
+# preserved verbatim (warning to stderr), but other missing keys (e.g. mcp from
+# src.json) still merge additively. Expect warning AND additive changes.
+_run "scenario-4-scalar-collision" 0 "yes" "WARN: scalar-vs-object"
 
 # Scenario 5: malformed JSON → exit 1, stderr mentions "invalid JSON", no write.
 _run "scenario-5-malformed" 1 "no" "invalid JSON"
+
+# Scenario 6: user has the OLD-style broken memory block (issue #24). The merge
+# policy is "narrow" — it never overwrites user-set keys, even ones we know are
+# broken. All src.json top-level keys are already present in the input (though
+# mcp.memory has a different shape), so no additions → exit 42 ("no merge needed")
+# → input is left verbatim. This locks the "no auto-migration" decision as a
+# regression test. Users with this config get a doctor warning (install.sh)
+# instead of silent overwrite.
+_run "scenario-6-old-memory-block" 42 "no" ""
 
 echo
 if [[ $fail_count -eq 0 ]]; then

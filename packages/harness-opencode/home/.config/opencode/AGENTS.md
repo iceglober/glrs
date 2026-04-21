@@ -28,7 +28,7 @@ Example patterns:
 Three local-only MCP servers ship enabled by default:
 
 - `serena` — AST-aware code intelligence via tree-sitter + LSP
-- `memory` — per-engineer SQLite across sessions (file: `.agent/memory.json`, should be gitignored per-repo)
+- `memory` — per-engineer JSON store across sessions. A launcher (`~/.config/opencode/bin/memory-mcp-launcher.sh`) sets `MEMORY_FILE_PATH` to `<repo-toplevel>/.agent/memory.json`, shared across worktrees of the same repo, with a narrow `memory.json` entry auto-added to `.agent/.gitignore` on first use. Outside a git repo it falls back to `~/.config/opencode/memory/fallback.json`. Set `MEMORY_MCP_LAUNCHER_DEBUG=1` to log the resolved path to stderr.
 - `git` — structured blame/log/bisect
 
 Two more are defined but disabled; enable in your project's `opencode.json` if you want them:

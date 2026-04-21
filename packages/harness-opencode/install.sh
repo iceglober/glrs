@@ -382,6 +382,21 @@ for f in "${SRC_OC}/plugins/"*.ts; do
   MANIFEST_ENTRIES+=("$dst")
 done
 
+# bin/ holds launcher shell scripts referenced from opencode.json (e.g.
+# memory-mcp-launcher.sh, which fixes per-repo MEMORY_FILE_PATH — issue #24).
+# Same per-file symlink discipline as tools/ and plugins/. The `chmod *` deny
+# rule blocks the installer from setting the exec bit, but launchers are
+# invoked via `bash <path>` from opencode.json, so the bit is nice-to-have
+# rather than required. Targets carry 100755 via `git update-index --chmod=+x`.
+step "Linking OpenCode bin scripts → ${OC_DIR}/bin/"
+for f in "${SRC_OC}/bin/"*.sh; do
+  [[ -e "$f" ]] || continue
+  name="$(basename "$f")"
+  dst="${OC_DIR}/bin/${name}"
+  link_file "$f" "$dst"
+  MANIFEST_ENTRIES+=("$dst")
+done
+
 step "Handling ${OC_DIR}/opencode.json, AGENTS.md, package.json"
 for base in "opencode.json" "AGENTS.md" "package.json"; do
   src="${SRC_OC}/${base}"
@@ -553,6 +568,49 @@ if [[ -f "$_doctor_oc_resolved" ]]; then
     warn "permission.external_directory with '~/.glorious/worktrees/**': 'allow' missing from '$_doctor_oc_resolved'"
     warn "  → /fresh worktrees will re-prompt \"Always allow\" until this is added."
     warn "  → See: docs/permissions.md"
+  fi
+
+  # Old-style memory MCP config detection (fixes #24). Because the merge policy
+  # is intentionally narrow (never overwrites user-set keys), users who did a
+  # real-file merge of opencode.json before this fix landed retain the broken
+  # ["npx", "-y", "@modelcontextprotocol/server-memory"] command + relative
+  # MEMORY_FILE_PATH. grep can't reliably parse pretty-printed multi-line JSON
+  # or gate on `enabled: false`, so use `node` for JSON traversal. If node is
+  # missing we silently skip — it's a nice-to-have diagnostic, not a hard
+  # requirement, and `node` already gates the merge path upstream.
+  if command -v node >/dev/null 2>&1; then
+    _memory_check="$(node -e '
+      try {
+        const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+        const m = c && c.mcp && c.mcp.memory;
+        if (!m || m.enabled === false) process.exit(0);
+        const cmd = Array.isArray(m.command) ? m.command : [];
+        const envPath = m.environment && m.environment.MEMORY_FILE_PATH;
+        const usesLauncher = cmd.some(x => typeof x === "string" && x.indexOf("memory-mcp-launcher") !== -1);
+        const directNpx = cmd.indexOf("@modelcontextprotocol/server-memory") !== -1;
+        const relEnv = typeof envPath === "string" && envPath.charAt(0) !== "/" && envPath.charAt(0) !== "~";
+        if (!usesLauncher && (directNpx || relEnv)) {
+          console.log("OLD_MEMORY_CONFIG");
+        }
+      } catch (_) {}
+    ' "$_doctor_oc_resolved" 2>/dev/null)"
+    if [[ "$_memory_check" == "OLD_MEMORY_CONFIG" ]]; then
+      warn "Old-style memory MCP config detected in '$_doctor_oc_resolved' (issue #24)"
+      warn "  → memories have been going to a volatile file inside the npx cache and are likely lost."
+      warn "  → Replace the 'memory' block under \"mcp\" with:"
+      warn '      "memory": {'
+      warn '        "type": "local",'
+      # shellcheck disable=SC2016  # single quotes are intentional — the literal
+      # string "$HOME" is part of the JSON snippet the user must paste verbatim
+      # into opencode.json, where the outer `bash -c` at runtime does the
+      # expansion. Expanding $HOME here would print the installer operator's
+      # home, which is wrong for the JSON paste.
+      warn '        "command": ["bash", "-c", "exec bash \"$HOME/.config/opencode/bin/memory-mcp-launcher.sh\""],'
+      warn '        "enabled": true'
+      warn "      }"
+      warn "  → The launcher (~/.config/opencode/bin/memory-mcp-launcher.sh) resolves MEMORY_FILE_PATH per-repo."
+    fi
+    unset _memory_check
   fi
 fi
 unset _doctor_oc_path _doctor_oc_resolved
