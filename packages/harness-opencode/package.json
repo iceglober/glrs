@@ -10,13 +10,20 @@
     "harness-opencode": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "lint": "echo 'no linter configured yet'",
+    "changeset": "changeset",
+    "release": "changeset publish",
     "prepublishOnly": "bun run build && bun run typecheck"
   },
   "peerDependencies": {
@@ -24,6 +31,8 @@
     "@opencode-ai/sdk": "^1.14"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.6.0",
+    "@changesets/cli": "^2.31.0",
     "@opencode-ai/plugin": "^1.14.19",
     "@opencode-ai/sdk": "^1.14.19",
     "@types/bun": "latest",

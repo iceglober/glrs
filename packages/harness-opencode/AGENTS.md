@@ -46,7 +46,7 @@ glorious-opencode/
 
 8. **No dangling path references in prompts.** Every file under `src/agents/prompts/`, `src/commands/prompts/`, and `src/skills/**/*.md` must not contain `~/.claude`, `home/.claude`, `~/.config/opencode`, or `home/.config/opencode`. CI enforces this via `test/prompts-no-dangling-paths.test.ts`.
 
-9. **Rollback recipe for maintainers.** For a broken release: `npm deprecate @glrs-dev/harness-opencode@<broken> "<reason>; use <fix>"` + publish a patch. Users on floating semver auto-recover on next `bun update`.
+9. **Rollback recipe for maintainers.** For a broken release: `npm deprecate @glrs-dev/harness-opencode@<broken> "<reason>; use <fix>"`, then ship the fix via the normal flow — `bunx changeset` (pick `patch`, describe the fix), merge, then merge the auto-opened "Version Packages" PR. Users on floating semver auto-recover on next `bun update`.
 
 ## When adding a new agent
 
@@ -76,6 +76,17 @@ bun run typecheck      # TypeScript type check
 bun test               # Run all tests
 npm publish --dry-run  # Verify tarball contents
 ```
+
+## Releasing
+
+Releases are automated via [Changesets](https://github.com/changesets/changesets). Do not run `npm publish` manually.
+
+- Every user-visible PR must include a changeset (`bunx changeset` → pick bump level → describe).
+- On merge to `main`, `.github/workflows/release.yml` opens or updates a "Version Packages" PR that bumps `package.json`, rewrites `CHANGELOG.md`, and consumes the changeset files.
+- Merging the Version Packages PR triggers `changeset publish`, which runs `npm publish` with provenance and pushes the `@glrs-dev/harness-opencode@<version>` tag.
+- The `npm-publish` GitHub environment gates every publish with maintainer approval.
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full contributor flow and bump-level cheat sheet.
 
 ## Philosophy
 
