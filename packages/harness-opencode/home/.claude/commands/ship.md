@@ -4,84 +4,99 @@ description: Finalize, commit, squash, push, and open a PR for QA-passed changes
 
 The plan at $ARGUMENTS has passed QA review. Ship it.
 
-Do exactly the following, asking for explicit user approval at each step. Use the `question` tool for every approval (fires OS notification). Do NOT skip approvals.
+**User invoking `/ship` IS the approval.** Execute the pipeline end-to-end without asking for per-step permission. Commits, pushes, and PR creation are not destructive — they're the whole point of this command. Only stop for genuinely unexpected states (see "Stop conditions" at the bottom).
+
+Report what you did in one compact message at the end with the PR URL. Do NOT narrate each step individually.
 
 ## 1. Survey the working state
 
 Run in parallel:
-- `git status` — are there uncommitted or staged changes?
-- `git log --oneline origin/$(git rev-parse --abbrev-ref HEAD)..HEAD` — list local commits ahead of origin (if the branch doesn't exist on origin, this will error — fall back to `git log $(git merge-base HEAD origin/main)..HEAD`)
-- `git diff --stat` — summarize file-level impact of everything (committed + uncommitted)
+- `git status --short`
+- `git log --oneline origin/$(git rev-parse --abbrev-ref HEAD)..HEAD 2>/dev/null || git log $(git merge-base HEAD origin/main)..HEAD --oneline` — local commits ahead of origin (or ahead of main if branch is not pushed)
+- `git diff --stat`
 
-Show all three outputs to the user.
+Classify the shape silently and proceed:
+- **Clean + no local commits** — nothing to ship; report "Nothing to ship — working tree clean and no local commits ahead of origin." and STOP.
+- **Dirty + no local commits** — Path A.
+- **Clean + local commits** — Path C.
+- **Dirty + local commits** — Path B.
 
-Classify the shape:
-- **Clean + no local commits** — nothing to ship; tell the user and STOP.
-- **Dirty + no local commits** — single-commit flow (path A below).
-- **Clean + local commits** — push flow (path C below).
-- **Dirty + local commits** — hybrid flow (path B below).
+## 2. Commit / squash
 
-## 2. Commit / squash path
+### Path A — single commit
 
-### Path A — single commit (clean → dirty)
-
-1. Read the plan's `# <Title>` and `## Goal`. Propose a commit message:
-
+1. Derive a commit message:
+   - If a plan path was given in `$ARGUMENTS` and the file exists, read its `# <Title>` and `## Goal` to shape the message.
+   - If no plan, derive a title and paragraph from the diff itself (infer the `<type>`: feat / fix / chore / refactor / docs / test / perf).
+2. Format:
    ```
-   <type>: <title in lower case>
+   <type>: <title>
 
-   <one paragraph from the goal>
+   <one paragraph summarizing what and why>
 
-   Plan: .agent/plans/<slug>.md
+   Plan: .agent/plans/<slug>.md       ← only if a plan path was given
    ```
+3. `git add -u && git commit -m "<subject>" -m "<body>"` — do it. No confirmation prompt.
 
-   `<type>` is one of: feat, fix, chore, refactor, docs, test, perf.
+### Path B — hybrid (local commits exist + uncommitted changes)
 
-2. Ask via `question` tool: "Commit with this message? (yes / edit / cancel)"
-3. On `yes`: `git add -u` then commit.
+1. Commit the uncommitted changes using Path A's message logic (one atomic commit of the remaining work).
+2. Squash all local commits into one:
+   - Determine base: `BASE=$(git merge-base HEAD origin/main)`
+   - Derive the final squash message from the plan (if given) or from the union of commit subjects.
+   - `git reset --soft "$BASE" && git commit -m "<subject>" -m "<body>"`
+3. No confirmation prompts. Just do it.
 
-### Path B — hybrid (local commits exist, plus uncommitted changes)
+### Path C — local commits only, no dirty changes
 
-1. Propose: commit the uncommitted changes first (Path A), then squash all local commits into one using the plan title.
-2. Ask via `question` tool: "Hybrid flow detected: <N> local commits + uncommitted changes. Commit remaining work and squash all into one commit? (yes / edit message / keep separate commits / cancel)"
-3. On `yes`: commit the dirty changes, then:
-   - Determine base: `git merge-base HEAD origin/main`
-   - Propose final commit message (same format as Path A)
-   - Ask: "Squash to this message? (yes / edit / cancel)"
-   - On `yes`: `git reset --soft <base>` followed by `git commit -m "<msg>"`
-4. On `keep separate commits`: commit the dirty changes normally, proceed to push with multiple commits.
-
-### Path C — local commits only (clean + local commits)
-
-1. Tell the user there's nothing new to commit. List the existing local commits.
-2. Ask via `question` tool: "Squash <N> local commits into one before push, or push as-is? (squash / push as-is / cancel)"
-3. On `squash`: follow Path B's squash sub-flow.
-4. On `push as-is`: skip to step 3 below.
+- **Single local commit** → skip straight to push.
+- **Multiple local commits** → squash to one using Path B's squash sub-flow (derive message from plan / commit subjects).
 
 ## 3. Push
 
-1. Determine current branch: `git rev-parse --abbrev-ref HEAD`.
-2. Ask via `question` tool: "Push to origin/<branch>? (yes / cancel)"
-3. On `yes`: `git push -u origin <branch>` (sets upstream if first push).
-4. If push fails due to non-fast-forward, STOP and report — do NOT `--force`.
+1. `BRANCH=$(git rev-parse --abbrev-ref HEAD)`
+2. `git push -u origin "$BRANCH"` — just do it. First push sets upstream automatically.
+3. On non-fast-forward or hook failure → STOP (see stop conditions).
 
-## 4. Open a PR / MR
+## 4. Open a PR
 
-1. Ask via `question` tool: "Open a PR? (yes / skip)"
-2. On `yes`: detect the git host from `git remote get-url origin` and pick the right CLI:
-   - **GitHub** (`github.com` or `gh auth status` succeeds): `gh pr create --title "<commit-title>" --body "$(cat <plan-path>)"`
-   - **GitLab** (`gitlab.com` or a self-hosted `*.gitlab.*`): `glab mr create --title "<commit-title>" --description "$(cat <plan-path>)"`
-   - **Bitbucket** (`bitbucket.org`): `bb pr create --title "<commit-title>" --body "$(cat <plan-path>)"` (if `bb` is installed) or fall through to step 3
-   - **Gitea / Codeberg** (`codeberg.org`, `gitea.*`): `tea pr create --title "<commit-title>" --description "$(cat <plan-path>)"`
-   - **Unknown host or no CLI available**: construct the web URL to open the compare/new-PR page (e.g., `https://<host>/<owner>/<repo>/compare/<base>...<head>?expand=1` for GitHub-shape hosts) and print it. Tell the user to paste the plan body manually.
-   Escape the plan body properly (beware of backticks, dollar signs, and newlines in shell-argument context).
-3. Report the PR / MR URL.
+1. Detect the git host from `git remote get-url origin`.
+2. Derive the PR body:
+   - If a plan path was given and the file exists → body is the plan contents (escape backticks/dollar signs/newlines for shell).
+   - Else → body is the commit's body (from `git log -1 --pretty=%b`).
+3. Create the PR:
+   - **GitHub**: `gh pr create --title "<subject>" --body "$(cat <path-or-tempfile>)"`
+   - **GitLab**: `glab mr create --title "<subject>" --description "$(cat <path-or-tempfile>)"`
+   - **Bitbucket**: `bb pr create --title "<subject>" --body "$(cat ...)"` (fall through if `bb` unavailable)
+   - **Gitea / Codeberg**: `tea pr create --title "<subject>" --description "$(cat ...)"`
+   - **Unknown host or no CLI**: construct and print the web URL (e.g., `https://<host>/<owner>/<repo>/compare/<base>...<head>?expand=1`). Report it so the user can open it manually.
+4. Report the PR URL.
+
+Prefer writing the body to a tempfile and using `--body-file` or `$(cat <tempfile>)` over inlining to dodge shell-escape bugs with backticks and dollar signs in plan content.
+
+## Final report
+
+One message, compact:
+
+```
+Shipped.
+- Commit: <subject> (<sha>)
+- Branch: <branch> → origin
+- PR: <url>
+```
+
+## Stop conditions
+
+Only stop and ask if:
+- **Non-fast-forward push** — someone else pushed to this branch; never force. Report and ask what to do.
+- **Pre-commit or pre-push hook failure** — NEVER use `--no-verify`. Report the hook output verbatim and ask the user. Fix the root cause if they direct you to.
+- **Working tree shape doesn't match any of the four classes above** (e.g., detached HEAD, merge in progress, rebase in progress) — report and ask.
+- **User has *unstaged* changes that look unrelated to the plan** — e.g., the plan says you're shipping a React refactor but the diff includes edits to unrelated files. Report the suspicious files and ask before committing them.
 
 ## Hard rules
 
-- Every approval via the `question` tool — never free-text chat.
-- Never `git push --force` automatically. If non-fast-forward, stop and ask.
-- Never rebase interactively without explicit user opt-in.
-- `git reset --soft` is the squash mechanism; `git reset --hard` is forbidden for safety.
-- **Never use `--no-verify` or `--no-gpg-sign`.** If a pre-commit or pre-push hook fails, STOP and report the hook failure. Fix the root cause (resolve the TODO, repair the lint error, update the plan's Out-of-scope section). If the user insists on bypass, they must type the bypass themselves.
-- If anything looks unexpected at any step, STOP and ask.
+- **Never** `git push --force` or `git push -f`. Permission-denied anyway. If non-fast-forward, stop and ask — the user decides.
+- **Never** `git reset --hard`. Use `git reset --soft` only, and only for the squash case in Path B/C.
+- **Never** use `--no-verify` or `--no-gpg-sign`. If a hook fails, stop and report.
+- **Never** merge a PR — that's always the user's call.
+- Everything else (commit, push, PR open, PR body write, upstream set) is a normal tool call. Just do it.

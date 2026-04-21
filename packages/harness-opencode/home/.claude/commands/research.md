@@ -168,7 +168,7 @@ Mark all todos as completed.
 
 ## Notes
 
-- If no topic is provided as an argument, ask the user what they want to research
-- If the topic is too broad, ask clarifying questions before proceeding
+- If no topic is provided as an argument, ask the user what they want to research (one `question` tool call).
+- If the topic is broad but still has a plausible scoping (e.g., "research the auth system" → scope to "the primary auth flow and its top-3 entry points"), just state your narrowing in the output and proceed — do NOT ask. Only ask if the topic is so vague there's no defensible default pick (e.g., "research this codebase").
 - Always provide specific file paths with line numbers in the final output
 - The goal is to leave the user with a complete mental model of how the topic works in this codebase
