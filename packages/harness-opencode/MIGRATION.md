@@ -9,7 +9,7 @@ This commit is a **pre-pivot warning commit**. Nothing has moved yet. This doc i
 In the coming weeks, a single PR will land on `main` that:
 
 - Deletes `install.sh`, `update.sh`, `uninstall.sh`, `.manifest`, and the entire `home/` tree from this repo.
-- Replaces them with a TypeScript OpenCode plugin published to npm as `@glorious/harness-opencode`.
+- Replaces them with a TypeScript OpenCode plugin published to npm as `@glrs-dev/harness-opencode`.
 - Leaves a tiny 7-line `install.sh` redirect stub at the repo root so the old `curl | bash` one-liner keeps working — it just prints the migration command and exits cleanly.
 
 **The pivot commit will be preceded by a tag** named `v0-legacy-clone-install` on the commit immediately before it. That tag will be promoted to a GitHub Release whose assets include the final `install.sh`, `update.sh`, and `uninstall.sh` — so you can always retrieve them later to cleanly uninstall the old model even after they're removed from `main`.
@@ -24,7 +24,7 @@ In the coming weeks, a single PR will land on `main` that:
 
 ```bash
 # Download the final-legacy uninstall.sh from the v0-legacy-clone-install release
-curl -fsSL https://github.com/iceglober/glorious-opencode/releases/download/v0-legacy-clone-install/uninstall.sh -o /tmp/legacy-uninstall.sh
+curl -fsSL https://github.com/glrs-dev/harness-opencode/releases/download/v0-legacy-clone-install/uninstall.sh -o /tmp/legacy-uninstall.sh
 bash /tmp/legacy-uninstall.sh
 ```
 
@@ -41,10 +41,10 @@ find ~/.claude ~/.config/opencode -xtype l -delete
 ### Step 3: install the npm plugin
 
 ```bash
-bunx @glorious/harness-opencode install
+bunx @glrs-dev/harness-opencode install
 ```
 
-This CLI adds `@glorious/harness-opencode` to your `~/.config/opencode/opencode.json` `plugin` array (non-destructively — your existing plugins are preserved, `.bak` created before any write). Skills, agents, and commands are registered at runtime from the npm package; nothing is written to `~/.config/opencode/skills/` or similar.
+This CLI adds `@glrs-dev/harness-opencode` to your `~/.config/opencode/opencode.json` `plugin` array (non-destructively — your existing plugins are preserved, `.bak` created before any write). Skills, agents, and commands are registered at runtime from the npm package; nothing is written to `~/.config/opencode/skills/` or similar.
 
 ### Step 4: start OpenCode
 
@@ -61,7 +61,7 @@ The plugin is loaded by OpenCode's startup. Agents, commands, tools, MCPs, and s
 - The clone+symlink model makes every shipped file a symlink into a git-tracked tree. User edits through any of those symlinks (most commonly `opencode.json`) write through to the repo and abort the next `git pull --ff-only`. This is a structural bug, not fixable without moving delivery off git.
 - npm delivery eliminates ~2,400 lines of installer/updater/migration shell.
 - The OpenCode plugin `config` hook lets us register agents, commands, MCPs, tools, and skills at runtime from a node_modules-owned read-only bundle. No files are written to user space except a single plugin-array entry in `opencode.json`.
-- Updates become standard npm semver: `bun update @glorious/harness-opencode`. No cron, no daemon, no state file, no dirty-tree gates.
+- Updates become standard npm semver: `bun update @glrs-dev/harness-opencode`. No cron, no daemon, no state file, no dirty-tree gates.
 - Claude Code support is deferred to a Phase B release with a separate CLI subcommand that writes agent/command/skill files into `~/.claude/`. Until that ships, this plugin is OpenCode-only.
 
 See `.agent/plans/pivot-npm-plugin.md` in the repo for the full plan.

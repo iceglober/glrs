@@ -6,9 +6,9 @@
  * TypeScript while still shipping the tool as part of the npm package.
  *
  * Usage:
- *   bunx @glorious/harness-opencode plan-check <path>
- *   bunx @glorious/harness-opencode plan-check --run <path>
- *   bunx @glorious/harness-opencode plan-check --check <path>
+ *   bunx @glrs-dev/harness-opencode plan-check <path>
+ *   bunx @glrs-dev/harness-opencode plan-check --run <path>
+ *   bunx @glrs-dev/harness-opencode plan-check --check <path>
  */
 
 import { execFileSync } from "node:child_process";

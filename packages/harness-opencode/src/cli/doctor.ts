@@ -1,5 +1,5 @@
 /**
- * `bunx @glorious/harness-opencode doctor`
+ * `bunx @glrs-dev/harness-opencode doctor`
  *
  * Checks the installation health and reports per-check green/yellow/red.
  */
@@ -9,7 +9,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { execSync } from "node:child_process";
 
-const PLUGIN_NAME = "@glorious/harness-opencode";
+const PLUGIN_NAME = "@glrs-dev/harness-opencode";
 
 function getOpencodeConfigPath(): string {
   const configHome =

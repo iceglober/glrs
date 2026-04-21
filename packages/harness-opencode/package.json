@@ -1,5 +1,5 @@
 {
-  "name": "@glorious/harness-opencode",
+  "name": "@glrs-dev/harness-opencode",
   "version": "0.1.0",
   "description": "Opinionated OpenCode agent harness — orchestrator, plan, build, QA, skills, MCP wiring, hashline editing.",
   "type": "module",
@@ -7,7 +7,7 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "bin": {
-    "glorious-harness-opencode": "./dist/cli.js"
+    "glrs-dev": "dist/cli.js"
   },
   "files": [
     "dist"
@@ -41,6 +41,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/iceglober/glorious-opencode.git"
+    "url": "git+https://github.com/glrs-dev/harness-opencode.git"
   }
 }

@@ -1,10 +1,10 @@
-# @glorious/harness-opencode
+# @glrs-dev/harness-opencode
 
 An opinionated OpenCode agent harness — orchestrator, plan, build, QA, skills, MCP wiring, hashline editing. Delivered as a single npm plugin.
 
 ## What is it?
 
-`@glorious/harness-opencode` is an OpenCode plugin that registers agents, slash commands, custom tools, MCP servers, and skills at runtime via the OpenCode plugin `config` hook. Zero files are written to your `~/.config/opencode/` directory (except a single plugin-array entry in `opencode.json`).
+`@glrs-dev/harness-opencode` is an OpenCode plugin that registers agents, slash commands, custom tools, MCP servers, and skills at runtime via the OpenCode plugin `config` hook. Zero files are written to your `~/.config/opencode/` directory (except a single plugin-array entry in `opencode.json`).
 
 **Phase A (current):** OpenCode-only. Claude Code support is Phase B.
 
@@ -22,23 +22,23 @@ An opinionated OpenCode agent harness — orchestrator, plan, build, QA, skills,
 ## Install
 
 ```bash
-bunx @glorious/harness-opencode install
+bunx @glrs-dev/harness-opencode install
 ```
 
-This adds `"@glorious/harness-opencode"` to your `~/.config/opencode/opencode.json` `plugin` array non-destructively. Your existing plugins and settings are preserved. A `.bak.<epoch>-<pid>` backup is written before any mutation.
+This adds `"@glrs-dev/harness-opencode"` to your `~/.config/opencode/opencode.json` `plugin` array non-destructively. Your existing plugins and settings are preserved. A `.bak.<epoch>-<pid>` backup is written before any mutation.
 
 Or add it manually:
 
 ```json
 {
-  "plugin": ["@glorious/harness-opencode"]
+  "plugin": ["@glrs-dev/harness-opencode"]
 }
 ```
 
 ## Update
 
 ```bash
-bun update @glorious/harness-opencode
+bun update @glrs-dev/harness-opencode
 ```
 
 Or if you're using floating semver in your `opencode.json`, OpenCode's internal `bun install` step handles it on startup.
@@ -64,20 +64,20 @@ Or if you're using floating semver in your `opencode.json`, OpenCode's internal 
 To pin to a specific version:
 
 ```bash
-bunx @glorious/harness-opencode install --pin
+bunx @glrs-dev/harness-opencode install --pin
 ```
 
-This injects `"@glorious/harness-opencode@<current-version>"` into your plugin array. OpenCode's plugin loader accepts `name@version` and `name@^semver` specifiers.
+This injects `"@glrs-dev/harness-opencode@<current-version>"` into your plugin array. OpenCode's plugin loader accepts `name@version` and `name@^semver` specifiers.
 
-For a broken release: `npm deprecate @glorious/harness-opencode@<broken> "<reason>"` + patch publish. Users on floating semver auto-recover on next `bun update`.
+For a broken release: `npm deprecate @glrs-dev/harness-opencode@<broken> "<reason>"` + patch publish. Users on floating semver auto-recover on next `bun update`.
 
 ## Uninstall
 
 ```bash
-bunx @glorious/harness-opencode uninstall
+bunx @glrs-dev/harness-opencode uninstall
 ```
 
-Removes the plugin entry from `opencode.json`. Skills live in `node_modules` — removed by `bun remove @glorious/harness-opencode`.
+Removes the plugin entry from `opencode.json`. Skills live in `node_modules` — removed by `bun remove @glrs-dev/harness-opencode`.
 
 ## Migrating from the old clone+symlink install
 
@@ -85,7 +85,7 @@ If you were using the previous `install.sh`-based harness (the `~/.glorious/open
 
 ## Privacy
 
-The plugin checks `registry.npmjs.org` once per day to see if a newer version is available. No analytics, no telemetry, no identifiers beyond what `fetch()` sends. Opt out: `export GLORIOUS_HARNESS_UPDATE_CHECK=0`.
+The plugin checks `registry.npmjs.org` once per day to see if a newer version is available. No analytics, no telemetry, no identifiers beyond what `fetch()` sends. Opt out: `export GLRS_DEV_UPDATE_CHECK=0`.
 
 ## Prerequisites
 

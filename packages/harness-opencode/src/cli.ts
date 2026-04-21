@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @glorious/harness-opencode CLI
+ * @glrs-dev/harness-opencode CLI
  *
  * Commands:
  *   install [--dry-run] [--pin]   Add plugin to opencode.json
@@ -19,19 +19,19 @@ import { planCheck } from "./bin/plan-check.js";
 const VERSION = "0.1.0";
 
 const HELP = `
-@glorious/harness-opencode — OpenCode agent harness CLI
+@glrs-dev/harness-opencode — OpenCode agent harness CLI
 
 Usage:
-  bunx @glorious/harness-opencode <command> [options]
+  bunx @glrs-dev/harness-opencode <command> [options]
 
 Commands:
   install [--dry-run] [--pin]
-      Add "@glorious/harness-opencode" to your opencode.json plugin array.
+      Add "@glrs-dev/harness-opencode" to your opencode.json plugin array.
       --dry-run  Preview changes without writing.
       --pin      Pin to the current exact version (e.g. @0.1.0).
 
   uninstall [--dry-run]
-      Remove "@glorious/harness-opencode" from your opencode.json plugin array.
+      Remove "@glrs-dev/harness-opencode" from your opencode.json plugin array.
 
   doctor
       Check installation health (OpenCode CLI, plugin registration, MCP backends).

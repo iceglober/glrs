@@ -1,7 +1,7 @@
 /**
- * `bunx @glorious/harness-opencode uninstall`
+ * `bunx @glrs-dev/harness-opencode uninstall`
  *
- * Removes "@glorious/harness-opencode" from the user's opencode.json plugin
+ * Removes "@glrs-dev/harness-opencode" from the user's opencode.json plugin
  * array. Writes a .bak backup before mutation. Does NOT touch skills (they
  * live in node_modules, removed by `bun remove`). Does NOT touch ~/.claude/.
  */
@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
-const PLUGIN_NAME = "@glorious/harness-opencode";
+const PLUGIN_NAME = "@glrs-dev/harness-opencode";
 
 function getOpencodeConfigPath(): string {
   const configHome =
@@ -103,6 +103,6 @@ export function uninstall(opts: UninstallOptions = {}): void {
   ok(`Removed "${PLUGIN_NAME}" from ${configPath}`);
   info(`Backup: ${bakPath}`);
   console.log(`
-To fully remove the package: bun remove @glorious/harness-opencode
+To fully remove the package: bun remove @glrs-dev/harness-opencode
 `);
 }

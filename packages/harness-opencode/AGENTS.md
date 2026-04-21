@@ -1,6 +1,6 @@
 # glorious-opencode — repo context for agents working on this repo
 
-You are editing the **@glorious/harness-opencode** npm plugin — an OpenCode agent harness delivered as a single npm package. This is meta-work: changes here propagate to every user on their next `bun update`.
+You are editing the **@glrs-dev/harness-opencode** npm plugin — an OpenCode agent harness delivered as a single npm package. This is meta-work: changes here propagate to every user on their next `bun update`.
 
 ## What this repo is
 
@@ -34,7 +34,7 @@ glorious-opencode/
 
 2. **Type-surface escape hatches are permitted where the SDK is narrower than the runtime.** Known gaps: `permission.external_directory` path-keyed maps; per-tool-name permission keys in `AgentConfig` (`ast_grep`, `tsc_check`, etc.); `skills.paths` (v2 SDK type, may not be in v1). Use `as unknown as Config` / narrow module augmentation. Document each escape hatch in `docs/plugin-architecture.md`.
 
-3. **No postinstall side-effects.** `bun add @glorious/harness-opencode` MUST NOT touch `~/.config/opencode/`. All filesystem mutation happens only via `bunx @glorious/harness-opencode install`.
+3. **No postinstall side-effects.** `bun add @glrs-dev/harness-opencode` MUST NOT touch `~/.config/opencode/`. All filesystem mutation happens only via `bunx @glrs-dev/harness-opencode install`.
 
 4. **Merge policy for opencode.json (CLI install subcommand).** The installer adds missing keys from our shipped defaults, preserves all user values verbatim, and writes a `.bak.<epoch>-<pid>` sibling before every mutation. It never overwrites a key the user has set, and never deletes keys. Arrays are treated as leaves (user's array wins) except the top-level `plugin` array, which is unioned-by-value so our plugin name lands even when a user has a custom plugin list. Scalar-vs-object collisions preserve the user's scalar and emit a WARN. The merge logic lives at `src/cli/merge-config.ts` and is codified by the fixture suite at `test/fixtures/merge-config/`; `bun test test/merge-config.test.ts` runs the tests.
 
@@ -46,7 +46,7 @@ glorious-opencode/
 
 8. **No dangling path references in prompts.** Every file under `src/agents/prompts/`, `src/commands/prompts/`, and `src/skills/**/*.md` must not contain `~/.claude`, `home/.claude`, `~/.config/opencode`, or `home/.config/opencode`. CI enforces this via `test/prompts-no-dangling-paths.test.ts`.
 
-9. **Rollback recipe for maintainers.** For a broken release: `npm deprecate @glorious/harness-opencode@<broken> "<reason>; use <fix>"` + publish a patch. Users on floating semver auto-recover on next `bun update`.
+9. **Rollback recipe for maintainers.** For a broken release: `npm deprecate @glrs-dev/harness-opencode@<broken> "<reason>; use <fix>"` + publish a patch. Users on floating semver auto-recover on next `bun update`.
 
 ## When adding a new agent
 

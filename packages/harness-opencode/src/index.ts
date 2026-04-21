@@ -1,5 +1,5 @@
 /**
- * @glorious/harness-opencode — OpenCode plugin entry point.
+ * @glrs-dev/harness-opencode — OpenCode plugin entry point.
  *
  * Registers agents, commands, MCPs, tools, and skills at runtime via the
  * OpenCode plugin `config` hook. Zero filesystem writes to user space.
@@ -33,7 +33,7 @@ import costTrackerPlugin from "./plugins/cost-tracker.js";
 // ---- Update notification ----
 
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const PACKAGE_NAME = "@glorious/harness-opencode";
+const PACKAGE_NAME = "@glrs-dev/harness-opencode";
 const BUNDLED_VERSION = "0.1.0"; // updated by release pipeline
 
 function getUpdateCheckStatePath(): string {
@@ -41,13 +41,13 @@ function getUpdateCheckStatePath(): string {
     process.env["XDG_CACHE_HOME"] ?? path.join(os.homedir(), ".cache");
   return path.join(
     cacheHome,
-    "glorious-harness-opencode",
+    "glrs-dev",
     "update-check.json",
   );
 }
 
 async function checkForUpdate(client: any): Promise<void> {
-  if (process.env["GLORIOUS_HARNESS_UPDATE_CHECK"] === "0") return;
+  if (process.env["GLRS_DEV_UPDATE_CHECK"] === "0") return;
 
   const statePath = getUpdateCheckStatePath();
 

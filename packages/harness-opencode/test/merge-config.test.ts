@@ -129,7 +129,7 @@ describe("merge-config", () => {
 
     const srcWithOurPlugin = {
       ...SRC_JSON,
-      plugin: ["@glorious/harness-opencode"],
+      plugin: ["@glrs-dev/harness-opencode"],
     };
 
     const result = mergeConfig(srcWithOurPlugin, dstPath);
@@ -138,7 +138,7 @@ describe("merge-config", () => {
     const actual = JSON.parse(fs.readFileSync(dstPath, "utf8"));
     // Both plugins present
     expect(actual.plugin).toContain("opencode-hashline");
-    expect(actual.plugin).toContain("@glorious/harness-opencode");
+    expect(actual.plugin).toContain("@glrs-dev/harness-opencode");
     // Order: existing first, new appended
     expect(actual.plugin[0]).toBe("opencode-hashline");
   });
@@ -163,7 +163,7 @@ describe("merge-config", () => {
 
   it("seedConfig: creates file with content when dst does not exist", () => {
     const dstPath = path.join(tmpDir, "new-dir", "opencode.json");
-    const content = { plugin: ["@glorious/harness-opencode"] };
+    const content = { plugin: ["@glrs-dev/harness-opencode"] };
 
     seedConfig(content as any, dstPath);
 

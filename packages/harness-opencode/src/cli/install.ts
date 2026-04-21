@@ -1,7 +1,7 @@
 /**
- * `bunx @glorious/harness-opencode install`
+ * `bunx @glrs-dev/harness-opencode install`
  *
- * Adds "@glorious/harness-opencode" to the user's opencode.json plugin array
+ * Adds "@glrs-dev/harness-opencode" to the user's opencode.json plugin array
  * via non-destructive merge. Preserves all existing plugins and user keys.
  * Writes a .bak.<epoch>-<pid> backup before every mutation.
  */
@@ -11,7 +11,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { mergeConfig, seedConfig } from "./merge-config.js";
 
-const PLUGIN_NAME = "@glorious/harness-opencode";
+const PLUGIN_NAME = "@glrs-dev/harness-opencode";
 const PACKAGE_VERSION = "0.1.0"; // updated by release pipeline
 
 function getOpencodeConfigPath(): string {
@@ -98,7 +98,7 @@ Next steps:
   1. Start OpenCode: opencode
   2. Agents, commands, tools, and skills load automatically.
   3. To enable Linear MCP: edit ~/.config/opencode/opencode.json and set "linear".enabled=true.
-  4. To update: bun update @glorious/harness-opencode
-  5. To uninstall: bunx @glorious/harness-opencode uninstall
+  4. To update: bun update @glrs-dev/harness-opencode
+  5. To uninstall: bunx @glrs-dev/harness-opencode uninstall
 `);
 }

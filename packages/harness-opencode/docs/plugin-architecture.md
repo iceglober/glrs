@@ -2,7 +2,7 @@
 
 ## How registration works
 
-`@glorious/harness-opencode` is an OpenCode plugin. OpenCode loads it from `node_modules` at startup and calls the plugin's `config` hook before the first session message reaches the LLM.
+`@glrs-dev/harness-opencode` is an OpenCode plugin. OpenCode loads it from `node_modules` at startup and calls the plugin's `config` hook before the first session message reaches the LLM.
 
 The `config` hook receives the full `Config` object by reference and mutates it in place:
 
@@ -61,9 +61,9 @@ All escape hatches use `as unknown as Config` or `(config as any)` at the call s
 
 ## Update notification
 
-The plugin checks `registry.npmjs.org/@glorious/harness-opencode/latest` once per day (rate-limited via `~/.cache/glorious-harness-opencode/update-check.json`). If a newer version is available, it emits a TUI toast via `client.tui.showToast`.
+The plugin checks `registry.npmjs.org/@glrs-dev/harness-opencode/latest` once per day (rate-limited via `~/.cache/glrs-dev/update-check.json`). If a newer version is available, it emits a TUI toast via `client.tui.showToast`.
 
-Opt out: `export GLORIOUS_HARNESS_UPDATE_CHECK=0`.
+Opt out: `export GLRS_DEV_UPDATE_CHECK=0`.
 
 ## Memory MCP path resolution
 

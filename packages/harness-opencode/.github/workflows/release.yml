@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: npm-publish
     # Extra guard: only run on the canonical repo, not forks.
-    if: github.repository == 'iceglober/glorious-opencode'
+    if: github.repository == 'glrs-dev/harness-opencode'
     permissions:
       contents: read
       packages: write  # required for GitHub Packages publish
@@ -38,7 +38,7 @@ jobs:
         run: bun test
 
       # ── Publish to npm (primary registry, zero-friction for users) ──────────
-      # Users install with: bun add @glorious/harness-opencode
+      # Users install with: bun add @glrs-dev/harness-opencode
       # No auth required on the user side.
       - name: Setup Node for npm publish
         uses: actions/setup-node@v4
@@ -52,7 +52,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # ── Publish to GitHub Packages (mirror, visible on repo page) ───────────
-      # Users install with: bun add @glorious/harness-opencode
+      # Users install with: bun add @glrs-dev/harness-opencode
       # but must first configure the registry:
       #   echo "@glorious:registry=https://npm.pkg.github.com" >> ~/.npmrc
       # This is why npm is the primary registry — GitHub Packages requires

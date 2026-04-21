@@ -109,7 +109,7 @@ For each file:
 - Legacy plans without a fence (old `- [ ]` checkboxes directly under
   `## Acceptance criteria`) still execute and pass review — the fence
   is required only for NEW plans.
-- The plan-check tool (`bunx @glorious/harness-opencode plan-check`) parses the fence
+- The plan-check tool (`bunx @glrs-dev/harness-opencode plan-check`) parses the fence
   and can emit verify commands for execution (`--run`) or validate
   structure (`--check`).
 

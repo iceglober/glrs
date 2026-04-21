@@ -22,7 +22,7 @@ export function createMcpConfig(): McpConfig {
     // Use node's require.resolve to find the bundled launcher inside the
     // installed package, then exec it. Works because the MCP command runs
     // in a CJS-compatible shell context.
-    "exec bash \"$(node -e 'process.stdout.write(require.resolve(\"@glorious/harness-opencode/dist/bin/memory-mcp-launcher.sh\"))')\"",
+    "exec bash \"$(node -e 'process.stdout.write(require.resolve(\"@glrs-dev/harness-opencode/dist/bin/memory-mcp-launcher.sh\"))')\"",
   ];
 
   return {
