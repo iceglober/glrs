@@ -33,10 +33,10 @@ bash /tmp/legacy-uninstall.sh
 If OpenCode or Claude Code misbehaves after the pull, it's probably because the uninstaller was unable to clean some files (user-customized, non-symlink content the uninstaller intentionally preserves). Remove any remaining dangling symlinks with:
 
 ```bash
-find ~/.claude ~/.config/opencode -xtype l -delete
+find ~/.claude ~/.config/opencode -type l ! -exec test -e {} \; -print -delete
 ```
 
-`-xtype l` matches dangling symlinks; `-delete` removes them. Safe on both BSD (macOS) and GNU (Linux) `find`.
+This matches symlinks (`-type l`) whose target does not exist (`! -exec test -e {} \;`), prints them (`-print`), and deletes them (`-delete`). The earlier GNU-only `-xtype l` shortcut fails on macOS's BSD `find`; this form is portable across BSD and GNU.
 
 ### Step 3: install the npm plugin
 

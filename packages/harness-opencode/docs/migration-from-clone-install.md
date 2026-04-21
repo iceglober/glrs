@@ -16,10 +16,10 @@ bash /tmp/legacy-uninstall.sh
 If OpenCode or Claude Code misbehaves after the uninstall, there may be dangling symlinks left behind (files the uninstaller intentionally preserved because you had local edits). Remove them:
 
 ```bash
-find ~/.claude ~/.config/opencode -xtype l -delete
+find ~/.claude ~/.config/opencode -type l ! -exec test -e {} \; -print -delete
 ```
 
-`-xtype l` matches dangling symlinks; `-delete` removes them. Safe on both macOS and Linux.
+This matches symlinks (`-type l`) whose target does not exist (`! -exec test -e {} \;`), prints them (`-print`), and deletes them (`-delete`). The earlier GNU-only `-xtype l` shortcut fails on macOS's BSD `find`; this form is portable across BSD and GNU.
 
 ## Step 3: Install the npm plugin
 
@@ -48,7 +48,7 @@ Agents, commands, tools, MCPs, and skills load automatically from the plugin.
 ## Troubleshooting
 
 **`opencode` fails to start after migration:**
-Run `find ~/.claude ~/.config/opencode -xtype l -delete` to remove any remaining dangling symlinks.
+Run `find ~/.claude ~/.config/opencode -type l ! -exec test -e {} \; -print -delete` to remove any remaining dangling symlinks.
 
 **My `opencode.json` customizations are gone:**
 The new installer preserves your existing `opencode.json`. If you had customizations in the old `home/.config/opencode/opencode.json` (which was symlinked into `~/.config/opencode/opencode.json`), those edits were in the git checkout. You can recover them from `~/.glorious/opencode/home/.config/opencode/opencode.json` if the checkout still exists.
