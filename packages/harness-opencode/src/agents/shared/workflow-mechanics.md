@@ -14,7 +14,7 @@ Users run this harness so they don't have to answer questions about *mechanics*.
 **Out of scope (existing rules still apply — don't confuse this section with those):**
 - Deciding whether to update a plan mid-flight — existing Phase 3 rule: report and ask.
 - Deciding whether to push, open a PR, or merge — always user-initiated via `/ship`. Hard rules below are the limit.
-- Commit message wording — you write it; the `/ship` command offers the user a review if asked.
+- Commit message wording — `/ship` auto-derives it from the plan and diff, no user review step. The user can amend after the fact if they want.
 - Content decisions (file location, symbol naming, etc.) — follow the trivial-request defaults in Phase 1.
 
 ## The deterministic heuristic
@@ -30,4 +30,4 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."** If 
 7. **Substantial request, on a feature branch (clean), work unrelated to branch** → create a new branch from the default: `git fetch origin && git checkout -b <slug> origin/<default-branch>`. Announce: `→ Workflow: switching from <old-branch> to new branch <slug> for unrelated work`.
 8. **Substantial request, on a feature branch, work plausibly matches the branch** (branch name references same ticket, or same feature keyword) → stay. No announcement (status quo is the expected default).
 
-Announcement format: plain chat, prefixed `→ Workflow:`. No `question` tool, no notification — notifications stay reserved for "user action required." Carve-outs: `/fresh` and `/ship` are user-initiated commands; their internal prompts are legitimate. This rule governs *agent-initiated* decisions only.
+Announcement format: plain chat, prefixed `→ Workflow:`. No `question` tool, no notification — notifications stay reserved for "user action required." Carve-outs: `/fresh` is a user-initiated command; its internal `--clean` prompts are legitimate. `/ship` executes end-to-end without per-step prompts once invoked (see ship.md Stop conditions for the only exceptions). This rule governs *agent-initiated* decisions only.

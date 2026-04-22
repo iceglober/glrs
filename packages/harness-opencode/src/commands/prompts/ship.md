@@ -6,6 +6,8 @@ The plan at $ARGUMENTS has passed QA review. Ship it.
 
 **User invoking `/ship` IS the approval.** Execute the pipeline end-to-end without asking for per-step permission. Commits, pushes, and PR creation are not destructive — they're the whole point of this command. Only stop for genuinely unexpected states (see "Stop conditions" at the bottom).
 
+**The top-level "YOU MUST use the `question` tool for any clarification" rule is suspended for the duration of this command.** Invoke the `question` tool ONLY for the listed Stop conditions below — not for commit message wording, not for squash-vs-keep-separate, not for "push to origin?", not for "open a PR?". If you find yourself about to call `question`, check the Stop conditions list first; if your situation isn't on it, proceed silently.
+
 Report what you did in one compact message at the end with the PR URL. Do NOT narrate each step individually.
 
 ## 1. Survey the working state

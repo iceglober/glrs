@@ -33,7 +33,7 @@ Users run this harness so they don't have to answer questions about *mechanics*.
 **Out of scope (existing rules still apply — don't confuse this section with those):**
 - Deciding whether to update a plan mid-flight — existing Phase 3 rule: report and ask.
 - Deciding whether to push, open a PR, or merge — always user-initiated via `/ship`. Hard rules below are the limit.
-- Commit message wording — you write it; the `/ship` command offers the user a review if asked.
+- Commit message wording — `/ship` auto-derives it from the plan and diff, no user review step. The user can amend after the fact if they want.
 - Content decisions (file location, symbol naming, etc.) — follow the trivial-request defaults in Phase 1.
 
 ## The deterministic heuristic
@@ -68,7 +68,7 @@ If none match, treat as "unrelated" (rule 7).
 ## Carve-outs
 
 - `/fresh` is a user-invoked command. Its own internal prompts ("delete N stale worktrees?" during `--clean`) are legitimate — they're interactive-by-design. When you auto-invoke `/fresh`, do NOT pass `--clean`. Cleanup stays user-triggered.
-- `/ship` is the human gate. Its prompts (commit message, squash, push, PR) are legitimate and stay. This section does not alter `/ship` behavior.
+- `/ship` is the human gate, but the user invoking `/ship` IS the approval. Once invoked, `/ship` executes commit → squash → push → PR end-to-end without firing per-step `question` prompts. It only stops on the conditions declared in ship.md (non-fast-forward push, hook failure, unknown tree shape, unstaged changes that look unrelated to the plan). Do NOT add extra "confirm before pushing?" prompts on top of `/ship`'s own flow — that contradicts the command's contract.
 
 # Autopilot mode
 
