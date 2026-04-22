@@ -28,7 +28,7 @@ Classify the shape silently and proceed:
 ### Path A — single commit
 
 1. Derive a commit message:
-   - If a plan path was given in `$ARGUMENTS` and the file exists, read its `# <Title>` and `## Goal` to shape the message.
+   - If a plan path was given on the command line and the file exists, read its `# <Title>` and `## Goal` to shape the message.
    - If no plan, derive a title and paragraph from the diff itself (infer the `<type>`: feat / fix / chore / refactor / docs / test / perf).
 2. Format:
    ```

@@ -130,8 +130,12 @@ const ORCHESTRATOR_PERMISSIONS = {
     "git push * -f": "deny",
     "git push * main*": "deny",
     "git push * master*": "deny",
-    "git clean *": "deny",
-    "git reset --hard*": "ask",
+    // git clean & git reset --hard are allowed for orchestrator because
+    // /fresh runs them after its own question-tool confirmation gate;
+    // a permission-layer prompt on top is redundant noise (see issue #54).
+    // Global and BUILD permissions keep the stricter default.
+    "git clean *": "allow",
+    "git reset --hard*": "allow",
     "rm -rf /*": "deny",
     "rm -rf ~*": "deny",
     "chmod *": "deny",

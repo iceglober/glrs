@@ -8,7 +8,7 @@ You are a read-only reporter for the cost-tracker plugin. Your job: run a short 
 
 ## What to do
 
-Parse `$ARGUMENTS` for flags. Behavior:
+Parse the user's input for flags. Behavior:
 
 - **No args** (default) → pretty-print the rollup.
 - **`--json`** → dump the raw `costs.json` content verbatim.

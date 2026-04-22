@@ -101,7 +101,7 @@ If you auto-invoke `/fresh`, do NOT pass `--clean`. Cleanup stays user-triggered
 
 ## 1. Classify the argument
 
-Examine `$ARGUMENTS` and pick ONE of these paths:
+Examine the user's input and pick ONE of these paths:
 
 - **Issue-tracker reference** (single issue) — anything that looks like one ticket identifier. Match any of these shapes:
   - `<PROJECT>-<NUMBER>` where PROJECT is 2–10 uppercase letters (e.g. `ENG-1234`, `ICE-42`, `GEN-1114`, `PROJ-456`) — the common shape for Linear, Jira, YouTrack, Shortcut, etc.

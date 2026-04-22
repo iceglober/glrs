@@ -20,7 +20,7 @@ What `/fresh` does NOT do:
 What `/fresh` DOES do, in order:
 
 1. **Prereq checks** — verify cwd is inside a worktree (not the main checkout).
-2. **Parse `$ARGUMENTS`** — extract flags and free text.
+2. **Parse the user's input** — extract flags and free text.
 3. **Derive the new branch name** — from Linear/GitHub reference or free-text slug, with collision retry.
 4. **Working-tree safety check** — confirm-then-discard in interactive mode; hard-stop in `--yes` mode if the tree has tracked or non-gitignored untracked changes.
 5. **Capture state** — `OLD_BRANCH`, unpushed commits, handoff-brief-preservation snapshot.
@@ -44,7 +44,7 @@ What `/fresh` DOES do, in order:
 - Run `git rev-parse --git-common-dir` and compare with `git rev-parse --git-dir`. If they match, this is the main checkout, NOT a worktree. Abort with: `/fresh is for long-running worktrees, not the main checkout. Run \`gsag wt new\` first to create one, or cd into an existing worktree tab.`
 - `gsag` is NOT required by this command. (It's the tool the user uses to initially *create* worktree tabs; we don't need it for re-keying.)
 
-## 1. Parse `$ARGUMENTS`
+## 1. Parse the user's input
 
 Same parsing rules as a typical fresh-worktree command:
 
@@ -56,10 +56,10 @@ Same parsing rules as a typical fresh-worktree command:
 - **Free text** — first contiguous non-flag substring, used to derive the branch name.
 - **Pass-through args** — forwarded to the reset hook verbatim.
 
-If `$ARGUMENTS` is empty or has no free text:
+If the input is empty or has no free text:
 
 - **Interactive mode (default)**: use the `question` tool — "What's this tab re-keying to? (free text, or an issue-tracker reference like `ENG-1234`)"
-- **Non-interactive mode (`--yes`)**: abort immediately with `ERROR: /fresh --yes requires a branch name or issue ref in $ARGUMENTS.` — the caller (autopilot) must always supply one.
+- **Non-interactive mode (`--yes`)**: abort immediately with `ERROR: /fresh --yes requires a branch name or issue ref as input.` — the caller (autopilot) must always supply one.
 
 ## 1a. Non-interactive mode (`--yes`)
 
@@ -71,7 +71,7 @@ Under `--yes`, every `question`-tool use in this command is replaced by a determ
 | Dirty tree with TRACKED changes (modified/staged/deleted) | Ask to discard | **Abort** with `ERROR: /fresh --yes refuses to discard tracked changes. Commit/stash and re-run, or run /fresh without --yes.` |
 | Dirty tree with untracked NON-gitignored files | Ask to discard | **Abort** with the file list. Non-gitignored untracked files are almost always intentional. |
 | Unpushed commits on current branch | Proceed silently | Proceed silently (same as interactive) |
-| `$ARGUMENTS` empty | Ask for input | Abort |
+| Input empty | Ask for input | Abort |
 
 The invariant: `--yes` must never destroy work that a reasonable human would want to keep. Gitignored build artifacts are the only discard that's clearly safe without consent. Everything else halts the autopilot sequence so a human can inspect. The autopilot loop treats a `/fresh --yes` abort as a hard stop, not a "try next issue."
 
@@ -222,7 +222,7 @@ The project-specific reset strategy. The hook owns the entire reset: working-tre
 - `BASE_BRANCH` — the base branch the new branch is intended to derive from (from §1 `--from` flag or repo default). Informational; hook may pick a different base.
 - `FRESH_PASSTHROUGH_ARGS` — pass-through args joined with spaces (informational only, not parse-safe)
 
-**Positional args:** the pass-through args from `$ARGUMENTS`, verbatim, so the hook can use `getopt` / `case` / etc.
+**Positional args:** the pass-through args from the command input, verbatim, so the hook can use `getopt` / `case` / etc.
 
 **Invocation** — execute the hook directly so its shebang is respected (the hook author chose zsh, python, node, or anything else):
 
@@ -268,7 +268,7 @@ Write `.agent/fresh-handoff.md` in the current worktree. This is what the NEXT a
 
 ## Original request
 
-<verbatim $ARGUMENTS>
+<the user's original input, verbatim>
 
 ## Tracker context
 
@@ -363,7 +363,7 @@ Recover previous work: git checkout <OLD_BRANCH>
 |---|---|---|---|
 | 0 (env check) | Not inside a worktree | Abort with guidance to create one first | Same |
 | 0 (env check) | Inside main checkout, not a worktree | Abort — `/fresh` is for worktrees only | Same |
-| 1 (parsing) | Empty `$ARGUMENTS` | Ask via `question` tool | **Abort** with `ERROR: /fresh --yes requires a ref/description.` |
+| 1 (parsing) | Empty input | Ask via `question` tool | **Abort** with `ERROR: /fresh --yes requires a ref/description.` |
 | 2 (tracker lookup) | MCP/gh unavailable, issue not found | Fall back to free-text slug | Same |
 | 2 (name collision) | New branch name conflicts | Retry with `-YYMMDD`, then `-$EPOCHSECONDS` | Same |
 | 3 (dirty tree with tracked changes) | User intervention needed | Ask to discard | **Abort** with file list |
@@ -418,7 +418,7 @@ autopilot queue    →    autopilot pops ref    →    /fresh <ref> --yes    →
 A repo opts into a custom `/fresh` reset strategy by committing an executable file at `.glorious/hooks/fresh-reset` (committed to the repo, so it's automatically present in every worktree). It receives:
 
 - **Env:** `WORKTREE_DIR`, `WORKTREE_NAME`, `OLD_BRANCH`, `NEW_BRANCH` (suggested), `BASE_BRANCH` (requested), `FRESH_PASSTHROUGH_ARGS`
-- **Positional args:** the pass-through args from `$ARGUMENTS`
+- **Positional args:** the pass-through args from the command input
 
 It is responsible for: discarding the working tree appropriately (e.g., `git reset --hard HEAD && git clean -fdx`), switching to the new branch (e.g., `git fetch origin "$BASE_BRANCH" && git checkout -b "$NEW_BRANCH" "origin/$BASE_BRANCH"`), and any project-specific cleanup (stopping docker/compose projects scoped to this worktree, killing dev servers matched by `/proc/<pid>/cwd` or PID files, freeing port slots, regenerating `.env`, re-installing deps if lockfiles changed).
 

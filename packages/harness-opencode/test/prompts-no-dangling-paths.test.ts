@@ -69,3 +69,47 @@ describe("prompts-no-dangling-paths", () => {
     });
   }
 });
+
+/**
+ * OpenCode textually substitutes `$ARGUMENTS` with the full user input
+ * wherever the token appears in a slash-command prompt. When a prompt
+ * embeds `$ARGUMENTS` multiple times as self-reference ("Parse $ARGUMENTS",
+ * "If $ARGUMENTS is empty"), long inputs (URLs, sentences) corrupt the
+ * rendered prompt into nonsense. Keeping exactly one substitution site at
+ * the top of the file and using semantic referents elsewhere ("the user's
+ * input") keeps the render coherent regardless of input length.
+ *
+ * See issue #54 for the failure this test guards against.
+ */
+describe("$ARGUMENTS occurs at most once per command prompt", () => {
+  const commandPromptsDir = path.join(ROOT, "src", "commands", "prompts");
+  const commandMdFiles = findMdFiles(commandPromptsDir);
+
+  it("finds at least one command prompt to check", () => {
+    expect(commandMdFiles.length).toBeGreaterThan(0);
+  });
+
+  for (const filePath of commandMdFiles) {
+    const relPath = path.relative(ROOT, filePath);
+    it(`${relPath} contains $ARGUMENTS at most once`, () => {
+      const raw = fs.readFileSync(filePath, "utf8");
+      // Strip YAML frontmatter before counting — metadata is never substituted,
+      // and a future `description:` field could otherwise over-count.
+      const body = raw.replace(/^---\n[\s\S]*?\n---\n/, "");
+      const matches = body.match(/\$ARGUMENTS/g) ?? [];
+      if (matches.length > 1) {
+        const lines = body.split("\n");
+        const locations: string[] = [];
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i]!.includes("$ARGUMENTS")) {
+            locations.push(`  line ${i + 1}: ${lines[i]!.trim()}`);
+          }
+        }
+        throw new Error(
+          `${relPath} contains $ARGUMENTS ${matches.length} times (expected ≤1):\n${locations.join("\n")}`,
+        );
+      }
+      expect(matches.length).toBeLessThanOrEqual(1);
+    });
+  }
+});

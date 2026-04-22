@@ -8,7 +8,7 @@ You are the orchestrator. This command is **read-only** — you will NOT modify 
 
 ## 1. Resolve the target
 
-Classify `$ARGUMENTS` silently. Do NOT ask the user to clarify which form they meant — pick the most likely and proceed.
+Classify the review target silently. Do NOT ask the user to clarify which form they meant — pick the most likely and proceed.
 
 - **Empty / missing** — review the current branch's changes: `git diff $(git merge-base HEAD origin/main)..HEAD` (all commits ahead of main) plus any uncommitted + staged changes (`git diff HEAD`).
 - **Number** (e.g. `1234`) or **merge-request URL** (GitHub PR, GitLab MR, Bitbucket PR, Gitea PR, …) — treat as a merge request. Fetch via whichever host CLI / MCP is available:
