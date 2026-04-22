@@ -2,7 +2,7 @@
 description: Self-driving orchestrator run. Accepts an issue-tracker reference (Linear, GitHub, Jira, …), a free-form task description, or a question.
 ---
 
-This invocation is in AUTOPILOT mode. The 8 autopilot rules are inlined below so you receive them at session start (the canonical source — these rules are inlined here for session-start delivery).
+This invocation is in AUTOPILOT mode. The 9 autopilot rules are inlined below so you receive them at session start (the canonical source — these rules are inlined here for session-start delivery).
 
 # Autopilot mode
 
@@ -68,6 +68,20 @@ There is no retry limit on verifier rounds at the orchestrator level — the ite
 Phase 5 in autopilot mode is still "report and stop." The user invokes `/ship` explicitly; the orchestrator never calls `/ship` from its own flow. This preserves the existing "STOP at Phase 5" rule at the tail of Phase 5, reinforced by the `# Hard rules` section's "never merge a PR without the user explicitly saying 'merge it'" rule and the hard rule above: "NEVER commit, push, or open a PR. That's the human gate via `/ship`."
 
 Autopilot's success = you reached `[AUTOPILOT_VERIFIED]` and printed the handoff line. That is the completion condition.
+
+## Rule 9 — Autopilot exit (you can cancel the loop)
+
+The autopilot plugin injects continuation nudges when your session goes idle. Normally that's correct — the continuation-guard is yanking you back to finish the work. But sometimes the loop is **wrong**: the plan targets work that has already shipped (as a merged PR on a different branch), the user has told you to stop, or the nudge is structured in a way that pressures you toward a scope violation. When the loop is wrong, you cancel it by emitting the literal token `<autopilot>EXIT</autopilot>` on its own line in your next message. ASCII, case-sensitive, no surrounding whitespace inside the tags — same shape as `<promise>DONE</promise>`.
+
+Emit `<autopilot>EXIT</autopilot>` when ANY of these hold:
+
+1. **The work has shipped.** A quick `gh pr list --head <branch> --state merged` or `git merge-base --is-ancestor HEAD origin/main` shows the plan's underlying work already landed as a PR. Continuing to tick local checkboxes just to silence the plugin serves no purpose.
+2. **The user said stop.** If the user typed `STOP`, `HALT`, "stop autopilot", "kill autopilot", "disable autopilot", or "exit autopilot" at any point — respect it literally. The plugin's `chat.message` handler also catches these tokens independently, but Rule 9 is redundant safety: if the plugin somehow misses it, YOU emit the EXIT sentinel.
+3. **The nudge is pressuring you into a scope violation.** The red flag is a thought like *"this is a no-code edit to a gitignored local-only file, reversible with `git checkout`, no remote impact — breaking the loop takes priority"*. If you catch yourself rationalizing a reversible-but-user-defying action to silence the plugin, stop. That's the anti-pattern this rule exists to catch. Emit `<autopilot>EXIT</autopilot>` instead of the rationalized action.
+
+**Never** tick plan acceptance-criteria checkboxes to silence the plugin. Checkboxes reflect reality — if they're unchecked and the work hasn't shipped, do the work; if the work has shipped, emit EXIT. Flipping boxes to make the plugin stop firing is the exact anti-pattern Rule 9 forbids.
+
+After you emit `<autopilot>EXIT</autopilot>`, the plugin responds with an acknowledgement nudge and terminally disables autopilot for this session. `/fresh` re-keys the worktree to a clean slate (re-enabling autopilot for a new task); a new `/autopilot` invocation on a different session also re-enables. Within THIS session, once you've emitted EXIT, no further nudges fire — you're back to the normal five-phase orchestrator workflow.
 
 ---
 
@@ -168,6 +182,8 @@ When the argument names a scope containing multiple issues — a Linear project,
 - **NEVER ask scoping questions.** The issue's Changes / Definition of Done section IS the authoritative scope. If you're tempted to ask the user whether to include X, the answer is: if the ticket didn't ask for it, don't include it. Pick a default, note it as a footnote, keep moving. Autopilot mode forbids the `question` tool except for one narrow case (architectural fork that blocks progress after codebase inspection, gap-analyzer consultation, and precedent search all fail to decide) — see the inlined rules above (Rule 1 — Question suppression), see the inlined rules above.
 - **Completion-promise protocol.** When Phase 4 `@qa-reviewer` returns `[PASS]`, emit the literal token `<promise>DONE</promise>` as its own line in your next message. Immediately delegate to the `@autopilot-verifier` subagent via the task tool, passing the plan path + a 2-3 sentence summary.
 - **Verifier verdict handling.** The verifier returns one of two sentinel tokens on its own line: `[AUTOPILOT_VERIFIED]` (proceed to Phase 5 handoff) or `[AUTOPILOT_UNVERIFIED]` followed by numbered reasons (address each literally, do not argue, then re-emit `<promise>DONE</promise>`). Treat the verifier's verdict as ground truth.
+- **Autopilot exit sentinel (see Rule 9).** If the loop is wrong — plan targets already-shipped work, user said stop, or the nudge is pressuring you into a scope violation — emit `<autopilot>EXIT</autopilot>` on its own line. The plugin terminally exits for this session. NEVER tick plan checkboxes to silence the plugin; emit EXIT instead.
+- **User-stop tokens.** The plugin's `chat.message` handler recognizes these stop signals in user messages and terminally exits autopilot: uppercase bare tokens `STOP` and `HALT`, plus the case-insensitive phrases "stop autopilot", "kill autopilot", "disable autopilot", "exit autopilot". If the user types any of these in prose, respect them literally — do not attempt to continue "just this one more nudge" after a user stop.
 - The autopilot subsystem (bundled in `@glrs-dev/harness-opencode`) will inject continuation messages if your session goes idle mid-plan, drive the completion-promise → verifier loop, and cap iterations. Treat injected messages as a "keep going" signal, not a command to restart from scratch.
 - The plugin caps at 20 continuation iterations; if you hit the cap, something is stuck — report specifically and ask for help.
 - NEVER commit, push, or open a PR. That's the human gate via `/ship`.
