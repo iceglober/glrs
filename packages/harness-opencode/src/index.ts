@@ -171,29 +171,33 @@ export function applyConfig(config: Config): void {
   }
 
   // Permission: global defaults (non-destructive merge, user-wins)
+  //
+  // We intentionally do NOT set a global `permission.bash` rule-map. An
+  // upstream object-form map was observed to misfire under OpenCode's
+  // permission resolution — when an agent declared `bash: "allow"` as a
+  // scalar (qa-reviewer, qa-thorough, autopilot-verifier), trivial
+  // read-only commands like `git branch --show-current` would still
+  // trigger ask-prompts, apparently because the runtime re-evaluates
+  // the global pattern map rather than honoring the agent-level scalar
+  // as final. See commits c9a288d (first attempted fix) and this one.
+  //
+  // Destructive-command safety is preserved at two other layers that
+  // remain intact:
+  //   1. Each primary agent (orchestrator, build) ships its own
+  //      object-form bash rule-map with explicit denies for `rm -rf`,
+  //      `sudo`, `chmod`, `chown`, `git push --force`, `git push main`,
+  //      etc. See ORCHESTRATOR_PERMISSIONS / BUILD_PERMISSIONS in
+  //      src/agents/index.ts.
+  //   2. Every agent's system prompt forbids destructive operations
+  //      explicitly. The QA reviewers are read-only by role and would
+  //      never reach for these commands under normal operation.
+  //
+  // Subagents without their own bash map (plan-reviewer, code-searcher,
+  // gap-analyzer, architecture-advisor, lib-reader) set `bash: "deny"`
+  // in their agent config, which shuts bash off entirely for them.
   const existingPermission = (config as any).permission ?? {};
   const existingExtDir = existingPermission.external_directory ?? {};
-  const existingBash = existingPermission.bash;
   (config as any).permission = {
-    // Our defaults first — user's existing values spread last to win
-    bash: existingBash ?? {
-      // Allow everything non-destructive; deny/ask only for dangerous ops.
-      // Last matching rule wins, so put "*" first.
-      "*": "allow",
-      "git push --force*": "deny",
-      "git push --force-with-lease*": "allow",   // safe force — re-allow after --force* deny
-      "git push -f *": "deny",
-      "git push * --force*": "deny",
-      "git push * --force-with-lease*": "allow",
-      "git push * -f": "deny",
-      "git clean *": "allow",
-      "git reset --hard*": "allow",
-      "rm -rf /*": "deny",
-      "rm -rf ~*": "deny",
-      "chmod *": "deny",
-      "chown *": "deny",
-      "sudo *": "deny",
-    },
     ...existingPermission,
     external_directory: {
       "~/.glorious/worktrees/**": "allow",
