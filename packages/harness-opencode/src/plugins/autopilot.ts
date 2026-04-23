@@ -6,13 +6,15 @@ import * as path from "node:path";
 /**
  * Reason an autopilot session terminated. When set, the session is
  * considered terminally exited — no further nudges fire on idle events
- * until a `/fresh` re-key clears it. This is the **continuation-guard**:
- * five independent detectors (shipped-probe, user-stop, orchestrator-exit,
- * max-iterations, stagnation) all funnel into the same `exited_reason`
- * field, and a single short-circuit at the top of the idle handler
- * (`pre-idle exit gate`) drops every future nudge once any detector
- * fires. Explicit string literal union (not an enum) so the value
- * survives JSON round-trips in `.agent/autopilot-state.json`.
+ * for this session. Terminal exit is truly terminal; the user must open a
+ * new session and invoke `/autopilot` again to resume automated driving.
+ * This is the **continuation-guard**: five independent detectors
+ * (shipped-probe, user-stop, orchestrator-exit, max-iterations, stagnation)
+ * all funnel into the same `exited_reason` field, and a single short-circuit
+ * at the top of the idle handler (`pre-idle exit gate`) drops every future
+ * nudge once any detector fires. Explicit string literal union (not an
+ * enum) so the value survives JSON round-trips in
+ * `.agent/autopilot-state.json`.
  *
  * Values:
  * - `"shipped"` — the shipped-probe detected the underlying work has
@@ -57,10 +59,6 @@ type ShippedCheckResult = "shipped" | "not_shipped" | "unknown";
 interface SessionAutopilot {
   iterations: number;
   lastPlanPath?: string;
-  /** Epoch ms of the most recently observed .agent/fresh-handoff.md. Used to
-   * detect a /fresh re-key between autopilot iterations and switch the nudge
-   * from "continue this plan" to "new task — read the handoff brief". */
-  lastHandoffMtime?: number;
   /** True after the orchestrator emitted <promise>DONE</promise> and the
    * plugin injected AUTOPILOT_VERIFICATION_PROMPT; cleared when a verdict
    * is observed, when max iterations is hit, or when the user intervenes. */
@@ -87,9 +85,10 @@ interface SessionAutopilot {
    * tool-call loops. */
   lastNudgeAt?: number;
   /** Terminal-exit reason. When set, the pre-idle exit gate short-circuits
-   * all nudges. Cleared only on `/fresh` re-key (fresh-transition branch).
-   * This is the unified continuation-guard exit signal, set by the
-   * shipped-probe, user-stop-token detection, orchestrator EXIT
+   * all nudges. Once set, it is never cleared for this session — terminal
+   * exit is truly terminal; the user must open a new session to re-enable
+   * autopilot. This is the unified continuation-guard exit signal, set by
+   * the shipped-probe, user-stop-token detection, orchestrator EXIT
    * sentinel, the max-iterations cap, or the stagnation detector.
    * Backward-compatible: older state files without this field behave
    * as today (no exit). */
@@ -120,7 +119,6 @@ interface AutopilotState {
 }
 
 const STATE_PATH = ".agent/autopilot-state.json";
-const HANDOFF_PATH = ".agent/fresh-handoff.md";
 const MAX_ITERATIONS = 20;
 const MAX_MISSING_VERDICTS = 3;
 const TARGET_AGENTS = new Set(["build", "orchestrator"]);
@@ -195,13 +193,12 @@ const AUTOPILOT_EXIT_RE = /^<autopilot>EXIT<\/autopilot>\s*$/m;
 const USER_STOP_BARE_RE = /\b(STOP|HALT)\b/;
 const USER_STOP_PHRASE_RE = /\b(stop|kill|disable|exit)\s+autopilot\b/i;
 
-// Activation signals (see `detectActivation`). The `/autopilot` slash command
+// Activation signal (see `detectActivation`). The `/autopilot` slash command
 // shows up in the session transcript as a literal `/autopilot` token in the
-// first user message; the orchestrator prompt's AUTOPILOT mode is gated on the
-// literal string `AUTOPILOT mode` in the incoming message body (see
-// `home/.claude/agents/orchestrator.md` § Autopilot mode). Fresh-handoff
-// transitions triggered by `/plan-loop` always imply autopilot — that's what
-// `/plan-loop` is for.
+// first user message; the orchestrator prompt's AUTOPILOT mode is gated on
+// the literal string `AUTOPILOT mode` in the incoming message body (see
+// `home/.claude/agents/orchestrator.md` § Autopilot mode). No other activation
+// path exists — autopilot is strictly opt-in via this slash command.
 const AUTOPILOT_MARKER_RE = /(^|\s)\/autopilot(\s|$)|AUTOPILOT mode/;
 
 // Prompt constants injected back into the session as continuation nudges.
@@ -228,14 +225,13 @@ const AUTOPILOT_MAX_ITERATIONS_MESSAGE =
  * One-shot nudge sent when `checkShipped` returns `"shipped"`. The message
  * is intentionally clear-exit: tells the orchestrator the work is already
  * shipped, no further nudges will fire, and how to re-enable autopilot
- * if the detection was wrong (emit the EXIT sentinel or run `/fresh`).
+ * (open a new session and invoke `/autopilot`).
  */
 const AUTOPILOT_SHIPPED_EXIT_MESSAGE =
   "[autopilot] Exiting: the underlying work has already shipped " +
   "(detected via merged PR or `git merge-base --is-ancestor HEAD origin/main`). " +
-  "No further nudges this session. If you believe this is wrong, emit " +
-  "`<autopilot>EXIT</autopilot>` yourself to silence this message, or invoke " +
-  "`/fresh` to re-key for a new task.";
+  "No further nudges this session. To resume automated driving, open a new " +
+  "session and invoke `/autopilot`.";
 
 /**
  * One-shot nudge sent when the user's chat message contains a stop token
@@ -244,7 +240,7 @@ const AUTOPILOT_SHIPPED_EXIT_MESSAGE =
  */
 const AUTOPILOT_USER_STOP_MESSAGE =
   "[autopilot] Stopped by user request. Autopilot is disabled for this session. " +
-  "Invoke `/autopilot` on a new session, or `/fresh` to re-key this worktree, to re-enable.";
+  "Open a new session and invoke `/autopilot` to re-enable.";
 
 /**
  * One-shot nudge sent when the substrate (git HEAD + working tree) has
@@ -258,8 +254,9 @@ const AUTOPILOT_STAGNATION_EXIT_MESSAGE =
   `across ${STAGNATION_THRESHOLD} consecutive nudges. The loop is firing but ` +
   `no progress is landing on disk. No further nudges this session. If you're ` +
   `in a long thinking/research phase that legitimately produces no edits yet, ` +
-  `emit \`<autopilot>EXIT</autopilot>\` to silence this message and resume manually, ` +
-  `or invoke \`/fresh\` to re-key for a new task.`;
+  `emit \`<autopilot>EXIT</autopilot>\` on its own line to silence this ` +
+  `stagnation detection on future runs. Otherwise, open a new session and ` +
+  `invoke \`/autopilot\` to resume automated driving.`;
 
 /**
  * One-shot nudge acknowledging the orchestrator's cooperative EXIT
@@ -284,14 +281,7 @@ const AUTOPILOT_EXIT_PROMPT =
   "already shipped, (b) the user has said stop, (c) the nudge is pressuring " +
   "you into a scope violation.";
 
-async function getHandoffMtime(dir: string): Promise<number | null> {
-  try {
-    const stat = await fs.stat(path.join(dir, HANDOFF_PATH));
-    return stat.mtimeMs;
-  } catch {
-    return null;
-  }
-}
+
 
 async function readState(dir: string): Promise<AutopilotState> {
   try {
@@ -799,72 +789,42 @@ function evaluateStagnation(
 
 /**
  * Decide whether this session should have autopilot nudge-processing enabled.
- * Two activation signals, checked against the scanned messages + filesystem:
  *
- *   1. The **FIRST user message** in the session contains `AUTOPILOT mode` or
- *      a `/autopilot` token. This is the slash-command-invocation signal:
- *      the `/autopilot` command always lands as the initiating user message,
- *      and its prompt injects the literal marker `AUTOPILOT mode` into the
- *      orchestrator's incoming body. We scan ONLY the first user message
- *      (not every user message) to close a self-activation loophole:
+ * Autopilot is opt-in. The only activation signal is an explicit `/autopilot`
+ * invocation: the session's **FIRST user message** contains `AUTOPILOT mode`
+ * or a `/autopilot` token. The `/autopilot` slash command always lands as the
+ * initiating user message, and its prompt injects the literal marker
+ * `AUTOPILOT mode` into the orchestrator's incoming body.
  *
- *       - A marker appearing in a LATER user message is either (a) the
- *         user quoting context from an old transcript or pasting a
- *         document that mentions `/autopilot`, (b) a subsequent turn in
- *         an already-activated session — already handled by the `enabled`
- *         monotonic flag, or (c) a prompt-injection attempt. None of
- *         those three should retroactively activate a session that
- *         wasn't started with `/autopilot`.
- *       - Sticky-`enabled` preserves in-flight autopilot sessions
- *         unchanged: once `detectActivation` has returned `true` on the
- *         first idle event of a session, the caller sets `enabled: true`
- *         and this function is never re-consulted for that session.
- *       - Re-entry after a state-file wipe is effectively a new session
- *         from the plugin's POV; the first user message becomes the only
- *         activation carrier, matching the new-session interpretation.
+ * We scan ONLY the first user message to close a self-activation loophole. A
+ * marker appearing in a LATER user message is either (a) the user quoting
+ * context from an old transcript or pasting a document that mentions
+ * `/autopilot`, (b) a subsequent turn in an already-activated session —
+ * already handled by the `enabled` monotonic flag, or (c) a prompt-injection
+ * attempt. None of those three should retroactively activate a session that
+ * wasn't started with `/autopilot`.
  *
- *      "First user message" means the first entry in `messages` where
- *      `msg.info?.role === "user"` — so an assistant message appearing
- *      before the first user turn (e.g., an initial system-generated
- *      preamble) does not shift the scan.
+ * Sticky-`enabled` preserves in-flight autopilot sessions unchanged: once
+ * `detectActivation` has returned `true` on the first idle event of a
+ * session, the caller sets `enabled: true` and this function is never
+ * re-consulted for that session.
  *
- *   2. A fresh-handoff transition just happened (handoff mtime advanced AND
- *      iterations is 0). `/plan-loop` is the only caller that writes the
- *      handoff brief, and it exists to hand off to autopilot — so any fresh
- *      transition implies autopilot. Signal 2 is independent of Signal 1
- *      and is unaffected by the first-user-message tightening.
+ * "First user message" means the first entry in `messages` where
+ * `msg.info?.role === "user"` — so an assistant message appearing before the
+ * first user turn (e.g., an initial system-generated preamble) does not
+ * shift the scan.
  *
- * Once either signal fires, return `true` and the caller should set
- * `enabled: true` on the session. Never returns `false` as "disable"; callers
- * who see `false` should simply not flip the bit — `enabled` is monotonic
- * (it only goes off when the session state is wiped).
+ * Returns `true` when the marker is present, `false` otherwise. Never
+ * returns `false` as "disable"; callers who see `false` should simply not
+ * flip the bit — `enabled` is monotonic (it only goes off when the session
+ * state is wiped).
  */
-function detectActivation(
-  messages: RawMessage[],
-  handoffMtime: number | null,
-  lastSeenHandoff: number,
-  currentIterations: number,
-): boolean {
-  // Signal 1: check the FIRST user message only. See the function doc
-  // for the full rationale; briefly: later markers are either quoted
-  // context, continuation of an already-active session, or injection
-  // attempts — none should retroactively activate.
+function detectActivation(messages: RawMessage[]): boolean {
   for (const msg of messages) {
     if (msg.info?.role !== "user") continue;
     // First user message found. This is the only one we consult.
     if (AUTOPILOT_MARKER_RE.test(userText(msg))) return true;
     break;
-  }
-  // Signal 2: fresh-handoff transition. The `/plan-loop` skill writes the
-  // handoff brief and only `/plan-loop` does that, so any advance is
-  // implicitly autopilot. We check iterations === 0 to match the existing
-  // fresh-transition guard elsewhere in the plugin.
-  if (
-    handoffMtime !== null &&
-    handoffMtime > lastSeenHandoff &&
-    currentIterations === 0
-  ) {
-    return true;
   }
   return false;
 }
@@ -913,34 +873,17 @@ const plugin: Plugin = async ({ client, directory }) => {
       if (!agent || !TARGET_AGENTS.has(agent)) return;
 
       const state = await readState(directory);
-      const existingSessState = state.sessions[sessionID];
-      const sessState: SessionAutopilot = existingSessState ?? { iterations: 0 };
+      const sessState: SessionAutopilot = state.sessions[sessionID] ?? {
+        iterations: 0,
+      };
 
-      // (2) First-time-seed: seed lastHandoffMtime with the current brief's
-      // mtime so we don't misread a pre-existing handoff as a new /fresh
-      // transition. Nothing to nudge on yet; record state and wait for the
-      // next idle event.
-      if (!existingSessState) {
-        const initialMtime = await getHandoffMtime(directory);
-        state.sessions[sessionID] = {
-          iterations: 0,
-          lastHandoffMtime: initialMtime ?? undefined,
-        };
-        await writeState(directory, state);
-        sessState.lastHandoffMtime = initialMtime ?? undefined;
-        // Fall through — activation detection below may still flip `enabled`
-        // on this very same idle event if the first user message contained
-        // a `/autopilot` marker.
-      }
-
-      // (2a) Pre-idle exit gate. If this session has terminally exited
+      // (2) Pre-idle exit gate. If this session has terminally exited
       // (via the shipped-probe, user-stop token, orchestrator's
       // cooperative EXIT sentinel, max-iterations cap, or stagnation
       // detector), short-circuit BEFORE any branch below can fire a
       // nudge. This is the central invariant of the continuation-guard.
-      // Terminal exit is truly terminal — the only way back is a `/fresh`
-      // re-key (which clears `exited_reason` in the fresh-transition
-      // branch below) or a brand-new session.
+      // Terminal exit is truly terminal — the only way back is a
+      // brand-new session.
       //
       // This is the central invariant that makes the continuation
       // loop safe: without it, the loop's escape conditions leaked
@@ -949,23 +892,13 @@ const plugin: Plugin = async ({ client, directory }) => {
       // restarting a loop that was supposed to have ended).
       if (sessState.exited_reason !== undefined) return;
 
-      // (3) Activation detection. If not yet enabled, scan signals. Once
-      // enabled, the flag is sticky — user messages reset iterations but
-      // don't disable autopilot (see chat.message handler).
-      const handoffMtime = await getHandoffMtime(directory);
-      const lastSeenHandoff = sessState.lastHandoffMtime ?? 0;
+      // (3) Activation detection. If not yet enabled, scan the first
+      // user message for an autopilot marker. Once enabled, the flag
+      // is sticky — user messages reset iterations but don't disable
+      // autopilot (see chat.message handler). Non-autopilot sessions
+      // exit here: no nudge, no state write.
       if (!sessState.enabled) {
-        const activated = detectActivation(
-          messages,
-          handoffMtime,
-          lastSeenHandoff,
-          sessState.iterations,
-        );
-        if (!activated) {
-          // Not an autopilot session. Do nothing — no nudge, no state write
-          // beyond the first-time-seed above.
-          return;
-        }
+        if (!detectActivation(messages)) return;
         sessState.enabled = true;
       }
 
@@ -974,7 +907,7 @@ const plugin: Plugin = async ({ client, directory }) => {
       // and terminally exit. This branch runs BEFORE the completion-promise
       // branch so EXIT wins over DONE — if the orchestrator emitted both
       // (e.g., it finished, then realized the plan was stale), EXIT takes
-      // precedence. Idempotent: next idle short-circuits at (2a).
+      // precedence. Idempotent: next idle short-circuits at (2).
       if (findOrchestratorExit(messages)) {
         const sent = await sendNudgeDebounced(
           client,
@@ -986,7 +919,6 @@ const plugin: Plugin = async ({ client, directory }) => {
           state.sessions[sessionID] = {
             iterations: sessState.iterations,
             lastPlanPath: sessState.lastPlanPath,
-            lastHandoffMtime: sessState.lastHandoffMtime,
             enabled: true,
             lastNudgeAt: sessState.lastNudgeAt,
             exited_reason: "orchestrator_exit",
@@ -997,11 +929,11 @@ const plugin: Plugin = async ({ client, directory }) => {
       }
 
       // (4) Max-iterations cap. Funneled through the same exited_reason
-      // exit gate so subsequent idles short-circuit at (2a). Unlike the
+      // exit gate so subsequent idles short-circuit at (2). Unlike the
       // pre-omo behavior (which reset iterations to 0 and cleared
       // `enabled`), we now preserve iterations for forensic traceability
       // and set `exited_reason: "max_iterations"`. The cap is still a
-      // one-shot nudge — the next idle exits at (2a).
+      // one-shot nudge — the next idle exits at (2).
       if (sessState.iterations >= MAX_ITERATIONS) {
         const sent = await sendNudgeDebounced(
           client,
@@ -1013,7 +945,6 @@ const plugin: Plugin = async ({ client, directory }) => {
           state.sessions[sessionID] = {
             iterations: sessState.iterations,
             lastPlanPath: sessState.lastPlanPath,
-            lastHandoffMtime: sessState.lastHandoffMtime,
             enabled: true,
             lastNudgeAt: sessState.lastNudgeAt,
             exited_reason: "max_iterations",
@@ -1023,51 +954,7 @@ const plugin: Plugin = async ({ client, directory }) => {
         return;
       }
 
-      // (5) Fresh-transition branch: if .agent/fresh-handoff.md is newer
-      // than what we've seen AND iterations is 0 (indicating /fresh just
-      // reset state), inject the handoff-brief nudge and wipe all verifier
-      // fields — a fresh re-key is a clean slate, INCLUDING re-enabling
-      // autopilot after a terminal exit. Since the (2a) pre-idle exit
-      // gate would short-circuit before we get here on an exited session,
-      // a terminally-exited session needs to be re-keyed via `/fresh` to
-      // reach this branch; the explicit clearing of `exited_reason` below
-      // is for the narrow race where the state file was externally reset
-      // but the mtime bump arrived on the same idle event.
-      const isFreshTransition =
-        handoffMtime !== null &&
-        handoffMtime > lastSeenHandoff &&
-        sessState.iterations === 0;
-
-      if (isFreshTransition) {
-        const sent = await sendNudgeDebounced(
-          client,
-          sessionID,
-          sessState,
-          `[autopilot] /fresh re-keyed this worktree to a new task. ` +
-            `Read \`${HANDOFF_PATH}\` for the full context (tracker ref, ` +
-            `branch name, base branch, reset-hook output), then run the ` +
-            `orchestrator five-phase workflow on the described work. ` +
-            `Do NOT revisit prior plans in this session — they belong to ` +
-            `the previous task.`,
-        );
-        if (sent) {
-          state.sessions[sessionID] = {
-            iterations: 1,
-            lastHandoffMtime: handoffMtime,
-            enabled: true,
-            lastNudgeAt: sessState.lastNudgeAt,
-            // exited_reason, last_shipped_check_*, last_substrate_hash,
-            // and consecutive_stagnant_iterations all intentionally
-            // omitted — a /fresh re-key is a clean slate. The implicit
-            // non-assignment drops any prior values for every detector's
-            // cache + counter state.
-          };
-          await writeState(directory, state);
-        }
-        return;
-      }
-
-      // (6) Completion-promise + verifier three-way branch.
+      // (5) Completion-promise + verifier three-way branch.
       const promise = findCompletionPromise(messages);
       if (promise) {
         if (!sessState.verification_pending) {
@@ -1084,8 +971,7 @@ const plugin: Plugin = async ({ client, directory }) => {
             state.sessions[sessionID] = {
               iterations: sessState.iterations,
               lastPlanPath: sessState.lastPlanPath,
-              lastHandoffMtime: sessState.lastHandoffMtime,
-              verification_pending: true,
+                verification_pending: true,
               consecutive_missing_verdicts: 0,
               enabled: true,
               lastNudgeAt: sessState.lastNudgeAt,
@@ -1109,12 +995,11 @@ const plugin: Plugin = async ({ client, directory }) => {
             AUTOPILOT_COMPLETE_MESSAGE(planPathForComplete),
           );
           if (sent) {
-            // Preserve handoff tracking; drop verifier fields and reset iterations.
-            // Keep `enabled: true` so a follow-up `/autopilot` or retry stays
-            // opted in — explicit /autopilot invocations are sticky.
+            // Drop verifier fields and reset iterations. Keep `enabled: true`
+            // so a follow-up `/autopilot` or retry stays opted in — explicit
+            // /autopilot invocations are sticky.
             state.sessions[sessionID] = {
               iterations: 0,
-              lastHandoffMtime: sessState.lastHandoffMtime,
               enabled: true,
               lastNudgeAt: sessState.lastNudgeAt,
             };
@@ -1134,8 +1019,7 @@ const plugin: Plugin = async ({ client, directory }) => {
             state.sessions[sessionID] = {
               iterations: sessState.iterations + 1,
               lastPlanPath: sessState.lastPlanPath,
-              lastHandoffMtime: sessState.lastHandoffMtime,
-              verification_pending: false,
+                verification_pending: false,
               consecutive_missing_verdicts: 0,
               enabled: true,
               lastNudgeAt: sessState.lastNudgeAt,
@@ -1162,7 +1046,6 @@ const plugin: Plugin = async ({ client, directory }) => {
               ? sessState.iterations + 1
               : sessState.iterations,
             lastPlanPath: sessState.lastPlanPath,
-            lastHandoffMtime: sessState.lastHandoffMtime,
             verification_pending: true,
             consecutive_missing_verdicts: nextMissing,
             enabled: true,
@@ -1194,7 +1077,6 @@ const plugin: Plugin = async ({ client, directory }) => {
         state.sessions[sessionID] = {
           iterations: 0,
           lastPlanPath: sessState.lastPlanPath,
-          lastHandoffMtime: sessState.lastHandoffMtime,
           enabled: true,
           lastNudgeAt: sessState.lastNudgeAt,
         };
@@ -1233,7 +1115,6 @@ const plugin: Plugin = async ({ client, directory }) => {
           state.sessions[sessionID] = {
             iterations: sessState.iterations,
             lastPlanPath: planPath,
-            lastHandoffMtime: sessState.lastHandoffMtime,
             enabled: true,
             lastNudgeAt: sessState.lastNudgeAt,
             exited_reason: "shipped",
@@ -1279,7 +1160,6 @@ const plugin: Plugin = async ({ client, directory }) => {
           state.sessions[sessionID] = {
             iterations: sessState.iterations,
             lastPlanPath: planPath,
-            lastHandoffMtime: sessState.lastHandoffMtime,
             enabled: true,
             lastNudgeAt: sessState.lastNudgeAt,
             exited_reason: "stagnation",
@@ -1314,7 +1194,6 @@ const plugin: Plugin = async ({ client, directory }) => {
         state.sessions[sessionID] = {
           iterations: sessState.iterations + 1,
           lastPlanPath: planPath,
-          lastHandoffMtime: handoffMtime ?? sessState.lastHandoffMtime,
           verification_pending: sessState.verification_pending,
           consecutive_missing_verdicts: sessState.consecutive_missing_verdicts,
           enabled: true,
@@ -1384,7 +1263,6 @@ const plugin: Plugin = async ({ client, directory }) => {
           state.sessions[sessionID] = {
             iterations: existing.iterations,
             lastPlanPath: existing.lastPlanPath,
-            lastHandoffMtime: existing.lastHandoffMtime,
             enabled: true,
             lastNudgeAt: sessState.lastNudgeAt,
             exited_reason: "user_stop",
@@ -1398,16 +1276,15 @@ const plugin: Plugin = async ({ client, directory }) => {
         // legitimate user message reset.
       }
 
-      // Preserve lastHandoffMtime, lastPlanPath, and the `enabled` flag
-      // across user-message resets. Clear iterations + all verifier
-      // fields — a user message always wins over in-flight verification
-      // state. Once autopilot is on, the only way off is max-iterations,
-      // an explicit stop token, the orchestrator's EXIT sentinel, or a
-      // new `/autopilot` invocation on a fresh session.
+      // Preserve lastPlanPath and the `enabled` flag across user-message
+      // resets. Clear iterations + all verifier fields — a user message
+      // always wins over in-flight verification state. Once autopilot is
+      // on, the only way off is max-iterations, an explicit stop token,
+      // the orchestrator's EXIT sentinel, or a new `/autopilot`
+      // invocation on a fresh session.
       state.sessions[sessionID] = {
         iterations: 0,
         lastPlanPath: existing.lastPlanPath,
-        lastHandoffMtime: existing.lastHandoffMtime,
         enabled: true,
         lastNudgeAt: existing.lastNudgeAt,
       };

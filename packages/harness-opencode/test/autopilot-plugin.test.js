@@ -128,21 +128,21 @@ test("countUnchecked: zero when no Acceptance criteria section", async () => {
     assert.equal(countUnchecked("# Plan\n## Goal\nnothing here\n"), 0);
 });
 
-test("detectActivation: empty messages + no handoff => false", async () => {
+test("detectActivation: empty messages => false", async () => {
     const { detectActivation } = await import(PLUGIN_PATH);
-    assert.equal(detectActivation([], null, 0, 0), false);
+    assert.equal(detectActivation([]), false);
 });
 
 test("detectActivation: user message with `/autopilot` prefix => true", async () => {
     const { detectActivation } = await import(PLUGIN_PATH);
     const msgs = [userMsg("/autopilot ENG-1234")];
-    assert.equal(detectActivation(msgs, null, 0, 0), true);
+    assert.equal(detectActivation(msgs), true);
 });
 
 test("detectActivation: user message with `AUTOPILOT mode` phrase => true", async () => {
     const { detectActivation } = await import(PLUGIN_PATH);
     const msgs = [userMsg("This invocation is in AUTOPILOT mode — apply ...")];
-    assert.equal(detectActivation(msgs, null, 0, 0), true);
+    assert.equal(detectActivation(msgs), true);
 });
 
 test("detectActivation: user message without markers => false", async () => {
@@ -151,29 +151,14 @@ test("detectActivation: user message without markers => false", async () => {
       userMsg("please implement KESB-23"),
       userMsg("looks good, proceed"),
     ];
-    assert.equal(detectActivation(msgs, null, 0, 0), false);
-});
-
-test("detectActivation: fresh handoff transition (new mtime + iter=0) => true", async () => {
-    const { detectActivation } = await import(PLUGIN_PATH);
-    assert.equal(detectActivation([], 1000, 500, 0), true);
-});
-
-test("detectActivation: fresh handoff but iter > 0 => false (already mid-run)", async () => {
-    const { detectActivation } = await import(PLUGIN_PATH);
-    assert.equal(detectActivation([], 1000, 500, 1), false);
-});
-
-test("detectActivation: handoff mtime unchanged => false", async () => {
-    const { detectActivation } = await import(PLUGIN_PATH);
-    assert.equal(detectActivation([], 500, 500, 0), false);
+    assert.equal(detectActivation(msgs), false);
 });
 
 test("detectActivation: substring 'autopilot' without slash => false (not a command)", async () => {
     const { detectActivation } = await import(PLUGIN_PATH);
     // Just discussing autopilot in prose should NOT activate.
     const msgs = [userMsg("what does autopilot do?")];
-    assert.equal(detectActivation(msgs, null, 0, 0), false);
+    assert.equal(detectActivation(msgs), false);
 });
 
 // --- first-user-message-only activation (self-activation guard) ----------
@@ -193,7 +178,7 @@ test("detectActivation: marker ONLY in second user message (first has no marker)
       userMsg("please implement KESB-23"),
       userMsg("/autopilot do X"),
     ];
-    assert.equal(detectActivation(msgs, null, 0, 0), false);
+    assert.equal(detectActivation(msgs), false);
 });
 
 test("detectActivation: marker only in later user message (paste-old-transcript case) => false", async () => {
@@ -207,7 +192,7 @@ test("detectActivation: marker only in later user message (paste-old-transcript 
       userMsg("any ideas?"),
       userMsg("thanks"),
     ];
-    assert.equal(detectActivation(msgs, null, 0, 0), false);
+    assert.equal(detectActivation(msgs), false);
 });
 
 test("detectActivation: AUTOPILOT mode phrase only in second user message => false", async () => {
@@ -218,7 +203,7 @@ test("detectActivation: AUTOPILOT mode phrase only in second user message => fal
       userMsg("hi"),
       userMsg("the docs say 'AUTOPILOT mode' means lights-out orchestration"),
     ];
-    assert.equal(detectActivation(msgs, null, 0, 0), false);
+    assert.equal(detectActivation(msgs), false);
 });
 
 test("detectActivation: first message is assistant, first user message has marker => true", async () => {
@@ -230,16 +215,7 @@ test("detectActivation: first message is assistant, first user message has marke
       assistantMsg("greeting"),
       userMsg("/autopilot ENG-1"),
     ];
-    assert.equal(detectActivation(msgs, null, 0, 0), true);
-});
-
-test("detectActivation: fresh-handoff still activates when first user message has no marker", async () => {
-    const { detectActivation } = await import(PLUGIN_PATH);
-    // Signal 2 (fresh-handoff) is independent of Signal 1's scope.
-    // /plan-loop writing the handoff brief remains a trusted activation
-    // path regardless of user-message content.
-    const msgs = [userMsg("unrelated chat, no marker")];
-    assert.equal(detectActivation(msgs, 1000, 500, 0), true);
+    assert.equal(detectActivation(msgs), true);
 });
 
 test("session.idle: marker in SECOND user message → zero nudges (no retroactive activation)", async () => {
@@ -273,13 +249,16 @@ test("session.idle: marker in SECOND user message → zero nudges (no retroactiv
         0,
         "marker in non-first user message must not retroactively activate",
       );
+      // Non-autopilot sessions never produce a state write — the plugin
+      // exits early when detectActivation returns false.
       const state = readStateFile(dir);
-      assert.ok(state, "state file exists after first-time-seed");
-      assert.equal(
-        state.sessions.s1.enabled,
-        undefined,
-        "session must not be marked enabled",
-      );
+      if (state) {
+        assert.equal(
+          state.sessions.s1?.enabled,
+          undefined,
+          "session must not be marked enabled",
+        );
+      }
     } finally {
       rmTmpDir(dir);
     }
@@ -340,11 +319,14 @@ test("session.idle: non-autopilot orchestrator session with 12 unchecked boxes �
         event: { type: "session.idle", properties: { sessionID: "s1" } },
       });
       assert.equal(client.prompts.length, 0, "non-autopilot session must not nudge");
-      // State should have been seeded on first-run but NOT marked enabled.
+      // Non-autopilot sessions never produce a state write — the plugin
+      // exits early when detectActivation returns false. So either the
+      // state file doesn't exist, or (if a prior test left one) the
+      // session entry must not be enabled.
       const state = readStateFile(dir);
-      assert.ok(state, "state file should exist after first-run seed");
-      assert.equal(state.sessions.s1.enabled, undefined);
-      assert.equal(state.sessions.s1.iterations, 0);
+      if (state) {
+        assert.equal(state.sessions.s1?.enabled, undefined);
+      }
     } finally {
       rmTmpDir(dir);
     }
@@ -445,39 +427,6 @@ test("session.idle: DONE promise in autopilot → verifier prompt", async () => 
     }
 });
 
-test("session.idle: fresh-handoff transition activates autopilot even without /autopilot marker", async () => {
-    const { default: factory } = await import(PLUGIN_PATH);
-    const dir = mkTmpDir();
-    try {
-      // Seed state with lastHandoffMtime = 0 so the written handoff looks new.
-      writeFixture(
-        dir,
-        ".agent/autopilot-state.json",
-        JSON.stringify({
-          sessions: {
-            s1: { iterations: 0, lastHandoffMtime: 0 },
-          },
-        }),
-      );
-      writeFixture(dir, ".agent/fresh-handoff.md", "# Handoff\n\nENG-1234\n");
-      const messages = [userMsg("pick up the next ticket")];
-      const client = mockClientWithMessages(messages);
-      const handlers = await factory({ client, directory: dir });
-      await handlers.event({
-        event: { type: "session.idle", properties: { sessionID: "s1" } },
-      });
-      assert.equal(client.prompts.length, 1);
-      assert.match(
-        client.prompts[0].text,
-        /\/fresh re-keyed this worktree to a new task/,
-      );
-      const state = readStateFile(dir);
-      assert.equal(state.sessions.s1.enabled, true);
-    } finally {
-      rmTmpDir(dir);
-    }
-});
-
 test("chat.message: non-autopilot session → no state write", async () => {
     const { default: factory } = await import(PLUGIN_PATH);
     const dir = mkTmpDir();
@@ -521,7 +470,6 @@ test("chat.message: autopilot session → iterations reset, enabled preserved", 
             s1: {
               iterations: 12,
               lastPlanPath: ".agent/plans/x.md",
-              lastHandoffMtime: 9999,
               enabled: true,
               verification_pending: true,
               consecutive_missing_verdicts: 2,
@@ -539,11 +487,6 @@ test("chat.message: autopilot session → iterations reset, enabled preserved", 
         state.sessions.s1.lastPlanPath,
         ".agent/plans/x.md",
         "lastPlanPath preserved",
-      );
-      assert.equal(
-        state.sessions.s1.lastHandoffMtime,
-        9999,
-        "lastHandoffMtime preserved",
       );
       assert.equal(
         state.sessions.s1.verification_pending,
@@ -1115,74 +1058,6 @@ test("session.idle: continue-execution nudge contains the EXIT escape clause", a
     }
 });
 
-test("fresh-transition after shipped-exit: clears exited_reason and re-enables nudging", async () => {
-    const { default: factory } = await import(PLUGIN_PATH);
-    const dir = mkTmpDir();
-    try {
-      // Seed state with a prior shipped exit AND a non-zero iterations
-      // count. The pre-idle exit gate would short-circuit (test 2 covers
-      // that). But when /fresh bumps the handoff mtime, we want the NEXT
-      // idle to recognize the transition. Problem: the pre-idle gate
-      // runs BEFORE the fresh-transition branch, so a session with
-      // exited_reason="shipped" can't reach the fresh-transition branch
-      // on its own. The plan notes this: the clear-on-fresh behavior
-      // exists for a narrow race where state was externally reset.
-      //
-      // To exercise the documented fresh-clear path, we simulate the
-      // external reset by nuking exited_reason in the state BEFORE
-      // firing the idle event — matching how /fresh itself writes a
-      // clean state file. After the reset, the handoff mtime advance
-      // must still re-enable nudging with iterations=1.
-      const oldHandoffMtime = 1000;
-      writeFixture(
-        dir,
-        ".agent/autopilot-state.json",
-        JSON.stringify({
-          sessions: {
-            s1: {
-              iterations: 0,
-              enabled: true,
-              lastHandoffMtime: oldHandoffMtime,
-              // Note: exited_reason intentionally absent here — /fresh
-              // writes a clean state file. This test verifies the
-              // post-/fresh idle produces the fresh-transition nudge.
-            },
-          },
-        }),
-      );
-      // Write a handoff brief with a new mtime.
-      writeFixture(dir, ".agent/fresh-handoff.md", "# New task\n");
-      // Bump the mtime explicitly so it's > oldHandoffMtime.
-      const newMtime = oldHandoffMtime + 5000;
-      fs.utimesSync(
-        path.join(dir, ".agent/fresh-handoff.md"),
-        newMtime / 1000,
-        newMtime / 1000,
-      );
-      const messages = [userMsg("resume")];
-      const client = mockClientWithMessages(messages);
-      const handlers = await factory({ client, directory: dir });
-      await handlers.event({
-        event: { type: "session.idle", properties: { sessionID: "s1" } },
-      });
-      assert.equal(client.prompts.length, 1);
-      assert.match(
-        client.prompts[0].text,
-        /\/fresh re-keyed this worktree/,
-      );
-      const state = readStateFile(dir);
-      assert.equal(state.sessions.s1.iterations, 1);
-      assert.equal(
-        state.sessions.s1.exited_reason,
-        undefined,
-        "exited_reason cleared by fresh-transition branch",
-      );
-      assert.equal(state.sessions.s1.enabled, true);
-    } finally {
-      rmTmpDir(dir);
-    }
-});
-
 test("session.idle: max-iterations sets exited_reason: 'max_iterations' and next idle short-circuits", async () => {
     const { default: factory, MAX_ITERATIONS } = await import(PLUGIN_PATH);
     const dir = mkTmpDir();
@@ -1508,7 +1383,7 @@ test("AUTOPILOT_STAGNATION_EXIT_MESSAGE: contains threshold count and EXIT instr
     );
     assert.match(
       AUTOPILOT_STAGNATION_EXIT_MESSAGE,
-      /\/fresh/,
-      "should explain how to re-key for new task",
+      /\/autopilot/,
+      "should explain how to re-enable autopilot on a new session",
     );
 });

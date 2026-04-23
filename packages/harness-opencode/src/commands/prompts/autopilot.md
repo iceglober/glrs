@@ -155,8 +155,8 @@ When the argument names a scope containing multiple issues — a Linear project,
 
 1. **Pop the next ref** from the queue. If empty, exit the loop and proceed to § 5 Reporting with a sequence summary.
 2. **PR pre-check**: fetch open + merged PRs that reference this ref. Use `gh pr list --search "<ref>" --state all --json number,title,state,url` (or Linear MCP's issue-to-PR lookup). If an open or merged PR exists, skip this ref: log `→ Skipping <ref> (PR #<N> is <state>)`, return to step 1.
-3. **Invoke `/fresh`** with the ref and `--yes` flag: treat this as a slash-command invocation on the user's behalf. The command re-keys the worktree, writes `.agent/fresh-handoff.md`, and resets the autopilot plugin's state. If `/fresh` aborts (dirty tracked tree, empty args, collision-after-retries, etc.), STOP the sequence entirely — do NOT try the next ref. Report the `/fresh` error and wait for human resolution.
-4. **Run the orchestrator arc** (§ 3 above) on the new task. The autopilot plugin's continuation nudges now reference the fresh handoff brief, not stale plans from the previous iteration. Standard `MAX_ITERATIONS=10` cap per iteration applies.
+3. **Invoke `/fresh`** with the ref and `--yes` flag: treat this as a slash-command invocation on the user's behalf. The command re-keys the worktree (discards the tree, fetches base, creates a new branch) and then auto-continues inline into the orchestrator arc on the new ref. If `/fresh` aborts (dirty tracked tree, empty args, collision-after-retries, etc.), STOP the sequence entirely — do NOT try the next ref. Report the `/fresh` error and wait for human resolution.
+4. **The orchestrator arc runs on the new task** as part of `/fresh`'s in-turn continuation. Standard `MAX_ITERATIONS=10` cap per iteration applies.
 5. **On orchestrator arc completion** (plan acceptance criteria all `[x]`, verify green, qa-reviewer `[PASS]`): do NOT invoke `/ship` — the human gate still applies per-PR. Instead, write a line into `.agent/autopilot-sequence-log.md`:
    ```
    - <ISO-timestamp> <ref>: <title> → plan at <plan-path> — run `/ship <plan-path>` when ready

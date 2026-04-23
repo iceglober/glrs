@@ -8,8 +8,8 @@
  * regression on the hook-first dispatch semantics.
  *
  * Assertions target concrete tokens the prompt MUST carry (paths, flag
- * names, handoff-brief field labels) rather than narrative prose, so the
- * test is stable across innocuous rewording.
+ * names) rather than narrative prose, so the test is stable across
+ * innocuous rewording.
  */
 
 import { describe, it, expect } from "bun:test";
@@ -40,16 +40,23 @@ describe("fresh prompt contract", () => {
     expect(freshPrompt).toContain("--skip-hook");
   });
 
-  it("defines the handoff-brief **Reset status:** field", () => {
-    expect(freshPrompt).toContain("**Reset status:**");
-  });
-
-  it("defines the handoff-brief **Branch now:** field", () => {
-    expect(freshPrompt).toContain("**Branch now:**");
-  });
-
   it("does not reference the deleted docs/fresh.md", () => {
     expect(freshPrompt).not.toContain("docs/fresh.md");
+  });
+
+  it("does not reference the removed handoff brief (moved out of /fresh)", () => {
+    // /fresh no longer writes .agent/fresh-handoff.md. If this assertion
+    // fails, someone is reintroducing the coupling that caused the
+    // autopilot double-nudge bug.
+    expect(freshPrompt).not.toContain(".agent/fresh-handoff.md");
+    expect(freshPrompt).not.toContain("handoff brief");
+  });
+
+  it("does not reset the autopilot-state file (moved out of /fresh)", () => {
+    // /fresh no longer touches .agent/autopilot-state.json. Autopilot
+    // is opt-in via the /autopilot slash command only; /fresh is
+    // purely a workspace-cleanup-and-branch command.
+    expect(freshPrompt).not.toContain("autopilot-state.json");
   });
 
   it("fresh command description does not contain stale 'gsag' or 'Create a fresh worktree' wording", () => {
