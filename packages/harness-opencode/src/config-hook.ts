@@ -25,11 +25,66 @@
  */
 
 import type { Config } from "@opencode-ai/plugin";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 
 import { createAgents } from "./agents/index.js";
 import { createCommands } from "./commands/index.js";
 import { createMcpConfig } from "./mcp/index.js";
 import { getSkillsRoot } from "./skills/paths.js";
+import { readOurPackageVersion } from "./auto-update.js";
+
+/**
+ * Diagnostic probe — dumps every agent's final `permission` block to
+ * a JSON file when `HARNESS_OPENCODE_PERM_DEBUG=1`. Silent and zero-
+ * overhead when the env var is unset.
+ *
+ * Writes to `$XDG_STATE_HOME/harness-opencode/perm-debug.json`, falling
+ * back to `~/.local/state/harness-opencode/perm-debug.json`. Wrapped in
+ * try/catch — the probe MUST NOT break plugin startup if the write
+ * fails for any reason.
+ *
+ * The previous two attempts at fixing the bash-prompt bug shipped
+ * without a way to verify the fix from the user's actual machine. This
+ * probe is the verification instrument: if the fix works, the snapshot
+ * shape matches the source; if prompts still fire despite a correct
+ * snapshot, the bug is elsewhere and we have concrete evidence instead
+ * of another speculative cycle.
+ */
+export function writePermDebugSnapshot(config: Config): void {
+  if (process.env["HARNESS_OPENCODE_PERM_DEBUG"] !== "1") return;
+
+  try {
+    const stateDir =
+      process.env["XDG_STATE_HOME"] ||
+      path.join(os.homedir(), ".local", "state");
+    const targetDir = path.join(stateDir, "harness-opencode");
+    const targetFile = path.join(targetDir, "perm-debug.json");
+
+    const version = readOurPackageVersion(import.meta.url);
+    const agentBlock = (config as any).agent ?? {};
+    const agentPerms: Record<string, unknown> = {};
+    for (const [name, cfg] of Object.entries(agentBlock)) {
+      agentPerms[name] = (cfg as any)?.permission ?? null;
+    }
+
+    const payload = {
+      timestamp: new Date().toISOString(),
+      pluginVersion: version,
+      agents: Object.keys(agentBlock),
+      agentPermissions: agentPerms,
+      // Include the global permission block too — useful context when
+      // diagnosing interplay between global and per-agent rules.
+      globalPermission: (config as any).permission ?? null,
+    };
+
+    fs.mkdirSync(targetDir, { recursive: true });
+    fs.writeFileSync(targetFile, JSON.stringify(payload, null, 2));
+  } catch {
+    // Probe is best-effort. Never let it break plugin startup.
+  }
+}
 
 export function applyConfig(config: Config): void {
   // Agents: user-wins (user's opencode.json overrides our defaults)
@@ -109,4 +164,9 @@ export function applyConfig(config: Config): void {
       ...existingExtDir,
     },
   };
+
+  // Diagnostic probe — silent unless HARNESS_OPENCODE_PERM_DEBUG=1.
+  // Runs at the end of applyConfig so the snapshot captures the final
+  // permission shape every agent will ship to OpenCode.
+  writePermDebugSnapshot(config);
 }

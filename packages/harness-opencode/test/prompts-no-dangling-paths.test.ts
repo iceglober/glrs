@@ -78,6 +78,54 @@ describe("prompts-no-dangling-paths", () => {
 });
 
 /**
+ * Docs-maintenance regression tests — lock in that the
+ * plugin-architecture doc explains the bash-permission root cause, so
+ * future cleanup doesn't strip it (which would re-open the cycle of
+ * "why is our allow not winning" investigations).
+ */
+describe("docs/plugin-architecture.md", () => {
+  const docPath = path.join(ROOT, "docs", "plugin-architecture.md");
+
+  it("docs/plugin-architecture.md describes the bash-permission root-cause", () => {
+    expect(fs.existsSync(docPath)).toBe(true);
+    const content = fs.readFileSync(docPath, "utf8");
+    // Section header present.
+    expect(content).toContain("Permission resolution");
+    // Key concepts: upstream injection, last-match-wins, fromConfig
+    // sort order, specific patterns.
+    expect(content.toLowerCase()).toContain("last-match");
+    expect(content.toLowerCase()).toContain("fromconfig");
+    expect(content).toContain("CORE_BASH_ALLOW_LIST");
+    expect(content).toContain("CORE_DESTRUCTIVE_BASH_DENIES");
+    // The probe is documented too.
+    expect(content).toContain("HARNESS_OPENCODE_PERM_DEBUG");
+  });
+
+  it("changeset for qa-reviewer-bash-prompts-root-cause exists and is a patch", () => {
+    const changesetDir = path.join(ROOT, ".changeset");
+    expect(fs.existsSync(changesetDir)).toBe(true);
+    const files = fs
+      .readdirSync(changesetDir)
+      .filter((f) => f.endsWith(".md") && f !== "README.md");
+    // At least one changeset mentions this fix.
+    const matches = files.filter((f) => {
+      const body = fs.readFileSync(path.join(changesetDir, f), "utf8");
+      return (
+        body.toLowerCase().includes("bash") &&
+        body.toLowerCase().includes("prompt")
+      );
+    });
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+    // Must be a patch bump.
+    for (const f of matches) {
+      const body = fs.readFileSync(path.join(changesetDir, f), "utf8");
+      // Frontmatter shape: ---\n"@glrs-dev/harness-opencode": patch\n---
+      expect(body).toMatch(/"@glrs-dev\/harness-opencode":\s*patch/);
+    }
+  });
+});
+
+/**
  * OpenCode textually substitutes `$ARGUMENTS` with the full user input
  * wherever the token appears in a slash-command prompt. When a prompt
  * embeds `$ARGUMENTS` multiple times as self-reference ("Parse $ARGUMENTS",

@@ -138,29 +138,203 @@ describe("subagent permissions", () => {
     expect((cfg as any).permission).toBeUndefined();
   });
 
-  it("qa-reviewer bash is plain \"allow\" string", () => {
-    // Regression target for the permission-ask bug: the agent-level bash
-    // permission must be the plain string "allow", not an object rule-map.
-    // A global bash rule-map was also observed to cause ask-prompts to
-    // leak through even when the agent scalar was "allow" — so
-    // applyConfig intentionally ships NO global permission.bash default.
-    // Destructive-command safety for reviewers relies on their read-only
-    // role (system prompt forbids destructive ops) and they never reach
-    // for `rm -rf`, `sudo`, etc. Primary agents (orchestrator, build)
-    // carry their own agent-level object-form deny rules.
+  // ---- bash object-form shape lock-in (root-cause fix, v0.7.0) ----
+  //
+  // Live log evidence (user's kn-eng session, 2026-04-24) proved that
+  // scalar `bash: "allow"` on subagents loses to an upstream OpenCode
+  // rule injecting `{bash, *, ask}` via last-match-wins. The fix: use
+  // object-form bash maps with SPECIFIC-PATTERN allows that sort
+  // AFTER upstream wildcard keys in `Permission.fromConfig`, winning
+  // via the same last-match-wins evaluation. See the big comment near
+  // CORE_BASH_ALLOW_LIST in src/agents/index.ts and the architecture
+  // doc for the full rationale.
+  //
+  // Do NOT simplify back to scalar. These tests lock that constraint.
+
+  // Commands from the user's actual bug reports — every one of these
+  // triggered a permission-ask prompt in the wild. The fix must make
+  // each one evaluate to "allow" via the specific-pattern rules in
+  // CORE_BASH_ALLOW_LIST (sorted LATER in fromConfig than the upstream
+  // wildcard `bash * ask`).
+  const PAIN_POINT_COMMANDS = [
+    "pnpm lint",
+    "pnpm lint --filter @kn/core",
+    "tail -n 20 foo.log",
+    "tail -30",
+    "ls apps/api-server/AGENTS.md apps/web-app/AGENTS.md",
+    "ls -la",
+    "cat package.json",
+    "head -50 foo.ts",
+    "git status",
+    "git diff HEAD~1 --stat",
+    "git log --oneline -20",
+    "git merge-base main HEAD",
+    "git merge-base HEAD origin/main",
+    "git rev-parse HEAD",
+    "git branch --show-current",
+    "git show HEAD:package.json",
+    "grep -rn foo src",
+    "rg foo src",
+    "find src -name '*.ts'",
+    "wc -l foo.ts",
+    "bunx @glrs-dev/harness-opencode plan-dir",
+    "bun test test/agents.test.ts",
+    "pnpm --filter @kn/core test",
+    "pnpm test foo.test.ts",
+  ];
+
+  // Commands that MUST be denied across every allow-list'd agent.
+  const DESTRUCTIVE_COMMANDS = [
+    "rm -rf /",
+    "rm -rf /tmp/anything",
+    "rm -rf ~/secret",
+    "chmod +x evil.sh",
+    "chown root file",
+    "sudo rm -f foo",
+    "git push --force origin main",
+    "git push -f origin main",
+    "git push origin --force main",
+    "git push origin --force-with-lease main", // explicit re-allow
+  ];
+
+  /**
+   * Simulates OpenCode's `Permission.fromConfig` → `Permission.evaluate`
+   * path for a given bash rule-map. Mirrors the upstream implementation
+   * in `packages/opencode/src/permission/index.ts` and
+   * `packages/opencode/src/util/wildcard.ts`. Any mismatch between this
+   * simulator and the real OpenCode runtime would be a bug in one of the
+   * two — the live log trace in the docs confirms this simulator lines
+   * up with observed behavior.
+   */
+  function evaluateBash(
+    bashMap: Record<string, string>,
+    command: string,
+  ): "allow" | "deny" | "ask" {
+    // fromConfig sorts top-level keys so wildcards-in-name sort first.
+    // Inside the `bash` permission, every sub-key's pattern is a
+    // bash-command glob; none contains the literal `*` in the KEY-NAME
+    // sense fromConfig sorts on (that sort is on the PERMISSION name,
+    // not the pattern). But we're already inside one permission here,
+    // so sort is a no-op — we just flatten the entries in order.
+    const rules: Array<{ pattern: string; action: string }> = [];
+    for (const [pattern, action] of Object.entries(bashMap)) {
+      rules.push({ pattern, action });
+    }
+
+    // Wildcard match, mirroring src/util/wildcard.ts::match.
+    function match(str: string, pattern: string): boolean {
+      let escaped = pattern
+        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+        .replace(/\*/g, ".*")
+        .replace(/\?/g, ".");
+      if (escaped.endsWith(" .*")) {
+        escaped = escaped.slice(0, -3) + "( .*)?";
+      }
+      return new RegExp("^" + escaped + "$", "s").test(str);
+    }
+
+    const matched = rules.findLast((r) => match(command, r.pattern));
+    if (!matched) return "ask";
+    if (matched.action === "allow") return "allow";
+    if (matched.action === "deny") return "deny";
+    return "ask";
+  }
+
+  it("qa-reviewer bash is object-form with enumerated allow-list", () => {
     const bash = (agents["qa-reviewer"] as any).permission.bash;
-    expect(bash).toBe("allow");
+    expect(typeof bash).toBe("object");
+    expect(bash).not.toBeNull();
+    expect(bash["*"]).toBe("allow");
+    // Spot-check a handful of enumerated entries — the exhaustive
+    // pain-point coverage is in the next test.
+    expect(bash["tail *"]).toBe("allow");
+    expect(bash["pnpm lint *"]).toBe("allow");
+    expect(bash["git merge-base *"]).toBe("allow");
+    expect(bash["ls *"]).toBe("allow");
+    // Core denies must be present.
+    expect(bash["rm -rf /*"]).toBe("deny");
+    expect(bash["rm -rf ~*"]).toBe("deny");
+    expect(bash["chmod *"]).toBe("deny");
+    expect(bash["chown *"]).toBe("deny");
+    expect(bash["sudo *"]).toBe("deny");
+    expect(bash["git push --force*"]).toBe("deny");
+    expect(bash["git push --force-with-lease*"]).toBe("allow");
   });
 
-  it("qa-thorough bash is plain \"allow\" string", () => {
+  it("qa-reviewer bash object form allows all reported pain-point commands", () => {
+    const bash = (agents["qa-reviewer"] as any).permission.bash;
+    const mismatches: string[] = [];
+    for (const cmd of PAIN_POINT_COMMANDS) {
+      const action = evaluateBash(bash, cmd);
+      if (action !== "allow") {
+        mismatches.push(`  "${cmd}" → ${action}`);
+      }
+    }
+    if (mismatches.length > 0) {
+      throw new Error(
+        `qa-reviewer bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
+      );
+    }
+  });
+
+  it("qa-reviewer bash object form denies destructive commands", () => {
+    const bash = (agents["qa-reviewer"] as any).permission.bash;
+    const mismatches: string[] = [];
+    for (const cmd of DESTRUCTIVE_COMMANDS) {
+      const action = evaluateBash(bash, cmd);
+      // --force-with-lease is the explicit re-allow exception.
+      const expected = cmd.includes("--force-with-lease") ? "allow" : "deny";
+      if (action !== expected) {
+        mismatches.push(`  "${cmd}" → ${action} (expected ${expected})`);
+      }
+    }
+    if (mismatches.length > 0) {
+      throw new Error(
+        `qa-reviewer bash map fails destructive-command check:\n${mismatches.join("\n")}`,
+      );
+    }
+  });
+
+  it("qa-thorough bash is object-form with enumerated allow-list", () => {
     const bash = (agents["qa-thorough"] as any).permission.bash;
-    expect(bash).toBe("allow");
+    expect(typeof bash).toBe("object");
+    expect(bash).not.toBeNull();
+    expect(bash["*"]).toBe("allow");
+    expect(bash["tail *"]).toBe("allow");
+    expect(bash["pnpm lint *"]).toBe("allow");
+    expect(bash["git merge-base *"]).toBe("allow");
+    expect(bash["rm -rf /*"]).toBe("deny");
   });
 
-  it("qa-thorough permission block matches qa-reviewer shape", () => {
+  it("qa-thorough bash object form allows all reported pain-point commands", () => {
+    const bash = (agents["qa-thorough"] as any).permission.bash;
+    const mismatches: string[] = [];
+    for (const cmd of PAIN_POINT_COMMANDS) {
+      const action = evaluateBash(bash, cmd);
+      if (action !== "allow") {
+        mismatches.push(`  "${cmd}" → ${action}`);
+      }
+    }
+    if (mismatches.length > 0) {
+      throw new Error(
+        `qa-thorough bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
+      );
+    }
+  });
+
+  it("qa-thorough bash shape matches qa-reviewer", () => {
+    // They share a role (read-only adversarial review). Any divergence
+    // would cause the fast/thorough dispatch to have different
+    // allowlists — a foot-gun. Fail noisily if someone drifts one
+    // without the other.
+    const qr = (agents["qa-reviewer"] as any).permission.bash;
+    const qt = (agents["qa-thorough"] as any).permission.bash;
+    expect(qt).toEqual(qr);
+  });
+
+  it("qa-thorough permission block matches qa-reviewer shape (non-bash keys)", () => {
     const qr = (agents["qa-reviewer"] as any).permission;
     const qt = (agents["qa-thorough"] as any).permission;
-    // Flat-keyed tool perms must match
     for (const key of [
       "edit",
       "webfetch",
@@ -178,9 +352,69 @@ describe("subagent permissions", () => {
     ]) {
       expect(qt[key]).toBe(qr[key]);
     }
-    // Bash is now a plain string; assert both are the same string value.
-    expect(qt.bash).toBe(qr.bash);
-    expect(qr.bash).toBe("allow");
+  });
+
+  it("orchestrator bash object-form includes enumerated allow-list", () => {
+    const bash = (agents["orchestrator"] as any).permission.bash;
+    const mismatches: string[] = [];
+    for (const cmd of PAIN_POINT_COMMANDS) {
+      const action = evaluateBash(bash, cmd);
+      if (action !== "allow") {
+        mismatches.push(`  "${cmd}" → ${action}`);
+      }
+    }
+    if (mismatches.length > 0) {
+      throw new Error(
+        `orchestrator bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
+      );
+    }
+  });
+
+  it("orchestrator bash object-form keeps destructive denies", () => {
+    const bash = (agents["orchestrator"] as any).permission.bash;
+    const mismatches: string[] = [];
+    for (const cmd of DESTRUCTIVE_COMMANDS) {
+      const action = evaluateBash(bash, cmd);
+      const expected = cmd.includes("--force-with-lease") ? "allow" : "deny";
+      if (action !== expected) {
+        mismatches.push(`  "${cmd}" → ${action} (expected ${expected})`);
+      }
+    }
+    if (mismatches.length > 0) {
+      throw new Error(
+        `orchestrator bash map fails destructive-command check:\n${mismatches.join("\n")}`,
+      );
+    }
+  });
+
+  it("build bash object-form includes enumerated allow-list", () => {
+    const bash = (agents["build"] as any).permission.bash;
+    const mismatches: string[] = [];
+    for (const cmd of PAIN_POINT_COMMANDS) {
+      const action = evaluateBash(bash, cmd);
+      if (action !== "allow") {
+        mismatches.push(`  "${cmd}" → ${action}`);
+      }
+    }
+    if (mismatches.length > 0) {
+      throw new Error(
+        `build bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
+      );
+    }
+  });
+
+  it("build bash object-form keeps destructive denies and build-specific deny/ask rules", () => {
+    const bash = (agents["build"] as any).permission.bash;
+    // Standard destructive denies.
+    for (const cmd of DESTRUCTIVE_COMMANDS) {
+      const action = evaluateBash(bash, cmd);
+      const expected = cmd.includes("--force-with-lease") ? "allow" : "deny";
+      expect(action).toBe(expected);
+    }
+    // Build-specific rules: git clean denied (stricter than orchestrator),
+    // git reset --hard must prompt (ask).
+    expect(bash["git clean *"]).toBe("deny");
+    expect(bash["git reset --hard*"]).toBe("ask");
   });
 
   it("src/agents/index.ts no longer contains NONDESTRUCTIVE_BASH_RULES", () => {

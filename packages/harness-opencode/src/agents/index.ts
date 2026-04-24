@@ -116,46 +116,167 @@ function agentFromPrompt(
 
 // ---- Permission blocks (reused across primary agents) ----
 
-// Read-only reviewers (qa-reviewer, qa-thorough) use `bash: "allow"` as
-// a plain scalar. Destructive-command safety for these agents relies on
-// their read-only role and system prompt — they are never asked to run
-// `rm -rf`, `sudo`, force-push, etc.
+// Root-cause finding (v0.7.0 bash-prompt fix, 2026-04-24):
 //
-// History: earlier iterations tried (a) per-subagent object-form rule-
-// maps (misfired on pipelined commands like `git show <ref>:<path> |
-// sed -n 'N,Mp'`), and (b) a scalar-allow agent layer paired with a
-// global object-form rule-map in applyConfig (still misfired — OpenCode
-// re-evaluated the global map and emitted ask-prompts for trivial reads
-// like `git branch --show-current`, breaking reviewer flow). The global
-// bash default was removed entirely; destructive-command denies now
-// live only on primary agents (orchestrator, build) that actually run
-// shell commands with mutation potential.
+// An upstream OpenCode layer (suspected to be the built-in "subagent"
+// mode's permission defaults — exact source not pinpointed) injects
+// `{permission: "bash", pattern: "*", action: "ask"}` into the effective
+// ruleset passed to `Permission.evaluate` AFTER our agent config reaches
+// OpenCode. We have hard evidence of this: user log at
+//   ~/.local/share/opencode/log/2026-04-24T014426.log lines 40292-40293
+//   (subagent with shape matching qa-reviewer: the agent-level block
+//   ends `{bash, *, ask}` despite our source shipping `bash: "allow"`)
+// and 46605-46606 (same ruleset wins `bash * ask` → prompt fires for
+// `git merge-base main HEAD`).
+//
+// `Permission.evaluate` walks the merged ruleset top-to-bottom and the
+// LAST matching rule wins. `Permission.fromConfig` sorts top-level
+// permission keys as "wildcard-in-name first, specific-in-name last"
+// before flattening into rules. Consequence: for the `bash` permission,
+// specific-pattern keys like `"git log *"` sort AFTER the upstream
+// `bash * ask` and win via last-match-wins for commands they match.
+// The wildcard `"*"` key does NOT beat the upstream ask — their names
+// are equally wildcard-only, so merge-position determines the winner
+// and the upstream ask lands AFTER us.
+//
+// Mitigation: enumerated object-form bash maps. `CORE_BASH_ALLOW_LIST`
+// contains the specific-pattern allows that cover the reported pain
+// points (pnpm lint, tail, ls, git status/diff/log/merge-base, etc.).
+// `CORE_DESTRUCTIVE_BASH_DENIES` contains the non-negotiable denies
+// that every agent capable of running bash must carry. Both are
+// shared across qa-reviewer, qa-thorough, orchestrator, and build
+// so the shape stays consistent as the allow-list evolves.
+//
+// Prior attempts (`c9a288d`, `3483448`) shipped scalar `bash: "allow"`
+// on the reviewers and diagnosed the loss of that allow at the wrong
+// layer (the global `permission.bash` map). That map was correctly
+// removed, but the scalar allow on the agent itself is still losing
+// to the upstream `bash * ask` — because the merge order puts their
+// wildcard rule last. Specific patterns in our agent block win the
+// evaluation; wildcards don't. See `docs/plugin-architecture.md`
+// "Permission resolution" for the full writeup and do NOT simplify
+// back to scalar `"allow"` without understanding this.
+
+/** Non-destructive commands the reviewers/primary agents need to run
+ * freely. Each entry is a glob-style pattern matching the FULL command
+ * string (tokens separated by spaces; trailing `*` matches any args).
+ * Keep entries specific enough that a destructive form (e.g. `rm -rf`)
+ * is NOT inadvertently matched — those live in `CORE_DESTRUCTIVE_BASH_DENIES`.
+ */
+const CORE_BASH_ALLOW_LIST = {
+  // File inspection — safe read-only commands the reviewers use heavily.
+  "ls *": "allow",
+  "cat *": "allow",
+  "head *": "allow",
+  "tail *": "allow",
+  "wc *": "allow",
+  "grep *": "allow",
+  "rg *": "allow",
+  "find *": "allow",
+  "file *": "allow",
+  "stat *": "allow",
+  "which *": "allow",
+  "whereis *": "allow",
+  "basename *": "allow",
+  "dirname *": "allow",
+  "realpath *": "allow",
+  "readlink *": "allow",
+  "diff *": "allow",
+  "sort *": "allow",
+  "uniq *": "allow",
+  "xxd *": "allow",
+  "tree *": "allow",
+  "date *": "allow",
+  "echo *": "allow",
+  // Git read-only subcommands (explicit rather than `git *` so we don't
+  // accidentally whitelist `git push` variants the destructive-deny
+  // table counteracts via longer-pattern matches — but clarity > trust).
+  "git status *": "allow",
+  "git log *": "allow",
+  "git diff *": "allow",
+  "git show *": "allow",
+  "git branch *": "allow",
+  "git merge-base *": "allow",
+  "git rev-parse *": "allow",
+  "git rev-list *": "allow",
+  "git blame *": "allow",
+  "git config --get *": "allow",
+  "git config --get": "allow",
+  "git remote *": "allow",
+  "git stash list *": "allow",
+  "git stash list": "allow",
+  "git ls-files *": "allow",
+  "git describe *": "allow",
+  "git tag *": "allow",
+  "git fetch *": "allow",
+  // Package/build tooling — the reviewers run lint/test/typecheck.
+  "pnpm lint *": "allow",
+  "pnpm test *": "allow",
+  "pnpm typecheck *": "allow",
+  "pnpm build *": "allow",
+  "pnpm run *": "allow",
+  "pnpm install *": "allow",
+  "pnpm --filter *": "allow",
+  "pnpm -w *": "allow",
+  "bun run *": "allow",
+  "bun test *": "allow",
+  "bun install *": "allow",
+  "bunx *": "allow",
+  "npm run *": "allow",
+  "npm test *": "allow",
+  "npx *": "allow",
+  "yarn *": "allow",
+  "tsc *": "allow",
+  "eslint *": "allow",
+  "prettier *": "allow",
+  "biome *": "allow",
+  // Our own CLI — the plan agent and qa-reviewer both call plan-check/plan-dir.
+  "bunx @glrs-dev/harness-opencode *": "allow",
+  // GitHub CLI — read-only gh calls are fine; destructive `gh pr merge`
+  // is gated at the orchestrator level by human intent (user runs /ship).
+  "gh pr view *": "allow",
+  "gh pr list *": "allow",
+  "gh issue view *": "allow",
+  "gh issue list *": "allow",
+  "gh api *": "allow",
+};
+
+/** Destructive-command denies. Applied to EVERY agent block that allows
+ * bash at all. Pattern order matters for readability, not for evaluation
+ * (findLast doesn't care about insertion order within the same specific
+ * pattern; it matches the LAST rule whose both permission AND pattern
+ * match). Each pattern here is specific enough to beat `"*": "allow"`.
+ */
+const CORE_DESTRUCTIVE_BASH_DENIES = {
+  "rm -rf /*": "deny",
+  "rm -rf ~*": "deny",
+  "chmod *": "deny",
+  "chown *": "deny",
+  "sudo *": "deny",
+  "git push --force*": "deny",
+  "git push -f *": "deny",
+  "git push * --force*": "deny",
+  "git push * -f": "deny",
+  "git push * main*": "deny",
+  "git push * master*": "deny",
+  // --force-with-lease is the safe variant — explicit allow rule sorts
+  // after the broad --force deny so the lease variant survives.
+  "git push --force-with-lease*": "allow",
+  "git push * --force-with-lease*": "allow",
+};
 
 const ORCHESTRATOR_PERMISSIONS = {
   edit: "allow" as const,
   bash: {
-    // Non-destructive ops are allowed globally via plugin config hook.
-    // Agent-level rules layer on top — last match wins.
     "*": "allow",
-    "git push --force*": "deny",
-    "git push --force-with-lease*": "allow",
-    "git push -f *": "deny",
-    "git push * --force*": "deny",
-    "git push * --force-with-lease*": "allow",
-    "git push * -f": "deny",
-    "git push * main*": "deny",
-    "git push * master*": "deny",
+    ...CORE_BASH_ALLOW_LIST,
+    ...CORE_DESTRUCTIVE_BASH_DENIES,
     // git clean & git reset --hard are allowed for orchestrator because
     // /fresh runs them after its own question-tool confirmation gate;
     // a permission-layer prompt on top is redundant noise (see issue #54).
-    // Global and BUILD permissions keep the stricter default.
+    // BUILD keeps the stricter default (deny/ask).
     "git clean *": "allow",
     "git reset --hard*": "allow",
-    "rm -rf /*": "deny",
-    "rm -rf ~*": "deny",
-    "chmod *": "deny",
-    "chown *": "deny",
-    "sudo *": "deny",
   },
   webfetch: "allow" as const,
   // Per-tool permissions (index signature on AgentConfig allows these)
@@ -204,21 +325,13 @@ const BUILD_PERMISSIONS = {
   edit: "allow" as const,
   bash: {
     "*": "allow",
-    "git push --force*": "deny",
-    "git push --force-with-lease*": "allow",
-    "git push -f *": "deny",
-    "git push * --force*": "deny",
-    "git push * --force-with-lease*": "allow",
-    "git push * -f": "deny",
-    "git push * main*": "deny",
-    "git push * master*": "deny",
+    ...CORE_BASH_ALLOW_LIST,
+    ...CORE_DESTRUCTIVE_BASH_DENIES,
+    // Build is stricter than orchestrator on mutation: no `git clean`
+    // (build shouldn't wipe worktree mid-execution), and
+    // `git reset --hard` must prompt explicitly.
     "git clean *": "deny",
     "git reset --hard*": "ask",
-    "rm -rf /*": "deny",
-    "rm -rf ~*": "deny",
-    "chmod *": "deny",
-    "chown *": "deny",
-    "sudo *": "deny",
   },
   webfetch: "allow" as const,
   ast_grep: "allow",
@@ -242,7 +355,18 @@ const BUILD_PERMISSIONS = {
 
 const QA_REVIEWER_PERMISSIONS = {
   edit: "deny" as const,
-  bash: "allow" as const,
+  // Object-form bash: the scalar `"allow"` shape loses to OpenCode's
+  // upstream subagent-default `{bash, *, ask}` via last-match-wins (see
+  // the root-cause comment near ORCHESTRATOR_PERMISSIONS). Enumerated
+  // specific patterns in CORE_BASH_ALLOW_LIST sort AFTER the upstream
+  // wildcard ask and win for the commands they match. `"*": "allow"`
+  // is kept as a backstop but may still lose to the upstream rule for
+  // commands not in the enumerated list; those are the known blind spot.
+  bash: {
+    "*": "allow",
+    ...CORE_BASH_ALLOW_LIST,
+    ...CORE_DESTRUCTIVE_BASH_DENIES,
+  },
   webfetch: "deny" as const,
   ast_grep: "allow",
   tsc_check: "allow",
@@ -264,7 +388,15 @@ const QA_REVIEWER_PERMISSIONS = {
 // only in model, description, and prompt body.
 const QA_THOROUGH_PERMISSIONS = {
   edit: "deny" as const,
-  bash: "allow" as const,
+  // Same object-form as QA_REVIEWER_PERMISSIONS — see the shape rationale
+  // there. qa-thorough re-runs the full suite unconditionally (per its
+  // prompt), so it touches the same command surface as qa-reviewer and
+  // needs the identical bash allow-list.
+  bash: {
+    "*": "allow",
+    ...CORE_BASH_ALLOW_LIST,
+    ...CORE_DESTRUCTIVE_BASH_DENIES,
+  },
   webfetch: "deny" as const,
   ast_grep: "allow",
   tsc_check: "allow",
