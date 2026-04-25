@@ -201,6 +201,7 @@ describe("refreshPluginCache", () => {
 
     const result = await refreshPluginCache("0.1.2", "0.6.0", {
       cacheDir: tmpCacheDir,
+      skipInstall: true,
     });
     expect(result.outcome).toBe("refreshed");
 
@@ -228,6 +229,7 @@ describe("refreshPluginCache", () => {
     writeCachePin(tmpCacheDir, "0.1.2", { withLock: false });
     const result = await refreshPluginCache("0.1.2", "0.6.0", {
       cacheDir: tmpCacheDir,
+      skipInstall: true,
     });
     expect(result.outcome).toBe("refreshed");
     const pkg = JSON.parse(
@@ -242,6 +244,7 @@ describe("refreshPluginCache", () => {
     fs.writeFileSync(path.join(tmpCacheDir, "package-lock.json"), "{garbage");
     const result = await refreshPluginCache("0.1.2", "0.6.0", {
       cacheDir: tmpCacheDir,
+      skipInstall: true,
     });
     expect(result.outcome).toBe("refreshed");
     // Lockfile should be gone — next install rebuilds it

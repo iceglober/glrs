@@ -11,8 +11,8 @@
  *
  * This module self-heals by detecting a stale cache pin and atomically
  * rewriting the cache-dir's `package.json` + `package-lock.json` to point at
- * the latest version. It then removes `node_modules/` under the cache dir so
- * OpenCode's next start triggers a fresh install. The plugin currently
+ * the latest version. It then removes `node_modules/` and runs `npm install`
+ * to ensure the new version is immediately available. The plugin currently
  * running in-process is still the old version — the refresh takes effect on
  * the NEXT OpenCode restart.
  *
@@ -29,8 +29,8 @@
  *   - Skip rewrite if the cache dir's package.json declares a non-exact
  *     version (e.g. `^0.6.0`) — the user is managing pins themselves.
  *   - Cross-check package name in cache dir matches ours before writing.
- *   - Best-effort rm of `node_modules/`; if it fails, next start re-reads
- *     the new pin and the install just overwrites.
+ *   - Best-effort `npm install` in the cache dir after rewriting; if it
+ *     fails, next `glrs-oc install-plugin` will fix it.
  *   - `HARNESS_OPENCODE_AUTO_UPDATE=0` disables ONLY the cache rewrite
  *     (update check still runs and toasts).
  *   - `HARNESS_OPENCODE_UPDATE_CHECK=0` disables both check and rewrite.
@@ -41,6 +41,7 @@ import * as fsSync from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
 
 export const PACKAGE_NAME = "@glrs-dev/harness-opencode";
 
@@ -78,6 +79,8 @@ export interface RefreshContext {
   cacheDir?: string;
   /** Skip actual writes — used in tests to verify decision logic. */
   dryRun?: boolean;
+  /** Skip `npm install` after rewriting the pin — used in tests. */
+  skipInstall?: boolean;
 }
 
 export interface RefreshResult {
@@ -275,15 +278,35 @@ export async function refreshPluginCache(
       }
     }
 
-    // 3. Remove node_modules/ so OpenCode's next start triggers a fresh
-    // install. If this fails, the old node_modules/ may get used on next
-    // start, but the package.json mismatch will make bun/npm reinstall
-    // anyway. Best-effort.
+    // 3. Remove node_modules/ and reinstall so the new version is
+    // immediately available. OpenCode does NOT reliably reinstall when
+    // it finds a cache dir without node_modules — it silently fails to
+    // load the plugin. We must install ourselves.
     const nmPath = path.join(cacheDir, "node_modules");
     try {
       await fs.rm(nmPath, { recursive: true, force: true });
     } catch {
-      // ignore — pin rewrite alone is usually enough to trigger reinstall
+      // ignore — install below will overwrite anyway
+    }
+
+    // Run npm install in the cache dir. Use npm (not bun) because
+    // OpenCode's cache uses npm lockfile format.
+    if (!ctx.skipInstall) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const child = execFile(
+            "npm",
+            ["install", "--no-audit", "--no-fund"],
+            { cwd: cacheDir, timeout: 30_000 },
+            (err) => (err ? reject(err) : resolve()),
+          );
+          // Prevent zombie processes
+          child.unref?.();
+        });
+      } catch {
+        // If npm install fails, the pin rewrite still happened. Next
+        // manual `glrs-oc install-plugin` will fix it.
+      }
     }
 
     return {
