@@ -288,10 +288,8 @@ For trivial work (Phase 1 decided no plan): just make the change, run lint/tests
 
 Final verification before declaring complete:
 - All `## Acceptance criteria` boxes are `[x]` (or "no plan" for trivial work).
-- Run the project's test command. It must pass. Discover the right invocation from `package.json` scripts / `Makefile` / `CONTRIBUTING.md` / project's `AGENTS.md` — typical forms: `pnpm test`, `npm test`, `yarn test`, `bun test`, `cargo test`, `pytest`, `go test ./...`.
-- Run the project's lint command. It must pass. (e.g., `pnpm lint`, `npm run lint`, `ruff check`, `golangci-lint run`.)
-- Run the project's typecheck/build command if applicable. It must pass. (e.g., `pnpm typecheck`, `tsc --noEmit`, `mypy`, `cargo check`.)
 - Run `git diff --stat` and confirm the changed files match the plan's `## File-level changes` (for non-trivial work).
+- Do NOT run the full test suite, lint, or typecheck directly in the orchestrator — delegate these to the QA reviewer below. The orchestrator's context (Opus) is expensive; 4,000 lines of passing tests is pure noise. Exception: `tsc_check` on a single file is fine (it's capped and fast).
 
 Then delegate to the QA reviewer. Pick between two variants deterministically:
 
@@ -336,9 +334,32 @@ STOP at Phase 5 — don't push or open a PR without the user's explicit `/ship` 
 - Plan mutations after `[OKAY]`: cosmetic/numeric thresholds (line budgets, row caps, arbitrary targets you set yourself) — update silently, note in commit. Design/approach changes — report and ask. See Phase 3 § "When you discover the plan is wrong" for the full rubric.
 - For trivial work without a plan: still respect Phase 4 (tests + lint must pass) and Phase 5 (don't ship without explicit user command).
 - If the user types anything during execution, treat it as either: (a) a course correction to apply, or (b) a halt request. Default to halt-and-ask if ambiguous.
-- Use `@code-searcher` for any search that might return > 30 hits. Don't pollute your own context with grep dumps.
+- Use `@code-searcher` for any search that might return > 10 files, any file read > 500 lines, or any log/output triage. Don't pollute your own context with intermediate output that a sub-agent can summarize.
 - Use `@architecture-advisor` if you fail at the same task twice. Don't try a third time without consultation.
 - **Log confirmed pre-existing failures to the plan.** When you investigate a failing test during Phase 3 execution and confirm it is pre-existing / unrelated to the current change (e.g., verified via `git stash` against the base branch, or by `git log --oneline -- <file>` showing the failure pre-dates this branch), you MUST use the `edit` tool to append a bullet to the plan file's `## Open questions` section BEFORE proceeding with further work. Bullet format (verbatim, with your specifics substituted): `- Pre-existing failure confirmed in <file>::<test-name> — not introduced by this change. Recommend separate cleanup.` Without this step, the finding dies with the session and the next qa run re-investigates the same failure. If the plan has no `## Open questions` section, create one at the end of the file before appending.
+
+# Context firewall — mandatory delegation for high-output operations
+
+The orchestrator's context window is expensive (Opus). Protect it by delegating anything that produces > ~500 tokens of intermediate output to a cheaper sub-agent. The sub-agent executes in an isolated context and returns only a structured summary; the intermediate noise stays contained.
+
+**Mandatory delegation triggers:**
+
+| Operation | Delegate to | Why |
+|---|---|---|
+| Codebase search expected to return > 10 files | `@code-searcher` | Search dumps flood context |
+| Full test suite (`bun test`, `npm test`, etc.) | `@build` or QA reviewer | Thousands of lines of passing tests is pure noise |
+| Full build / typecheck on large projects | `@build` or QA reviewer | Build logs are verbose on success |
+| Reading files > 500 lines for analysis | `@code-searcher` or `@lib-reader` | Only the summary matters to the orchestrator |
+| Log analysis / large output triage | `@code-searcher` | Parse in isolation, return findings |
+
+**What stays in the orchestrator (no delegation needed):**
+- Phase 0 bootstrap (short commands, < 20 lines each)
+- Single-file reads for targeted inspection (< 500 lines)
+- `tsc_check` / `eslint_check` (output is already capped by the tool)
+- `git` commands that return < 50 lines
+- Any tool call where you need the FULL output to make a decision in the next turn
+
+**Rule of thumb:** if the command's output is for verification (pass/fail), delegate. If the output is for your immediate next decision, keep it.
 
 # Subagent reference (recap)
 

@@ -689,6 +689,29 @@ describe("prompt content assertions", () => {
     expect(prime).toMatch(/- `@qa-thorough`/);
   });
 
+  // ---- context firewall + delegation strengthening ----
+
+  it("prime prompt contains context firewall section", () => {
+    expect(prime).toContain("Context firewall");
+    expect(prime).toContain("Mandatory delegation triggers");
+  });
+
+  it("prime prompt delegates full test suites instead of running directly", () => {
+    // Phase 4 should NOT instruct running the full test suite directly
+    expect(prime).not.toContain(
+      "Run the project's test command. It must pass.",
+    );
+    // Should instruct delegation to QA reviewer
+    expect(prime).toContain(
+      "Do NOT run the full test suite, lint, or typecheck directly in the orchestrator",
+    );
+  });
+
+  it("prime prompt uses strengthened delegation threshold (> 10 files, not > 30 hits)", () => {
+    expect(prime).toContain("> 10 files");
+    expect(prime).not.toContain("> 30 hits");
+  });
+
   // ---- Plan-storage migration regression guards (a7 in the
   // plans-repo-shared-storage plan) ----
   //

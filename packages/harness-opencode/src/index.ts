@@ -38,11 +38,12 @@ import {
 import { loadDotenv } from "./plugins/dotenv.js";
 
 // Sub-plugins (autopilot idle-nudge loop + OS notifications + cost tracking
-// + pilot subsystem runtime guards)
+// + pilot subsystem runtime guards + tool output middleware)
 import autopilotPlugin from "./plugins/autopilot.js";
 import notifyPlugin from "./plugins/notify.js";
 import costTrackerPlugin from "./plugins/cost-tracker.js";
 import pilotPlugin from "./plugins/pilot-plugin.js";
+import toolHooksPlugin from "./plugins/tool-hooks.js";
 
 // ---- Update notification ----
 
@@ -157,6 +158,7 @@ const plugin: Plugin = async (input) => {
   const notifyHooks = await notifyPlugin(input);
   const costTrackerHooks = await costTrackerPlugin(input);
   const pilotHooks = await pilotPlugin(input);
+  const toolHooks = await toolHooksPlugin(input);
 
   // Merge all hooks.
   //
@@ -176,6 +178,7 @@ const plugin: Plugin = async (input) => {
       if (autopilotHooks.config) await autopilotHooks.config(config);
       if (notifyHooks.config) await notifyHooks.config(config);
       if (costTrackerHooks.config) await costTrackerHooks.config(config);
+      if (toolHooks.config) await toolHooks.config(config);
     },
 
     // Custom tools
@@ -209,6 +212,12 @@ const plugin: Plugin = async (input) => {
   // turns it into a tool-result error visible to the agent).
   if (pilotHooks["tool.execute.before"] !== undefined) {
     hooks["tool.execute.before"] = pilotHooks["tool.execute.before"];
+  }
+
+  // tool.execute.after — tool-hooks sub-plugin provides backpressure,
+  // post-edit verification, loop detection, and read deduplication.
+  if (toolHooks["tool.execute.after"] !== undefined) {
+    hooks["tool.execute.after"] = toolHooks["tool.execute.after"];
   }
 
   return hooks;

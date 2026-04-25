@@ -63,4 +63,10 @@ describe("plugin hooks shape", () => {
       }
     }
   });
+
+  it("tool.execute.after is wired through from tool-hooks sub-plugin", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hooks = (await plugin(fakeInput as any)) as Record<string, unknown>;
+    expect(typeof hooks["tool.execute.after"]).toBe("function");
+  });
 });
