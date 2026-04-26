@@ -1,0 +1,64 @@
+[package]
+name = "assume"
+version = "0.6.3"
+edition = "2021"
+rust-version = "1.75"
+description = "Unified credential assume manager with plugin architecture"
+license = "MIT"
+repository = "https://github.com/iceglober/glorious"
+
+[[bin]]
+name = "gs-assume"
+path = "src/main.rs"
+
+[[bin]]
+name = "gsa"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+aes-gcm = "0.10"
+ratatui = "0.29"
+crossterm = "0.28"
+nucleo = "0.5"
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+aws-config = "1"
+aws-sdk-sso = "1"
+aws-sdk-ssooidc = "1"
+aws-sdk-sts = "1"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dirs = "6"
+chrono = { version = "0.4", features = ["serde"] }
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4"] }
+open = "5"
+notify-rust = "4"
+clap_complete = "4"
+rand = "0.8"
+base64 = "0.22"
+sha2 = "0.10"
+url = "2"
+tokio-stream = "0.1"
+nix = { version = "0.29", features = ["signal", "fs"] }
+exec = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "z"
