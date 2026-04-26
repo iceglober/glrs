@@ -1,17 +1,36 @@
 name: Release
 
+# Trigger on pushes to main.
+# - If unreleased changesets exist, changesets/action opens or updates
+#   a "Version Packages" PR (consuming the changesets into a version bump
+#   + CHANGELOG entry).
+# - When that Version PR is merged (next push to main), the action detects
+#   no pending changesets and instead runs `pnpm release` (= `changeset
+#   publish`), which publishes to npm with provenance and pushes git tags.
+#
+# Auth: a GitHub App (APP_ID / APP_PRIVATE_KEY secrets) mints a short-lived
+# token used for `git push`, the Version Packages PR, and tag creation.
+# Unlike the default GITHUB_TOKEN, pushes made with an app token DO trigger
+# downstream workflow runs — so CI actually runs on the Version PR's update
+# commits. NPM_TOKEN is a registry-access token for publish.
 on:
   push:
     branches: [main]
 
+# Serialize release runs so overlapping pushes to main don't race on
+# the Version PR or the registry. cancel-in-progress stays false — we
+# never want to drop a run that might need to publish.
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# contents: write — push the "Version Packages" PR and tag.
+# pull-requests: write — open and update the Version PR.
+# id-token: write — mint the OIDC token npm provenance needs.
 permissions:
   contents: write
   pull-requests: write
-  id-token: write   # for npm provenance
+  id-token: write
 
 jobs:
   # Compute whether this push will actually trigger a publish. A publish
@@ -20,6 +39,8 @@ jobs:
   # the Version PR instead, we skip the expensive Rust build matrix.
   detect-publish:
     name: Detect publish intent
+    # Canonical-repo guard: forks can never publish even with a stolen token.
+    if: github.repository == 'iceglober/glrs'
     runs-on: ubuntu-22.04
     outputs:
       will_publish: ${{ steps.check.outputs.will_publish }}
@@ -59,26 +80,59 @@ jobs:
     # as success for this job's if-condition.
     if: |
       always() &&
+      github.repository == 'iceglober/glrs' &&
       needs.detect-publish.result == 'success' &&
       (needs.rust-build.result == 'success' || needs.rust-build.result == 'skipped')
     runs-on: ubuntu-22.04
+    # Maintainer approval required before NPM_TOKEN becomes available
+    # to the job. Protected by the `npm-publish` environment's rules.
     environment: npm-publish
     steps:
-      - uses: actions/checkout@v4
+      # Mint a short-lived token from the GitHub App. Unlike the default
+      # GITHUB_TOKEN, pushes made with an app token DO trigger downstream
+      # workflows — so CI actually runs on the Version PR's update commits
+      # instead of silently skipping them.
+      #
+      # Setup prerequisites (one-time, done by maintainer):
+      #   1. Install a GitHub App on iceglober/glrs with permissions:
+      #      contents: write, pull-requests: write, metadata: read.
+      #   2. Generate a private key for the app.
+      #   3. Set repo secrets APP_ID (the numeric app id) and
+      #      APP_PRIVATE_KEY (the full PEM contents, including BEGIN/END
+      #      lines).
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
         with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so changesets/action can reconcile against prior tags.
           fetch-depth: 0
+          # Use the app token for checkout so git push inherits it.
+          token: ${{ steps.app-token.outputs.token }}
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10
+
+      # setup-node writes the .npmrc that NODE_AUTH_TOKEN consumes when
+      # `changeset publish` calls `npm publish` under the hood.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
           cache: pnpm
-          registry-url: https://registry.npmjs.org
+          registry-url: 'https://registry.npmjs.org'
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
       - uses: dtolnay/rust-toolchain@stable
+
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
@@ -100,6 +154,12 @@ jobs:
         if: needs.detect-publish.outputs.will_publish == 'true'
         run: pnpm --filter @glrs-dev/assume run pack:platforms
 
+      # Either opens/updates the Version Packages PR, OR (if no pending
+      # changesets exist) runs the publish script. Never both in the
+      # same run. The app token in GITHUB_TOKEN makes the PR's commits
+      # trigger downstream CI; without it, the Version PR's updates are
+      # invisible to the `pull_request` trigger and CI has to be manually
+      # re-run (bit us in the old repo before the app-token switch).
       - name: Create Release Pull Request or Publish
         id: changesets
         uses: changesets/action@v1
@@ -109,8 +169,12 @@ jobs:
           commit: "chore: version packages"
           title: "chore: version packages"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Belt-and-suspenders: some tooling paths (npm publish invoked
+          # from `changeset publish`) read NODE_AUTH_TOKEN instead of or
+          # alongside NPM_TOKEN. Setting both covers both call sites.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # crates.io publishing for the `glrs-assume` crate is deliberately
       # NOT wired here yet. The release pipeline above publishes the five
