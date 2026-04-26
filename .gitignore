@@ -1,0 +1,49 @@
+# Node / TS
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Rust
+target/
+
+# Changesets work files (keep config + README)
+# (nothing globbed here — all *.md in .changeset/ are tracked; only the tool prunes on publish)
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Bun
+.bun/
+
+# pnpm
+.pnpm-store/
+
+# Astro / docs
+docs/.astro/
+docs/dist/
+
+# Terraform / Pulumi
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+Pulumi.*.yaml.bak

@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write   # for npm provenance
+
+jobs:
+  release:
+    name: Changesets version PR or publish
+    runs-on: ubuntu-22.04
+    environment: npm-publish
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm turbo run build
+
+      - name: Download Rust release artifacts
+        # If the rust-build-matrix workflow has run for this commit, pull those
+        # artifacts into packages/assume/npm/<platform>/bin/ before publishing.
+        # On a Version Packages PR merge this is mandatory; on other pushes
+        # (no publish), it's a no-op.
+        uses: actions/download-artifact@v4
+        with:
+          path: packages/assume/.release-artifacts
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Pack platform tarballs
+        run: |
+          if [ -d "packages/assume/.release-artifacts" ] && [ -n "$(ls -A packages/assume/.release-artifacts 2>/dev/null)" ]; then
+            pnpm --filter @glrs-dev/assume run pack:platforms
+          else
+            echo "No rust artifacts found; skipping platform packaging. This is expected on non-release pushes."
+          fi
+
+      - name: Create Release Pull Request or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: pnpm release
+          version: pnpm version-packages
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish glrs-assume to crates.io
+        if: steps.changesets.outputs.published == 'true'
+        working-directory: packages/assume
+        run: |
+          PUBLISHED='${{ steps.changesets.outputs.publishedPackages }}'
+          if echo "$PUBLISHED" | grep -q '"@glrs-dev/assume"'; then
+            cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          else
+            echo "No @glrs-dev/assume publish; skipping crates.io"
+          fi

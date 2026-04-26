@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ts:
+    name: TS build / test / typecheck
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Turbo build
+        run: pnpm turbo run build --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*'
+      - name: Turbo typecheck
+        run: pnpm turbo run typecheck --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*'
+      - name: Turbo test
+        run: pnpm turbo run test --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*'
+      - name: Turbo lint
+        run: pnpm turbo run lint --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*'
+
+  rust:
+    name: Rust (assume) build / test / clippy / fmt
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: cargo fmt
+        working-directory: packages/assume
+        run: cargo fmt --check
+      - name: cargo clippy
+        working-directory: packages/assume
+        run: cargo clippy -- -D warnings
+      - name: cargo build
+        working-directory: packages/assume
+        run: cargo build --release
+      - name: cargo test
+        working-directory: packages/assume
+        run: cargo test --release
+
+  verdaccio-smoke:
+    name: Verdaccio e2e smoke test
+    runs-on: ubuntu-22.04
+    needs: [ts, rust]
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Run verdaccio smoke script
+        run: bash scripts/verdaccio-smoke.sh

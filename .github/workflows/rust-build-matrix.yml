@@ -1,0 +1,79 @@
+name: Rust build matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to build (e.g., v0.2.0)"
+        required: true
+        type: string
+  # Called by release.yml after `changeset version` commits the version bump
+  # but before `changeset publish`. Artifact naming uses the version input so
+  # downstream publish step can locate them.
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            platform: darwin-x64
+            bin_suffix: ""
+            use_cross: false
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            platform: darwin-arm64
+            bin_suffix: ""
+            use_cross: false
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+            platform: linux-x64
+            bin_suffix: ""
+            use_cross: false
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04
+            platform: linux-arm64
+            bin_suffix: ""
+            use_cross: true
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2022
+            platform: win32-x64
+            bin_suffix: ".exe"
+            use_cross: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install cross (if needed)
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --rev 4090bec
+      - name: Build release (cargo)
+        if: ${{ !matrix.use_cross }}
+        working-directory: packages/assume
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Build release (cross)
+        if: matrix.use_cross
+        working-directory: packages/assume
+        run: cross build --release --target ${{ matrix.target }}
+      - name: Collect binaries
+        shell: bash
+        working-directory: packages/assume
+        run: |
+          mkdir -p .release-artifacts/${{ matrix.platform }}
+          cp target/${{ matrix.target }}/release/gs-assume${{ matrix.bin_suffix }} .release-artifacts/${{ matrix.platform }}/
+          cp target/${{ matrix.target }}/release/gsa${{ matrix.bin_suffix }} .release-artifacts/${{ matrix.platform }}/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assume-${{ matrix.platform }}-${{ inputs.version }}
+          path: packages/assume/.release-artifacts/${{ matrix.platform }}/
+          retention-days: 14
