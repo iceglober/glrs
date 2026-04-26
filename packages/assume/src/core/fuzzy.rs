@@ -65,7 +65,7 @@ pub fn match_contexts(pattern: &str, contexts: &[Context]) -> Vec<MatchResult> {
         }
     }
 
-    results.sort_by(|a, b| b.score.cmp(&a.score));
+    results.sort_by_key(|r| std::cmp::Reverse(r.score));
     results
 }
 

@@ -116,8 +116,6 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       # setup-node writes the .npmrc that NODE_AUTH_TOKEN consumes when
       # `changeset publish` calls `npm publish` under the hood.
