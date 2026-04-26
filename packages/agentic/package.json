@@ -1,0 +1,34 @@
+{
+  "name": "@glorious/agentic",
+  "version": "4.1.0",
+  "description": "Structured AI workflows for product and engineering",
+  "license": "MIT",
+  "repository": "https://github.com/iceglober/glorious",
+  "type": "module",
+  "bin": {
+    "gs-agentic": "./dist/index.js",
+    "gsag": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "bun run build.ts",
+    "dev": "bun --watch run build.ts",
+    "typecheck": "bun x tsc --noEmit",
+    "test": "bun test src/",
+    "test:e2e": "bash e2e/run.sh"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.86",
+    "cmd-ts": "^0.13.0",
+    "execa": "^9.6.1",
+    "ink": "^6.8.0",
+    "marked": "^18.0.0",
+    "react": "^19.0.0",
+    "sql.js": "^1.14.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.7.3"
+  }
+}

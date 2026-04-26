@@ -1,0 +1,317 @@
+import { describe, test, expect } from "bun:test";
+import { renderStatePage } from "./state-html.js";
+
+describe("renderStatePage", () => {
+  test("returns valid HTML document", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("</html>");
+  });
+
+  test("loads React from CDN", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("esm.sh/react@");
+  });
+
+  test("loads htm from CDN", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("esm.sh/htm");
+  });
+
+  test("loads marked from CDN for markdown rendering", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("esm.sh/marked");
+  });
+
+  test("uses correct API port", () => {
+    const html = renderStatePage(4567);
+    expect(html).toContain("127.0.0.1:4567");
+  });
+
+  test("all mode embeds all flag in fetch URL", () => {
+    const html = renderStatePage(3000, { all: true });
+    expect(html).toContain("all=true");
+  });
+
+  test("default mode does not include all param", () => {
+    const html = renderStatePage(3000);
+    expect(html).not.toContain("all=true");
+  });
+
+  test("no innerHTML usage except dangerouslySetInnerHTML for markdown", () => {
+    const html = renderStatePage(3000);
+    // Only allowed instance is React's dangerouslySetInnerHTML for rendered markdown
+    const lines = html.split("\n");
+    const innerHtmlLines = lines.filter(l => l.includes(".innerHTML"));
+    expect(innerHtmlLines.length).toBe(0);
+  });
+
+  test("embeds CSS styles", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("<style>");
+  });
+
+  test("contains root mount point", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain('id="root"');
+  });
+
+  // Dark mode design system
+  test("dark mode background colors", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("#0a0a0a");
+    expect(html).toContain("#141414");
+  });
+
+  test("phase HSL colors defined", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("--phase-understand");
+    expect(html).toContain("--phase-design");
+    expect(html).toContain("--phase-implement");
+    expect(html).toContain("--phase-verify");
+    expect(html).toContain("--phase-ship");
+    expect(html).toContain("--phase-done");
+    expect(html).toContain("--phase-cancelled");
+  });
+
+  test("progress bar classes present", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain(".progress-bar");
+    expect(html).toContain(".progress-segment");
+  });
+
+  test("detail panel classes present", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain(".detail-panel");
+  });
+
+  test("repo pill classes present", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain(".repo-pill");
+  });
+
+  test("phase pill classes for all phases", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain(".pill-understand");
+    expect(html).toContain(".pill-design");
+    expect(html).toContain(".pill-implement");
+    expect(html).toContain(".pill-verify");
+    expect(html).toContain(".pill-ship");
+    expect(html).toContain(".pill-done");
+    expect(html).toContain(".pill-cancelled");
+  });
+
+  // Component presence
+  test("contains SummaryBar component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("SummaryBar");
+  });
+
+  test("contains DashboardView component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("DashboardView");
+  });
+
+  test("contains EpicDetail component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("EpicDetail");
+  });
+
+  test("contains TaskDetailPanel component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("TaskDetailPanel");
+  });
+
+  test("contains RepoPills component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("RepoPills");
+  });
+
+  test("contains SegmentedProgress component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("SegmentedProgress");
+  });
+
+  test("contains PhaseStepper component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("PhaseStepper");
+  });
+
+  test("contains SidebarSearch component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("SidebarSearch");
+  });
+
+  test("contains Timeline component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("Timeline");
+  });
+
+  test("contains ReadySection component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("ReadySection");
+  });
+
+  test("contains ReviewItemList component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("ReviewItemList");
+  });
+
+  test("contains DependencyPills component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("DependencyPills");
+  });
+
+  // Keyboard navigation
+  test("keyboard handler registered", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain('addEventListener("keydown"');
+  });
+
+  test("contains ShortcutOverlay component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("ShortcutOverlay");
+  });
+
+  test("escape key handling", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("Escape");
+  });
+
+  test("search focus on slash key", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain('.sidebar-search"');
+  });
+
+  // API endpoints
+  test("fetches summary endpoint", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("/api/state/summary");
+  });
+
+  test("summary URL includes all flag when all mode", () => {
+    const html = renderStatePage(3000, { all: true });
+    // Should have both state and summary URLs with all=true
+    expect(html).toContain("/api/state?all=true");
+    expect(html).toContain("/api/state/summary?all=true");
+  });
+
+  test("severity classes for review items", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain(".severity-CRITICAL");
+    expect(html).toContain(".severity-HIGH");
+    expect(html).toContain(".severity-MEDIUM");
+    expect(html).toContain(".severity-LOW");
+  });
+
+  test("repoLabel splits on / not -", () => {
+    const html = renderStatePage(3000, { all: true });
+    expect(html).toContain('r.split("/")');
+    expect(html).not.toContain('r.split("-")');
+  });
+
+  test("seeds selectedRepo from first fetch using stateData", () => {
+    const html = renderStatePage(3000, { all: true });
+    expect(html).toContain("prev => prev || stateData.repos[0].repo");
+    expect(html).not.toContain("prev => prev || data.repos[0].repo");
+  });
+
+  test("repo tabs require more than 1 repo", () => {
+    const html = renderStatePage(3000, { all: true });
+    // Tab rendering guard uses > 1, not > 0
+    expect(html).toContain("isMultiRepo && state.repos.length > 1");
+  });
+
+  test("renderMarkdown uses sanitizeHtml", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("sanitizeHtml(marked.parse(content))");
+  });
+
+  test("sanitizeHtml function is defined", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("function sanitizeHtml(html)");
+  });
+
+  test("sanitizeHtml handles script and on-event attributes", () => {
+    const html = renderStatePage(3000);
+    // The sanitizeHtml function should reference script tag stripping and on* handler stripping
+    expect(html).toContain("sanitizeHtml");
+    // Handles both quoted and unquoted on* handlers (two separate replace calls)
+    const sanitizeSection = html.slice(html.indexOf("function sanitizeHtml"), html.indexOf("function renderMarkdown"));
+    const replaceCount = (sanitizeSection.match(/\.replace\(/g) || []).length;
+    expect(replaceCount).toBeGreaterThanOrEqual(5);
+  });
+
+  test("sanitizeHtml strips iframe tags", () => {
+    const html = renderStatePage(3000);
+    const sanitizeSection = html.slice(html.indexOf("function sanitizeHtml"), html.indexOf("function renderMarkdown"));
+    expect(sanitizeSection).toContain("iframe");
+  });
+
+  test("sanitizeHtml neutralizes javascript: URLs", () => {
+    const html = renderStatePage(3000);
+    const sanitizeSection = html.slice(html.indexOf("function sanitizeHtml"), html.indexOf("function renderMarkdown"));
+    expect(sanitizeSection).toContain("javascript:");
+  });
+
+  test("no css() function calls in output", () => {
+    const html = renderStatePage(3000);
+    // css() was an undefined function — replaced with inline style objects
+    expect(html).not.toMatch(/\bcss\s*\(/);
+  });
+
+  test("useState before conditional return in EpicDetail", () => {
+    const html = renderStatePage(3000);
+    const epicDetailStart = html.indexOf("function EpicDetail");
+    const body = html.slice(epicDetailStart, epicDetailStart + 500);
+    const useStateIdx = body.indexOf("useState");
+    const earlyReturnIdx = body.indexOf("if (!epic)");
+    expect(useStateIdx).toBeGreaterThan(-1);
+    expect(earlyReturnIdx).toBeGreaterThan(-1);
+    expect(useStateIdx).toBeLessThan(earlyReturnIdx);
+  });
+
+  test("repo name uses inline style object not css()", () => {
+    const html = renderStatePage(3000);
+    // camelCase CSS property indicates style object, not css() string
+    expect(html).toContain("fontSize");
+  });
+
+  test("EpicDetail still has early return for missing epic", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("if (!epic)");
+    expect(html).toContain("Epic not found");
+  });
+
+  test("multi-repo mode still references repoName", () => {
+    const html = renderStatePage(3000, { all: true });
+    expect(html).toContain("repoName");
+  });
+
+  // SubmitForm component
+  test("contains SubmitForm component", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("SubmitForm");
+  });
+
+  test("submit form has textarea", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("submit-textarea");
+  });
+
+  test("submit form has submit button", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("submit-btn");
+  });
+
+  test("submit form POSTs to /api/task", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("/api/task");
+    expect(html).toContain("POST");
+  });
+
+  test("verify badge class defined", () => {
+    const html = renderStatePage(3000);
+    expect(html).toContain("verify-badge");
+  });
+});
