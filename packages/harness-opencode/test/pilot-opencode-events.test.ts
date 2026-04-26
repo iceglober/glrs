@@ -76,12 +76,14 @@ function makeMockStream() {
 function makeFakeClient() {
   const stream = makeMockStream();
   let signalSeen: AbortSignal | undefined;
+  let subscribeOpts: unknown = undefined;
   const client = {
     event: {
       subscribe: async (
-        opts?: { signal?: AbortSignal },
+        opts?: { signal?: AbortSignal; query?: { directory?: string } },
       ): Promise<{ stream: typeof stream.stream }> => {
         signalSeen = opts?.signal;
+        subscribeOpts = opts;
         if (signalSeen) {
           if (signalSeen.aborted) {
             stream.close();
@@ -95,7 +97,12 @@ function makeFakeClient() {
       },
     },
   } as unknown as Parameters<typeof EventBus>[0] extends infer T ? T : never;
-  return { client, stream, getSignal: () => signalSeen };
+  return {
+    client,
+    stream,
+    getSignal: () => signalSeen,
+    getSubscribeOpts: () => subscribeOpts,
+  };
 }
 
 /**
@@ -441,5 +448,71 @@ describe("EventBus — stream errors", () => {
     expect(err).toBeInstanceOf(Error);
     expect(err!.message).toMatch(/connection refused/);
     await bus.close();
+  });
+});
+
+// --- Directory scoping ----------------------------------------------------
+
+describe("EventBus — directory scoping", () => {
+  // Regression guard for the v0.16.2 "stall after 5min with 0 events" bug.
+  //
+  // Root cause: opencode's SSE `/event` endpoint filters session-level
+  // events (message.updated, message.part.updated, session.idle, etc.)
+  // by the subscriber's declared directory. An EventBus constructed
+  // without a directory only received server-wide events (heartbeats,
+  // file-watcher, connected) — never session events. The pilot worker's
+  // `waitForIdle` therefore waited forever for a `session.idle` that
+  // was being dropped at the SSE layer, and the stall timer fired at
+  // 5min with `eventCount=0`. Verified empirically: with directory
+  // scope, a 15s window over a live pilot-builder session yields ~27
+  // events; without, ~2 (heartbeats).
+  //
+  // These tests lock the contract: when the bus is constructed with a
+  // directory, that directory MUST appear in the subscribe-call's
+  // `query.directory` option. When constructed without, no query
+  // should be sent.
+
+  test("passes directory through to event.subscribe when constructed with one", async () => {
+    const fc = makeFakeClient();
+    const bus = new EventBus(fc.client, "/path/to/worktree");
+    // Give runStream a microtask to call subscribe.
+    await flush(4);
+    const opts = fc.getSubscribeOpts() as
+      | { query?: { directory?: string } }
+      | undefined;
+    expect(opts).toBeDefined();
+    expect(opts?.query?.directory).toBe("/path/to/worktree");
+    await bus.close();
+  });
+
+  test("omits query when constructed without a directory (back-compat for unit tests)", async () => {
+    const fc = makeFakeClient();
+    const bus = new EventBus(fc.client);
+    await flush(4);
+    const opts = fc.getSubscribeOpts() as
+      | { query?: { directory?: string } }
+      | undefined;
+    expect(opts).toBeDefined();
+    // Either no query field at all, or query exists but directory unset.
+    expect(opts?.query?.directory).toBeUndefined();
+    await bus.close();
+  });
+
+  test("two buses with different directories produce independent subscriptions", async () => {
+    const fcA = makeFakeClient();
+    const fcB = makeFakeClient();
+    const busA = new EventBus(fcA.client, "/task/a");
+    const busB = new EventBus(fcB.client, "/task/b");
+    await flush(4);
+    const optsA = fcA.getSubscribeOpts() as {
+      query?: { directory?: string };
+    };
+    const optsB = fcB.getSubscribeOpts() as {
+      query?: { directory?: string };
+    };
+    expect(optsA.query?.directory).toBe("/task/a");
+    expect(optsB.query?.directory).toBe("/task/b");
+    await busA.close();
+    await busB.close();
   });
 });

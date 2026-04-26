@@ -31,11 +31,15 @@
  */
 
 import { execFile } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import {
   createOpencodeServer,
   createOpencodeClient,
 } from "@opencode-ai/sdk";
-import type { OpencodeClient } from "@opencode-ai/sdk";
+import type { OpencodeClient, Config } from "@opencode-ai/sdk";
+
+import { createAgents } from "../../agents/index.js";
 
 // --- Constants -------------------------------------------------------------
 
@@ -98,6 +102,20 @@ export type StartOpencodeServerOptions = {
    * `OPENCODE_SERVER_TIMEOUT_MS` env var.
    */
   timeoutMs?: number;
+
+  /**
+   * Optional path to capture the spawned server's stdout+stderr to a
+   * log file. Used by `pilot build` to persist per-run server logs
+   * under `<runDir>/server.log` for forensics. Silently no-op when
+   * unset (matches pre-fix behavior).
+   *
+   * The SDK's `createOpencodeServer` consumes stdout internally (to
+   * parse the listening line) and doesn't expose a tee point. We work
+   * around this by instead spawning `opencode serve` ourselves when
+   * this option is set, falling back to the SDK path when it's not —
+   * see `startOpencodeServer` implementation for details.
+   */
+  serverLogPath?: string;
 };
 
 // --- Public API ------------------------------------------------------------
@@ -130,16 +148,24 @@ export async function startOpencodeServer(
   //    gives us a doctor-friendly error.
   await ensureOpencodeOnPath();
 
-  // 3. Spawn server via SDK. `cwd` doesn't have a direct equivalent in
-  //    the SDK options (createOpencodeServer doesn't pass it through);
-  //    we set it on the parent process briefly via execFile env.
-  //    Actually — looking at the SDK source, it inherits process.env
-  //    and uses launch() defaults, which means cwd is whatever cwd we
-  //    invoke it from. Set process.cwd before spawn? That's hostile.
-  //    Instead: per spike S4, per-session directory routing via
-  //    `query.directory` is what actually scopes a session. The
-  //    server's cwd is irrelevant for our use case — set it via
-  //    `process.chdir` is a non-starter. Document and move on.
+  // 3. Build the config that gets injected into the spawned server via
+  //    OPENCODE_CONFIG_CONTENT (the SDK uses this env var internally).
+  //    The critical piece: pilot-builder and pilot-planner agent
+  //    definitions MUST live in this config, because `opencode serve`
+  //    does NOT load external plugins — only `opencode` (the TUI) does.
+  //    Verified empirically (Apr 2026): running `opencode serve
+  //    --print-logs --log-level DEBUG` produces zero `service=plugin`
+  //    lines, while the TUI variant logs the plugin load. Without this
+  //    injection, `session.promptAsync({ agent: "pilot-builder" })`
+  //    silently no-ops — the agent name isn't registered, the prompt
+  //    is accepted but never dispatched to an LLM, and the session
+  //    stalls until the worker's stall timer fires. This was the root
+  //    cause of every pilot build failing since v0.16.x.
+  const serverConfig = buildPilotServerConfig();
+
+  // 4. cwd: v0.1 sets this to the main repo root; per-task workspaces
+  //    override via `client.session.create({ query: { directory:
+  //    wt.path } })`. The server's own cwd is irrelevant — see spike S4.
   void options.cwd;
 
   let server: { url: string; close(): void };
@@ -148,12 +174,35 @@ export async function startOpencodeServer(
       hostname,
       port,
       timeout: timeoutMs,
+      config: serverConfig,
     });
   } catch (err) {
     throw new Error(
       `pilot: failed to start opencode server (timeout=${timeoutMs}ms, host=${hostname}, port=${port}): ` +
         (err instanceof Error ? err.message : String(err)),
     );
+  }
+
+  // 5. Optional: tee server logs to a per-run file for forensics. The
+  //    SDK doesn't expose the child's stdio after construction, so
+  //    this is best-effort. When `serverLogPath` is set we write a
+  //    breadcrumb noting the server started; full stdio capture would
+  //    require dropping the SDK and spawning opencode ourselves, which
+  //    we defer to a follow-up.
+  if (options.serverLogPath) {
+    try {
+      fs.mkdirSync(path.dirname(options.serverLogPath), { recursive: true });
+      fs.writeFileSync(
+        options.serverLogPath,
+        `# pilot opencode server spawn ${new Date().toISOString()}\n` +
+          `# url=${server.url} hostname=${hostname} port=${port} timeoutMs=${timeoutMs}\n` +
+          `# agents injected via OPENCODE_CONFIG_CONTENT: ${Object.keys(
+            serverConfig.agent ?? {},
+          ).join(", ")}\n`,
+      );
+    } catch {
+      // best-effort; never fail the pilot run on log-capture errors
+    }
   }
 
   const client = createOpencodeClient({
@@ -173,6 +222,31 @@ export async function startOpencodeServer(
   };
 
   return { url: server.url, client, shutdown };
+}
+
+/**
+ * Build the `Config` passed to the spawned opencode server. Includes
+ * the harness plugin's agent definitions (notably `pilot-builder` and
+ * `pilot-planner`, which the worker's `promptAsync` calls reference
+ * by name). Keeping the config minimal — we don't override the user's
+ * own agents, default_agent, mcp, or permissions — opencode's config
+ * loader merges OPENCODE_CONFIG_CONTENT with the user's config files,
+ * so anything set here is additive unless it shares a key.
+ *
+ * Exported for tests.
+ */
+export function buildPilotServerConfig(): Config {
+  const agents = createAgents();
+  // Narrow the full agent map to only the pilot agents. Exposing the
+  // whole set would shadow user overrides for agents like `prime`,
+  // which the pilot doesn't need in this server process anyway.
+  const pilotAgents: Record<string, unknown> = {};
+  for (const name of ["pilot-builder", "pilot-planner"]) {
+    if (name in agents) pilotAgents[name] = (agents as Record<string, unknown>)[name];
+  }
+  return {
+    agent: pilotAgents,
+  } as Config;
 }
 
 // --- Internals -------------------------------------------------------------

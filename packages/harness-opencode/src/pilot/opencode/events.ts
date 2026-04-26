@@ -74,7 +74,11 @@ export type WaitForIdleResult =
 export type WaitForIdleOptions = {
   /**
    * Stall timeout: if no events for this session arrive within
-   * `stallMs`, give up. Default 5 minutes.
+   * `stallMs`, give up. Default 60 minutes. (Raised from 5 minutes in
+   * v0.16.2; the old default was calibrated against a broken stream
+   * that never delivered events — see directory-scope fix. Real-world
+   * inter-event gaps during deep agent work can legitimately exceed
+   * 5 minutes.)
    */
   stallMs?: number;
 
@@ -104,6 +108,7 @@ export class EventBus {
   private readonly subscribers: Subscriber[] = [];
   private readonly streamPromise: Promise<void>;
   private readonly aborter: AbortController;
+  private readonly directory: string | undefined;
   private closed = false;
   private fatalError: Error | null = null;
 
@@ -112,9 +117,30 @@ export class EventBus {
    * Begins consuming the stream immediately; throws asynchronously
    * (via `streamPromise`) if the subscription dies — call
    * `waitForStreamEnd` to surface that.
+   *
+   * `directory` is CRITICAL: opencode's SSE endpoint scopes session-
+   * related events (message.updated, message.part.updated, session.idle,
+   * etc.) by directory. Subscribing to `/event` without a directory
+   * query parameter returns ONLY server-wide events (server.connected,
+   * server.heartbeat, file.watcher.updated) — session events are
+   * filtered out. Every pilot task session runs with a directory
+   * (the per-task worktree path), so the bus MUST pass a directory
+   * that encompasses those sessions' directories.
+   *
+   * v0.1 contract: pass the pilot's repo root here. Per-task worktrees
+   * are descendants, and opencode's directory-scope is prefix-match (a
+   * session with `directory=/repo/.pilot/wt/00` is included when the
+   * subscriber passes `directory=/repo`). This was verified empirically
+   * (Apr 2026): subscriber with no directory saw 2 events over 15s for
+   * a live `agent=pilot-builder` session; same test with directory set
+   * saw 27 events including session.idle.
+   *
+   * Omitting the directory is ONLY correct for test environments with
+   * no directory-scoped sessions (unit tests using mock streams).
    */
-  constructor(client: OpencodeClient) {
+  constructor(client: OpencodeClient, directory?: string) {
     this.aborter = new AbortController();
+    this.directory = directory;
     this.streamPromise = this.runStream(client, this.aborter.signal);
   }
 
@@ -155,7 +181,7 @@ export class EventBus {
     sessionId: string,
     options: WaitForIdleOptions = {},
   ): Promise<WaitForIdleResult> {
-    const stallMs = options.stallMs ?? 5 * 60 * 1000;
+    const stallMs = options.stallMs ?? 60 * 60 * 1000;
     const errorIsFatal = options.errorIsFatal ?? true;
 
     return new Promise<WaitForIdleResult>((resolve) => {
@@ -254,14 +280,27 @@ export class EventBus {
    * (the canonical name across event types per S3) and fall through
    * to all-session subscribers if the field is absent (e.g. some
    * server-wide events lack a sessionID).
+   *
+   * Diagnostic: when env var `PILOT_EVENT_LOG` is set to a writable path,
+   * every RAW event seen on the stream is appended as one JSON line
+   * BEFORE sessionID extraction or filtering. Used to debug
+   * "Forensics shows zero events but the stall fires" cases by
+   * comparing raw stream → filtered fan-out. Unset in normal
+   * operation (zero overhead).
    */
   private async runStream(
     client: OpencodeClient,
     signal: AbortSignal,
   ): Promise<void> {
+    const rawLogPath = process.env.PILOT_EVENT_LOG ?? null;
     let result;
     try {
-      result = await client.event.subscribe({ signal });
+      result = await client.event.subscribe({
+        signal,
+        ...(this.directory !== undefined
+          ? { query: { directory: this.directory } }
+          : {}),
+      });
     } catch (err) {
       this.fatalError = err instanceof Error ? err : new Error(String(err));
       return;
@@ -279,6 +318,29 @@ export class EventBus {
           typeof (event.properties as { sessionID?: unknown }).sessionID === "string"
             ? ((event.properties as { sessionID: string }).sessionID)
             : null;
+
+        // Diagnostic: dump raw event + extractor result + live subscriber
+        // sessionIDs. Enabled when PILOT_EVENT_LOG is set. One JSON line
+        // per event. Best-effort; failures never break the bus.
+        if (rawLogPath !== null) {
+          try {
+            const { appendFileSync } = await import("node:fs");
+            const liveSubs = this.subscribers.map((s) => s.sessionId);
+            appendFileSync(
+              rawLogPath,
+              JSON.stringify({
+                ts: Date.now(),
+                type: event.type,
+                extractedSessionID: sessionID,
+                liveSubscriberSessionIDs: liveSubs,
+                matchedSubscribers: liveSubs.filter((s) => s === sessionID).length,
+                raw: rawEvent,
+              }) + "\n",
+            );
+          } catch {
+            // swallow — diagnostic must not break the stream
+          }
+        }
 
         // Fan out only to subscribers whose registered sessionId matches.
         // If the event has no sessionID, no subscribers match (we
