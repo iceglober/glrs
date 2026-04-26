@@ -112,13 +112,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish glrs-assume to crates.io
-        if: steps.changesets.outputs.published == 'true'
-        working-directory: packages/assume
-        run: |
-          PUBLISHED='${{ steps.changesets.outputs.publishedPackages }}'
-          if echo "$PUBLISHED" | grep -q '"@glrs-dev/assume"'; then
-            cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          else
-            echo "No @glrs-dev/assume publish; skipping crates.io"
-          fi
+      # crates.io publishing for the `glrs-assume` crate is deliberately
+      # NOT wired here yet. The release pipeline above publishes the five
+      # `@glrs-dev/assume*` npm packages (prebuilt-binary pattern) which
+      # covers `npm i -g @glrs-dev/assume` users. When we're ready to also
+      # publish to crates.io:
+      #   1. Create a crates.io token at https://crates.io/me and scope it
+      #      to publish-new + publish-update for `glrs-assume`.
+      #   2. `gh secret set CARGO_REGISTRY_TOKEN --repo iceglober/glrs`
+      #   3. Re-add a step that runs `cd packages/assume && cargo publish
+      #      --token $CARGO_REGISTRY_TOKEN` when steps.changesets.outputs.
+      #      published == 'true' and the publish set includes
+      #      @glrs-dev/assume.
+      # Tracked as follow-up work; see the plan's Open questions section.

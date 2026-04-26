@@ -9,7 +9,6 @@ Multi-cloud credential manager with per-shell context switching.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/@glrs-dev/assume?style=flat-square)](https://www.npmjs.com/package/@glrs-dev/assume)
-[![crates.io](https://img.shields.io/crates/v/glrs-assume?style=flat-square)](https://crates.io/crates/glrs-assume)
 
 <br/>
 
@@ -19,19 +18,16 @@ Multi-cloud credential manager with per-shell context switching.
 
 ### Install
 
-Via npm (prebuilt binary, auto-selected for your platform):
-
 ```bash
 npm i -g @glrs-dev/assume
 ```
 
-Or via Cargo (builds from source):
+The prebuilt binary for your platform is auto-selected via npm's `optionalDependencies`. No postinstall scripts.
 
-```bash
-cargo install glrs-assume
-```
+Two equivalent bins ship with the package: `gs-assume` and `gsa` (shorter alias). Pick one; they're identical.
 
-Both install the same two bins: `gs-assume` and `gsa` (shorter alias). Pick one; they're identical.
+> [!NOTE]
+> Crates.io publishing (`cargo install glrs-assume`) is planned but not yet enabled. For now, `npm i -g @glrs-dev/assume` is the only install path.
 
 ### First-time setup
 
