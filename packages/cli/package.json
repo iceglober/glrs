@@ -1,0 +1,56 @@
+{
+  "name": "@glrs-dev/cli",
+  "version": "0.0.0",
+  "description": "Unified CLI for the @glrs-dev ecosystem. Dispatches to harness-opencode, agentic, and assume sub-tools.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iceglober/glrs.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://glrs.dev",
+  "bugs": {
+    "url": "https://github.com/iceglober/glrs/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "glrs": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "glrs",
+    "cli",
+    "dispatcher",
+    "opencode",
+    "agentic",
+    "assume"
+  ],
+  "engines": {
+    "node": ">=20.10"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean --target node20",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "lint": "echo 'no linter configured yet'"
+  },
+  "dependencies": {
+    "@glrs-dev/harness-opencode": "workspace:*",
+    "@glrs-dev/agentic": "workspace:*",
+    "@glrs-dev/assume": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22",
+    "tsup": "^8",
+    "typescript": "^5"
+  }
+}
