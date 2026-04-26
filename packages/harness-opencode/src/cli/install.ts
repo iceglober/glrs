@@ -372,43 +372,75 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
     if (catwalkProviders && catwalkProviders.length > 0) {
       // Build choices from live Catwalk data.
       const providerChoices = catwalkProviders.map((p) => p.name);
+      providerChoices.push("Keep defaults (no model config)");
       providerChoices.push("Custom (enter model IDs manually)");
 
+      const keepDefaultsIdx = providerChoices.length - 2; // "Keep defaults" is second-to-last
       const providerIdx = await promptChoice(
         "  Which model provider?",
         providerChoices,
-        0,
+        keepDefaultsIdx,
       );
 
       if (providerIdx < catwalkProviders.length) {
         const provider = catwalkProviders[providerIdx]!;
+        ok(`Provider: ${provider.name}`);
+
+        // Let the user pick a model for each tier.
         const suggested = suggestTiers(provider);
+        const modelChoices = provider.models.map((m) => `${provider.id}/${m.id}`);
+
+        const tiers: Array<{ tier: string; suggested: string }> = [
+          { tier: "deep", suggested: suggested.deep },
+          { tier: "mid", suggested: suggested.mid },
+          { tier: "fast", suggested: suggested.fast },
+        ];
+
+        const picked: Record<string, string> = {};
+        for (const { tier, suggested: suggestedModel } of tiers) {
+          const defaultIdx = modelChoices.indexOf(suggestedModel);
+          const idx = await promptChoice(
+            `  ${tier} model?`,
+            modelChoices,
+            defaultIdx >= 0 ? defaultIdx : 0,
+          );
+          picked[tier] = modelChoices[idx]!;
+          info(`  ${tier} → ${picked[tier]}`);
+        }
+
         preset = {
           label: provider.name,
           providerId: provider.id,
-          deep: suggested.deep,
-          mid: suggested.mid,
-          fast: suggested.fast,
+          deep: picked["deep"]!,
+          mid: picked["mid"]!,
+          fast: picked["fast"]!,
         };
-        ok(`Provider: ${provider.name}`);
-        info(`  deep → ${preset.deep}`);
-        info(`  mid  → ${preset.mid}`);
-        info(`  fast → ${preset.fast}`);
+      } else if (providerIdx === catwalkProviders.length) {
+        // "Keep defaults" — no model config, preset stays null, skip custom too.
+        ok("Models: OpenCode defaults");
+        // Signal that we should NOT fall through to the custom prompt.
+        // Set a sentinel so the code below skips the custom input block.
+        pluginOpts._skipModels = true;
       }
       // else: custom — preset stays null, handled below
     } else {
       // Offline fallback — use hardcoded presets.
       warn("Could not reach Catwalk API — using built-in presets");
-      const presetLabels = [...MODEL_PRESETS.map((p) => p.label), "Custom (enter model IDs manually)"];
+      const presetLabels = [...MODEL_PRESETS.map((p) => p.label), "Keep defaults (no model config)", "Custom (enter model IDs manually)"];
+      const keepDefaultsOfflineIdx = presetLabels.length - 2;
       const choice = await promptChoice(
         "  Which model provider?",
         presetLabels,
-        0,
+        keepDefaultsOfflineIdx,
       );
 
       if (choice < MODEL_PRESETS.length) {
         preset = MODEL_PRESETS[choice]!;
         ok(`Provider: ${preset.label}`);
+      } else if (choice === MODEL_PRESETS.length) {
+        // "Keep defaults" — no model config.
+        ok("Models: OpenCode defaults");
+        pluginOpts._skipModels = true;
       }
       // else: custom — preset stays null
     }
@@ -420,7 +452,7 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
         fast: [preset.fast],
       };
       ok(`Models configured`);
-    } else {
+    } else if (!pluginOpts._skipModels) {
       // Custom: ask for each tier manually.
       info("Enter model IDs in <provider>/<model-id> format (e.g. bedrock/anthropic.claude-opus-4-6)");
       const { input } = await import("@inquirer/prompts");
@@ -435,9 +467,11 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
         };
         ok("Models: custom");
       } else {
-        ok("Models: Anthropic API defaults");
+        ok("Models: OpenCode defaults");
       }
     }
+    // Clean up sentinel before writing to config.
+    delete pluginOpts._skipModels;
     console.log();
   }
 
