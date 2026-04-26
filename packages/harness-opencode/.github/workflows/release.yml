@@ -1,0 +1,98 @@
+name: release
+
+# Trigger on pushes to main.
+# - If unreleased changesets exist, changesets/action opens or updates
+#   a "Version Packages" PR (consuming the changesets into a version bump
+#   + CHANGELOG entry).
+# - When that Version PR is merged (next push to main), the action detects
+#   no pending changesets and instead runs `bun run release`
+#   (= `changeset publish`), which publishes to npm with provenance and
+#   pushes the git tag.
+on:
+  push:
+    branches: [main]
+
+# Serialize release runs so overlapping pushes to main don't race on
+# the Version PR or the registry. cancel-in-progress stays false — we
+# never want to drop a run that might need to publish.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# contents: write — push the "Version Packages" PR and tag.
+# pull-requests: write — open and update the Version PR.
+# id-token: write — mint the OIDC token npm provenance needs.
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    # Canonical-repo guard: forks can never publish even with a stolen token.
+    if: github.repository == 'iceglober/harness-opencode'
+    runs-on: ubuntu-latest
+    # Maintainer approval required before NPM_TOKEN becomes available
+    # to the job. Protected by the `npm-publish` environment's rules.
+    environment: npm-publish
+    steps:
+      # Mint a short-lived token from the harness-opencode-ci GitHub App.
+      # Unlike GITHUB_TOKEN, pushes made with an app token DO trigger
+      # downstream workflows (the CI `pull_request` trigger). This fixes
+      # the recurring issue where the Changesets bot updates the Version
+      # Packages PR but CI never runs on the new commit — requiring a
+      # manual close/reopen to kick checks.
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so changesets/action can reconcile against prior tags.
+          fetch-depth: 0
+          # Use the app token for checkout so git push inherits it.
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # setup-node writes the .npmrc that NODE_AUTH_TOKEN consumes when
+      # `changeset publish` calls `npm publish` under the hood.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
+
+      # Either opens/updates the Version Packages PR, OR (if no pending
+      # changesets exist) runs the publish script. Never both in the
+      # same run.
+      - name: Create Release Pull Request or Publish to npm
+        uses: changesets/action@v1
+        with:
+          version: bunx changeset version
+          publish: bun run release
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
