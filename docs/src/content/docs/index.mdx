@@ -1,0 +1,42 @@
+---
+title: glrs
+description: Unified @glrs-dev ecosystem — agent harness, agentic CLI, SSO credentials.
+template: splash
+hero:
+  tagline: One monorepo. One release cadence. One docs site. Four packages.
+  actions:
+    - text: Install
+      link: /install/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/iceglober/glrs
+      icon: external
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+## Packages
+
+<CardGrid>
+  <Card title="@glrs-dev/cli" icon="seti:config">
+    Unified `glrs` binary. Dispatches to the three subtools below.
+    [Read more →](/cli/)
+  </Card>
+  <Card title="@glrs-dev/harness-opencode" icon="rocket">
+    OpenCode agent harness — PRIME, plan, build, QA, skills, MCP wiring.
+    [Read more →](/harness-opencode/)
+  </Card>
+  <Card title="@glrs-dev/agentic" icon="seti:shell">
+    `gs-agentic` / `gsag` — worktree management, plan state, skills.
+    [Read more →](/agentic/)
+  </Card>
+  <Card title="@glrs-dev/assume" icon="seti:lock">
+    `gs-assume` / `gsa` — multi-cloud SSO credential manager. Prebuilt Rust binary.
+    [Read more →](/assume/)
+  </Card>
+</CardGrid>
+
+:::note[Docs in progress]
+This site is the scaffold. Content is being written. Until it's filled in, each package's GitHub README is authoritative.
+:::

@@ -1,0 +1,30 @@
+---
+title: "@glrs-dev/assume"
+description: Multi-cloud SSO credential manager with per-shell context switching.
+---
+
+Docs content in progress. See [the package README](https://github.com/iceglober/glrs/tree/main/packages/assume) for the full documentation while this site is being filled in.
+
+## Install
+
+Via npm (prebuilt binary):
+
+```bash
+npm i -g @glrs-dev/assume
+```
+
+Or via Cargo (builds from source):
+
+```bash
+cargo install glrs-assume
+```
+
+Two equivalent bins: `gs-assume` and `gsa`.
+
+## What it is
+
+A Rust-based daemon + CLI for managing SSO credentials across AWS, GCP, and other providers. Per-shell context switching, fuzzy account/role matching, browser-based login flow.
+
+## Packaging
+
+The npm distribution uses the prebuilt-binary `optionalDependencies` pattern — your package manager only downloads the binary tarball for your actual platform (`darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`, or `win32-x64`). No postinstall scripts.

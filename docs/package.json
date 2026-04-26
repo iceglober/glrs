@@ -1,0 +1,24 @@
+{
+  "name": "@glrs-dev/docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Docs site for the @glrs-dev ecosystem. Published to https://glrs.dev.",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "typecheck": "astro check",
+    "test": "echo 'no tests'",
+    "lint": "echo 'no linter configured yet'"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@astrojs/starlight": "^0.30.0",
+    "astro": "^5.0.0",
+    "sharp": "^0.33.5",
+    "typescript": "^5.7.3"
+  }
+}

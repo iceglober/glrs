@@ -1,0 +1,7 @@
+config:
+  gcp:project: glrs-prod
+  gcp:region: us-central1
+  glrs:domain: glrs.dev
+  glrs:docsBucket: glrs-dev-docs
+  glrs:githubOrg: iceglober
+  glrs:githubRepo: glrs

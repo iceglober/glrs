@@ -1,0 +1,43 @@
+---
+title: Install
+description: One install command for the whole ecosystem.
+---
+
+## The one-liner
+
+```bash
+npm i -g @glrs-dev/cli
+```
+
+This installs the unified `glrs` dispatcher plus all three sub-tools (`harness-opencode`, `gs-agentic` / `gsag`, `gs-assume` / `gsa`) as dependencies.
+
+Verify:
+
+```bash
+glrs --help
+glrs oc --help
+glrs agentic --help
+glrs assume --help
+```
+
+## Install tools individually
+
+If you only need one:
+
+```bash
+npm i -g @glrs-dev/harness-opencode
+npm i -g @glrs-dev/agentic
+npm i -g @glrs-dev/assume
+```
+
+Or for `assume`, build from source via Cargo:
+
+```bash
+cargo install glrs-assume
+```
+
+## Requirements
+
+- **Node.js ≥ 20.10** for the TypeScript packages
+- **macOS, Linux, or Windows** on x64 or arm64 for `@glrs-dev/assume` (prebuilt binary platforms)
+- **GitHub CLI** (`gh`) for `@glrs-dev/agentic`'s GitHub-interacting commands
