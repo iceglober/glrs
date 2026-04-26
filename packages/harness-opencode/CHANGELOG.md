@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.14.0
+
+### Minor Changes
+
+- [#109](https://github.com/iceglober/harness-opencode/pull/109) [`10c5a82`](https://github.com/iceglober/harness-opencode/commit/10c5a8218cff54a458c5b6adf3bf8562e437f5d4) Thanks [@iceglober](https://github.com/iceglober)! - Add `agent-estimation` bundled skill. Teaches agents to estimate task effort in tool-call rounds first (with a structured module-breakdown table and risk coefficients) and convert to human wallclock only at the final step. Avoids the systematic overestimation that happens when agents anchor to human-developer timelines absorbed from training data. Adapted from https://openclawlaunch.com/skills/agent-estimation.
+
+### Patch Changes
+
+- [#110](https://github.com/iceglober/harness-opencode/pull/110) [`467df1d`](https://github.com/iceglober/harness-opencode/commit/467df1d4fcdecdc34830ca85b8530ea5272a9be5) Thanks [@iceglober](https://github.com/iceglober)! - Detect pre-[#100](https://github.com/iceglober/harness-opencode/issues/100) legacy model-override IDs at runtime and in `doctor`.
+
+  Before PR [#100](https://github.com/iceglober/harness-opencode/issues/100), the installer suggested stale model IDs like `bedrock/claude-opus-4` (no `anthropic.` subpath, no minor-version digit). These IDs never resolved in OpenCode, so any user who kept their pre-[#100](https://github.com/iceglober/harness-opencode/issues/100) `options.models` block saw agents crash with `ProviderModelNotFoundError` at the first subagent invocation — most visibly on `pilot-planner` and `qa-reviewer`, whose tier overrides get stomped first.
+
+  The plugin now runs a conservative offline pattern validator on every override it applies in `resolveHarnessModels()`. On invalid IDs it emits a single-line warn (deduped per unique bad value) naming the offending key (`models.deep`, `models.pilot-planner`, etc.) and suggesting the Catwalk-canonical replacement. The user's config is never auto-rewritten.
+
+  `bunx @glrs-dev/harness-opencode doctor` now includes a model-overrides check: it reads both `plugin options.models` and legacy `harness.models`, prints a red-X line with the full remediation hint for each invalid entry, and a green check when everything resolves cleanly.
+
+  Unknown or CRIS-prefixed IDs (`global.anthropic.*`, `openai/*`, etc.) stay silent — the validator flags only the specific pre-[#100](https://github.com/iceglober/harness-opencode/issues/100) legacy pattern. No behavior change to the happy path.
+
+- [#112](https://github.com/iceglober/harness-opencode/pull/112) [`8e89895`](https://github.com/iceglober/harness-opencode/commit/8e898955ea0cb1a30c15a82983b508e35cdd4071) Thanks [@iceglober](https://github.com/iceglober)! - Make tool-output truncation per-tool-shape-aware and widen the permission allowlist to cover the plugin's own spill path.
+
+  Before this change, every `bash`/`read`/`glob`/`grep` output over 2000 chars was truncated to a 300-char head + 200-char tail with the full text spilled to `~/.local/state/harness-opencode/tool-output/<callID>.txt` — but that spill path was not in the external_directory allowlist, so the PRIME hit a permission prompt on every recovery read. The recovery read then re-truncated, compounding. On any file >~50 lines or grep with >~15 matches, a session spent 3-5 turns ping-ponging between truncation and permission prompts.
+
+  **Allowlist:** `~/.local/state/**` and `~/.config/crush/**` are now in the default `permission.external_directory` map (before `...existingExtDir`, so user overrides still win).
+
+  **Truncation:** raised the base threshold from 2000 → 6000 chars (~150 lines of code) and added per-tool shapes:
+
+  - `read`: `"skip"` — Read's own `limit`/`offset` is the single bound.
+  - `glob`: `"skip"` — path lists aren't useful when middle-truncated.
+  - `bash`: `"tail"` (default 4000 chars) — failures and exit codes are at the end; keeping head loses signal.
+  - `grep`: `"head-with-count"` — first 20 match blocks verbatim + `"... N more matches — full output at <path>"` footer. Middle-truncation breaks match blocks.
+
+  The bash-failure bypass (`looksLikeBashFailure`) is preserved as the first check among truncation paths. A new recovery-read bypass skips truncation entirely when Read is targeting a file under the spill dir. Users can override per-tool shape/threshold/head/tail/grepHeadMatches via `toolHooks.backpressure.perTool.<tool>` in `opencode.json`; user values always win.
+
 ## 0.13.3
 
 ### Patch Changes
