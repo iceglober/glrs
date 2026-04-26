@@ -1,0 +1,2 @@
+# Binaries for this platform are populated during the release workflow by
+# scripts/pack-platform-tarballs.mjs. See darwin-arm64/bin/.gitkeep.

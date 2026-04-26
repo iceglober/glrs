@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "outDir": "dist",
+    "rootDir": "src/npm-shim"
+  },
+  "include": ["src/npm-shim/**/*.ts"],
+  "exclude": ["node_modules", "dist", "target", "npm", "scripts", "tests", "src/*.rs", "src/**/*.rs"]
+}

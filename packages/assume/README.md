@@ -2,13 +2,14 @@
 
 <br/>
 
-# `glorious-assume`
+# `@glrs-dev/assume`
 
 **Authenticate once, work all day.**<br/>
 Multi-cloud credential manager with per-shell context switching.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
-[![GitHub Release](https://img.shields.io/github/v/release/iceglober/glorious?filter=assume-*&style=flat-square&label=latest)](https://github.com/iceglober/glorious/releases)
+[![npm version](https://img.shields.io/npm/v/@glrs-dev/assume?style=flat-square)](https://www.npmjs.com/package/@glrs-dev/assume)
+[![crates.io](https://img.shields.io/crates/v/glrs-assume?style=flat-square)](https://crates.io/crates/glrs-assume)
 
 <br/>
 
@@ -18,11 +19,19 @@ Multi-cloud credential manager with per-shell context switching.
 
 ### Install
 
+Via npm (prebuilt binary, auto-selected for your platform):
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iceglober/glorious/main/packages/assume/install.sh | bash
+npm i -g @glrs-dev/assume
 ```
 
-No dependencies required beyond `curl` and `python3`. This downloads the pre-built binary, installs to `~/.local/bin`, adds shell integration, and starts the daemon.
+Or via Cargo (builds from source):
+
+```bash
+cargo install glrs-assume
+```
+
+Both install the same two bins: `gs-assume` and `gsa` (shorter alias). Pick one; they're identical.
 
 ### First-time setup
 

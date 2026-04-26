@@ -1,11 +1,16 @@
 [package]
-name = "assume"
+name = "glrs-assume"
 version = "0.6.3"
 edition = "2021"
 rust-version = "1.75"
-description = "Unified credential assume manager with plugin architecture"
+description = "Unified SSO credential manager for AWS, GCP, and more — CLI bins `gs-assume` and `gsa`."
 license = "MIT"
-repository = "https://github.com/iceglober/glorious"
+repository = "https://github.com/iceglober/glrs"
+homepage = "https://glrs.dev/assume"
+documentation = "https://glrs.dev/assume"
+readme = "README.md"
+keywords = ["sso", "aws", "gcp", "credentials", "assume"]
+categories = ["command-line-utilities", "authentication"]
 
 [[bin]]
 name = "gs-assume"
