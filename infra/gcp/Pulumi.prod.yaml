@@ -1,7 +1,8 @@
 config:
-  gcp:project: glrs-prod
+  gcp:project: glorious-dev
   gcp:region: us-central1
   glrs:domain: glrs.dev
   glrs:docsBucket: glrs-dev-docs
   glrs:githubOrg: iceglober
   glrs:githubRepo: glrs
+encryptionsalt: v1:MCE1QnexVDA=:v1:NyuVHPoqMuZSlHcD:FiGE9ldEE2XJSMlU4jRqR4cQ4n7mKw==

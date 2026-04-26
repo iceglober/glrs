@@ -26,27 +26,19 @@ export default defineConfig({
         },
         {
           label: "harness-opencode",
-          items: [
-            { label: "Overview", slug: "harness-opencode/index" },
-          ],
+          items: [{ label: "Overview", slug: "harness-opencode" }],
         },
         {
           label: "agentic",
-          items: [
-            { label: "Overview", slug: "agentic/index" },
-          ],
+          items: [{ label: "Overview", slug: "agentic" }],
         },
         {
           label: "assume",
-          items: [
-            { label: "Overview", slug: "assume/index" },
-          ],
+          items: [{ label: "Overview", slug: "assume" }],
         },
         {
           label: "cli",
-          items: [
-            { label: "Overview", slug: "cli/index" },
-          ],
+          items: [{ label: "Overview", slug: "cli" }],
         },
       ],
       editLink: {
