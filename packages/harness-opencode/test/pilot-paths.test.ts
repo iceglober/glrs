@@ -24,6 +24,7 @@ import {
   getWorktreeDir,
   getStateDbPath,
   getWorkerJsonlPath,
+  getTaskJsonlPath,
 } from "../src/pilot/paths.js";
 import { getRepoFolder } from "../src/plan-paths.js";
 
@@ -285,6 +286,54 @@ describe("getRunDir / file paths", () => {
       expect(fs.existsSync(path.dirname(p0))).toBe(true);
       // File NOT pre-created.
       expect(fs.existsSync(p0)).toBe(false);
+    }),
+  );
+
+  test(
+    "getTaskJsonlPath creates `tasks/<taskId>/` and returns session.jsonl",
+    withCleanEnv(async () => {
+      const repo = path.join(tmp, "task-jsonl-test");
+      fs.mkdirSync(repo);
+      gitInit(repo);
+
+      process.env.GLORIOUS_PILOT_DIR = path.join(tmp, "ptaskjsonl");
+      const p = await getTaskJsonlPath(
+        repo,
+        "01ARZ3NDEKTSV4RRFFQ69G5FAA",
+        "T1-AUDIT-DOC",
+      );
+      expect(path.basename(p)).toBe("session.jsonl");
+      expect(path.basename(path.dirname(p))).toBe("T1-AUDIT-DOC");
+      expect(path.basename(path.dirname(path.dirname(p)))).toBe("tasks");
+      // Parent dir created.
+      expect(fs.existsSync(path.dirname(p))).toBe(true);
+      // File NOT pre-created — worker appends on first event.
+      expect(fs.existsSync(p)).toBe(false);
+    }),
+  );
+
+  test(
+    "getTaskJsonlPath rejects unsafe taskIds",
+    withCleanEnv(async () => {
+      const repo = path.join(tmp, "unsafe-task");
+      fs.mkdirSync(repo);
+      gitInit(repo);
+
+      process.env.GLORIOUS_PILOT_DIR = path.join(tmp, "punsafetask");
+      const runId = "01ARZ3NDEKTSV4RRFFQ69G5FAA";
+      await expect(getTaskJsonlPath(repo, runId, "../escape")).rejects.toThrow(
+        /safe/,
+      );
+      await expect(getTaskJsonlPath(repo, runId, "/abs")).rejects.toThrow(
+        /safe/,
+      );
+      await expect(getTaskJsonlPath(repo, runId, ".hidden")).rejects.toThrow(
+        /safe/,
+      );
+      await expect(getTaskJsonlPath(repo, runId, "")).rejects.toThrow(/safe/);
+      await expect(
+        getTaskJsonlPath(repo, runId, "has space"),
+      ).rejects.toThrow(/safe/);
     }),
   );
 

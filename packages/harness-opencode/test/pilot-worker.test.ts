@@ -659,6 +659,130 @@ describe("runWorker — stall", () => {
   });
 });
 
+// --- Forensics: JSONL capture + enriched task.failed payload --------------
+
+describe("runWorker — forensics (JSONL + enriched task.failed payload)", () => {
+  test("captures session events to JSONL and enriches stall payload with eventCount/lastEventTs", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    gitCommitFile(repo, "src/a.ts", "x", "init");
+
+    // Redirect <base> into our tmp dir so the JSONL lands where we can
+    // read it. `getPilotDir` appends `<repoFolder>/pilot` on top.
+    const base = path.join(tmp, "pilot-base");
+    const prevEnv = process.env.GLORIOUS_PILOT_DIR;
+    process.env.GLORIOUS_PILOT_DIR = base;
+
+    const wtPath = path.join(tmp, "wt", "00");
+    const plan = makePlan([{ id: "T1", touches: ["src/**"], verify: ["true"] }]);
+    const opened = openStateDb(":memory:");
+    try {
+      const runId = createRun(opened.db, { plan, planPath: "/p", slug: "s" });
+      upsertFromPlan(opened.db, runId, plan);
+
+      const { bus, pushIdleResult, emitEvent } = makeMockBus();
+
+      // Arrange: the waitForIdle will return `stall`, but we emit two
+      // SSE events BEFORE the stall resolves — those are what the
+      // forensics counters should count.
+      //
+      // Timing: the worker registers its forensics subscription before
+      // awaiting waitForIdle. The mock's pushIdleResult resolves on
+      // queueMicrotask — same microtask queue as any chain we build.
+      // We sequence: emit events → push stall → runWorker. The events
+      // reach the subscribers when emitEvent is called, so pre-emitting
+      // before the worker's waitForIdle fires is safe as long as the
+      // subscription exists. It does (openForensics runs before the
+      // attempt loop).
+      //
+      // We can't emit BEFORE runWorker because the subscription doesn't
+      // exist yet — runWorker calls openForensics mid-run. So we defer
+      // via promptAsyncImpl, which fires AFTER forensics is open and
+      // BEFORE the mock bus's waitForIdle resolves the pushed stall.
+      const { client: clientWithEmit, calls } = makeMockClient({
+        promptAsyncImpl: () => {
+          emitEvent({
+            type: "message.part.updated",
+            properties: { sessionID: "ses_test_1", partId: "p1" },
+          });
+          emitEvent({
+            type: "message.updated",
+            properties: { sessionID: "ses_test_1", messageId: "m1" },
+          });
+        },
+      });
+      pushIdleResult("ses_test_1", { kind: "stall", stallMs: 1000 });
+
+      const pool = new WorktreePool({
+        repoPath: repo,
+        worktreeDir: async () => wtPath,
+      });
+
+      await runWorker({
+        db: opened.db,
+        runId,
+        plan,
+        scheduler: makeScheduler({ db: opened.db, runId, plan }),
+        pool,
+        client: clientWithEmit as never,
+        bus: bus as never,
+        branchPrefix: "pilot/x",
+        base: "main",
+        maxAttempts: 1,
+        stallMs: 1_000,
+      });
+
+      // Task ended as failed with the stall phase.
+      const t = getTask(opened.db, runId, "T1")!;
+      expect(t.status).toBe("failed");
+      expect(t.last_error).toMatch(/stalled/);
+
+      // The task.failed event payload carries eventCount + lastEventTs
+      // as NUMBERS (not null), plus the reason string.
+      const events = readEventsDecoded(opened.db, { runId, taskId: "T1" });
+      const failedEvent = events.find((e) => e.kind === "task.failed");
+      expect(failedEvent).toBeDefined();
+      const payload = failedEvent!.payload as {
+        phase?: string;
+        reason?: string;
+        eventCount?: number;
+        lastEventTs?: number | null;
+      };
+      expect(payload.phase).toBe("waitForIdle.stall");
+      expect(typeof payload.reason).toBe("string");
+      expect(payload.reason).toMatch(/stalled after/);
+      expect(payload.eventCount).toBe(2);
+      expect(typeof payload.lastEventTs).toBe("number");
+
+      // The JSONL file exists and contains two parseable lines. Use
+      // getTaskJsonlPath to resolve the same location the worker used.
+      const { getTaskJsonlPath } = await import(
+        "../src/pilot/paths.js"
+      );
+      const jsonlPath = await getTaskJsonlPath(process.cwd(), runId, "T1");
+      const contents = fs.readFileSync(jsonlPath, "utf8");
+      const lines = contents.split("\n").filter((l) => l.length > 0);
+      expect(lines.length).toBe(2);
+      for (const line of lines) {
+        const parsed = JSON.parse(line) as {
+          ts: unknown;
+          type: unknown;
+          properties: unknown;
+        };
+        expect(typeof parsed.ts).toBe("number");
+        expect(typeof parsed.type).toBe("string");
+        expect(typeof parsed.properties).toBe("object");
+      }
+    } finally {
+      opened.close();
+      if (prevEnv === undefined) delete process.env.GLORIOUS_PILOT_DIR;
+      else process.env.GLORIOUS_PILOT_DIR = prevEnv;
+    }
+  });
+});
+
 // --- Cascade fail --------------------------------------------------------
 
 describe("runWorker — cascade-fail dependents", () => {

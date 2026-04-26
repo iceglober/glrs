@@ -53,8 +53,8 @@ import {
   markRunRunning,
   markRunFinished,
 } from "../state/runs.js";
-import { upsertFromPlan, countByStatus } from "../state/tasks.js";
-import { appendEvent, subscribeToEvents } from "../state/events.js";
+import { upsertFromPlan, countByStatus, listTasks } from "../state/tasks.js";
+import { appendEvent, subscribeToEvents, readEventsDecoded } from "../state/events.js";
 import { startOpencodeServer } from "../opencode/server.js";
 import { EventBus } from "../opencode/events.js";
 import { WorktreePool } from "../worktree/pool.js";
@@ -63,6 +63,7 @@ import { makeScheduler } from "../scheduler/ready-set.js";
 import { runWorker } from "../worker/worker.js";
 import { promises as fs } from "node:fs";
 import { requirePlugin } from "../../cli/plugin-check.js";
+import type { Database } from "bun:sqlite";
 
 // --- Public command --------------------------------------------------------
 
@@ -420,7 +421,7 @@ export async function executeRun(args: {
 
   // 11. Print summary BEFORE cleanup so subprocess shutdown noise
   //     doesn't interleave with the user-facing report.
-  printSummary({ planPath, runId, runDir, counts, finalStatus });
+  printSummary({ planPath, runId, runDir, counts, finalStatus, db: db.db });
 
   // 12. Cleanup (server, bus, pool, sigint handler, db).
   await runCleanup(cleanup);
@@ -700,6 +701,15 @@ export function startStreamingLogger(args: {
   const taskStart = new Map<string, number>();
   let succeeded = 0;
   let failed = 0;
+  // Blocked-cascade de-noise: accumulate blocked events into a counter
+  // and a single first-reason capture; emit one summary line on
+  // run.finished (or when the logger unsubscribes, whichever comes
+  // first). Pre-v0.2 we printed one scary `task.blocked` line per
+  // event — on a 12-task plan with one early failure, that meant 10
+  // lines of noise hiding the real failure.
+  let blockedCount = 0;
+  let blockedReason: string | null = null;
+  let blockedFlushed = false;
 
   const formatTs = (ms: number): string => {
     const d = new Date(ms);
@@ -711,6 +721,22 @@ export function startStreamingLogger(args: {
 
   const write = (line: string) => {
     stderrWriter(`[${formatTs(clock())}] ${line}\n`);
+  };
+
+  const writeRaw = (line: string) => {
+    // Continuation / summary lines without a timestamp prefix — appears
+    // visually attached to the previous event line.
+    stderrWriter(`${line}\n`);
+  };
+
+  const flushBlockedSummary = () => {
+    if (blockedFlushed) return;
+    blockedFlushed = true;
+    if (blockedCount === 0) return;
+    const suffix = blockedReason !== null ? ` (${blockedReason})` : "";
+    write(
+      `blocked: ${blockedCount} task(s) waiting on failed dependency${suffix}`,
+    );
   };
 
   const unsub = subscribe((event) => {
@@ -742,6 +768,13 @@ export function startStreamingLogger(args: {
         failed += 1;
         const ms = id !== null ? event.ts - (taskStart.get(id) ?? event.ts) : 0;
         write(`task.failed ${id ?? "?"} in ${Math.round(ms / 1000)}s`);
+        // Render phase+reason continuation if the worker populated
+        // them (post-v0.2 task.failed payload). Tolerate missing
+        // fields — events from pre-v0.2 code paths may not have them.
+        const detail = extractPhaseReason(event.payload);
+        if (detail !== null) {
+          writeRaw(`  → ${detail.phase}: ${truncate(detail.reason, 200)}`);
+        }
         write(
           `run.progress ${succeeded}/${totalTasks} succeeded, ${failed} failed`,
         );
@@ -753,8 +786,25 @@ export function startStreamingLogger(args: {
       case "task.stopped":
         write(`task.stopped ${id ?? "?"} (builder STOP)`);
         break;
-      case "task.blocked":
-        write(`task.blocked ${id ?? "?"}`);
+      case "task.blocked": {
+        // De-noised: count instead of print. Capture the first
+        // payload's reason for the summary — all blocked events in a
+        // single cascade share the same root cause.
+        blockedCount += 1;
+        if (blockedReason === null) {
+          const p = event.payload as { reason?: unknown } | null;
+          if (
+            p !== null &&
+            typeof p === "object" &&
+            typeof p.reason === "string"
+          ) {
+            blockedReason = p.reason;
+          }
+        }
+        break;
+      }
+      case "run.finished":
+        flushBlockedSummary();
         break;
       case "task.touches.violation":
         write(`task.touches.violation ${id ?? "?"}`);
@@ -767,7 +817,36 @@ export function startStreamingLogger(args: {
     }
   });
 
-  return unsub;
+  return () => {
+    // Flush blocked summary on teardown too, in case run.finished
+    // never fired (SIGINT, server crash, etc.) — the user should
+    // still see the count on their way out.
+    flushBlockedSummary();
+    unsub();
+  };
+}
+
+/**
+ * Extract `{phase, reason}` from a task.failed event payload, tolerating
+ * payloads that predate v0.2's enrichment (no phase/reason fields) or
+ * aren't objects at all. Returns null when either field is missing or
+ * non-string; the streaming logger + summary both use that as a signal
+ * to skip the continuation line.
+ */
+function extractPhaseReason(
+  payload: unknown,
+): { phase: string; reason: string } | null {
+  if (payload === null || typeof payload !== "object") return null;
+  const p = payload as { phase?: unknown; reason?: unknown };
+  if (typeof p.phase !== "string" || typeof p.reason !== "string") {
+    return null;
+  }
+  return { phase: p.phase, reason: p.reason };
+}
+
+function truncate(s: string, maxChars: number): string {
+  if (s.length <= maxChars) return s;
+  return s.slice(0, maxChars - 1) + "…";
 }
 
 /**
@@ -828,26 +907,101 @@ function printDryRun(
   }
 }
 
-function printSummary(args: {
+export function printSummary(args: {
   planPath: string;
   runId: string;
   runDir: string;
   counts: ReturnType<typeof countByStatus>;
   finalStatus: string;
+  db: Database;
 }): void {
-  const { counts, finalStatus, runId, runDir, planPath } = args;
+  const { counts, finalStatus, runId, runDir, planPath, db } = args;
   const totalRun = counts.succeeded + counts.failed + counts.aborted;
+
+  // Counts line first (identical to pre-v0.2 for back-compat).
   process.stdout.write(
     `\nRun ${runId} ${finalStatus}: ` +
       `succeeded=${counts.succeeded} failed=${counts.failed} ` +
       `blocked=${counts.blocked} aborted=${counts.aborted} ` +
       `pending=${counts.pending} ready=${counts.ready} running=${counts.running} ` +
-      `(of ${totalRun + counts.blocked + counts.pending + counts.ready + counts.running} total)\n` +
-      `  plan: ${planPath}\n` +
+      `(of ${totalRun + counts.blocked + counts.pending + counts.ready + counts.running} total)\n`,
+  );
+
+  // Failure block — only when there's something to show. Runs with
+  // zero failed + zero aborted render exactly as before.
+  if (counts.failed > 0 || counts.aborted > 0) {
+    const failed = listTasks(db, runId).filter(
+      (t) => t.status === "failed" || t.status === "aborted",
+    );
+    if (failed.length > 0) {
+      process.stdout.write(`\nFailed tasks (${failed.length}):\n\n`);
+      for (const t of failed) {
+        const { phase, reason } = resolveFailureDetail(db, runId, t);
+        const session = t.session_id ?? "(none — failed before session.create)";
+        const worktree = t.worktree_path ?? "(none)";
+        const elapsed =
+          t.started_at !== null && t.finished_at !== null
+            ? Math.round((t.finished_at - t.started_at) / 1000)
+            : 0;
+        process.stdout.write(
+          `  ${t.task_id}\n` +
+            `    phase:    ${phase}\n` +
+            `    reason:   ${truncateSummary(reason, 300)}\n` +
+            `    session:  ${session}\n` +
+            `    worktree: ${worktree}\n` +
+            `    elapsed:  ${elapsed}s   attempts: ${t.attempts}\n` +
+            `\n`,
+        );
+      }
+    }
+  }
+
+  // Follow-up commands last (unchanged).
+  process.stdout.write(
+    `  plan: ${planPath}\n` +
       `  run dir: ${runDir}\n` +
       `  status: bunx @glrs-dev/harness-opencode pilot status --run ${runId}\n` +
       `  logs:   bunx @glrs-dev/harness-opencode pilot logs --run ${runId} <task-id>\n`,
   );
+}
+
+/**
+ * Resolve the `{phase, reason}` to print for a failed/aborted task.
+ *
+ * Priority:
+ *   1. Last `task.failed` event's payload.phase + payload.reason (post-v0.2).
+ *   2. Row's `last_error` fallback for reason; phase defaults to "unknown".
+ *   3. `"(no reason recorded)"` placeholder when both are empty.
+ */
+function resolveFailureDetail(
+  db: Database,
+  runId: string,
+  row: { task_id: string; last_error: string | null },
+): { phase: string; reason: string } {
+  const events = readEventsDecoded(db, { runId, taskId: row.task_id });
+  // Walk in reverse for the latest task.failed event.
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!;
+    if (e.kind !== "task.failed") continue;
+    const p = e.payload as { phase?: unknown; reason?: unknown } | null;
+    if (p !== null && typeof p === "object") {
+      const phase = typeof p.phase === "string" ? p.phase : "unknown";
+      const reason =
+        typeof p.reason === "string"
+          ? p.reason
+          : row.last_error ?? "(no reason recorded)";
+      return { phase, reason };
+    }
+  }
+  return {
+    phase: "unknown",
+    reason: row.last_error ?? "(no reason recorded)",
+  };
+}
+
+function truncateSummary(s: string, maxChars: number): string {
+  if (s.length <= maxChars) return s;
+  return s.slice(0, maxChars - 1) + "…";
 }
 
 async function runCleanup(

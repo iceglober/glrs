@@ -66,11 +66,12 @@
 
 import type { Database } from "bun:sqlite";
 import type { OpencodeClient } from "@opencode-ai/sdk";
+import * as fsSync from "node:fs";
 
 import type { Plan, PlanTask } from "../plan/schema.js";
 import type { Scheduler } from "../scheduler/ready-set.js";
 import type { WorktreePool, WorktreeSlot } from "../worktree/pool.js";
-import type { EventBus } from "../opencode/events.js";
+import type { EventBus, EventLike } from "../opencode/events.js";
 
 import {
   markRunning,
@@ -85,6 +86,7 @@ import { kickoffPrompt, fixPrompt, type LastFailure, type RunContext } from "../
 import { runVerify } from "../verify/runner.js";
 import { enforceTouches } from "../verify/touches.js";
 import { commitAll, headSha } from "../worktree/git.js";
+import { getTaskJsonlPath } from "../paths.js";
 import { StopDetector } from "./stop-detect.js";
 
 // --- Public types ----------------------------------------------------------
@@ -196,11 +198,83 @@ export async function runWorker(deps: WorkerDeps): Promise<WorkerResult> {
 
 // --- One-task workflow -----------------------------------------------------
 
+/**
+ * Per-task forensics: the JSONL writer for SSE events + the
+ * last-event-ts / event-count counters read by stall payloads.
+ *
+ * One `Forensics` instance lives for the duration of a single task's
+ * session. It:
+ *   - Subscribes to the bus for the task's session exactly once.
+ *   - Appends every incoming event as a JSON line to the task's
+ *     session.jsonl (`<runDir>/tasks/<taskId>/session.jsonl`).
+ *   - Tracks `lastEventTs` + `eventCount` so the stall handler can
+ *     surface "N events, last Xms ago" in the task.failed payload.
+ *
+ * Every failure path in `runOneTask` MUST call `dispose()` before
+ * returning — otherwise the bus keeps calling the handler long after
+ * the task has moved on.
+ */
+type Forensics = {
+  /** Snapshot current counters; safe to read repeatedly. */
+  counters(): { lastEventTs: number | null; eventCount: number };
+  /** Unsubscribe and close the JSONL writer. Idempotent. */
+  dispose(): void;
+  /** Path to the JSONL file (for testing / debugging). */
+  jsonlPath: string;
+};
+
+function openForensics(args: {
+  bus: EventBus;
+  sessionId: string;
+  jsonlPath: string;
+}): Forensics {
+  let lastEventTs: number | null = null;
+  let eventCount = 0;
+  let disposed = false;
+
+  // Ensure the file exists (empty JSONL is still a valid zero-line file).
+  // Parent directory is already created by getTaskJsonlPath.
+  try {
+    fsSync.appendFileSync(args.jsonlPath, "");
+  } catch {
+    // If the initial touch fails, later appendFileSync calls will also
+    // fail — we swallow both; forensics are best-effort.
+  }
+
+  const unsubscribe = args.bus.on(args.sessionId, (event: EventLike) => {
+    if (disposed) return;
+    const ts = Date.now();
+    lastEventTs = ts;
+    eventCount += 1;
+    try {
+      const line = JSON.stringify({ ts, type: event.type, properties: event.properties }) + "\n";
+      fsSync.appendFileSync(args.jsonlPath, line);
+    } catch {
+      // Forensics failure must NOT fail the task; swallow.
+    }
+  });
+
+  return {
+    counters: () => ({ lastEventTs, eventCount }),
+    dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      try {
+        unsubscribe();
+      } catch {
+        // ignore
+      }
+    },
+    jsonlPath: args.jsonlPath,
+  };
+}
+
 async function runOneTask(
   deps: WorkerDeps,
   task: PlanTask,
   opts: { maxAttempts: number; stallMs: number },
 ): Promise<void> {
+  const cwd = process.cwd();
   appendEvent(deps.db, {
     runId: deps.runId,
     taskId: task.id,
@@ -272,6 +346,23 @@ async function runOneTask(
     return;
   }
 
+  // 2b. Open forensics — JSONL writer + counters — before any bus
+  // traffic we care about. Must be disposed before every return path
+  // below; helper `finishForensics` closes over this scope.
+  let forensics: Forensics | null = null;
+  try {
+    const jsonlPath = await getTaskJsonlPath(cwd, deps.runId, task.id);
+    forensics = openForensics({ bus: deps.bus, sessionId, jsonlPath });
+  } catch {
+    // Forensics failure must not fail the task — swallow.
+    forensics = null;
+  }
+  const disposeForensics = () => {
+    if (forensics) forensics.dispose();
+  };
+  const forensicsCounters = () =>
+    forensics ? forensics.counters() : { lastEventTs: null, eventCount: 0 };
+
   // 3. Mark running with the session/branch/worktree info.
   try {
     markRunning(deps.db, {
@@ -283,13 +374,16 @@ async function runOneTask(
     });
   } catch (err) {
     // Race or invariant violation; fail gracefully.
+    disposeForensics();
     deps.pool.preserveOnFailure(slot);
-    markFailedSafe(
-      deps.db,
-      deps.runId,
-      task.id,
-      `markRunning failed: ${errorMessage(err)}`,
-    );
+    const reason = `markRunning failed: ${errorMessage(err)}`;
+    markFailedSafe(deps.db, deps.runId, task.id, reason);
+    appendEvent(deps.db, {
+      runId: deps.runId,
+      taskId: task.id,
+      kind: "task.failed",
+      payload: { phase: "markRunning", reason },
+    });
     return;
   }
 
@@ -326,12 +420,13 @@ async function runOneTask(
     if (deps.abortSignal?.aborted) {
       await abortSession(deps, sessionId);
       markAbortedSafe(deps.db, deps.runId, task.id, "abort signal");
+      disposeForensics();
       deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
         kind: "task.aborted",
-        payload: { phase: "pre-prompt" },
+        payload: { phase: "pre-prompt", reason: "abort signal" },
       });
       return;
     }
@@ -373,6 +468,7 @@ async function runOneTask(
     } catch (err) {
       unsubStop();
       const reason = `promptAsync failed: ${errorMessage(err)}`;
+      disposeForensics();
       deps.pool.preserveOnFailure(slot);
       markFailedSafe(deps.db, deps.runId, task.id, reason);
       appendEvent(deps.db, {
@@ -398,57 +494,68 @@ async function runOneTask(
     if (idleResult.kind === "abort") {
       await abortSession(deps, sessionId);
       markAbortedSafe(deps.db, deps.runId, task.id, "abort signal");
+      disposeForensics();
       deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
         kind: "task.aborted",
-        payload: { phase: "waitForIdle" },
+        payload: { phase: "waitForIdle", reason: "abort signal" },
       });
       return;
     }
 
     if (idleResult.kind === "stall") {
+      const { lastEventTs, eventCount } = forensicsCounters();
+      const sinceLast =
+        lastEventTs !== null ? `${Date.now() - lastEventTs}ms` : "none";
+      const reason =
+        `stalled after ${idleResult.stallMs}ms ` +
+        `(${eventCount} event${eventCount === 1 ? "" : "s"}, last ${sinceLast})`;
       try {
         await abortSession(deps, sessionId);
       } catch {
         // best effort
       }
-      markFailedSafe(
-        deps.db,
-        deps.runId,
-        task.id,
-        `stalled after ${idleResult.stallMs}ms with no events`,
-      );
+      disposeForensics();
+      markFailedSafe(deps.db, deps.runId, task.id, reason);
       deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
         kind: "task.failed",
-        payload: { phase: "waitForIdle.stall", stallMs: idleResult.stallMs },
+        payload: {
+          phase: "waitForIdle.stall",
+          reason,
+          stallMs: idleResult.stallMs,
+          eventCount,
+          lastEventTs,
+        },
       });
       return;
     }
 
     if (idleResult.kind === "session-error") {
-      markFailedSafe(
-        deps.db,
-        deps.runId,
-        task.id,
-        `session error: ${JSON.stringify(idleResult.properties)}`,
-      );
+      const reason = `session error: ${JSON.stringify(idleResult.properties)}`;
+      disposeForensics();
+      markFailedSafe(deps.db, deps.runId, task.id, reason);
       deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
         kind: "task.failed",
-        payload: { phase: "session.error", properties: idleResult.properties },
+        payload: {
+          phase: "session.error",
+          reason,
+          properties: idleResult.properties,
+        },
       });
       return;
     }
 
     // STOP detected during the wait.
     if (stopReason !== null) {
+      disposeForensics();
       markFailedSafe(deps.db, deps.runId, task.id, stopReason);
       deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
@@ -487,6 +594,7 @@ async function runOneTask(
       });
       // Aborted-during-verify: same disposition as abort during idle.
       if (verifyResult.failure.aborted) {
+        disposeForensics();
         markAbortedSafe(deps.db, deps.runId, task.id, "abort signal during verify");
         deps.pool.preserveOnFailure(slot);
         return;
@@ -494,18 +602,15 @@ async function runOneTask(
       // Try again if attempts remain.
       if (attempt < opts.maxAttempts) continue;
       // Out of attempts.
-      markFailedSafe(
-        deps.db,
-        deps.runId,
-        task.id,
-        `verify failed after ${opts.maxAttempts} attempts: ${lastFailure.command} → exit ${lastFailure.exitCode}`,
-      );
+      const reason = `verify failed after ${opts.maxAttempts} attempts: ${lastFailure.command} → exit ${lastFailure.exitCode}`;
+      disposeForensics();
+      markFailedSafe(deps.db, deps.runId, task.id, reason);
       deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
         kind: "task.failed",
-        payload: { phase: "verify", attempts: opts.maxAttempts },
+        payload: { phase: "verify", reason, attempts: opts.maxAttempts },
       });
       return;
     }
@@ -538,18 +643,15 @@ async function runOneTask(
         payload: { attempt, violators: touches.violators },
       });
       if (attempt < opts.maxAttempts) continue;
-      markFailedSafe(
-        deps.db,
-        deps.runId,
-        task.id,
-        `touches violation after ${opts.maxAttempts} attempts: ${touches.violators.join(", ")}`,
-      );
+      const reason = `touches violation after ${opts.maxAttempts} attempts: ${touches.violators.join(", ")}`;
+      disposeForensics();
+      markFailedSafe(deps.db, deps.runId, task.id, reason);
       deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
         kind: "task.failed",
-        payload: { phase: "touches", attempts: opts.maxAttempts },
+        payload: { phase: "touches", reason, attempts: opts.maxAttempts },
       });
       return;
     }
@@ -559,6 +661,7 @@ async function runOneTask(
       // No edits — verify passed but nothing to commit. This is
       // legitimate for verify-only tasks; mark succeeded without
       // commit.
+      disposeForensics();
       markSucceeded(deps.db, deps.runId, task.id);
       deps.pool.release(slot);
       appendEvent(deps.db, {
@@ -577,6 +680,7 @@ async function runOneTask(
         authorName: deps.authorName,
         authorEmail: deps.authorEmail,
       });
+      disposeForensics();
       markSucceeded(deps.db, deps.runId, task.id);
       deps.pool.release(slot);
       appendEvent(deps.db, {
@@ -588,6 +692,7 @@ async function runOneTask(
       return;
     } catch (err) {
       const reason = `commit failed: ${errorMessage(err)}`;
+      disposeForensics();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
       deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
@@ -602,8 +707,16 @@ async function runOneTask(
 
   // Unreachable in normal flow — every loop branch returns.
   // If we DO get here, something went off-script.
-  markFailedSafe(deps.db, deps.runId, task.id, "worker loop exited unexpectedly");
+  const reason = "worker loop exited unexpectedly";
+  disposeForensics();
+  markFailedSafe(deps.db, deps.runId, task.id, reason);
   deps.pool.preserveOnFailure(slot);
+  appendEvent(deps.db, {
+    runId: deps.runId,
+    taskId: task.id,
+    kind: "task.failed",
+    payload: { phase: "worker.exit", reason },
+  });
 }
 
 // --- Helpers ---------------------------------------------------------------

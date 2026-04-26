@@ -76,7 +76,7 @@ function expandTilde(p: string): string {
  * Returns the absolute base — NOT yet repo-scoped. Callers compose with
  * `<repoFolder>/pilot/...` themselves.
  */
-function resolveBaseDir(): string {
+export function resolveBaseDir(): string {
   const pilotEnv = process.env.GLORIOUS_PILOT_DIR;
   if (pilotEnv) return expandTilde(pilotEnv);
 
@@ -206,6 +206,38 @@ export async function getWorkerJsonlPath(
   return path.join(workersDir, `${padWorker(n)}.jsonl`);
 }
 
+/**
+ * Resolve `<runDir>/tasks/<taskId>/session.jsonl` — the per-task SSE
+ * forensic log. Creates the parent `tasks/<taskId>/` directory if
+ * missing. Caller appends one JSON object per line.
+ *
+ * This path is the one documented in `src/pilot/AGENTS.md` as the
+ * operator's read-out for "what did the session actually do" when a
+ * task failed silently. Unlike the per-worker JSONL (which is a
+ * superset across tasks), this file is scoped to a single task so
+ * post-mortems don't require filtering.
+ */
+export async function getTaskJsonlPath(
+  cwd: string,
+  runId: string,
+  taskId: string,
+): Promise<string> {
+  if (!isSafeRunId(runId)) {
+    throw new Error(
+      `getTaskJsonlPath: runId ${JSON.stringify(runId)} is not a safe filesystem segment`,
+    );
+  }
+  if (!isSafeTaskId(taskId)) {
+    throw new Error(
+      `getTaskJsonlPath: taskId ${JSON.stringify(taskId)} is not a safe filesystem segment`,
+    );
+  }
+  const runDir = await getRunDir(cwd, runId);
+  const taskDir = path.join(runDir, "tasks", taskId);
+  await fs.mkdir(taskDir, { recursive: true });
+  return path.join(taskDir, "session.jsonl");
+}
+
 // --- Validation helpers ----------------------------------------------------
 
 /**
@@ -219,4 +251,13 @@ export async function getWorkerJsonlPath(
  */
 function isSafeRunId(runId: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(runId);
+}
+
+/**
+ * Same character class as `isSafeRunId`. Task IDs come from the
+ * planner agent (e.g. `T1-AUDIT-DOC`); treat them as untrusted for
+ * filesystem purposes even though the planner is constrained.
+ */
+function isSafeTaskId(taskId: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(taskId);
 }

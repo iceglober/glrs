@@ -27,7 +27,8 @@
  *   3. (worker runs the task)
  *   4. Either `pool.release(slot)` (clean reset) OR
  *      `pool.preserveOnFailure(slot)` (skip reset, keep state for
- *      inspection — slot becomes unusable until manually pruned).
+ *      inspection — slot retires to `retiredSlots` on the NEXT
+ *      `acquire` so downstream tasks can proceed on a fresh path).
  *
  * Ship-checklist alignment: Phase C1 of `PILOT_TODO.md`.
  */
@@ -82,6 +83,27 @@ export class WorktreePool {
   readonly repoPath: string;
   private readonly worktreeDirOf: (n: number) => Promise<string>;
   private readonly slots: Map<number, WorktreeSlot> = new Map();
+  /**
+   * Slots that were preserved on failure. No longer reachable via
+   * `acquire` — they stay here for `shutdown` (so `keepPreserved=false`
+   * can still clean them up) and `inspect` (so debug tooling sees them).
+   *
+   * When a slot is preserved and a subsequent `acquire(n)` happens, the
+   * current live slot at index `n` is MOVED here, and `slots` gets a
+   * fresh stub at `n` with a bumped `retryCounter`. This is what
+   * prevents a single failed task from poisoning every downstream task
+   * (the pre-v0.2 bug: one preserve → all subsequent `prepare` calls
+   * threw "slot N is preserved").
+   */
+  private readonly retiredSlots: WorktreeSlot[] = [];
+  /**
+   * Per-index retry counter. Bumps every time `acquire` retires a
+   * preserved slot. Read by `prepare` to decide whether the worktree
+   * path needs a `-<counter>` suffix (for retried slots) or the bare
+   * `worktreeDirOf(n)` path (first-ever use — back-compat with the
+   * existing on-disk layout).
+   */
+  private readonly retryCounter: Map<number, number> = new Map();
   private readonly workerCount: number;
   /**
    * Set of workers currently held by an `acquire`. v0.1 only ever holds
@@ -102,21 +124,35 @@ export class WorktreePool {
   }
 
   /**
-   * Acquire a worker slot. v0.1 returns slot 0 on the first call;
-   * subsequent calls before `release` block-by-error (the worker should
-   * never call acquire twice without releasing).
+   * Acquire a worker slot. Returns the live slot for the given worker
+   * index, or a fresh stub if the current live slot was preserved on
+   * failure.
    *
-   * Returns a `WorktreeSlot` that the caller passes to `prepare`.
+   * v0.1 always uses slot 0. First call returns a fresh stub. If that
+   * slot is later `preserveOnFailure`'d, the next `acquire()` retires
+   * the preserved slot into `retiredSlots`, bumps the retry counter,
+   * and mints a new stub at index 0. The old slot stays on disk (for
+   * operator inspection) but is no longer the pool's live slot.
    */
   acquire(): WorktreeSlot {
     for (let n = 0; n < this.workerCount; n++) {
       if (this.busy.has(n)) continue;
       this.busy.add(n);
       const existing = this.slots.get(n);
-      if (existing) return existing;
-      // Slot doesn't exist yet — create a stub. The path is filled in
-      // lazily on first `prepare` (we don't know `runId` here, and
-      // that's the caller's domain).
+      // Preserved slots are retired on next acquire; caller gets a
+      // fresh stub. The existing `prepare()` guard is still correct
+      // defence-in-depth against a caller reusing a stale slot ref.
+      if (existing && existing.preserved) {
+        this.retiredSlots.push(existing);
+        this.slots.delete(n);
+        this.retryCounter.set(n, (this.retryCounter.get(n) ?? 0) + 1);
+      } else if (existing) {
+        return existing;
+      }
+      // Slot doesn't exist yet (or we just retired the preserved one)
+      // — create a fresh stub. The path is filled in lazily on first
+      // `prepare` (we don't know `runId` here, and that's the
+      // caller's domain).
       const stub: WorktreeSlot = {
         index: n,
         path: "", // filled by prepare
@@ -143,6 +179,10 @@ export class WorktreePool {
    * is `<branchPrefix>/<taskId>`. `base` is the commit-ish the branch
    * is created from — usually the main branch's HEAD or a specific
    * sha if reproducibility matters.
+   *
+   * For retried slots (i.e. `retryCounter[n] > 0`), the resolved path
+   * gets a `-<counter>` suffix so retries don't collide with the
+   * preserved predecessor on disk.
    */
   async prepare(args: {
     slot: WorktreeSlot;
@@ -158,8 +198,12 @@ export class WorktreePool {
     const branch = `${args.branchPrefix}/${args.taskId}`;
 
     if (!args.slot.prepared) {
-      // First use: resolve target path and add the worktree.
-      const wtPath = await this.worktreeDirOf(args.slot.index);
+      // First use: resolve target path and add the worktree. Retried
+      // slots (retryCounter > 0) get a `-<counter>` suffix so they
+      // live beside the preserved predecessor on disk.
+      const basePath = await this.worktreeDirOf(args.slot.index);
+      const counter = this.retryCounter.get(args.slot.index) ?? 0;
+      const wtPath = counter > 0 ? `${basePath}-${counter}` : basePath;
       args.slot.path = wtPath;
 
       // Ensure the path doesn't already exist as a stale dir from a
@@ -218,9 +262,13 @@ export class WorktreePool {
 
   /**
    * Preserve a slot's state on failure. The slot is marked preserved
-   * and removed from the busy set, but `prepare` will refuse to reuse
-   * it. The CLI's `pilot worktrees prune` (Phase G6) is the path back
-   * to a usable state.
+   * and removed from the busy set. Unlike pre-v0.2 behaviour, the
+   * next `acquire()` call retires this slot into `retiredSlots` and
+   * mints a fresh stub — so a single failure doesn't cascade-block
+   * the rest of the run.
+   *
+   * The CLI's `pilot worktrees prune` (Phase G6) remains the path to
+   * permanently remove preserved slots from disk.
    */
   preserveOnFailure(slot: WorktreeSlot): void {
     slot.preserved = true;
@@ -228,14 +276,16 @@ export class WorktreePool {
   }
 
   /**
-   * Tear down all worktrees managed by this pool. Called at end of
-   * `pilot build` (whether success or failure). Preserved slots are
-   * skipped — those are the user's to inspect.
+   * Tear down all worktrees managed by this pool — BOTH live and
+   * retired. Called at end of `pilot build` (whether success or
+   * failure). Preserved slots are skipped when `keepPreserved` is
+   * true (the default) — those are the user's to inspect.
    */
   async shutdown(args: { keepPreserved?: boolean } = {}): Promise<void> {
     const keepPreserved = args.keepPreserved ?? true;
     const errors: Error[] = [];
-    for (const slot of this.slots.values()) {
+    const all = [...this.slots.values(), ...this.retiredSlots];
+    for (const slot of all) {
       if (slot.preserved && keepPreserved) continue;
       if (!slot.prepared || slot.path === "") continue;
       try {
@@ -255,8 +305,12 @@ export class WorktreePool {
     }
   }
 
-  /** Inspect current slots (for tests / `pilot worktrees list`). */
+  /**
+   * Inspect current slots (for tests / `pilot worktrees list`). Returns
+   * live slots followed by retired slots, in insertion order within
+   * each group.
+   */
   inspect(): ReadonlyArray<WorktreeSlot> {
-    return [...this.slots.values()];
+    return [...this.slots.values(), ...this.retiredSlots];
   }
 }

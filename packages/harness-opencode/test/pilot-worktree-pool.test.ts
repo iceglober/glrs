@@ -219,7 +219,7 @@ describe("WorktreePool — preserveOnFailure", () => {
   beforeEach(() => { tmp = mkTmpDir(); });
   afterEach(() => rmTmpDir(tmp));
 
-  test("preserved slots are not reusable", async () => {
+  test("preserved slots are not reusable via the preserved reference itself", async () => {
     if (!GIT_OK) return;
     const repo = path.join(tmp, "repo");
     fs.mkdirSync(repo);
@@ -240,18 +240,73 @@ describe("WorktreePool — preserveOnFailure", () => {
 
     pool.preserveOnFailure(slot);
 
-    // After preservation, the slot is no longer busy (acquire returns it).
-    const slotAgain = pool.acquire();
-    expect(slotAgain.index).toBe(0);
-    // ...but prepare refuses to reuse it.
+    // Handing the preserved slot reference BACK to prepare is still
+    // rejected — defence-in-depth against callers that cached a stale
+    // slot. The supported path is to re-`acquire`, which mints a
+    // fresh stub (see "retires preserved slot and mints fresh path").
     await expect(
       pool.prepare({
-        slot: slotAgain,
+        slot,
         taskId: "T2",
         branchPrefix: "pilot/x",
         base: "main",
       }),
     ).rejects.toThrow(/preserved/);
+  });
+
+  test("retires preserved slot and mints fresh path", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    gitCommitFile(repo, "a.txt", "a", "init");
+
+    const pool = new WorktreePool({
+      repoPath: repo,
+      worktreeDir: async (n) => path.join(tmp, "wt", `0${n}`),
+    });
+
+    // T1: acquire → prepare → preserve.
+    const slotT1 = pool.acquire();
+    await pool.prepare({
+      slot: slotT1,
+      taskId: "T1",
+      branchPrefix: "pilot/x",
+      base: "main",
+    });
+    const t1Path = slotT1.path;
+    pool.preserveOnFailure(slotT1);
+
+    // T2: acquire returns a FRESH stub (not the preserved one),
+    // prepare succeeds, path is suffixed with `-1` to avoid colliding
+    // with the preserved predecessor on disk.
+    const slotT2 = pool.acquire();
+    expect(slotT2.preserved).toBe(false);
+    expect(slotT2.prepared).toBe(false);
+    expect(slotT2.path).toBe(""); // stub, path filled by prepare
+    // The stub is a DIFFERENT object than the preserved slot.
+    expect(slotT2).not.toBe(slotT1);
+
+    const prepared = await pool.prepare({
+      slot: slotT2,
+      taskId: "T2",
+      branchPrefix: "pilot/x",
+      base: "main",
+    });
+    expect(prepared.path).toBe(path.join(tmp, "wt", "00-1"));
+    expect(fs.existsSync(prepared.path)).toBe(true);
+    expect(prepared.path).not.toBe(t1Path);
+
+    // `inspect` shows BOTH slots — live + retired.
+    const all = pool.inspect();
+    expect(all).toHaveLength(2);
+    const preserved = all.find((s) => s.preserved === true);
+    const live = all.find((s) => s.preserved === false);
+    expect(preserved).toBeDefined();
+    expect(live).toBeDefined();
+    expect(preserved!.path).toBe(t1Path);
+    expect(live!.path).toBe(prepared.path);
+    expect(live!.prepared).toBe(true);
   });
 
   test("shutdown skips preserved slots by default", async () => {

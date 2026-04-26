@@ -228,4 +228,86 @@ describe("runStatus — error paths", () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toMatch(/no state\.db/);
   });
+
+  test("resolves run from a different worktree of the same repo", async () => {
+    // Set up two independently-named git repos sharing a single
+    // GLORIOUS_PILOT_DIR base. Only the FIRST repo holds the state.db
+    // for the target run. When we invoke runStatus from the SECOND
+    // repo, the cwd-scoped fast path misses — the cross-repo scan
+    // should then find the state.db under the first repo's
+    // `<base>/<repo-folder>/pilot/runs/<runId>/state.db`.
+    const repoA = path.join(tmp, "repo-A");
+    const repoB = path.join(tmp, "repo-B");
+    fs.mkdirSync(repoA);
+    fs.mkdirSync(repoB);
+    gitInit(repoA);
+    gitInit(repoB);
+    const pilotBase = path.join(tmp, "shared-pilot-base");
+
+    // Seed the run under repo-A's folder.
+    const prevEnv = process.env.GLORIOUS_PILOT_DIR;
+    const prevCwd = process.cwd();
+    process.env.GLORIOUS_PILOT_DIR = pilotBase;
+    process.chdir(repoA);
+    const runId = "01TESTCROSSREPO1234567890";
+    try {
+      await getRunDir(repoA, runId);
+      const dbPath = await getStateDbPath(repoA, runId);
+      const opened = openStateDb(dbPath);
+      try {
+        opened.db.run(
+          `INSERT INTO runs (id, plan_path, plan_slug, started_at, status)
+           VALUES (?, ?, ?, ?, 'completed')`,
+          [runId, "/p.yaml", "xp", 1_700_000_000_000],
+        );
+      } finally {
+        opened.close();
+      }
+    } finally {
+      process.chdir(prevCwd);
+    }
+
+    // Invoke runStatus from repo-B — cwd-scoped path maps to the
+    // DIFFERENT repo folder, so the cross-repo scan is what has to
+    // find it.
+    const r = await withRepo(
+      { repo: repoB, pilotBase },
+      () => runStatus({ runId }),
+    );
+    if (prevEnv === undefined) delete process.env.GLORIOUS_PILOT_DIR;
+    else process.env.GLORIOUS_PILOT_DIR = prevEnv;
+
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(new RegExp(`Run ${runId}: completed`));
+  });
+
+  test("explicit --run id error lists every path tried (cwd + cross-repo candidates)", async () => {
+    // Two repos under the same pilot base. Neither has the target
+    // runId. Error should list BOTH the cwd-scoped path and at least
+    // one cross-repo candidate.
+    const repoA = path.join(tmp, "repo-X");
+    const repoB = path.join(tmp, "repo-Y");
+    fs.mkdirSync(repoA);
+    fs.mkdirSync(repoB);
+    gitInit(repoA);
+    gitInit(repoB);
+    const pilotBase = path.join(tmp, "multi-base");
+    // Create both repo-folders inside the base so the scan has two
+    // dirs to visit. `getPilotDir` would auto-create repo-B's dir
+    // when runStatus cwds into it; we manually create repo-A's.
+    fs.mkdirSync(path.join(pilotBase, "repo-X", "pilot", "runs"), {
+      recursive: true,
+    });
+
+    const r = await withRepo(
+      { repo: repoB, pilotBase },
+      () => runStatus({ runId: "01MISSING0000000000000000" }),
+    );
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/no state\.db for run/);
+    // The cwd-scoped path AND the cross-repo candidate both appear
+    // in the tried list.
+    expect(r.stderr).toMatch(/repo-Y/);
+    expect(r.stderr).toMatch(/repo-X/);
+  });
 });
