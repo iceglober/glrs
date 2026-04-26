@@ -24,6 +24,12 @@ const FORBIDDEN_PATTERNS = [
   // which means the plan they describe will be invisible from sibling
   // worktrees and wiped by `/fresh`. See src/plan-paths.ts.
   ".agent/plans",
+  // Legacy npm scope. All packages moved to @glrs-dev as part of the
+  // iceglober/glorious → iceglober/glrs monorepo consolidation. Any prompt
+  // referencing @glorious/<anything> is dangling. The bin names `gsag`,
+  // `gs-agentic`, `gs-assume`, `gsa` remain stable and fine to reference
+  // as shell commands — only the npm package name is forbidden.
+  "@glorious/",
 ];
 
 function findMdFiles(dir: string): string[] {

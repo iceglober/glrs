@@ -19,7 +19,7 @@ Once 1.0 ships, this table will track supported major lines instead.
 
 Use one of these private channels:
 
-1. **Preferred — GitHub private vulnerability reporting:** go to the [Security tab](https://github.com/iceglober/harness-opencode/security/advisories/new) and open a new advisory. This gives us a private thread with tracking, severity fields, and a path to issue a CVE if applicable.
+1. **Preferred — GitHub private vulnerability reporting:** go to the [Security tab](https://github.com/iceglober/glrs/security/advisories/new) and open a new advisory. This gives us a private thread with tracking, severity fields, and a path to issue a CVE if applicable.
 2. **Fallback — email:** `austin@glorious.dev`. Use PGP if you have a key; otherwise plain email is fine. Include the word `SECURITY` in the subject.
 
 Please include:
