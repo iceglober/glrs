@@ -20,13 +20,16 @@ if (args.length === 0 || args[0] === "--help" || args[0] === "-h" || args[0] ===
 if (args[0] === "--version" || args[0] === "-V") {
   // Read our own package version via JSON import. Avoids baking a constant at
   // build time that could drift from package.json.
-  import("node:fs").then(async ({ readFileSync }) => {
-    const { fileURLToPath } = await import("node:url");
-    const { dirname, resolve } = await import("node:path");
-    const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
-    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version: string };
-    process.stdout.write(`glrs ${pkg.version}\n`);
-  });
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname, resolve } = await import("node:path");
+  const pkgPath = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "package.json",
+  );
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version: string };
+  process.stdout.write(`glrs ${pkg.version}\n`);
   process.exit(0);
 }
 

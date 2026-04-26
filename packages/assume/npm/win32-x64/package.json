@@ -17,6 +17,9 @@
   "files": [
     "bin"
   ],
+  "bin": {
+    "gs-assume-bin": "./bin/gs-assume.exe"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": true

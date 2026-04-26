@@ -14,8 +14,53 @@ permissions:
   id-token: write   # for npm provenance
 
 jobs:
+  # Compute whether this push will actually trigger a publish. A publish
+  # happens when Changesets finds no pending changesets (meaning the
+  # Version Packages PR was just merged). On pushes that will open/update
+  # the Version PR instead, we skip the expensive Rust build matrix.
+  detect-publish:
+    name: Detect publish intent
+    runs-on: ubuntu-22.04
+    outputs:
+      will_publish: ${{ steps.check.outputs.will_publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          # Changesets publishes iff .changeset/ has no pending *.md files
+          # (other than README.md and config.json). This condition is the
+          # same one changesets/action uses internally.
+          pending=$(find .changeset -name '*.md' -not -name 'README.md' | wc -l | tr -d ' ')
+          if [ "$pending" = "0" ]; then
+            echo "will_publish=true" >> "$GITHUB_OUTPUT"
+            echo "No pending changesets → this push will publish."
+          else
+            echo "will_publish=false" >> "$GITHUB_OUTPUT"
+            echo "$pending pending changeset(s) → this push will open/update the Version PR, not publish."
+          fi
+
+  # Build Rust binaries for all 5 platforms ONLY when we're about to publish.
+  # The rust-build-matrix.yml is set up as `workflow_call` for this purpose.
+  rust-build:
+    name: Build Rust binaries (5 platforms)
+    needs: detect-publish
+    if: needs.detect-publish.outputs.will_publish == 'true'
+    uses: ./.github/workflows/rust-build-matrix.yml
+    with:
+      # Use the commit SHA as the version marker; the actual version bump
+      # lives in @glrs-dev/assume's package.json (synced to Cargo.toml by
+      # scripts/sync-version.mjs). This version string is artifact-naming only.
+      version: ${{ github.sha }}
+
   release:
     name: Changesets version PR or publish
+    needs: [detect-publish, rust-build]
+    # rust-build is skipped on non-publish pushes, so treat a skipped need
+    # as success for this job's if-condition.
+    if: |
+      always() &&
+      needs.detect-publish.result == 'success' &&
+      (needs.rust-build.result == 'success' || needs.rust-build.result == 'skipped')
     runs-on: ubuntu-22.04
     environment: npm-publish
     steps:
@@ -41,23 +86,19 @@ jobs:
         run: pnpm turbo run build
 
       - name: Download Rust release artifacts
-        # If the rust-build-matrix workflow has run for this commit, pull those
-        # artifacts into packages/assume/npm/<platform>/bin/ before publishing.
-        # On a Version Packages PR merge this is mandatory; on other pushes
-        # (no publish), it's a no-op.
+        if: needs.detect-publish.outputs.will_publish == 'true'
         uses: actions/download-artifact@v4
         with:
           path: packages/assume/.release-artifacts
           merge-multiple: true
-        continue-on-error: true
+
+      - name: Sync Cargo + npm versions
+        if: needs.detect-publish.outputs.will_publish == 'true'
+        run: pnpm --filter @glrs-dev/assume run sync:version
 
       - name: Pack platform tarballs
-        run: |
-          if [ -d "packages/assume/.release-artifacts" ] && [ -n "$(ls -A packages/assume/.release-artifacts 2>/dev/null)" ]; then
-            pnpm --filter @glrs-dev/assume run pack:platforms
-          else
-            echo "No rust artifacts found; skipping platform packaging. This is expected on non-release pushes."
-          fi
+        if: needs.detect-publish.outputs.will_publish == 'true'
+        run: pnpm --filter @glrs-dev/assume run pack:platforms
 
       - name: Create Release Pull Request or Publish
         id: changesets
