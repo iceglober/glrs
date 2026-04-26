@@ -1,20 +1,48 @@
 {
-  "name": "@glorious/agentic",
-  "version": "4.1.0",
-  "description": "Structured AI workflows for product and engineering",
+  "name": "@glrs-dev/agentic",
+  "version": "0.0.0",
+  "description": "Structured AI workflows for product and engineering — worktree management, plan state, agent skills.",
   "license": "MIT",
-  "repository": "https://github.com/iceglober/glorious",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iceglober/glrs.git",
+    "directory": "packages/agentic"
+  },
+  "homepage": "https://glrs.dev/agentic",
+  "bugs": {
+    "url": "https://github.com/iceglober/glrs/issues"
+  },
   "type": "module",
   "bin": {
     "gs-agentic": "./dist/index.js",
     "gsag": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "agentic",
+    "cli",
+    "worktree",
+    "claude",
+    "glorious",
+    "glrs"
+  ],
+  "engines": {
+    "node": ">=20.10"
   },
   "scripts": {
     "build": "bun run build.ts",
     "dev": "bun --watch run build.ts",
     "typecheck": "bun x tsc --noEmit",
     "test": "bun test src/",
-    "test:e2e": "bash e2e/run.sh"
+    "test:e2e": "bash e2e/run.sh",
+    "lint": "echo 'no linter configured yet'"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.86",

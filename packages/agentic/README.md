@@ -2,13 +2,13 @@
 
 <br/>
 
-# `glorious-agentic`
+# `@glrs-dev/agentic`
 
 **Design specs. Write code. Ship it.**<br/>
 AI workflows for product & engineering, powered by Claude Code.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
-[![GitHub Release](https://img.shields.io/github/v/release/iceglober/glorious?filter=agentic-*&style=flat-square&label=latest)](https://github.com/iceglober/glorious/releases)
+[![npm version](https://img.shields.io/npm/v/@glrs-dev/agentic?style=flat-square)](https://www.npmjs.com/package/@glrs-dev/agentic)
 
 <br/>
 
@@ -22,8 +22,16 @@ AI workflows for product & engineering, powered by Claude Code.
 > Requires Node.js 20+ and the [GitHub CLI](https://cli.github.com).
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iceglober/glorious/main/packages/agentic/install.sh | bash
+npm i -g @glrs-dev/agentic
 ```
+
+Or run ad-hoc without installing:
+
+```bash
+bunx @glrs-dev/agentic <command>
+```
+
+The package ships two equivalent bins: `gs-agentic` and `gsag` (shorter). Use either — they point at the same binary.
 
 ### Install Claude Code skills
 
