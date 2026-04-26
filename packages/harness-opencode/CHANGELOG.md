@@ -1,4 +1,68 @@
 # Changelog
+## 0.16.2
+
+### Patch Changes
+
+- [#128](https://github.com/iceglober/harness-opencode/pull/128) [`3f34e76`](https://github.com/iceglober/harness-opencode/commit/3f34e762a4fba0dbf14009445a5a478ba01888d9) Thanks [@iceglober](https://github.com/iceglober)! - Fix pilot build stalling with "0 events" at 5min.
+
+  Two independent bugs that both blocked pilot from ever running:
+
+  1. **Pilot's opencode server had no pilot-builder / pilot-planner
+     agents.** `opencode serve` (spawned by the SDK's
+     `createOpencodeServer`) does not load external plugins — only the
+     interactive `opencode` TUI does. Verified via `opencode serve
+--print-logs --log-level DEBUG`: zero `service=plugin` lines. The
+     pilot worker's `session.promptAsync({ agent: "pilot-builder" })`
+     was accepted by the server but the prompt went nowhere, because
+     no agent was registered under that name. Fix: inject the two
+     pilot agents into the spawned server's config via the SDK's
+     `createOpencodeServer({ config })` option (forwarded to the server
+     as `OPENCODE_CONFIG_CONTENT` env var).
+
+  2. **EventBus received only server-wide events (heartbeats,
+     file-watcher), never session-level events.** opencode's SSE
+     `/event` endpoint scopes session events (message.updated,
+     message.part.updated, session.idle) by subscriber directory, and
+     the match is **exact**, not prefix. The EventBus was constructed
+     once per run without a directory, so the SSE stream dropped every
+     session event the server published. Verified empirically: a 15s
+     window over a live pilot-builder session with no directory yielded
+     2 events (heartbeats); with the task's exact worktree directory,
+     27 events including session.idle. Fix: construct a new EventBus
+     per task, scoped to the task's worktree. `WorkerDeps.bus` became
+     `WorkerDeps.busFactory: (directory: string) => EventBus`.
+
+  Also:
+
+  - Default `stallMs` raised from 5min to 60min. The 5min default was
+    calibrated against a broken stream — with events actually flowing,
+    legitimate inter-event gaps during deep subagent work can exceed
+    5min. User-override still honored.
+
+  - New diagnostic: when `PILOT_EVENT_LOG` env var is set, EventBus
+    dumps every raw SSE event (with extracted sessionID, live
+    subscriber IDs, and matched-subscriber count) as JSONL to that
+    path. Zero overhead when unset.
+
+  - Regression tests: `EventBus — directory scoping` (3 tests locking
+    the subscribe-call contract) and `buildPilotServerConfig` (4 tests
+    locking the injected-agents contract).
+
+## 0.16.1
+
+### Patch Changes
+
+- [#127](https://github.com/iceglober/harness-opencode/pull/127) [`afe4f8e`](https://github.com/iceglober/harness-opencode/commit/afe4f8e8cdfc360fc8b3b169f1d385db97f84eb4) Thanks [@iceglober](https://github.com/iceglober)! - Fix PRIME dispatching to `pilot-planner` (or falling back to `general`) instead of `@plan` during normal sessions. The `@plan` agent was registered as `mode: "primary"` — which meant it wasn't visible to other agents' `task`-tool subagent picker — so when PRIME reached Phase 2 and tried to "delegate to @plan via the task tool", the only planner-shaped subagent it could see was `pilot-planner` (whose description also led with "Interactive planner…"). Switch `@plan` to `mode: "all"` — which per OpenCode's agent docs means the agent is both a primary (Tab-cycleable, top-level `@plan` invocation works) AND a subagent (visible to other agents' task-tool picker). No user-visible regression. Also rewrite `pilot-planner`'s description to remove the "Interactive planner" prefix collision. Two regression tests lock the fix.
+
+- [#125](https://github.com/iceglober/harness-opencode/pull/125) [`f4c6905`](https://github.com/iceglober/harness-opencode/commit/f4c69051e23d6519d1db1f6591cc41562d2339bf) Thanks [@iceglober](https://github.com/iceglober)! - Make `pilot build` failures diagnosable from the terminal alone: failure phase and reason now print inline beneath each `task.failed` line, the run summary includes a per-failed-task detail block with session id and preserved worktree path, and the blocked-cascade is de-noised to one summary line instead of one scary line per blocked task.
+
+  Also fixes two supporting bugs: a preserved-on-failure worktree slot no longer poisons every subsequent task in the run, and `pilot status --run <id>` / `pilot logs --run <id>` now resolve the state DB from any worktree (or any repo under the same pilot base), so you can investigate a failed run from wherever you happen to be checked out.
+
+- [#127](https://github.com/iceglober/harness-opencode/pull/127) [`afe4f8e`](https://github.com/iceglober/harness-opencode/commit/afe4f8e8cdfc360fc8b3b169f1d385db97f84eb4) Thanks [@iceglober](https://github.com/iceglober)! - PRIME now delegates Phase 3 (plan execution) to `@build` via the task tool instead of executing file edits itself. This moves the highest-volume token-consumer in the five-phase workflow off the `deep`/Opus tier and onto the `mid` tier — users can swap Sonnet for Kimi K2, GLM-4.6, Haiku, or any other cheap mid-tier model and see a significant cost reduction on substantial work.
+
+  `@build` now uses `mode: "all"` (same pattern as `@plan`): top-level `@build <plan-path>` invocation still works for users who want to execute a plan directly, AND the agent is visible to PRIME's task-tool picker for delegation. `@build`'s prompt is reshaped for the dual invocation: sections trimmed to avoid duplicating PRIME's Phase 4 QA delegation (full-suite test runs + qa-reviewer dispatch moved to PRIME), a structured "Return payload" section added for PRIME-relayed summaries, and the `question` tool is scoped to top-level invocations only (subagent-mode invocations STOP with a blocker payload that PRIME relays). Three regression tests lock the behavioral changes.
+
+
 
 ## 0.16.0
 
