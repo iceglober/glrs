@@ -20,9 +20,9 @@
     "test": "bun test",
     "typecheck": "bun run --filter='*' typecheck",
     "lint": "bun run --filter='*' lint",
-    "changeset": "bunx @changesets/cli",
-    "version-packages": "bunx @changesets/cli version && bun install",
-    "release": "bun run build && bunx @changesets/cli publish"
+    "changeset": "changeset",
+    "version-packages": "changeset version && bun install",
+    "release": "bun run build && changeset publish"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.6.0",
