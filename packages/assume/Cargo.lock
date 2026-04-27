@@ -133,50 +133,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "assume"
-version = "0.6.3"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "assert_cmd",
- "async-trait",
- "aws-config",
- "aws-sdk-sso",
- "aws-sdk-ssooidc",
- "aws-sdk-sts",
- "base64",
- "chrono",
- "clap",
- "clap_complete",
- "crossterm",
- "dirs",
- "exec",
- "http-body-util",
- "hyper 1.9.0",
- "hyper-util",
- "nix",
- "notify-rust",
- "nucleo",
- "open",
- "predicates",
- "rand 0.8.5",
- "ratatui",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-stream",
- "toml",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
-]
-
-[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1388,6 +1344,50 @@ checksum = "f0d8a4362ccb29cb0b265253fb0a2728f592895ee6854fd9bc13f2ffda266ff1"
 dependencies = [
  "opaque-debug",
  "polyval",
+]
+
+[[package]]
+name = "glrs-assume"
+version = "0.6.3"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "assert_cmd",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-sso",
+ "aws-sdk-ssooidc",
+ "aws-sdk-sts",
+ "base64",
+ "chrono",
+ "clap",
+ "clap_complete",
+ "crossterm",
+ "dirs",
+ "exec",
+ "http-body-util",
+ "hyper 1.9.0",
+ "hyper-util",
+ "nix",
+ "notify-rust",
+ "nucleo",
+ "open",
+ "predicates",
+ "rand 0.8.5",
+ "ratatui",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
 ]
 
 [[package]]

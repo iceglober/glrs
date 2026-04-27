@@ -12,6 +12,15 @@ readme = "README.md"
 keywords = ["sso", "aws", "gcp", "credentials", "assume"]
 categories = ["command-line-utilities", "authentication"]
 
+# Package/crate name (for crates.io + npm sibling) is `glrs-assume`, but
+# the library's internal name stays `assume` so the binary's `use assume::*`
+# imports continue to work without a source-wide rename. The rename from
+# `assume` → `glrs-assume` happened at the package boundary only; the
+# codebase still refers to the library as `assume` internally.
+[lib]
+name = "assume"
+path = "src/lib.rs"
+
 [[bin]]
 name = "gs-assume"
 path = "src/main.rs"

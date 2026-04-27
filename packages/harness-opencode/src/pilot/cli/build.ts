@@ -338,8 +338,17 @@ export async function executeRun(args: {
   }
   cleanup.push(() => server!.shutdown());
 
-  const bus = new EventBus(server.client);
-  cleanup.push(() => bus.close());
+  // Bus factory: each task gets its own EventBus scoped to the task's
+  // worktree directory. opencode's SSE `/event` endpoint filters
+  // session-level events by subscriber directory (exact-match), so
+  // a single bus at run start would receive only server-wide events
+  // (heartbeats, file-watcher) and never session events
+  // (message.updated, message.part.updated, session.idle). Every pilot
+  // task stalling-at-5min through v0.16.1 traces to this bug.
+  // Worker's runOneTask invokes this factory after creating the task's
+  // worktree and closes the bus at task teardown.
+  const busFactory = (directory: string) =>
+    new EventBus(server!.client, directory);
 
   // 7. Build pool + scheduler.
   const pool = new WorktreePool({
@@ -399,7 +408,7 @@ export async function executeRun(args: {
     scheduler,
     pool,
     client: server.client,
-    bus,
+    busFactory,
     branchPrefix,
     base,
     abortSignal: aborter.signal,

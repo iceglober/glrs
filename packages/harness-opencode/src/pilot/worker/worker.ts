@@ -98,7 +98,27 @@ export type WorkerDeps = {
   scheduler: Scheduler;
   pool: WorktreePool;
   client: OpencodeClient;
-  bus: EventBus;
+  /**
+   * Factory that produces a per-task EventBus scoped to the given
+   * worktree directory. The factory must scope its SSE subscription
+   * to that directory (via `new EventBus(client, directory)`) — the
+   * opencode server's `/event` endpoint filters session-level events
+   * by subscriber directory, and a bus without a directory receives
+   * only server-wide events (heartbeats, connected, file-watcher).
+   *
+   * Why a factory instead of a single shared bus: opencode's SSE
+   * directory-scope is exact-match, not prefix-match. A single bus
+   * scoped to the run's worktrees-parent directory receives ZERO
+   * events for per-task sessions whose directories are children of
+   * that parent. Each task must therefore have its own bus scoped to
+   * its own worktree.
+   *
+   * Contract: the worker creates ONE bus per task and closes it at
+   * task end (in the same `finally`-style cleanup block that disposes
+   * forensics). Callers (build.ts) wire this up as
+   * `(directory) => new EventBus(client, directory)`.
+   */
+  busFactory: (directory: string) => EventBus;
 
   /**
    * Branch prefix derived from the plan slug (e.g. `pilot/eng-1234`).
@@ -162,7 +182,15 @@ export type WorkerResult = {
 export async function runWorker(deps: WorkerDeps): Promise<WorkerResult> {
   const attempted: string[] = [];
   const maxAttempts = deps.maxAttempts ?? 3;
-  const stallMs = deps.stallMs ?? 5 * 60 * 1000;
+  // Default 60min per waitForIdle. Tasks legitimately do minutes of
+  // work between events — planning passes, tool-heavy grounding
+  // phases, plan-reviewer delegations. 5min (the pre-v0.16.2 default)
+  // was only ever long enough because the stream was broken and no
+  // events ever fired anyway; with events flowing, the wait timer
+  // measures real-world inter-event gaps, which can exceed 5min for
+  // deep subagent work. Users can still override per-run via the
+  // `stallMs` arg on `runWorker`.
+  const stallMs = deps.stallMs ?? 60 * 60 * 1000;
 
   while (true) {
     if (deps.abortSignal?.aborted) {
@@ -346,19 +374,43 @@ async function runOneTask(
     return;
   }
 
-  // 2b. Open forensics — JSONL writer + counters — before any bus
+  // 2b. Open a per-task EventBus scoped to the worktree directory.
+  //     opencode's SSE `/event` endpoint filters session-level events
+  //     by subscriber directory (exact-match). Without this scope the
+  //     bus receives only server-wide events (heartbeats, file-watcher),
+  //     never session.idle / message.updated / message.part.updated —
+  //     which is what caused pilot to "stall" for every task until
+  //     v0.16.2. One bus per task; torn down alongside forensics.
+  const bus = deps.busFactory(prepared.path);
+  // Give the SSE stream a moment to connect before the caller starts
+  // sending prompts. Without this, fast tasks can complete their
+  // first message.part.updated before our subscription handshake
+  // finishes, and we'd miss it.
+  await new Promise((r) => setTimeout(r, 200));
+  const disposeBus = async () => {
+    try {
+      await bus.close();
+    } catch {
+      // closing is best-effort; never fail a task on teardown
+    }
+  };
+
+  // 2c. Open forensics — JSONL writer + counters — before any bus
   // traffic we care about. Must be disposed before every return path
   // below; helper `finishForensics` closes over this scope.
   let forensics: Forensics | null = null;
   try {
     const jsonlPath = await getTaskJsonlPath(cwd, deps.runId, task.id);
-    forensics = openForensics({ bus: deps.bus, sessionId, jsonlPath });
+    forensics = openForensics({ bus, sessionId, jsonlPath });
   } catch {
     // Forensics failure must not fail the task — swallow.
     forensics = null;
   }
   const disposeForensics = () => {
     if (forensics) forensics.dispose();
+    // Fire-and-forget bus close — the caller doesn't need to await
+    // since the subsequent task gets its own fresh bus anyway.
+    void disposeBus();
   };
   const forensicsCounters = () =>
     forensics ? forensics.counters() : { lastEventTs: null, eventCount: 0 };
@@ -451,7 +503,7 @@ async function runOneTask(
         stopReason = `STOP: ${d.reason}`;
       },
     });
-    unsubStop = deps.bus.on(sessionId, (e) => {
+    unsubStop = bus.on(sessionId, (e: EventLike) => {
       stopDet.consume(e);
     });
 
@@ -481,7 +533,7 @@ async function runOneTask(
     }
 
     // Wait for idle (or stall / abort / session-error).
-    const idleResult = await deps.bus.waitForIdle(sessionId, {
+    const idleResult = await bus.waitForIdle(sessionId, {
       stallMs: opts.stallMs,
       abortSignal: deps.abortSignal,
     });

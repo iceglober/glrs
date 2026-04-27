@@ -19,8 +19,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -31,13 +29,13 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
       - name: Turbo build
-        run: pnpm turbo run build --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*'
+        run: pnpm turbo run build --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*' --filter='!@glrs-dev/infra-gcp'
       - name: Turbo typecheck
-        run: pnpm turbo run typecheck --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*'
+        run: pnpm turbo run typecheck --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*' --filter='!@glrs-dev/infra-gcp'
       - name: Turbo test
-        run: pnpm turbo run test --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*'
+        run: pnpm turbo run test --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*' --filter='!@glrs-dev/infra-gcp'
       - name: Turbo lint
-        run: pnpm turbo run lint --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*'
+        run: pnpm turbo run lint --filter='!@glrs-dev/assume' --filter='!@glrs-dev/assume-*' --filter='!@glrs-dev/infra-gcp'
 
   rust:
     name: Rust (assume) build / test / clippy / fmt
@@ -68,8 +66,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 20

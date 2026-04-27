@@ -74,10 +74,8 @@ fn run_picker_loop(
                 KeyCode::Up => {
                     selected_idx = selected_idx.saturating_sub(1);
                 }
-                KeyCode::Down => {
-                    if selected_idx + 1 < filtered.len() {
-                        selected_idx += 1;
-                    }
+                KeyCode::Down if selected_idx + 1 < filtered.len() => {
+                    selected_idx += 1;
                 }
                 KeyCode::Backspace => {
                     query.pop();
@@ -321,10 +319,8 @@ fn run_multi_select_loop(
                 KeyCode::Up => {
                     selected_idx = selected_idx.saturating_sub(1);
                 }
-                KeyCode::Down => {
-                    if selected_idx + 1 < filtered.len() {
-                        selected_idx += 1;
-                    }
+                KeyCode::Down if selected_idx + 1 < filtered.len() => {
+                    selected_idx += 1;
                 }
                 KeyCode::Backspace => {
                     query.pop();
