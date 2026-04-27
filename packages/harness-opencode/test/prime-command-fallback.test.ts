@@ -83,7 +83,7 @@ describe("prime slash-command fallback section", () => {
   it("section documents the cache read path", () => {
     const body = extractSection();
     expect(body).toContain(
-      "~/.cache/opencode/packages/@glrs-dev/harness-opencode",
+      "~/.cache/opencode/packages/@glrs-dev/harness-plugin-opencode",
     );
   });
 

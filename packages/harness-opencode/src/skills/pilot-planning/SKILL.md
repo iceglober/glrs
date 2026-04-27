@@ -31,9 +31,9 @@ Apply these eight rules in order. Each rule has its own file in `rules/` for the
 
 ## After applying the rules
 
-1. Save the YAML to the path returned by `bunx @glrs-dev/harness-opencode pilot plan-dir`.
-2. Run `bunx @glrs-dev/harness-opencode pilot validate <path>` and fix every error / warning.
-3. Hand off to the user with: `Plan saved to <path>. Next: bunx @glrs-dev/harness-opencode pilot build`.
+1. Save the YAML to the path returned by `bunx @glrs-dev/harness-plugin-opencode pilot plan-dir`.
+2. Run `bunx @glrs-dev/harness-plugin-opencode pilot validate <path>` and fix every error / warning.
+3. Hand off to the user with: `Plan saved to <path>. Next: bunx @glrs-dev/harness-plugin-opencode pilot build`.
 
 Do NOT summarize the plan in chat. The user can read the YAML.
 

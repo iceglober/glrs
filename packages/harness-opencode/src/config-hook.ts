@@ -11,7 +11,7 @@
  *     TypeError: undefined is not an object (evaluating 'V[G]')
  *
  * inside its minified bundle whenever `src/index.ts` (the module
- * registered via `opencode.json → plugin: ["@glrs-dev/harness-opencode"]`)
+ * registered via `opencode.json → plugin: ["@glrs-dev/harness-plugin-opencode"]`)
  * exposed ANY named export in addition to the `default` plugin factory.
  * The loader appears to probe named exports looking for `PluginModule`-
  * shaped re-exports (`{ id?, server, tui? }`) and fails hard when it
@@ -95,7 +95,7 @@ export function writePermDebugSnapshot(config: Config): void {
  * Resolve `models` tier/per-agent overrides onto an agent map.
  *
  * Model config is read from plugin options (the second element of the
- * `["@glrs-dev/harness-opencode", { models: {...} }]` tuple in
+ * `["@glrs-dev/harness-plugin-opencode", { models: {...} }]` tuple in
  * opencode.json). Falls back to the legacy `config.harness.models`
  * top-level key for backward compatibility (that key is now rejected
  * by OpenCode's schema, but a user on an older OpenCode version may

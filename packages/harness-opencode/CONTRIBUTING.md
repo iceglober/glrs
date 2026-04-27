@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing to `@glrs-dev/harness-opencode`. This repo is an npm-published OpenCode plugin; every change you merge flows to every user on their next `bun update`. Be deliberate.
+Thanks for contributing to `@glrs-dev/harness-plugin-opencode`. This repo is an npm-published OpenCode plugin; every change you merge flows to every user on their next `bun update`. Be deliberate.
 
 For repo architecture, invariants, and rules about adding agents/skills/commands, read [`AGENTS.md`](./AGENTS.md) first — it's the source of truth for what this package is and how it's wired.
 
@@ -83,7 +83,7 @@ Branch protection on `main` is the gate — only maintainers can merge the Versi
 
 ## Tag format
 
-Changesets creates tags in the form `@glrs-dev/harness-opencode@<version>` (e.g. `@glrs-dev/harness-opencode@0.1.3`).
+Changesets creates tags in the form `@glrs-dev/harness-plugin-opencode@<version>` (e.g. `@glrs-dev/harness-plugin-opencode@0.1.3`).
 
 Legacy tags `v0.1.1` and `v0.1.2` stay as historical references; we don't migrate them.
 

@@ -1,8 +1,8 @@
 /**
- * Self-update for @glrs-dev/harness-opencode.
+ * Self-update for @glrs-dev/harness-plugin-opencode.
  *
  * Context: OpenCode caches plugin packages at
- * `~/.cache/opencode/packages/@glrs-dev/harness-opencode@latest/` with an
+ * `~/.cache/opencode/packages/@glrs-dev/harness-plugin-opencode@latest/` with an
  * exact version pin written into that dir's `package.json` and
  * `package-lock.json`. Once pinned, `bun update` from within that dir is a
  * no-op — the user never auto-receives new plugin releases. They'd have to
@@ -43,7 +43,7 @@ import * as os from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 
-export const PACKAGE_NAME = "@glrs-dev/harness-opencode";
+export const PACKAGE_NAME = "@glrs-dev/harness-plugin-opencode";
 
 export function getOpenCodeCachePackageDir(): string {
   const cacheHome =

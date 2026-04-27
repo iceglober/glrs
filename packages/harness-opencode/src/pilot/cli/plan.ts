@@ -139,7 +139,7 @@ export async function runPlan(opts: {
   }
   process.stdout.write(
     `Plan ready at ${newest.path}\n` +
-      `Build with: bunx @glrs-dev/harness-opencode pilot build\n`,
+      `Build with: bunx @glrs-dev/harness-plugin-opencode pilot build\n`,
   );
   return 0;
 }

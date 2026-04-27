@@ -31,7 +31,7 @@
  *
  * Configuration (via plugin options in opencode.json):
  *
- *   "plugin": [["@glrs-dev/harness-opencode", {
+ *   "plugin": [["@glrs-dev/harness-plugin-opencode", {
  *     "toolHooks": {
  *       backpressure: {
  *         enabled: true,        // default

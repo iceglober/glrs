@@ -5,7 +5,7 @@
  * Behavior:
  *   - Checks `registry.npmjs.org` at most once per 24h (rate-limited
  *     via a timestamp file at `~/.cache/harness-opencode/cli-update.json`).
- *   - Minor/patch: spawns `bun update -g @glrs-dev/harness-opencode`
+ *   - Minor/patch: spawns `bun update -g @glrs-dev/harness-plugin-opencode`
  *     as a detached background process. Current invocation uses the old
  *     version; next invocation gets the new one.
  *   - Major: prints a notice to stderr. No auto-apply.
@@ -22,7 +22,7 @@ import * as os from "node:os";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const PACKAGE_NAME = "@glrs-dev/harness-opencode";
+const PACKAGE_NAME = "@glrs-dev/harness-plugin-opencode";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
 
 // --- ANSI helpers ----------------------------------------------------------

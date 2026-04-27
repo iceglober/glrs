@@ -313,7 +313,7 @@ describe("Phase J — manual E2E checklist (OPENCODE_E2E=1)", () => {
     //
     //   1. Hand-written a `pilot.yaml` with two trivial tasks
     //      (touch + echo, easy verify).
-    //   2. Run `bunx @glrs-dev/harness-opencode pilot validate <path>`
+    //   2. Run `bunx @glrs-dev/harness-plugin-opencode pilot validate <path>`
     //      and seen exit 0.
     //   3. Run `pilot build` and watched both tasks commit on
     //      per-task branches.

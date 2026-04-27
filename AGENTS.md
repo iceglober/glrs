@@ -7,7 +7,7 @@ You are working in the unified `@glrs-dev` ecosystem monorepo. Three published p
 ```
 glrs/
 ├── packages/
-│   ├── harness-opencode/    # @glrs-dev/harness-opencode — OpenCode agent harness
+│   ├── harness-opencode/    # @glrs-dev/harness-plugin-opencode — OpenCode agent harness
 │   ├── cli/                 # @glrs-dev/cli — `glrs` dispatcher + worktree management
 │   └── assume/              # @glrs-dev/assume — Rust-based SSO tool (gs-assume, gsa)
 │       ├── src/             # Rust sources

@@ -1,4 +1,4 @@
-# @glrs-dev/harness-opencode
+# @glrs-dev/harness-plugin-opencode
 
 Opinionated agent harness for [OpenCode](https://opencode.ai). Agents, tools, slash commands, and an unattended pilot mode — one package.
 
@@ -7,7 +7,7 @@ Opinionated agent harness for [OpenCode](https://opencode.ai). Agents, tools, sl
 ### CLI (recommended)
 
 ```bash
-bun add -g @glrs-dev/harness-opencode
+bun add -g @glrs-dev/harness-plugin-opencode
 glrs-oc install-plugin
 opencode
 ```
@@ -17,7 +17,7 @@ Gives you the full CLI (`glrs-oc`) plus all [plugin features](#what-the-plugin-p
 ### Plugin only
 
 ```bash
-bunx @glrs-dev/harness-opencode install
+bunx @glrs-dev/harness-plugin-opencode install
 opencode
 ```
 
@@ -263,17 +263,17 @@ Your opencode.json values win. Example:
 
 **Update:**
 ```bash
-bun update -g @glrs-dev/harness-opencode
+bun update -g @glrs-dev/harness-plugin-opencode
 ```
 
 **Pin version:** `glrs-oc install-plugin --pin`
 
-**Rollback:** `npm deprecate @glrs-dev/harness-opencode@<broken> "<reason>"` — then ship a patch.
+**Rollback:** `npm deprecate @glrs-dev/harness-plugin-opencode@<broken> "<reason>"` — then ship a patch.
 
 **Uninstall:**
 ```bash
 glrs-oc uninstall                           # remove from opencode.json
-bun remove -g @glrs-dev/harness-opencode    # remove CLI
+bun remove -g @glrs-dev/harness-plugin-opencode    # remove CLI
 ```
 
 ## Prerequisites
@@ -315,7 +315,7 @@ A future release may sandbox the bash surface (filesystem allow-list, egress fil
 
 ### What this plugin does NOT do
 
-- It does NOT ship any postinstall scripts. `bun add @glrs-dev/harness-opencode` mutates only `node_modules/`. All filesystem changes to your config happen in the explicit `glrs-oc install` / `bunx @glrs-dev/harness-opencode install` step.
+- It does NOT ship any postinstall scripts. `bun add @glrs-dev/harness-plugin-opencode` mutates only `node_modules/`. All filesystem changes to your config happen in the explicit `glrs-oc install` / `bunx @glrs-dev/harness-plugin-opencode install` step.
 - It does NOT write to `~/.config/opencode/agents/`, `~/.config/opencode/commands/`, `~/.config/opencode/skills/`, or `~/.config/opencode/tools/`. Agents, commands, and skills live in `node_modules` (read-only by design). The only config write is `~/.config/opencode/opencode.json` during `install`.
 - It does NOT exfiltrate code, prompts, file paths, error messages, usernames, project names, or git remotes via telemetry. See the allow-list in `src/telemetry.ts`.
 
@@ -325,7 +325,7 @@ A future release may sandbox the bash surface (filesystem allow-list, egress fil
 
 **Catwalk model catalog.** During interactive `install` only, fetches the provider list from `catwalk.charm.land/v2/providers`. The response is schema-validated (see `src/cli/catwalk.ts`) before any value reaches your `opencode.json`. If validation fails, the installer falls back to built-in presets.
 
-**Telemetry.** `@glrs-dev/harness-opencode` collects anonymous usage data via [Aptabase](https://aptabase.com) to help improve reliability. The data is opt-out, contains no personal information, and has no stable user identifier — Aptabase tracks anonymous sessions only.
+**Telemetry.** `@glrs-dev/harness-plugin-opencode` collects anonymous usage data via [Aptabase](https://aptabase.com) to help improve reliability. The data is opt-out, contains no personal information, and has no stable user identifier — Aptabase tracks anonymous sessions only.
 
 **What gets sent:** package version, OS, Node version, which tools were invoked (hashline, serena, memory, custom tools), tool durations, file extensions of edited files (e.g. `.ts`), edit success/failure outcomes, and hashline mismatch rates.
 

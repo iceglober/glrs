@@ -163,7 +163,7 @@ export function validateModelOverride(id: unknown): ValidateModelResult {
   if (CATWALK_PROVIDER_PATTERN.test(id)) {
     const suggestion =
       LEGACY_TO_MODELS_DEV[id] ??
-      "run `bunx @glrs-dev/harness-opencode install` to pick a current preset";
+      "run `bunx @glrs-dev/harness-plugin-opencode install` to pick a current preset";
 
     // Distinguish pre-#100 short form (no subpath) from the longer forms
     // — the reason text guides the user to the correct mental model.
@@ -189,5 +189,5 @@ export function formatModelOverrideWarning(
   const suggestionText = suggestion
     ? ` Suggested replacement: \`${suggestion}\`.`
     : "";
-  return `[@glrs-dev/harness-opencode] Warning: invalid model override "${id}" (from ${source}).${suggestionText} Run \`bunx @glrs-dev/harness-opencode doctor\` for details.`;
+  return `[@glrs-dev/harness-plugin-opencode] Warning: invalid model override "${id}" (from ${source}).${suggestionText} Run \`bunx @glrs-dev/harness-plugin-opencode doctor\` for details.`;
 }

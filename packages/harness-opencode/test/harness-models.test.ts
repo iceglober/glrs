@@ -295,7 +295,7 @@ describe("resolveHarnessModels — legacy-ID warning", () => {
     expect(warnings[0]).toContain(
       "amazon-bedrock/global.anthropic.claude-opus-4-7",
     );
-    expect(warnings[0]).toContain("bunx @glrs-dev/harness-opencode doctor");
+    expect(warnings[0]).toContain("bunx @glrs-dev/harness-plugin-opencode doctor");
 
     // All deep-tier agents still got the bad value written (user intent
     // preserved; warn is advisory).

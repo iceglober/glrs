@@ -23,7 +23,7 @@ A good pilot plan has these properties:
 
 - The **`pilot-planning` skill** (auto-invoked) carries the full methodology: first-principles questions to ask, decomposition rules, verify-design heuristics, scope-tightness checks, DAG-shape patterns, milestone/self-review checklists. **Read the skill** before you start asking the user questions.
 - The harness's existing read-only tools (Serena, ast_grep, todo_scan, comment_check, git read commands, linear, webfetch) are available for codebase research.
-- The **`bunx @glrs-dev/harness-opencode pilot validate <plan>`** subcommand validates a draft plan: schema, DAG, glob conflicts. Run it before declaring "done" — fix every error it reports.
+- The **`bunx @glrs-dev/harness-plugin-opencode pilot validate <plan>`** subcommand validates a draft plan: schema, DAG, glob conflicts. Run it before declaring "done" — fix every error it reports.
 
 # What you cannot do
 
@@ -63,7 +63,7 @@ The `pilot-planning` skill carries the eight rules. Apply them:
 
 ## 4. Write the YAML
 
-Save the plan to the path returned by `bunx @glrs-dev/harness-opencode pilot plan-dir` (yes, this is a different subcommand than the markdown-plan dir). The slug is derived deterministically from the user's input (Linear ID → lowercased, free-form → kebab-case).
+Save the plan to the path returned by `bunx @glrs-dev/harness-plugin-opencode pilot plan-dir` (yes, this is a different subcommand than the markdown-plan dir). The slug is derived deterministically from the user's input (Linear ID → lowercased, free-form → kebab-case).
 
 Required schema (see `src/pilot/plan/schema.ts` for the canonical Zod definition):
 
@@ -109,7 +109,7 @@ tasks:
 Run:
 
 ```
-bunx @glrs-dev/harness-opencode pilot validate <plan-path>
+bunx @glrs-dev/harness-plugin-opencode pilot validate <plan-path>
 ```
 
 Fix every error it reports. If it reports glob-conflict warnings, decide: should those tasks be merged, sequenced (add `depends_on`), or accepted as-is (touch sets that overlap but that the user is OK with running serially)?
@@ -120,7 +120,7 @@ Print to the user:
 
 ```
 Plan saved to <path>. Next:
-  bunx @glrs-dev/harness-opencode pilot build
+  bunx @glrs-dev/harness-plugin-opencode pilot build
 ```
 
 Don't elaborate. Don't summarize the plan in chat. The user can read it.

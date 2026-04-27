@@ -32,7 +32,7 @@ import {
 } from "../auto-update.js";
 import { fetchModelsDevProviders, suggestTiersFromModelsDev, pickBedrockTierIds, type ModelsDevProvider } from "./models-dev.js";
 
-const PLUGIN_NAME = "@glrs-dev/harness-opencode";
+const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
 
 // --- ANSI helpers ----------------------------------------------------------
 
@@ -109,7 +109,7 @@ const MCP_TOGGLES: McpToggle[] = [
 
 /**
  * Extract plugin options from the tuple form in the plugin array.
- * Supports: `["@glrs-dev/harness-opencode", { ... }]`
+ * Supports: `["@glrs-dev/harness-plugin-opencode", { ... }]`
  * Returns the options object, or null if not found/not tuple form.
  */
 function extractPluginOptions(
@@ -165,7 +165,7 @@ function getOpencodeConfigPath(): string {
 /**
  * Refresh the OpenCode plugin cache if it exists and is stale.
  *
- * The cache at ~/.cache/opencode/packages/@glrs-dev/harness-opencode@latest/
+ * The cache at ~/.cache/opencode/packages/@glrs-dev/harness-plugin-opencode@latest/
  * can get stuck with an exact pin to an old version and no node_modules/.
  * When that happens, the plugin never loads (no code to run), and the
  * in-plugin auto-update never fires. This function breaks the deadlock
@@ -208,7 +208,7 @@ function readExistingConfig(configPath: string): Record<string, any> | null {
  * Returns a human-readable label.
  */
 function detectModelProvider(existing: Record<string, any> | null): string | null {
-  // Check tuple form first: ["@glrs-dev/harness-opencode", { models: {...} }]
+  // Check tuple form first: ["@glrs-dev/harness-plugin-opencode", { models: {...} }]
   const opts = extractPluginOptions(existing);
   const models = opts?.models ?? existing?.harness?.models;
   if (!models) return null;
@@ -319,7 +319,7 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
   const existingOpts = extractPluginOptions(existing);
   let hasModels = !!(existingOpts?.models ?? existing?.harness?.models);
 
-  console.log(`\n${c.bold}${c.blue}@glrs-dev/harness-opencode${c.reset} setup\n`);
+  console.log(`\n${c.bold}${c.blue}@glrs-dev/harness-plugin-opencode${c.reset} setup\n`);
 
   // Show current state
   if (hasPlugin) {
@@ -360,7 +360,7 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
 
   // Build the config to merge — always include the plugin entry.
   // Plugin options (models, etc.) go into the tuple form:
-  //   plugin: [["@glrs-dev/harness-opencode", { models: {...} }]]
+  //   plugin: [["@glrs-dev/harness-plugin-opencode", { models: {...} }]]
   const pluginOpts: Record<string, unknown> = {};
 
   // Model provider — only prompt if not already configured.
@@ -563,7 +563,7 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
   // Migrate legacy `harness` top-level key → plugin options tuple.
   // OpenCode's config schema rejects unrecognized top-level keys, so
   // the old `harness` key must be removed. We move its contents into
-  // the plugin tuple: ["@glrs-dev/harness-opencode", { models: {...} }].
+  // the plugin tuple: ["@glrs-dev/harness-plugin-opencode", { models: {...} }].
   if (!dryRun) {
     migrateHarnessKeyToPluginOptions(configPath);
   }

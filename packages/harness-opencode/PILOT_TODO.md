@@ -1,6 +1,6 @@
 # Pilot v0.1+v0.2 — Implementation Todo
 
-End-to-end checklist for the `pilot` subsystem in `@glrs-dev/harness-opencode`.
+End-to-end checklist for the `pilot` subsystem in `@glrs-dev/harness-plugin-opencode`.
 Every box must be checked before declaring v0.1+v0.2 done.
 
 **Combined release scope:** planner agent + planning skill + builder agent +
@@ -218,7 +218,7 @@ dependent phases consume. Each spike is timeboxed.
 - [x] Create `src/agents/prompts/pilot-planner.md` (frontmatter: `mode: primary`, `model: anthropic/claude-opus-4-7`, `temperature: 0.3`).
 - [x] Body: workflow (understand → research → apply skill → write YAML → validate → hand off), schema reference, common-mistake list, "when to refuse".
 - [x] Add `pilotPlannerPrompt = readPrompt("pilot-planner.md")` in `src/agents/index.ts`.
-- [x] Add `PILOT_PLANNER_PERMISSIONS`: `bash: { "*": "deny", + enumerated read-only inspection allows + `bunx @glrs-dev/harness-opencode pilot validate*` + `pilot plan-dir*` + harness `plan-dir*` }`. `edit: allow` (constrained at runtime by pilot-plugin in Phase H1). `webfetch: deny` by default; planner uses `linear` MCP. `question: allow` (interactive planning). `tsc_check`, `eslint_check`, `playwright`, `memory` denied.
+- [x] Add `PILOT_PLANNER_PERMISSIONS`: `bash: { "*": "deny", + enumerated read-only inspection allows + `bunx @glrs-dev/harness-plugin-opencode pilot validate*` + `pilot plan-dir*` + harness `plan-dir*` }`. `edit: allow` (constrained at runtime by pilot-plugin in Phase H1). `webfetch: deny` by default; planner uses `linear` MCP. `question: allow` (interactive planning). `tsc_check`, `eslint_check`, `playwright`, `memory` denied.
 - [x] Add to `createAgents()` with explicit `mode/model/temperature` overrides.
 - [x] Add `"pilot-planner": "deep"` to `AGENT_TIERS`.
 - [x] Extend `test/agents.test.ts` with pilot-planner shape + deny-list assertions; updated `test/harness-models.test.ts` deep/mid groupings to include the new agents.
@@ -249,7 +249,7 @@ dependent phases consume. Each spike is timeboxed.
 
 - [x] Create `src/pilot/cli/index.ts` exporting `pilotSubcommand` (a `subcommands(...)` value) wired into `src/cli.ts` under the `pilot` key. Each verb's command lives in its own file.
 - [x] cmd-ts auto-generates `--help` for both the top-level and the pilot subtree; no manual HELP text maintenance.
-- [x] **Verify:** `bunx @glrs-dev/harness-opencode pilot --help` lists all 10 verbs (validate, plan, build, status, resume, retry, logs, worktrees, cost, plan-dir).
+- [x] **Verify:** `bunx @glrs-dev/harness-plugin-opencode pilot --help` lists all 10 verbs (validate, plan, build, status, resume, retry, logs, worktrees, cost, plan-dir).
 
 ### G2. `pilot validate`
 
@@ -263,7 +263,7 @@ dependent phases consume. Each spike is timeboxed.
 ### G3. `pilot plan`
 
 - [x] Create `src/pilot/cli/plan.ts`. Spawns `opencode --agent pilot-planner --prompt "<initial>"` per spike S1. `--opencode-bin` flag overrides PATH lookup (used by tests).
-- [x] On exit, scans plans dir for new YAML files (or YAMLs whose mtime moved forward); prints `Plan ready at <path>` and `Build with: bunx @glrs-dev/harness-opencode pilot build`.
+- [x] On exit, scans plans dir for new YAML files (or YAMLs whose mtime moved forward); prints `Plan ready at <path>` and `Build with: bunx @glrs-dev/harness-plugin-opencode pilot build`.
 - [x] Test file `test/pilot-cli-plan.test.ts` (5 tests) using shell shims for happy/fail/no-op opencode behavior.
 - [x] **Verify:** 5 tests pass.
 
@@ -341,7 +341,7 @@ dependent phases consume. Each spike is timeboxed.
 ### I4. Changeset + release prep
 
 - [x] Created `.changeset/pilot-subsystem-v0-1.md` with `minor` bump, full description of the pilot subsystem (CLI surface, agents, skill, plugin, persistent state, doctor extensions, deferred limitations).
-- [x] `bunx changeset status` lists `@glrs-dev/harness-opencode` as a minor bump.
+- [x] `bunx changeset status` lists `@glrs-dev/harness-plugin-opencode` as a minor bump.
 - [x] **Verify:** changeset file committed under `.changeset/`.
 
 ---

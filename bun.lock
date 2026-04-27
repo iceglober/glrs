@@ -56,7 +56,7 @@
     },
     "packages/cli": {
       "name": "@glrs-dev/cli",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "bin": {
         "glrs": "./dist/cli.js",
       },
@@ -71,7 +71,7 @@
         "zod": "4.1.8",
       },
       "devDependencies": {
-        "@glrs-dev/harness-opencode": "workspace:*",
+        "@glrs-dev/harness-plugin-opencode": "workspace:*",
         "@types/bun": "latest",
         "@types/node": "^22",
         "tsup": "^8",
@@ -79,8 +79,8 @@
       },
     },
     "packages/harness-opencode": {
-      "name": "@glrs-dev/harness-opencode",
-      "version": "1.0.0",
+      "name": "@glrs-dev/harness-plugin-opencode",
+      "version": "0.1.0",
       "bin": {
         "glrs-oc": "dist/cli.js",
         "harness-opencode": "dist/cli.js",
@@ -274,7 +274,7 @@
 
     "@glrs-dev/docs": ["@glrs-dev/docs@workspace:docs"],
 
-    "@glrs-dev/harness-opencode": ["@glrs-dev/harness-opencode@workspace:packages/harness-opencode"],
+    "@glrs-dev/harness-plugin-opencode": ["@glrs-dev/harness-plugin-opencode@workspace:packages/harness-opencode"],
 
     "@glrs-dev/infra-gcp": ["@glrs-dev/infra-gcp@workspace:infra/gcp"],
 

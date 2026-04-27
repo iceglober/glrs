@@ -1,7 +1,6 @@
 {
-  "name": "@glrs-dev/harness-opencode",
-  "version": "1.0.0",
-  "private": true,
+  "name": "@glrs-dev/harness-plugin-opencode",
+  "version": "0.1.0",
   "description": "Opinionated OpenCode agent harness — PRIME, plan, build, QA, skills, MCP wiring, hashline editing.",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,6 +15,10 @@
     "CHANGELOG.md",
     "SECURITY.md"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",

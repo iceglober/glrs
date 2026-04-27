@@ -128,7 +128,7 @@ export function kickoffPrompt(
     `# Pilot task: ${task.id} — ${task.title}`,
     ``,
     `You are running unattended as the **pilot-builder** agent under the pilot subsystem ` +
-      `of \`@glrs-dev/harness-opencode\`. This is task **${task.id}** of the plan **"${ctx.planName}"**` +
+      `of \`@glrs-dev/harness-plugin-opencode\`. This is task **${task.id}** of the plan **"${ctx.planName}"**` +
       (ctx.milestone ? ` (milestone: **${ctx.milestone}**)` : "") +
       `.`,
     ``,

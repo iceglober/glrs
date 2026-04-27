@@ -242,13 +242,13 @@ describe("pilot agents", () => {
     >;
     const bash = perm.bash as Record<string, string>;
     expect(bash["*"]).toBe("deny");
-    expect(bash["bunx @glrs-dev/harness-opencode pilot validate"]).toBe(
+    expect(bash["bunx @glrs-dev/harness-plugin-opencode pilot validate"]).toBe(
       "allow",
     );
-    expect(bash["bunx @glrs-dev/harness-opencode pilot validate *"]).toBe(
+    expect(bash["bunx @glrs-dev/harness-plugin-opencode pilot validate *"]).toBe(
       "allow",
     );
-    expect(bash["bunx @glrs-dev/harness-opencode pilot plan-dir"]).toBe(
+    expect(bash["bunx @glrs-dev/harness-plugin-opencode pilot plan-dir"]).toBe(
       "allow",
     );
   });
@@ -400,7 +400,7 @@ describe("subagent permissions", () => {
     "rg foo src",
     "find src -name '*.ts'",
     "wc -l foo.ts",
-    "bunx @glrs-dev/harness-opencode plan-dir",
+    "bunx @glrs-dev/harness-plugin-opencode plan-dir",
     "bun test test/agents.test.ts",
     "pnpm --filter @kn/core test",
     "pnpm test foo.test.ts",
@@ -676,8 +676,8 @@ describe("subagent permissions", () => {
     const bash = (agents["plan"] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash["*"]).toBe("deny");
-    expect(bash["bunx @glrs-dev/harness-opencode plan-dir"]).toBe("allow");
-    expect(bash["bunx @glrs-dev/harness-opencode plan-dir *"]).toBe("allow");
+    expect(bash["bunx @glrs-dev/harness-plugin-opencode plan-dir"]).toBe("allow");
+    expect(bash["bunx @glrs-dev/harness-plugin-opencode plan-dir *"]).toBe("allow");
   });
 
   it("plan agent description references the repo-shared plan directory (not .agent/plans)", () => {
@@ -840,7 +840,7 @@ describe("prompt content assertions", () => {
     // these references must appear so the agent actually invokes the
     // resolver rather than writing to a hardcoded path.
     const hasResolver =
-      planPrompt.includes("bunx @glrs-dev/harness-opencode plan-dir") ||
+      planPrompt.includes("bunx @glrs-dev/harness-plugin-opencode plan-dir") ||
       planPrompt.includes("GLORIOUS_PLAN_DIR");
     expect(hasResolver).toBe(true);
   });
@@ -848,7 +848,7 @@ describe("prompt content assertions", () => {
   it("prime Phase 0 probe references new plan dir (or a shell snippet that resolves it)", () => {
     // Phase 0 bootstrap should probe for plans using the resolver, not
     // the legacy `ls .agent/plans/`.
-    expect(prime).toContain("bunx @glrs-dev/harness-opencode plan-dir");
+    expect(prime).toContain("bunx @glrs-dev/harness-plugin-opencode plan-dir");
     // Legacy probe must be gone.
     expect(prime).not.toContain("ls .agent/plans/");
   });

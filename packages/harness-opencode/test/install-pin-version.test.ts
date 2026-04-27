@@ -61,6 +61,6 @@ describe("install --pin version sync", () => {
     }
 
     const joined = logs.join("\n");
-    expect(joined).toContain(`@glrs-dev/harness-opencode@${expectedVersion}`);
+    expect(joined).toContain(`@glrs-dev/harness-plugin-opencode@${expectedVersion}`);
   });
 });

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * @glrs-dev/harness-opencode CLI entry point.
+ * @glrs-dev/harness-plugin-opencode CLI entry point.
  *
  * Built on `cmd-ts` for declarative argument parsing, type-safe option
  * shapes, and consistent --help output across every subcommand. Each
@@ -78,7 +78,7 @@ const VERSION = "0.1.0";
 const installCmd = command({
   name: "install",
   description:
-    'Add "@glrs-dev/harness-opencode" to your opencode.json plugin array.',
+    'Add "@glrs-dev/harness-plugin-opencode" to your opencode.json plugin array.',
   args: {
     dryRun: flag({
       long: "dry-run",
@@ -97,7 +97,7 @@ const installCmd = command({
 const uninstallCmd = command({
   name: "uninstall",
   description:
-    'Remove "@glrs-dev/harness-opencode" from your opencode.json plugin array.',
+    'Remove "@glrs-dev/harness-plugin-opencode" from your opencode.json plugin array.',
   args: {
     dryRun: flag({
       long: "dry-run",
@@ -193,7 +193,7 @@ const planDirCmd = command({
 const installPluginCmd = command({
   name: "install-plugin",
   description:
-    'Add "@glrs-dev/harness-opencode" to your opencode.json plugin array.',
+    'Add "@glrs-dev/harness-plugin-opencode" to your opencode.json plugin array.',
   args: {
     dryRun: flag({
       long: "dry-run",
