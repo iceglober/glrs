@@ -39,7 +39,7 @@
   "scripts": {
     "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean --target node20",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'no tests yet'",
+    "test": "bun test src/",
     "lint": "echo 'no linter configured yet'"
   },
   "dependencies": {

@@ -716,6 +716,7 @@ fn try_credential_fetch(url: &str, auth: &str) -> EndpointStatus {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 

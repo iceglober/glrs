@@ -7,6 +7,7 @@ const run = (...args: string[]) =>
   execaSync("node", [CLI, "state", "task", ...args], {
     reject: false,
     stderr: "pipe",
+    env: { ...process.env, GLRS_CLI_DISPATCHED: "1" },
   });
 
 describe("state task CLI", () => {

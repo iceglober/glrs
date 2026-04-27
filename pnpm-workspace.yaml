@@ -3,3 +3,4 @@ packages:
   - "packages/assume/npm/*"
   - "docs"
   - "infra/gcp"
+  - "tests/*"

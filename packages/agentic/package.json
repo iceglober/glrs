@@ -1,6 +1,7 @@
 {
   "name": "@glrs-dev/agentic",
   "version": "0.0.0",
+  "private": true,
   "description": "Structured AI workflows for product and engineering — worktree management, plan state, agent skills.",
   "license": "MIT",
   "repository": {
@@ -21,10 +22,6 @@
     "dist",
     "CHANGELOG.md"
   ],
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
-  },
   "keywords": [
     "agentic",
     "cli",

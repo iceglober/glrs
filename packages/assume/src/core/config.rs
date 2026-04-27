@@ -298,7 +298,7 @@ region = "us-west-2"
     #[test]
     fn test_merge_team_config() {
         let mut user = Config::default();
-        let mut user_aws = ProviderConfig {
+        let user_aws = ProviderConfig {
             enabled: true,
             profiles: vec![ProfileConfig {
                 alias: Some("dev/deploy".into()),

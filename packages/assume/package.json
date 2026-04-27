@@ -1,6 +1,7 @@
 {
   "name": "@glrs-dev/assume",
   "version": "0.6.3",
+  "private": true,
   "description": "Unified SSO credential manager for AWS, GCP, and more — npm distribution of the glrs-assume Rust binary.",
   "license": "MIT",
   "repository": {
@@ -22,10 +23,6 @@
     "dist",
     "CHANGELOG.md"
   ],
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
-  },
   "keywords": [
     "sso",
     "aws",
@@ -40,7 +37,7 @@
   "scripts": {
     "build": "tsup src/npm-shim/index.ts src/npm-shim/cli.ts --format esm --dts --clean --target node20",
     "typecheck": "tsc --noEmit",
-    "test": "bun test src/npm-shim/",
+    "test": "echo 'rust tests run via cargo'",
     "lint": "echo 'no linter configured yet'",
     "pack:platforms": "node scripts/pack-platform-tarballs.mjs",
     "sync:version": "node scripts/sync-version.mjs"

@@ -90,6 +90,28 @@ fn build_registry(cfg: &config::Config) -> anyhow::Result<PluginRegistry> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Standalone-invocation redirect guard — runs before everything else.
+    // Set GLRS_CLI_DISPATCHED=1 to suppress (done by @glrs-dev/cli's dispatcher).
+    if std::env::var("GLRS_CLI_DISPATCHED")
+        .map(|v| v.is_empty())
+        .unwrap_or(true)
+    {
+        let invoke = std::env::args()
+            .next()
+            .and_then(|a| {
+                std::path::Path::new(&a)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| "gs-assume".to_string());
+        eprintln!("[{invoke}] This binary is deprecated when invoked standalone.");
+        eprintln!("[{invoke}] Install @glrs-dev/cli and use 'glrs assume' instead:");
+        eprintln!("[{invoke}]   npm i -g @glrs-dev/cli");
+        eprintln!("[{invoke}]   glrs assume <args>");
+        eprintln!("[{invoke}] Docs: https://glrs.dev/install");
+        std::process::exit(1);
+    }
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())

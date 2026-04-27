@@ -69,6 +69,7 @@ function run(env: Env, flags: string = ""): string {
     env: {
       ...process.env,
       HOME: env.homeDir,
+      GLRS_CLI_DISPATCHED: "1",
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -318,7 +319,7 @@ describe("e2e: gsag skills", () => {
     const out = execSync(`echo "" | node ${CLI} skills`, {
       cwd: env.projectDir,
       encoding: "utf-8",
-      env: { ...process.env, HOME: env.homeDir },
+      env: { ...process.env, HOME: env.homeDir, GLRS_CLI_DISPATCHED: "1" },
       stdio: ["pipe", "pipe", "pipe"],
     });
     expect(out).toContain("created");
@@ -377,7 +378,7 @@ function runCapture(env: Env, args: string): { stdout: string; stderr: string } 
   const result = spawnSync("node", [CLI, ...args.split(/\s+/)], {
     cwd: env.projectDir,
     encoding: "utf-8",
-    env: { ...process.env, HOME: env.homeDir },
+    env: { ...process.env, HOME: env.homeDir, GLRS_CLI_DISPATCHED: "1" },
   });
   return { stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }

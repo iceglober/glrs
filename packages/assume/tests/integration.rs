@@ -4,8 +4,13 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
+/// Build a Command for gs-assume with GLRS_CLI_DISPATCHED=1 pre-set.
+/// All pre-existing tests use this helper so they continue to work after
+/// the standalone-redirect guard was added to main().
 fn gs_assume() -> Command {
-    Command::cargo_bin("gs-assume").unwrap()
+    let mut cmd = Command::cargo_bin("gs-assume").unwrap();
+    cmd.env("GLRS_CLI_DISPATCHED", "1");
+    cmd
 }
 
 #[test]
@@ -237,4 +242,51 @@ fn test_use_outputs_credential_uri_with_context_id() {
         !stdout.contains("export "),
         "failed `use` must not output export lines, got: {stdout}"
     );
+}
+
+// ── Standalone-redirect guard tests ──────────────────────────────────────────
+
+/// gs-assume exits 1 with a redirect notice when GLRS_CLI_DISPATCHED is unset.
+#[test]
+fn test_redirect_when_not_dispatched() {
+    Command::cargo_bin("gs-assume")
+        .unwrap()
+        .env_remove("GLRS_CLI_DISPATCHED")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "This binary is deprecated when invoked standalone.",
+        ))
+        .stderr(predicate::str::contains("@glrs-dev/cli"))
+        .stderr(predicate::str::contains("glrs.dev/install"));
+}
+
+/// gsa exits 1 with a redirect notice when GLRS_CLI_DISPATCHED is unset.
+/// gsa is a separate [[bin]] in Cargo.toml pointing to the same src/main.rs.
+#[test]
+fn test_gsa_redirect_when_not_dispatched() {
+    Command::cargo_bin("gsa")
+        .unwrap()
+        .env_remove("GLRS_CLI_DISPATCHED")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "This binary is deprecated when invoked standalone.",
+        ))
+        .stderr(predicate::str::contains("@glrs-dev/cli"));
+}
+
+/// gs-assume runs normally (no redirect) when GLRS_CLI_DISPATCHED=1.
+#[test]
+fn test_no_redirect_when_dispatched() {
+    Command::cargo_bin("gs-assume")
+        .unwrap()
+        .env("GLRS_CLI_DISPATCHED", "1")
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("gs-assume"))
+        .stderr(predicate::str::contains("deprecated").not());
 }
