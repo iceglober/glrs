@@ -7,7 +7,7 @@ This folder is managed by [Changesets](https://github.com/changesets/changesets)
 Every user-visible PR must include a changeset:
 
 ```bash
-pnpm changeset
+bun run changeset
 ```
 
 Pick the bump level (patch / minor / major) per affected package and describe the change. The tool creates a new markdown file in this folder — commit it with your PR.

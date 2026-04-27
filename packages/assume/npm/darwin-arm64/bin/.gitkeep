@@ -2,4 +2,4 @@
 # scripts/pack-platform-tarballs.mjs. Outside CI this directory is empty
 # and the @glrs-dev/assume shim will throw a descriptive error if someone
 # tries to run the tool from a workspace clone without having first run
-# `pnpm --filter @glrs-dev/assume run build` + the rust toolchain.
+# `bun run --filter @glrs-dev/assume build` + the rust toolchain.

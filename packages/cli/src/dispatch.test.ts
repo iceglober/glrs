@@ -1,14 +1,9 @@
 /**
- * Tests that `glrs oc --help`, `glrs agentic --help`, and `glrs assume --help`
- * dispatch to the real underlying tools (not the redirect).
- * Acceptance criterion a2.
+ * Tests that `glrs oc --help` dispatches to the real harness-opencode tool
+ * (not the deprecation redirect), and that `glrs wt --help` works natively.
  *
- * Prerequisites: all downstream packages must be built before this test runs.
- * The verify command in the plan sequences builds before running this test.
- * For the assume subcommand, the native Rust binary must be built and placed
- * at the expected platform path (see the plan's a2 verify command).
- *
- * Tests skip gracefully when binaries are missing.
+ * Prerequisites: @glrs-dev/harness-opencode must be built before this test
+ * runs. Skips gracefully when binaries are missing.
  */
 import { describe, test, expect } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -39,35 +34,48 @@ function isHarnessBuilt(): boolean {
   }
 }
 
-function isAgenticBuilt(): boolean {
-  try {
-    const pkgJson = req("@glrs-dev/agentic/package.json") as {
-      bin?: Record<string, string>;
-    };
-    const binKey = pkgJson.bin?.["gs-agentic"];
-    if (!binKey) return false;
-    const pkgPath = req.resolve("@glrs-dev/agentic/package.json");
-    const binPath = resolve(dirname(pkgPath), binKey);
-    return existsSync(binPath);
-  } catch {
-    return false;
-  }
+function isCliBuilt(): boolean {
+  return existsSync(cliJs);
 }
 
-function isAssumeBuilt(): boolean {
-  try {
-    const assume = req("@glrs-dev/assume") as { getBinaryPath: () => string };
-    const binPath = assume.getBinaryPath();
-    return existsSync(binPath);
-  } catch {
-    return false;
-  }
-}
+describe("glrs CLI", () => {
+  test("glrs --help prints top-level help", () => {
+    if (!isCliBuilt()) {
+      console.log("SKIP: cli not built — run `bun run build` first");
+      return;
+    }
+    const result = spawnSync(process.execPath, [cliJs, "--help"], {
+      encoding: "utf8",
+      timeout: 15000,
+    });
+    const output = (result.stdout ?? "") + (result.stderr ?? "");
+    expect(output).toContain("glrs — unified CLI");
+    expect(output).toContain("oc");
+    expect(output).toContain("wt");
+  });
 
-describe("glrs dispatch passthrough", () => {
-  test("glrs oc --help prints harness-opencode help, not redirect", () => {
-    if (!isHarnessBuilt()) {
-      console.log("SKIP: harness-opencode not built — run `cd packages/harness-opencode && bun run build` first");
+  test("glrs wt --help prints worktree help natively", () => {
+    if (!isCliBuilt()) {
+      console.log("SKIP: cli not built — run `bun run build` first");
+      return;
+    }
+    const result = spawnSync(process.execPath, [cliJs, "wt", "--help"], {
+      encoding: "utf8",
+      timeout: 15000,
+    });
+    const output = (result.stdout ?? "") + (result.stderr ?? "");
+    expect(output).toContain("worktree management");
+    // Worktree subcommands
+    expect(output).toContain("new");
+    expect(output).toContain("list");
+    expect(output).toContain("switch");
+    expect(output).toContain("delete");
+    expect(output).toContain("cleanup");
+  });
+
+  test("glrs oc --help dispatches to harness-opencode (not redirect)", () => {
+    if (!isCliBuilt() || !isHarnessBuilt()) {
+      console.log("SKIP: cli or harness-opencode not built — run `bun run build` first");
       return;
     }
     const result = spawnSync(process.execPath, [cliJs, "oc", "--help"], {
@@ -80,33 +88,16 @@ describe("glrs dispatch passthrough", () => {
     expect(output).toContain("install");
   });
 
-  test("glrs agentic --help prints gs-agentic help, not redirect", () => {
-    if (!isAgenticBuilt()) {
-      console.log("SKIP: agentic not built — run `cd packages/agentic && bun run build` first");
+  test("glrs <unknown> prints unknown-subcommand error", () => {
+    if (!isCliBuilt()) {
+      console.log("SKIP: cli not built — run `bun run build` first");
       return;
     }
-    const result = spawnSync(process.execPath, [cliJs, "agentic", "--help"], {
+    const result = spawnSync(process.execPath, [cliJs, "not-a-real-subcommand"], {
       encoding: "utf8",
       timeout: 15000,
     });
-    expect(result.stderr ?? "").not.toContain(REDIRECT_SUBSTRING);
-    const output = (result.stdout ?? "") + (result.stderr ?? "");
-    // gs-agentic help should mention its subcommands
-    expect(output).toContain("gs-agentic");
-  });
-
-  test("glrs assume --help prints gs-assume help, not redirect", () => {
-    if (!isAssumeBuilt()) {
-      console.log("SKIP: assume native binary not built — run `cd packages/assume && cargo build --release` and copy binary to npm/<platform>/bin/ first");
-      return;
-    }
-    const result = spawnSync(process.execPath, [cliJs, "assume", "--help"], {
-      encoding: "utf8",
-      timeout: 15000,
-    });
-    expect(result.stderr ?? "").not.toContain(REDIRECT_SUBSTRING);
-    const output = (result.stdout ?? "") + (result.stderr ?? "");
-    // gs-assume help should mention credential management
-    expect(output).toContain("credential");
+    expect(result.status).toBe(2);
+    expect(result.stderr ?? "").toContain("Unknown subcommand");
   });
 });

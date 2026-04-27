@@ -37,7 +37,7 @@ pulumi login gs://glrs-pulumi-state
 
 # 5. Init the stack
 cd infra/gcp
-pnpm install
+bun install
 pulumi stack init prod
 pulumi config set gcp:project glrs-prod
 ```

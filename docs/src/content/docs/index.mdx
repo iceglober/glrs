@@ -1,9 +1,9 @@
 ---
 title: glrs
-description: Unified @glrs-dev ecosystem — agent harness, agentic CLI, SSO credentials.
+description: Unified @glrs-dev ecosystem — agent harness, worktree CLI, SSO credentials.
 template: splash
 hero:
-  tagline: One install. One CLI. Three tools.
+  tagline: One install. One CLI. Focused tools.
   actions:
     - text: Install
       link: /install/
@@ -26,19 +26,15 @@ npm i -g @glrs-dev/cli
 
 <CardGrid>
   <Card title="@glrs-dev/cli" icon="seti:config">
-    Unified `glrs` binary. Dispatches to the three subtools below.
+    Unified `glrs` binary. Dispatches to harness-opencode and provides worktree management.
     [Read more →](/cli/)
   </Card>
   <Card title="@glrs-dev/harness-opencode" icon="rocket">
     OpenCode agent harness — PRIME, plan, build, QA, skills, MCP wiring.
     Use via `glrs oc`. [Read more →](/harness-opencode/)
   </Card>
-  <Card title="@glrs-dev/agentic" icon="seti:shell">
-    Worktree management, plan state, skills. Use via `glrs agentic`.
-    [Read more →](/agentic/)
-  </Card>
   <Card title="@glrs-dev/assume" icon="seti:lock">
-    Multi-cloud SSO credential manager. Prebuilt Rust binary. Use via `glrs assume`.
+    Multi-cloud SSO credential manager. Standalone Rust binary, installed separately.
     [Read more →](/assume/)
   </Card>
 </CardGrid>

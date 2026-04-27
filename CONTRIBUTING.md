@@ -1,10 +1,10 @@
 # Contributing to glrs
 
-Thanks for contributing. This monorepo uses **pnpm workspaces**, **turborepo**, and **Changesets**. The contributor flow is:
+Thanks for contributing. This monorepo uses **Bun workspaces** and **Changesets**. The contributor flow is:
 
 1. Fork + branch off `main`
 2. Make your change in the relevant `packages/<name>/` directory
-3. Add a **changeset** describing the change: `pnpm changeset`
+3. Add a **changeset** describing the change: `bun run changeset`
 4. Open a PR
 5. On merge, Changesets opens/updates a "Version Packages" PR
 6. Merging that PR publishes to npm (gated by the `npm-publish` GitHub environment)
@@ -14,10 +14,10 @@ Thanks for contributing. This monorepo uses **pnpm workspaces**, **turborepo**, 
 ```bash
 git clone git@github.com:iceglober/glrs.git
 cd glrs
-pnpm install
-pnpm build          # builds all packages
-pnpm test           # runs tests across all packages
-pnpm typecheck      # typechecks all TS packages
+bun install
+bun run build          # builds all packages
+bun test               # runs tests across all packages
+bun run typecheck      # typechecks all TS packages
 ```
 
 ## Changesets
@@ -25,7 +25,7 @@ pnpm typecheck      # typechecks all TS packages
 Every user-visible PR must include a changeset. Run:
 
 ```bash
-pnpm changeset
+bun run changeset
 ```
 
 Pick the bump level per affected package, describe the change in plain English (user-facing, not implementation-detail), and commit the generated `.changeset/*.md` file with your PR.
@@ -45,10 +45,10 @@ If your change touches multiple packages, create a single changeset that lists a
 ```
 ---
 "@glrs-dev/harness-opencode": minor
-"@glrs-dev/agentic": patch
+"@glrs-dev/cli": patch
 ---
 
-Added `glrs agentic wt switch` command and wired it into the harness prompt.
+Added `glrs wt switch` command and wired it into the harness prompt.
 ```
 
 Inter-package dependencies bump automatically via Changesets' `updateInternalDependencies: patch` setting. You don't need to manually bump `@glrs-dev/cli` when one of its sub-packages changes — Changesets will patch-bump it for you.
@@ -58,16 +58,14 @@ Inter-package dependencies bump automatically via Changesets' `updateInternalDep
 Each package has its own `AGENTS.md` (for AI agents) and may have its own `CONTRIBUTING.md`:
 
 - `packages/harness-opencode/AGENTS.md` — OpenCode plugin invariants
-- `packages/agentic/` — CLI conventions
 - `packages/assume/` — Rust toolchain + build matrix notes
 - `packages/cli/` — dispatcher conventions
 
 ## Running a single package's tests
 
 ```bash
-pnpm --filter @glrs-dev/harness-opencode test
-pnpm --filter @glrs-dev/agentic test
-pnpm --filter @glrs-dev/cli test
+bun run --filter @glrs-dev/harness-opencode test
+bun run --filter @glrs-dev/cli test
 ```
 
 For Rust:
@@ -96,4 +94,4 @@ For a broken release:
 npm deprecate @glrs-dev/<pkg>@<broken-version> "<reason>; use <fix-version>"
 ```
 
-Then ship the fix via the normal flow. Users on floating semver auto-recover on next `pnpm update`.
+Then ship the fix via the normal flow. Users on floating semver auto-recover on next `bun update`.

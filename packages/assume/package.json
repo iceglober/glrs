@@ -32,15 +32,15 @@
     "glrs"
   ],
   "engines": {
-    "node": ">=20.10"
+    "bun": ">=1.2.0"
   },
   "scripts": {
-    "build": "tsup src/npm-shim/index.ts src/npm-shim/cli.ts --format esm --dts --clean --target node20",
+    "build": "tsup src/npm-shim/index.ts src/npm-shim/cli.ts --format esm --dts --clean",
     "typecheck": "tsc --noEmit",
     "test": "echo 'rust tests run via cargo'",
     "lint": "echo 'no linter configured yet'",
-    "pack:platforms": "node scripts/pack-platform-tarballs.mjs",
-    "sync:version": "node scripts/sync-version.mjs"
+    "pack:platforms": "bun scripts/pack-platform-tarballs.mjs",
+    "sync:version": "bun scripts/sync-version.mjs"
   },
   "devDependencies": {
     "@types/bun": "latest",
