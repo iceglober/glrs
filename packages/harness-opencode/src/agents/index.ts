@@ -43,6 +43,7 @@ const libReaderPrompt = readPrompt("lib-reader.md");
 const agentsMdWriterPrompt = readPrompt("agents-md-writer.md");
 const pilotBuilderPrompt = readPrompt("pilot-builder.md");
 const pilotPlannerPrompt = readPrompt("pilot-planner.md");
+const researchPrompt = readPrompt("research.md");
 
 /** Strip YAML frontmatter (--- ... ---) from a markdown string. */
 function stripFrontmatter(md: string): string {
@@ -637,6 +638,32 @@ const PILOT_PLANNER_PERMISSIONS = {
   linear: "allow",
 };
 
+// ---- Research agent permissions ----
+// Research agent needs allow-by-default bash because research-auto dispatches
+// arbitrary user-supplied run/measure commands that a deny-by-default enumerated
+// allow-list would block. Destructive patterns remain denied via shared constants.
+
+const RESEARCH_PERMISSIONS = {
+  edit: "allow" as const,
+  bash: {
+    "*": "allow",
+    ...CORE_BASH_ALLOW_LIST,
+    ...CORE_DESTRUCTIVE_BASH_DENIES,
+  },
+  webfetch: "allow" as const,
+  ast_grep: "allow",
+  tsc_check: "deny",
+  eslint_check: "deny",
+  todo_scan: "allow",
+  comment_check: "allow",
+  question: "allow",
+  serena: "allow",
+  memory: "allow",
+  git: "allow",
+  playwright: "deny",
+  linear: "allow",
+};
+
 
 // ---- Tier map ----
 
@@ -661,6 +688,7 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   "plan-reviewer": "deep",
   "gap-analyzer": "deep",
   "pilot-planner": "deep",
+  research: "deep",
   build: "mid",
   "qa-reviewer": "mid",
   "docs-maintainer": "mid",
@@ -742,6 +770,15 @@ export function createAgents(): Record<string, AgentConfig> {
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
       permission: PILOT_PLANNER_PERMISSIONS as AgentConfig["permission"],
+    }),
+
+    // Research agent — mode:all for both primary invocation and task-tool dispatch
+    research: agentFromPrompt(researchPrompt, {
+      description: "Research orchestrator — decomposes a research query into parallel workstreams, dispatches research skills (research / research-web / research-local / research-auto) as subagents, reviews findings for gaps, iterates, and synthesizes. Use when the user asks to investigate, explore, deep-dive, or understand a complex topic that needs multiple workstreams.",
+      mode: "all",
+      model: "anthropic/claude-opus-4-7",
+      temperature: 0.3,
+      permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
     }),
   };
 }
