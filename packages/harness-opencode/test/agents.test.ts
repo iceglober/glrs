@@ -8,10 +8,10 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 14 agents", () => {
-    // 14 agents total: prime (mode:primary), plan + build (both mode:all —
+  it("returns exactly 15 agents", () => {
+    // 15 agents total: prime (mode:primary), plan + build + research (all mode:all —
     // primary AND task-tool-dispatchable), 9 pure subagents, 2 pilot subagents.
-    expect(Object.keys(agents).length).toBe(14);
+    expect(Object.keys(agents).length).toBe(15);
   });
 
   it("has 2 primary-capable agents besides plan (prime, build; mode=primary or mode=all)", () => {
@@ -27,14 +27,15 @@ describe("createAgents", () => {
     }
   });
 
-  it("has 13 subagent-capable agents (mode=subagent or mode=all)", () => {
+  it("has 14 subagent-capable agents (mode=subagent or mode=all)", () => {
     // "Subagent-capable" means the agent appears in other agents'
     // task-tool picker. mode: "subagent" and mode: "all" both qualify.
-    // plan and build both have mode:"all" — user-invocable AND
+    // plan, build, and research all have mode:"all" — user-invocable AND
     // task-dispatchable. The other 11 are mode:"subagent" only.
     const subagentCapable = [
       "plan",
       "build",
+      "research",
       "qa-reviewer",
       "qa-thorough",
       "plan-reviewer",
@@ -278,6 +279,54 @@ describe("pilot agents", () => {
   test("pilot-planner prompt references the pilot-planning skill", () => {
     const prompt = agents["pilot-planner"]!.prompt as string;
     expect(prompt).toMatch(/pilot-planning/);
+  });
+});
+
+describe("research agent", () => {
+  const agents = createAgents();
+
+  it("research agent registered with mode=all, opus model, temperature 0.3", () => {
+    const research = agents["research"]!;
+    expect(research).toBeDefined();
+    expect(research.mode).toBe("all");
+    expect(research.model).toBe("anthropic/claude-opus-4-7");
+    expect(research.temperature).toBe(0.3);
+  });
+
+  it("research agent description leads with 'Research orchestrator'", () => {
+    const desc = (agents["research"]!.description ?? "") as string;
+    expect(desc.toLowerCase().startsWith("research orchestrator")).toBe(true);
+  });
+
+  it("research agent uses allow-by-default bash with shared denies", () => {
+    const perm = agents["research"]!.permission as Record<string, unknown>;
+    const bash = perm.bash as Record<string, string>;
+    expect(bash["*"]).toBe("allow");
+    expect(bash["rm -rf /*"]).toBe("deny");
+    expect(bash["git push --force*"]).toBe("deny");
+    expect(bash["ls *"]).toBe("allow");
+  });
+
+  it("research agent webfetch and edit are allow, tsc_check and eslint_check are deny", () => {
+    const perm = agents["research"]!.permission as Record<string, unknown>;
+    expect(perm.webfetch).toBe("allow");
+    expect(perm.edit).toBe("allow");
+    expect(perm.tsc_check).toBe("deny");
+    expect(perm.eslint_check).toBe("deny");
+  });
+
+  it("research agent mode is not primary", () => {
+    expect(agents["research"]!.mode).not.toBe("primary");
+  });
+
+  it("AGENT_TIERS contains research as deep tier", async () => {
+    const { AGENT_TIERS } = await import("../src/agents/index.js");
+    expect(AGENT_TIERS["research"]).toBe("deep");
+  });
+
+  it("prime subagent reference lists @research", () => {
+    const prime = agents["prime"]!.prompt as string;
+    expect(prime).toContain("`@research`");
   });
 });
 

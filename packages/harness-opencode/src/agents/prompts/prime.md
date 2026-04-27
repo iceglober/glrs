@@ -365,6 +365,7 @@ The PRIME's context window is expensive (Opus). Protect it by delegating anythin
 
 - `@plan` — writes the plan under the repo-shared plan directory (resolves via `bunx @glrs-dev/harness-opencode plan-dir`; absolute path returned) and runs its own gap-analysis + adversarial-review loop. PRIME delegates Phase 2 plan authoring here.
 - `@build` — executes a written plan file-by-file. Runs per-file lint/tests inline, checks acceptance boxes, commits locally. Returns a structured payload with commit SHAs, plan mutations, and any STOP conditions. PRIME delegates Phase 3 execution here.
+- `@research` — multi-round research orchestrator for complex investigations that would otherwise pollute your context with 4-6 parallel explorations. Delegate when the user asks to investigate / deep-dive / understand a topic that needs codebase + external-web context, or multi-workstream planning. Returns a synthesized report; pass it to the user (or feed into `@plan` as grounding if it precedes a plan authoring step).
 - `@code-searcher` — fast codebase grep + structural search, returns paths and short snippets
 - `@lib-reader` — local-only docs/library lookups (node_modules, type defs, project docs)
 - `@qa-reviewer` — fast adversarial reviewer (Sonnet). Trusts the PRIME's recent green output within this session, focuses on semantic + scope checks. Default for Phase 4.

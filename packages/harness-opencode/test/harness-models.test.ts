@@ -38,6 +38,7 @@ describe("AGENT_TIERS", () => {
       "plan-reviewer",
       "prime",
       "qa-thorough",
+      "research",
     ]);
     expect(mid).toEqual([
       "agents-md-writer",
@@ -82,6 +83,7 @@ describe("resolveHarnessModels", () => {
       "architecture-advisor",
       "plan-reviewer",
       "gap-analyzer",
+      "research",
     ]) {
       expect(agents[name]!.model).toBe("deep-model-1");
     }
