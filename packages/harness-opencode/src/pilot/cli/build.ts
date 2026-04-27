@@ -710,13 +710,15 @@ export function startStreamingLogger(args: {
   const taskStart = new Map<string, number>();
   let succeeded = 0;
   let failed = 0;
-  // Blocked-cascade de-noise: accumulate blocked events into a counter
-  // and a single first-reason capture; emit one summary line on
-  // run.finished (or when the logger unsubscribes, whichever comes
-  // first). Pre-v0.2 we printed one scary `task.blocked` line per
-  // event — on a 12-task plan with one early failure, that meant 10
-  // lines of noise hiding the real failure.
+  // Blocked-cascade: render the first INLINE_BLOCKED_CAP events inline as
+  // they arrive; collapse any beyond the cap into a single "...N more"
+  // continuation. The end-of-run summary (flushBlockedSummary) still fires
+  // with the total count + first-reason, which remains useful at high
+  // cascade counts.
+  const INLINE_BLOCKED_CAP = 5;
   let blockedCount = 0;
+  let blockedInlineEmitted = 0;
+  let blockedOverflowEmitted = false;
   let blockedReason: string | null = null;
   let blockedFlushed = false;
 
@@ -763,9 +765,33 @@ export function startStreamingLogger(args: {
       case "task.verify.passed":
         write(`task.verify.passed ${id ?? "?"}`);
         break;
-      case "task.verify.failed":
-        write(`task.verify.failed ${id ?? "?"}`);
+      case "task.verify.failed": {
+        // Render richer line when payload is conforming; fall back to
+        // terse one-liner for non-conforming (pre-v0.2) payloads.
+        const p = event.payload as {
+          attempt?: unknown;
+          of?: unknown;
+          command?: unknown;
+          exitCode?: unknown;
+          timedOut?: unknown;
+        } | null;
+        if (
+          p !== null &&
+          typeof p === "object" &&
+          typeof p.attempt === "number" &&
+          typeof p.of === "number" &&
+          typeof p.command === "string" &&
+          typeof p.exitCode === "number"
+        ) {
+          const timedOutSuffix = p.timedOut === true ? " (timed out)" : "";
+          write(
+            `task.verify.failed ${id ?? "?"} attempt ${p.attempt}/${p.of} (${p.command} → exit ${p.exitCode}${timedOutSuffix})`,
+          );
+        } else {
+          write(`task.verify.failed ${id ?? "?"}`);
+        }
         break;
+      }
       case "task.succeeded": {
         succeeded += 1;
         const ms = id !== null ? event.ts - (taskStart.get(id) ?? event.ts) : 0;
@@ -787,18 +813,38 @@ export function startStreamingLogger(args: {
         write(
           `run.progress ${succeeded}/${totalTasks} succeeded, ${failed} failed`,
         );
+        // Always emit a logs-pointer breadcrumb so the user can find
+        // the full event trace without waiting for the end-of-run summary.
+        if (id !== null) {
+          writeRaw(
+            `  run \`bunx @glrs-dev/harness-opencode pilot logs ${id} --run ${runId}\` for full logs`,
+          );
+        }
         break;
       }
       case "task.aborted":
         write(`task.aborted ${id ?? "?"}`);
         break;
-      case "task.stopped":
-        write(`task.stopped ${id ?? "?"} (builder STOP)`);
+      case "task.stopped": {
+        // Render stopReason inline when payload carries it; fall back to
+        // the generic "(builder STOP)" suffix otherwise.
+        const p = event.payload as { reason?: unknown } | null;
+        const stopReason =
+          p !== null && typeof p === "object" && typeof p.reason === "string"
+            ? p.reason
+            : null;
+        const suffix = stopReason !== null ? `(${stopReason})` : "(builder STOP)";
+        write(`task.stopped ${id ?? "?"} ${suffix}`);
+        // Logs-pointer breadcrumb — same as task.failed.
+        if (id !== null) {
+          writeRaw(
+            `  run \`bunx @glrs-dev/harness-opencode pilot logs ${id} --run ${runId}\` for full logs`,
+          );
+        }
         break;
+      }
       case "task.blocked": {
-        // De-noised: count instead of print. Capture the first
-        // payload's reason for the summary — all blocked events in a
-        // single cascade share the same root cause.
+        // Count every blocked event for the end-of-run summary.
         blockedCount += 1;
         if (blockedReason === null) {
           const p = event.payload as { reason?: unknown } | null;
@@ -810,6 +856,49 @@ export function startStreamingLogger(args: {
             blockedReason = p.reason;
           }
         }
+        // Render inline up to the cap.
+        if (blockedInlineEmitted < INLINE_BLOCKED_CAP) {
+          blockedInlineEmitted += 1;
+          const p = event.payload as { failedDep?: unknown } | null;
+          const failedDep =
+            p !== null &&
+            typeof p === "object" &&
+            typeof p.failedDep === "string"
+              ? p.failedDep
+              : null;
+          const depSuffix =
+            failedDep !== null
+              ? `(blocked by failed task ${failedDep})`
+              : "(dep failed)";
+          write(`task.blocked ${id ?? "?"} ${depSuffix}`);
+        } else if (!blockedOverflowEmitted) {
+          // First event past the cap: emit a single collapse line.
+          // The count of "more" events is blockedCount - INLINE_BLOCKED_CAP.
+          blockedOverflowEmitted = true;
+          const moreCount = blockedCount - INLINE_BLOCKED_CAP;
+          writeRaw(`  ...${moreCount} more blocked (see run summary)`);
+        } else {
+          // Subsequent overflow events: update the collapse line count.
+          // We can't rewrite the already-emitted line, so we just keep
+          // counting — the end-of-run summary will show the full total.
+        }
+        break;
+      }
+      case "task.attempt": {
+        // Render a low-key continuation line for attempt >= 2 (retry with
+        // fix prompt). Attempt 1 stays suppressed — first attempts are the
+        // default and don't need a tick.
+        const p = event.payload as { attempt?: unknown; of?: unknown } | null;
+        if (
+          p !== null &&
+          typeof p === "object" &&
+          typeof p.attempt === "number" &&
+          typeof p.of === "number" &&
+          p.attempt >= 2
+        ) {
+          writeRaw(`  attempt ${p.attempt}/${p.of} (retry with fix prompt)`);
+        }
+        // attempt === 1 or non-conforming payload: stay suppressed.
         break;
       }
       case "run.finished":
@@ -818,9 +907,9 @@ export function startStreamingLogger(args: {
       case "task.touches.violation":
         write(`task.touches.violation ${id ?? "?"}`);
         break;
-      // Other kinds (task.session.created, task.attempt, run.*) are
-      // intentionally suppressed — too chatty for stdout. `pilot logs`
-      // carries the full trace.
+      // Other kinds (task.session.created, run.*) are intentionally
+      // suppressed — too chatty for stdout. `pilot logs` carries the
+      // full trace.
       default:
         break;
     }

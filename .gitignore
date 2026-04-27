@@ -28,6 +28,7 @@ pnpm-debug.log*
 # Editor
 .vscode/
 .idea/
+.serena/
 *.swp
 *.swo
 
