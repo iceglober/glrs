@@ -1,6 +1,7 @@
 {
   "name": "@glrs-dev/assume-win32-x64",
   "version": "0.6.3",
+  "private": true,
   "description": "Prebuilt gs-assume.exe binary for Windows x64. Installed automatically as an optional dependency of @glrs-dev/assume.",
   "license": "MIT",
   "repository": {
@@ -19,10 +20,6 @@
   ],
   "bin": {
     "gs-assume-bin": "./bin/gs-assume.exe"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
   },
   "engines": {
     "node": ">=20.10"

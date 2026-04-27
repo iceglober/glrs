@@ -271,12 +271,14 @@ tasks:
 
 describe("CLI surface — pilot validate (spawned)", () => {
   const cliPath = path.resolve(import.meta.dir, "..", "src", "cli.ts");
+  const dispatchedEnv = { ...process.env, GLRS_CLI_DISPATCHED: "1" };
 
   test("exit 0 on a valid plan via the spawned CLI", () => {
     const p = writePlan("ok.yaml", VALID_PLAN);
     const r = spawnSync("bun", ["run", cliPath, "pilot", "validate", p], {
       encoding: "utf8",
       timeout: 10_000,
+      env: dispatchedEnv,
     });
     expect(r.status).toBe(0);
   });
@@ -289,6 +291,7 @@ describe("CLI surface — pilot validate (spawned)", () => {
     const r = spawnSync("bun", ["run", cliPath, "pilot", "validate", p], {
       encoding: "utf8",
       timeout: 10_000,
+      env: dispatchedEnv,
     });
     expect(r.status).toBe(2);
     expect(r.stderr.length).toBeGreaterThan(0);
@@ -298,7 +301,7 @@ describe("CLI surface — pilot validate (spawned)", () => {
     const r = spawnSync(
       "bun",
       ["run", cliPath, "pilot", "validate", "--help"],
-      { encoding: "utf8", timeout: 10_000 },
+      { encoding: "utf8", timeout: 10_000, env: dispatchedEnv },
     );
     // cmd-ts exits 1 on --help. Status is implementation detail; we
     // care that the help text mentions our command.

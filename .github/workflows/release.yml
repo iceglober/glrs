@@ -33,56 +33,10 @@ permissions:
   id-token: write
 
 jobs:
-  # Compute whether this push will actually trigger a publish. A publish
-  # happens when Changesets finds no pending changesets (meaning the
-  # Version Packages PR was just merged). On pushes that will open/update
-  # the Version PR instead, we skip the expensive Rust build matrix.
-  detect-publish:
-    name: Detect publish intent
-    # Canonical-repo guard: forks can never publish even with a stolen token.
-    if: github.repository == 'iceglober/glrs'
-    runs-on: ubuntu-22.04
-    outputs:
-      will_publish: ${{ steps.check.outputs.will_publish }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: check
-        run: |
-          # Changesets publishes iff .changeset/ has no pending *.md files
-          # (other than README.md and config.json). This condition is the
-          # same one changesets/action uses internally.
-          pending=$(find .changeset -name '*.md' -not -name 'README.md' | wc -l | tr -d ' ')
-          if [ "$pending" = "0" ]; then
-            echo "will_publish=true" >> "$GITHUB_OUTPUT"
-            echo "No pending changesets → this push will publish."
-          else
-            echo "will_publish=false" >> "$GITHUB_OUTPUT"
-            echo "$pending pending changeset(s) → this push will open/update the Version PR, not publish."
-          fi
-
-  # Build Rust binaries for all 5 platforms ONLY when we're about to publish.
-  # The rust-build-matrix.yml is set up as `workflow_call` for this purpose.
-  rust-build:
-    name: Build Rust binaries (5 platforms)
-    needs: detect-publish
-    if: needs.detect-publish.outputs.will_publish == 'true'
-    uses: ./.github/workflows/rust-build-matrix.yml
-    with:
-      # Use the commit SHA as the version marker; the actual version bump
-      # lives in @glrs-dev/assume's package.json (synced to Cargo.toml by
-      # scripts/sync-version.mjs). This version string is artifact-naming only.
-      version: ${{ github.sha }}
-
   release:
     name: Changesets version PR or publish
-    needs: [detect-publish, rust-build]
-    # rust-build is skipped on non-publish pushes, so treat a skipped need
-    # as success for this job's if-condition.
-    if: |
-      always() &&
-      github.repository == 'iceglober/glrs' &&
-      needs.detect-publish.result == 'success' &&
-      (needs.rust-build.result == 'success' || needs.rust-build.result == 'skipped')
+    # Canonical-repo guard: forks can never publish even with a stolen token.
+    if: github.repository == 'iceglober/glrs'
     runs-on: ubuntu-22.04
     # Maintainer approval required before NPM_TOKEN becomes available
     # to the job. Protected by the `npm-publish` environment's rules.
@@ -129,28 +83,11 @@ jobs:
         with:
           bun-version: latest
 
-      - uses: dtolnay/rust-toolchain@stable
-
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
       - name: Build all packages
         run: pnpm turbo run build
-
-      - name: Download Rust release artifacts
-        if: needs.detect-publish.outputs.will_publish == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          path: packages/assume/.release-artifacts
-          merge-multiple: true
-
-      - name: Sync Cargo + npm versions
-        if: needs.detect-publish.outputs.will_publish == 'true'
-        run: pnpm --filter @glrs-dev/assume run sync:version
-
-      - name: Pack platform tarballs
-        if: needs.detect-publish.outputs.will_publish == 'true'
-        run: pnpm --filter @glrs-dev/assume run pack:platforms
 
       # Either opens/updates the Version Packages PR, OR (if no pending
       # changesets exist) runs the publish script. Never both in the
@@ -175,10 +112,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # crates.io publishing for the `glrs-assume` crate is deliberately
-      # NOT wired here yet. The release pipeline above publishes the five
-      # `@glrs-dev/assume*` npm packages (prebuilt-binary pattern) which
-      # covers `npm i -g @glrs-dev/assume` users. When we're ready to also
-      # publish to crates.io:
+      # NOT wired here yet. When we're ready to also publish to crates.io:
       #   1. Create a crates.io token at https://crates.io/me and scope it
       #      to publish-new + publish-update for `glrs-assume`.
       #   2. `gh secret set CARGO_REGISTRY_TOKEN --repo iceglober/glrs`

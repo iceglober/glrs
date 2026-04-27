@@ -1,3 +1,20 @@
+// Standalone-invocation redirect guard — runs before everything else,
+// including argv parsing and top-level side-effects (checkForUpdate,
+// autoSyncSkills, initState). Set GLRS_CLI_DISPATCHED=1 to suppress.
+{
+  const dispatched = process.env["GLRS_CLI_DISPATCHED"];
+  if (!dispatched || dispatched === "") {
+    const argv1 = process.argv[1] ?? "gs-agentic";
+    const invoke = argv1.replace(/\\/g, "/").split("/").pop() ?? "gs-agentic";
+    process.stderr.write(`[${invoke}] This binary is deprecated when invoked standalone.\n`);
+    process.stderr.write(`[${invoke}] Install @glrs-dev/cli and use 'glrs agentic' instead:\n`);
+    process.stderr.write(`[${invoke}]   npm i -g @glrs-dev/cli\n`);
+    process.stderr.write(`[${invoke}]   glrs agentic <args>\n`);
+    process.stderr.write(`[${invoke}] Docs: https://glrs.dev/install\n`);
+    process.exit(1);
+  }
+}
+
 import { subcommands, run, binary } from "cmd-ts";
 import { create } from "./commands/create.js";
 import { checkout } from "./commands/checkout.js";

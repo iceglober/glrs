@@ -18,7 +18,22 @@
  *   - pilot ...    See `src/pilot/cli/index.ts`
  */
 
-// Runtime guard — keep first, before any imports that assume modern APIs.
+// Standalone-invocation redirect guard — runs before everything else.
+// When invoked directly (not via `glrs oc`), print a redirect notice and exit.
+// Set GLRS_CLI_DISPATCHED=1 to suppress (done by @glrs-dev/cli's dispatcher).
+{
+  const dispatched = process.env["GLRS_CLI_DISPATCHED"];
+  if (!dispatched || dispatched === "") {
+    const argv1 = process.argv[1] ?? "harness-opencode";
+    const invoke = argv1.replace(/\\/g, "/").split("/").pop() ?? "harness-opencode";
+    process.stderr.write(`[${invoke}] This binary is deprecated when invoked standalone.\n`);
+    process.stderr.write(`[${invoke}] Install @glrs-dev/cli and use 'glrs oc' instead:\n`);
+    process.stderr.write(`[${invoke}]   npm i -g @glrs-dev/cli\n`);
+    process.stderr.write(`[${invoke}]   glrs oc <args>\n`);
+    process.stderr.write(`[${invoke}] Docs: https://glrs.dev/install\n`);
+    process.exit(1);
+  }
+}
 // Skip when running under Bun (which reports process.versions.bun and has
 // its own ABI compatibility; our `engines.node` floor applies to raw Node).
 if (!process.versions.bun) {

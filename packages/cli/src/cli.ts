@@ -52,9 +52,13 @@ try {
 const forward = args.slice(1);
 const spawnArgs = [...resolved.preArgs, ...forward];
 
+// Set GLRS_CLI_DISPATCHED=1 so the spawned bin skips its standalone-redirect guard.
+const spawnEnv = { ...process.env, GLRS_CLI_DISPATCHED: "1" };
+
 const child = spawn(resolved.executable, spawnArgs, {
   stdio: "inherit",
   windowsHide: false,
+  env: spawnEnv,
 });
 
 child.on("error", (err) => {
