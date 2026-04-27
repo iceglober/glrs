@@ -2,7 +2,7 @@
  * Tests that `glrs oc --help` dispatches to the real harness-opencode tool
  * (not the deprecation redirect), and that `glrs wt --help` works natively.
  *
- * Prerequisites: @glrs-dev/harness-opencode must be built before this test
+ * Prerequisites: @glrs-dev/harness-plugin-opencode must be built before this test
  * runs. Skips gracefully when binaries are missing.
  */
 import { describe, test, expect } from "bun:test";
@@ -21,12 +21,12 @@ const req = createRequire(import.meta.url);
 
 function isHarnessBuilt(): boolean {
   try {
-    const pkgJson = req("@glrs-dev/harness-opencode/package.json") as {
+    const pkgJson = req("@glrs-dev/harness-plugin-opencode/package.json") as {
       bin?: Record<string, string>;
     };
     const binKey = pkgJson.bin?.["harness-opencode"];
     if (!binKey) return false;
-    const pkgPath = req.resolve("@glrs-dev/harness-opencode/package.json");
+    const pkgPath = req.resolve("@glrs-dev/harness-plugin-opencode/package.json");
     const binPath = resolve(dirname(pkgPath), binKey);
     return existsSync(binPath);
   } catch {

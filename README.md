@@ -9,7 +9,7 @@ Docs: **[glrs.dev](https://glrs.dev)**
 | Package | npm | What it is |
 |---|---|---|
 | [`@glrs-dev/cli`](./packages/cli) | `@glrs-dev/cli` | Single `glrs` binary. Dispatches to harness-opencode and provides worktree management. |
-| [`@glrs-dev/harness-opencode`](./packages/harness-opencode) | `@glrs-dev/harness-opencode` | OpenCode agent harness — PRIME, plan, build, QA, skills, MCP wiring. |
+| [`@glrs-dev/harness-plugin-opencode`](./packages/harness-opencode) | `@glrs-dev/harness-plugin-opencode` | OpenCode agent harness — PRIME, plan, build, QA, skills, MCP wiring. |
 | [`@glrs-dev/assume`](./packages/assume) | `@glrs-dev/assume` (+ [crates.io](https://crates.io/crates/glrs-assume)) | Rust-based SSO credential manager for AWS/GCP. Bins: `gs-assume`, `gsa`. |
 
 ## Quick start

@@ -234,7 +234,7 @@ const CORE_BASH_ALLOW_LIST = {
   "prettier *": "allow",
   "biome *": "allow",
   // Our own CLI — the plan agent and qa-reviewer both call plan-check/plan-dir.
-  "bunx @glrs-dev/harness-opencode *": "allow",
+  "bunx @glrs-dev/harness-plugin-opencode *": "allow",
   "glrs-oc *": "allow",
   // GitHub CLI — read-only gh calls are fine; destructive `gh pr merge`
   // is gated at the PRIME level by human intent (user runs /ship).
@@ -304,12 +304,12 @@ const PLAN_PERMISSIONS = {
   // subcommand (returns an absolute path derived from the worktree's
   // repo-folder key; see src/plan-paths.ts and src/cli.ts). The object-
   // form denies bash broadly and re-allows only `bunx
-  // @glrs-dev/harness-opencode plan-dir[...]`. No other bash invocation
+  // @glrs-dev/harness-plugin-opencode plan-dir[...]`. No other bash invocation
   // is permitted, so the read-only-aside-from-plans invariant holds.
   bash: {
     "*": "deny",
-    "bunx @glrs-dev/harness-opencode plan-dir": "allow",
-    "bunx @glrs-dev/harness-opencode plan-dir *": "allow",
+    "bunx @glrs-dev/harness-plugin-opencode plan-dir": "allow",
+    "bunx @glrs-dev/harness-plugin-opencode plan-dir *": "allow",
     "glrs-oc plan-dir": "allow",
     "glrs-oc plan-dir *": "allow",
   },
@@ -607,12 +607,12 @@ const PILOT_PLANNER_PERMISSIONS = {
     "git branch *": "allow",
     "git rev-parse *": "allow",
     // Pilot CLI: validate, plan-dir for self-check + path resolution.
-    "bunx @glrs-dev/harness-opencode pilot validate *": "allow",
-    "bunx @glrs-dev/harness-opencode pilot validate": "allow",
-    "bunx @glrs-dev/harness-opencode pilot plan-dir": "allow",
-    "bunx @glrs-dev/harness-opencode pilot plan-dir *": "allow",
-    "bunx @glrs-dev/harness-opencode plan-dir": "allow",
-    "bunx @glrs-dev/harness-opencode plan-dir *": "allow",
+    "bunx @glrs-dev/harness-plugin-opencode pilot validate *": "allow",
+    "bunx @glrs-dev/harness-plugin-opencode pilot validate": "allow",
+    "bunx @glrs-dev/harness-plugin-opencode pilot plan-dir": "allow",
+    "bunx @glrs-dev/harness-plugin-opencode pilot plan-dir *": "allow",
+    "bunx @glrs-dev/harness-plugin-opencode plan-dir": "allow",
+    "bunx @glrs-dev/harness-plugin-opencode plan-dir *": "allow",
     "glrs-oc pilot validate *": "allow",
     "glrs-oc pilot validate": "allow",
     "glrs-oc pilot plan-dir": "allow",
@@ -711,7 +711,7 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: PRIME_PERMISSIONS as AgentConfig["permission"],
     }),
     plan: agentFromPrompt(planPrompt, {
-      description: "Interactive planner. Orchestrates gap analysis and adversarial review. Produces a written plan in the repo-shared plan directory (resolve via `bunx @glrs-dev/harness-opencode plan-dir`).",
+      description: "Interactive planner. Orchestrates gap analysis and adversarial review. Produces a written plan in the repo-shared plan directory (resolve via `bunx @glrs-dev/harness-plugin-opencode plan-dir`).",
       mode: "all",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,

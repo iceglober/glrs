@@ -21,7 +21,7 @@ import { join } from "node:path";
 
 const APP_KEY = "A-US-3617699429";
 const ENDPOINT = "https://us.aptabase.com/api/v0/event";
-const PKG_NAME = "@glrs-dev/harness-opencode";
+const PKG_NAME = "@glrs-dev/harness-plugin-opencode";
 
 // Replaced at build time by tsup's `define` option. Falls back to "dev"
 // if running unbundled (tests, direct ts-node execution).

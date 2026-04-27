@@ -44,7 +44,7 @@ If your change touches multiple packages, create a single changeset that lists a
 
 ```
 ---
-"@glrs-dev/harness-opencode": minor
+"@glrs-dev/harness-plugin-opencode": minor
 "@glrs-dev/cli": patch
 ---
 
@@ -64,7 +64,7 @@ Each package has its own `AGENTS.md` (for AI agents) and may have its own `CONTR
 ## Running a single package's tests
 
 ```bash
-bun run --filter @glrs-dev/harness-opencode test
+bun run --filter @glrs-dev/harness-plugin-opencode test
 bun run --filter @glrs-dev/cli test
 ```
 

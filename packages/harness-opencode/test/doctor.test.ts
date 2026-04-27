@@ -44,7 +44,7 @@ function captured(fn: () => void): { stdout: string; stderr: string } {
 describe("doctor", () => {
   test("runs without throwing and prints the harness section header", () => {
     const r = captured(() => doctor());
-    expect(r.stdout).toMatch(/Doctor.*@glrs-dev\/harness-opencode/);
+    expect(r.stdout).toMatch(/Doctor.*@glrs-dev\/harness-plugin-opencode/);
   });
 
   test("prints the Pilot subsystem section", () => {
@@ -90,7 +90,7 @@ describe("doctor — model-override validation", () => {
     writeConfig({
       plugin: [
         [
-          "@glrs-dev/harness-opencode",
+          "@glrs-dev/harness-plugin-opencode",
           {
             models: {
               deep: ["bedrock/claude-opus-4"],
@@ -127,7 +127,7 @@ describe("doctor — model-override validation", () => {
     writeConfig({
       plugin: [
         [
-          "@glrs-dev/harness-opencode",
+          "@glrs-dev/harness-plugin-opencode",
           {
             models: {
               deep: ["anthropic/claude-opus-4-7"],
@@ -146,7 +146,7 @@ describe("doctor — model-override validation", () => {
 
   test("stays silent about models when no overrides are configured", () => {
     writeConfig({
-      plugin: ["@glrs-dev/harness-opencode"],
+      plugin: ["@glrs-dev/harness-plugin-opencode"],
     });
 
     const r = captured(() => doctor());
@@ -157,7 +157,7 @@ describe("doctor — model-override validation", () => {
 
   test("surfaces bad IDs in legacy top-level harness.models too", () => {
     writeConfig({
-      plugin: ["@glrs-dev/harness-opencode"],
+      plugin: ["@glrs-dev/harness-plugin-opencode"],
       harness: { models: { deep: ["bedrock/claude-opus-4"] } },
     });
 

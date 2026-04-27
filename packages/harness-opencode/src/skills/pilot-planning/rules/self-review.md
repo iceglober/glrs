@@ -23,7 +23,7 @@ The validator catches schema, DAG, and glob errors. It cannot catch "this verify
 ## Run validate
 
 ```
-bunx @glrs-dev/harness-opencode pilot validate <plan-path>
+bunx @glrs-dev/harness-plugin-opencode pilot validate <plan-path>
 ```
 
 Fix every error AND warning. The "warnings" tier (e.g., glob conflicts between tasks) is also yours to action — either decide they're OK and document it, or restructure.
@@ -33,7 +33,7 @@ Fix every error AND warning. The "warnings" tier (e.g., glob conflicts between t
 When all seven questions are answered "yes" and `pilot validate` exits 0:
 
 - Save the plan.
-- Tell the user: `Plan saved to <path>. Next: bunx @glrs-dev/harness-opencode pilot build`.
+- Tell the user: `Plan saved to <path>. Next: bunx @glrs-dev/harness-plugin-opencode pilot build`.
 - Stop. Don't summarize. Don't editorialize. The user can read the YAML.
 
 ## When the plan is NOT ready

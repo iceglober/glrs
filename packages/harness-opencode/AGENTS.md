@@ -1,6 +1,6 @@
 # glorious-opencode — repo context for agents working on this repo
 
-You are editing the **@glrs-dev/harness-opencode** npm plugin — an OpenCode agent harness delivered as a single npm package. This is meta-work: changes here propagate to every user on their next `bun update`.
+You are editing the **@glrs-dev/harness-plugin-opencode** npm plugin — an OpenCode agent harness delivered as a single npm package. This is meta-work: changes here propagate to every user on their next `bun update`.
 
 ## What this repo is
 
@@ -48,7 +48,7 @@ glorious-opencode/
 
 2. **Type-surface escape hatches are permitted where the SDK is narrower than the runtime.** Known gaps: `permission.external_directory` path-keyed maps; per-tool-name permission keys in `AgentConfig` (`ast_grep`, `tsc_check`, etc.); `skills.paths` (v2 SDK type, may not be in v1). Use `as unknown as Config` / narrow module augmentation. Document each escape hatch in `docs/plugin-architecture.md`.
 
-3. **No postinstall side-effects.** `bun add @glrs-dev/harness-opencode` MUST NOT touch `~/.config/opencode/`. All filesystem mutation happens only via `bunx @glrs-dev/harness-opencode install`.
+3. **No postinstall side-effects.** `bun add @glrs-dev/harness-plugin-opencode` MUST NOT touch `~/.config/opencode/`. All filesystem mutation happens only via `bunx @glrs-dev/harness-plugin-opencode install`.
 
 4. **Merge policy for opencode.json (CLI install subcommand).** The installer adds missing keys from our shipped defaults, preserves all user values verbatim, and writes a `.bak.<epoch>-<pid>` sibling before every mutation. It never overwrites a key the user has set, and never deletes keys. Arrays are treated as leaves (user's array wins) except the top-level `plugin` array, which is unioned-by-value so our plugin name lands even when a user has a custom plugin list. Scalar-vs-object collisions preserve the user's scalar and emit a WARN. The merge logic lives at `src/cli/merge-config.ts` and is codified by the fixture suite at `test/fixtures/merge-config/`; `bun test test/merge-config.test.ts` runs the tests.
 
@@ -60,7 +60,7 @@ glorious-opencode/
 
 8. **No dangling path references in prompts.** Every file under `src/agents/prompts/`, `src/commands/prompts/`, and `src/skills/**/*.md` must not contain `~/.claude`, `home/.claude`, `~/.config/opencode`, or `home/.config/opencode`. CI enforces this via `test/prompts-no-dangling-paths.test.ts`.
 
-9. **Rollback recipe for maintainers.** For a broken release: `npm deprecate @glrs-dev/harness-opencode@<broken> "<reason>; use <fix>"`, then ship the fix via the normal flow — `bunx changeset` (pick `patch`, describe the fix), merge, then merge the auto-opened "Version Packages" PR. Users on floating semver auto-recover on next `bun update`.
+9. **Rollback recipe for maintainers.** For a broken release: `npm deprecate @glrs-dev/harness-plugin-opencode@<broken> "<reason>; use <fix>"`, then ship the fix via the normal flow — `bunx changeset` (pick `patch`, describe the fix), merge, then merge the auto-opened "Version Packages" PR. Users on floating semver auto-recover on next `bun update`.
 
 10. **Pilot subsystem registers via the standard surfaces.** `pilot-builder` and `pilot-planner` agents register through `createAgents()` like every other agent. The `pilot-planning` skill ships in `src/skills/` and bundles to `dist/skills/` like every other skill. The CLI subcommands wire into the top-level cmd-ts tree under the `pilot` key. The `pilot-plugin.ts` is a sub-plugin that hooks `tool.execute.before` to enforce builder/planner invariants at runtime (alongside the agents' permission maps). The pilot subsystem's PERSISTENT state — SQLite DB, git worktrees, JSONL logs, YAML plans — lives under `~/.glorious/opencode/<repo>/pilot/`, NOT under `~/.config/opencode/`. Per-repo derivation mirrors `src/plan-paths.ts`'s `getRepoFolder` (the `git rev-parse --git-common-dir` strategy).
 
@@ -99,7 +99,7 @@ Releases are automated via [Changesets](https://github.com/changesets/changesets
 
 - Every user-visible PR must include a changeset (`bunx changeset` → pick bump level → describe).
 - On merge to `main`, `.github/workflows/release.yml` opens or updates a "Version Packages" PR that bumps `package.json`, rewrites `CHANGELOG.md`, and consumes the changeset files.
-- Merging the Version Packages PR triggers `changeset publish`, which runs `npm publish` with provenance and pushes the `@glrs-dev/harness-opencode@<version>` tag.
+- Merging the Version Packages PR triggers `changeset publish`, which runs `npm publish` with provenance and pushes the `@glrs-dev/harness-plugin-opencode@<version>` tag.
 - Branch protection on `main` is the publish gate — merging the Version Packages PR auto-publishes.
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full contributor flow and bump-level cheat sheet.

@@ -1,5 +1,5 @@
 /**
- * Pilot subcommand tree (`bunx @glrs-dev/harness-opencode pilot ...`).
+ * Pilot subcommand tree (`bunx @glrs-dev/harness-plugin-opencode pilot ...`).
  *
  * Wired into the top-level CLI via `src/cli.ts`. Each `pilot <verb>`
  * lives in its own file and is composed here using `cmd-ts`'s

@@ -21,7 +21,7 @@ The `harness-opencode` bin remains available directly for power users who prefer
 
 The `glrs` binary has two subcommands:
 
-- **`glrs oc <args>`** — dispatches to [`@glrs-dev/harness-opencode`](../harness-opencode/) (bundled as a dependency). Resolves the bin via `require.resolve(<package>/package.json)` → reads the `bin` field → spawns with argv forwarded.
+- **`glrs oc <args>`** — dispatches to [`@glrs-dev/harness-plugin-opencode`](../harness-opencode/) (bundled as a dependency). Resolves the bin via `require.resolve(<package>/package.json)` → reads the `bin` field → spawns with argv forwarded.
 - **`glrs wt <args>`** — worktree management, handled natively. Commands: `new`, `list`, `switch`, `delete`, `cleanup`. Worktrees are stored in `~/.glorious/worktrees/<repo>/<name>/`.
 
 ## Philosophy

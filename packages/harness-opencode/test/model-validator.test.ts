@@ -165,7 +165,7 @@ describe("validateModelOverride", () => {
         const result = validateModelOverride(id);
         expect(result.valid).toBe(false);
         expect(result.suggestion).toContain(
-          "bunx @glrs-dev/harness-opencode install",
+          "bunx @glrs-dev/harness-plugin-opencode install",
         );
         expect(result.reason).toContain(id);
       });
@@ -209,8 +209,8 @@ describe("formatModelOverrideWarning", () => {
     expect(out).toContain(
       "amazon-bedrock/global.anthropic.claude-opus-4-7",
     );
-    expect(out).toContain("bunx @glrs-dev/harness-opencode doctor");
-    expect(out).toContain("@glrs-dev/harness-opencode");
+    expect(out).toContain("bunx @glrs-dev/harness-plugin-opencode doctor");
+    expect(out).toContain("@glrs-dev/harness-plugin-opencode");
   });
 
   it("handles missing suggestion gracefully", () => {

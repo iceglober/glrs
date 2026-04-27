@@ -86,7 +86,7 @@ If the TUI fails to dispatch a plugin-registered slash command, the raw text flo
 **Action.** When a fallback fires:
 
 1. Announce in plain chat (one line, no `question` tool): `→ Slash command /<cmd> fallback (TUI dispatch missed — executing inline)`.
-2. Read the template file from the bundled plugin cache path: `~/.cache/opencode/packages/@glrs-dev/harness-opencode@latest/node_modules/@glrs-dev/harness-opencode/dist/commands/prompts/<cmd>.md`.
+2. Read the template file from the bundled plugin cache path: `~/.cache/opencode/packages/@glrs-dev/harness-plugin-opencode@latest/node_modules/@glrs-dev/harness-plugin-opencode/dist/commands/prompts/<cmd>.md`.
 3. Strip YAML frontmatter if present (delimited by an opening `---` line through the next `---` line). Execute the body only.
 4. Substitute `$ARGUMENTS` with everything after `/<cmd> ` on the first line — whitespace-trimmed, empty string if no args.
 5. Execute the resulting instructions verbatim as this turn's directive.
@@ -110,7 +110,7 @@ Before Phase 1, run this probe inline (no subagent) — sessions typically start
 1. `pwd` — confirm working directory.
 2. `git status --short` — see uncommitted work.
 3. `git log --oneline -5` — recent history.
-4. `PLAN_DIR="$(bunx @glrs-dev/harness-opencode plan-dir 2>/dev/null)" && ls "$PLAN_DIR" 2>/dev/null | tail -5` — plans for this repo (resolved from `~/.glorious/opencode/<repo>/plans/`; falls back silently if the CLI or repo isn't available).
+4. `PLAN_DIR="$(bunx @glrs-dev/harness-plugin-opencode plan-dir 2>/dev/null)" && ls "$PLAN_DIR" 2>/dev/null | tail -5` — plans for this repo (resolved from `~/.glorious/opencode/<repo>/plans/`; falls back silently if the CLI or repo isn't available).
 
 For each plan found, read it and count unchecked acceptance items. Classify as **stale** (ignore) only if `git merge-base --is-ancestor HEAD origin/main` (fallback `origin/master`) exits 0 — meaning this worktree's work is already landed. If classification fails (no origin fetched, detached HEAD, etc.), treat as active — over-surface is safer than silently dropping.
 
@@ -363,7 +363,7 @@ The PRIME's context window is expensive (Opus). Protect it by delegating anythin
 
 # Subagent reference (recap)
 
-- `@plan` — writes the plan under the repo-shared plan directory (resolves via `bunx @glrs-dev/harness-opencode plan-dir`; absolute path returned) and runs its own gap-analysis + adversarial-review loop. PRIME delegates Phase 2 plan authoring here.
+- `@plan` — writes the plan under the repo-shared plan directory (resolves via `bunx @glrs-dev/harness-plugin-opencode plan-dir`; absolute path returned) and runs its own gap-analysis + adversarial-review loop. PRIME delegates Phase 2 plan authoring here.
 - `@build` — executes a written plan file-by-file. Runs per-file lint/tests inline, checks acceptance boxes, commits locally. Returns a structured payload with commit SHAs, plan mutations, and any STOP conditions. PRIME delegates Phase 3 execution here.
 - `@research` — multi-round research orchestrator for complex investigations that would otherwise pollute your context with 4-6 parallel explorations. Delegate when the user asks to investigate / deep-dive / understand a topic that needs codebase + external-web context, or multi-workstream planning. Returns a synthesized report; pass it to the user (or feed into `@plan` as grounding if it precedes a plan authoring step).
 - `@code-searcher` — fast codebase grep + structural search, returns paths and short snippets

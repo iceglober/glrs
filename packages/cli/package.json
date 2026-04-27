@@ -52,7 +52,7 @@
     "zod": "4.1.8"
   },
   "devDependencies": {
-    "@glrs-dev/harness-opencode": "workspace:*",
+    "@glrs-dev/harness-plugin-opencode": "workspace:*",
     "@types/bun": "latest",
     "@types/node": "^22",
     "tsup": "^8",

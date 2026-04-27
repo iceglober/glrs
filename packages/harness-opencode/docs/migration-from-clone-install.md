@@ -24,10 +24,10 @@ This matches symlinks (`-type l`) whose target does not exist (`! -exec test -e 
 ## Step 3: Install the npm plugin
 
 ```bash
-bunx @glrs-dev/harness-opencode install
+bunx @glrs-dev/harness-plugin-opencode install
 ```
 
-This adds `"@glrs-dev/harness-opencode"` to your `~/.config/opencode/opencode.json` `plugin` array non-destructively.
+This adds `"@glrs-dev/harness-plugin-opencode"` to your `~/.config/opencode/opencode.json` `plugin` array non-destructively.
 
 ## Step 4: Start OpenCode
 

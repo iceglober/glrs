@@ -1,13 +1,18 @@
 #!/usr/bin/env bun
 /**
  * Vendor harness-opencode's build output into the cli package so the
- * published @glrs-dev/cli tarball is self-contained.
+ * published @glrs-dev/cli tarball is self-contained for standalone use
+ * (glrs oc install, glrs oc doctor, etc.) without a separate npm install.
  *
- * Why: @glrs-dev/harness-opencode is marked `private: true` and will
- * never publish to npm again. But cli's `glrs oc` subcommand needs to
- * spawn it. Solution: copy packages/harness-opencode/dist/ into
+ * Note: @glrs-dev/harness-plugin-opencode ALSO publishes to npm
+ * independently, because OpenCode's plugin runtime resolves it via npm
+ * at plugin-load time — the vendored copy serves the CLI's subprocess
+ * dispatch, while the npm copy serves OpenCode's plugin loader. The
+ * two resolve from different locations but both run the same code.
+ *
+ * Vendoring strategy: copy packages/harness-opencode/dist/ into
  * packages/cli/dist/vendor/harness-opencode/ at build time. The cli's
- * dispatcher resolves the bin from there, not from node_modules.
+ * dispatcher resolves the subprocess bin from there, not from node_modules.
  *
  * Runs as the `build` script's second step in packages/cli/package.json.
  */
@@ -29,7 +34,7 @@ function fail(msg: string): never {
 if (!existsSync(HARNESS_DIST)) {
   fail(
     `harness-opencode dist/ missing at ${HARNESS_DIST}. ` +
-      `Run 'bun run --filter=@glrs-dev/harness-opencode build' first.`,
+      `Run 'bun run --filter=@glrs-dev/harness-plugin-opencode build' first.`,
   );
 }
 if (!existsSync(HARNESS_PKG_JSON)) {

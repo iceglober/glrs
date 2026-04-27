@@ -33,10 +33,14 @@ function readPkg(relPath: string): Record<string, unknown> {
 }
 
 describe("private packages", () => {
-  test("harness-opencode is private and has no publishConfig", () => {
+  test("harness-plugin-opencode IS publishable (required for opencode to load the plugin at runtime)", () => {
+    // Reverse invariant: this package MUST publish to npm, because
+    // OpenCode resolves plugins by npm-installing them at runtime into
+    // ~/.cache/opencode/packages/. If it's marked private, the plugin
+    // load fails with an ETARGET error.
     const pkg = readPkg("packages/harness-opencode/package.json");
-    expect(pkg["private"]).toBe(true);
-    expect(pkg["publishConfig"]).toBeUndefined();
+    expect(pkg["private"], "harness-plugin-opencode must NOT be private").toBeUndefined();
+    expect(pkg["publishConfig"]).toMatchObject({ access: "public" });
   });
 
   test("assume is private and has no publishConfig", () => {

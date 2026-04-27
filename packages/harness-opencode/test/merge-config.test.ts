@@ -129,7 +129,7 @@ describe("merge-config", () => {
 
     const srcWithOurPlugin = {
       ...SRC_JSON,
-      plugin: ["@glrs-dev/harness-opencode"],
+      plugin: ["@glrs-dev/harness-plugin-opencode"],
     };
 
     const result = mergeConfig(srcWithOurPlugin, dstPath);
@@ -138,7 +138,7 @@ describe("merge-config", () => {
     const actual = JSON.parse(fs.readFileSync(dstPath, "utf8"));
     // Both plugins present
     expect(actual.plugin).toContain("opencode-hashline");
-    expect(actual.plugin).toContain("@glrs-dev/harness-opencode");
+    expect(actual.plugin).toContain("@glrs-dev/harness-plugin-opencode");
     // Order: existing first, new appended
     expect(actual.plugin[0]).toBe("opencode-hashline");
   });
@@ -146,13 +146,13 @@ describe("merge-config", () => {
   it("plugin tuple form upgrades existing string entry to tuple", () => {
     const input = {
       "$schema": "https://opencode.ai/config.json",
-      plugin: ["@glrs-dev/harness-opencode"],
+      plugin: ["@glrs-dev/harness-plugin-opencode"],
     };
     const dstPath = writeDst(input);
 
     const srcWithTuple = {
       ...SRC_JSON,
-      plugin: [["@glrs-dev/harness-opencode", { models: { deep: ["bedrock/opus"] } }]],
+      plugin: [["@glrs-dev/harness-plugin-opencode", { models: { deep: ["bedrock/opus"] } }]],
     };
 
     const result = mergeConfig(srcWithTuple, dstPath);
@@ -161,20 +161,20 @@ describe("merge-config", () => {
     const actual = JSON.parse(fs.readFileSync(dstPath, "utf8"));
     // Plugin should be upgraded to tuple form
     expect(Array.isArray(actual.plugin[0])).toBe(true);
-    expect(actual.plugin[0][0]).toBe("@glrs-dev/harness-opencode");
+    expect(actual.plugin[0][0]).toBe("@glrs-dev/harness-plugin-opencode");
     expect(actual.plugin[0][1].models.deep[0]).toBe("bedrock/opus");
   });
 
   it("plugin tuple form does not downgrade existing tuple", () => {
     const input = {
       "$schema": "https://opencode.ai/config.json",
-      plugin: [["@glrs-dev/harness-opencode", { models: { deep: ["user-model"] } }]],
+      plugin: [["@glrs-dev/harness-plugin-opencode", { models: { deep: ["user-model"] } }]],
     };
     const dstPath = writeDst(input);
 
     const srcWithString = {
       ...SRC_JSON,
-      plugin: ["@glrs-dev/harness-opencode"],
+      plugin: ["@glrs-dev/harness-plugin-opencode"],
     };
 
     const result = mergeConfig(srcWithString, dstPath);
@@ -205,7 +205,7 @@ describe("merge-config", () => {
 
   it("seedConfig: creates file with content when dst does not exist", () => {
     const dstPath = path.join(tmpDir, "new-dir", "opencode.json");
-    const content = { plugin: ["@glrs-dev/harness-opencode"] };
+    const content = { plugin: ["@glrs-dev/harness-plugin-opencode"] };
 
     seedConfig(content as any, dstPath);
 

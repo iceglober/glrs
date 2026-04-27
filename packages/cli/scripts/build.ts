@@ -34,7 +34,7 @@ async function step(name: string, fn: () => Promise<void>): Promise<void> {
 
 async function main(): Promise<void> {
   // Step 1: harness-opencode build
-  await step("Building @glrs-dev/harness-opencode", async () => {
+  await step("Building @glrs-dev/harness-plugin-opencode", async () => {
     const result = await $`bun run build`.cwd(HARNESS_ROOT).nothrow();
     if (result.exitCode !== 0) {
       throw new Error(

@@ -1,5 +1,5 @@
 /**
- * @glrs-dev/harness-opencode — OpenCode plugin entry point.
+ * @glrs-dev/harness-plugin-opencode — OpenCode plugin entry point.
  *
  * Registers agents, commands, MCPs, tools, and skills at runtime via the
  * OpenCode plugin `config` hook. Zero filesystem writes to user space.
@@ -117,7 +117,7 @@ async function checkForUpdate(client: any): Promise<void> {
 
 const plugin: Plugin = async (input, options) => {
   // Plugin options come from the opencode.json tuple:
-  //   "plugin": [["@glrs-dev/harness-opencode", { models: {...}, toolHooks: {...} }]]
+  //   "plugin": [["@glrs-dev/harness-plugin-opencode", { models: {...}, toolHooks: {...} }]]
   // This is where users configure model tiers and tool-hooks behavior.
   // The options object is passed through to config-hook and sub-plugins.
   const pluginOptions = options ?? {};

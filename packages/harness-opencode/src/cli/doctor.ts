@@ -1,5 +1,5 @@
 /**
- * `bunx @glrs-dev/harness-opencode doctor`
+ * `bunx @glrs-dev/harness-plugin-opencode doctor`
  *
  * Checks the installation health and reports per-check green/yellow/red.
  */
@@ -10,7 +10,7 @@ import * as os from "node:os";
 import { execSync } from "node:child_process";
 import { validateModelOverride } from "../model-validator.js";
 
-const PLUGIN_NAME = "@glrs-dev/harness-opencode";
+const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
 
 function getOpencodeConfigPath(): string {
   const configHome =

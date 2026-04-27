@@ -1,14 +1,15 @@
 /**
  * Invariant: changesets don't reference packages that have been removed
- * or made permanently private. The removed packages are:
- *   - @glrs-dev/agentic (deleted)
- *   - @glrs-dev/harness-opencode (now vendored into @glrs-dev/cli,
- *     never publishes again)
+ * or made permanently private. Removed/forbidden packages are:
+ *   - @glrs-dev/agentic (deleted from the repo)
+ *   - @glrs-dev/harness-opencode (renamed to @glrs-dev/harness-plugin-opencode;
+ *     the old name was deprecated at v0.16.2 on npm and must never be
+ *     referenced in a new changeset)
  *   - @glrs-dev/assume* (all private; the Rust binary is published via
- *     a separate crates.io path)
+ *     a separate path, not via changesets)
  *
- * Valid changesets reference @glrs-dev/cli only (the one publishable
- * package in the monorepo right now). Unrelated changes may coexist.
+ * Valid changesets reference @glrs-dev/cli and @glrs-dev/harness-plugin-opencode
+ * (the two publishable packages in the monorepo). Unrelated changes may coexist.
  *
  * This test no-ops when .changeset/ has been consumed by `changeset version`
  * (i.e., no non-README *.md files remain). That happens on the Changesets
@@ -60,25 +61,22 @@ function extractFrontmatter(content: string): string {
 const CONSUMED = changesetFiles.length === 0;
 
 describe.skipIf(CONSUMED)("changeset entry", () => {
-  test("no changeset references removed or permanently-private packages", () => {
-    // @glrs-dev/agentic is deleted. @glrs-dev/harness-opencode is
-    // vendored into @glrs-dev/cli and never publishes again. Any
-    // assume-<platform> packages are published via a separate path.
-    // A changeset declaring these packages is dead-code and would
-    // cause `changeset publish` to attempt a no-op or a failing publish.
+  test("no changeset references removed or forbidden packages", () => {
+    // A changeset declaring these packages is dead-code and would cause
+    // `changeset publish` to attempt a no-op or a failing publish.
     for (const { name, content } of allContents) {
       const frontmatter = extractFrontmatter(content);
       expect(
         frontmatter,
-        `${name} should not reference @glrs-dev/agentic`,
+        `${name} should not reference @glrs-dev/agentic (deleted)`,
       ).not.toMatch(/"@glrs-dev\/agentic":\s*/);
       expect(
         frontmatter,
-        `${name} should not reference @glrs-dev/harness-opencode`,
+        `${name} should not reference @glrs-dev/harness-opencode (renamed — use @glrs-dev/harness-plugin-opencode)`,
       ).not.toMatch(/"@glrs-dev\/harness-opencode":\s*/);
       expect(
         frontmatter,
-        `${name} should not reference @glrs-dev/assume or @glrs-dev/assume-<platform>`,
+        `${name} should not reference @glrs-dev/assume or @glrs-dev/assume-<platform> (private)`,
       ).not.toMatch(/"@glrs-dev\/assume(-[a-z0-9-]+)?":\s*/);
     }
   });

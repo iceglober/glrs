@@ -817,7 +817,7 @@ export function startStreamingLogger(args: {
         // the full event trace without waiting for the end-of-run summary.
         if (id !== null) {
           writeRaw(
-            `  run \`bunx @glrs-dev/harness-opencode pilot logs ${id} --run ${runId}\` for full logs`,
+            `  run \`bunx @glrs-dev/harness-plugin-opencode pilot logs ${id} --run ${runId}\` for full logs`,
           );
         }
         break;
@@ -838,7 +838,7 @@ export function startStreamingLogger(args: {
         // Logs-pointer breadcrumb — same as task.failed.
         if (id !== null) {
           writeRaw(
-            `  run \`bunx @glrs-dev/harness-opencode pilot logs ${id} --run ${runId}\` for full logs`,
+            `  run \`bunx @glrs-dev/harness-plugin-opencode pilot logs ${id} --run ${runId}\` for full logs`,
           );
         }
         break;
@@ -1058,8 +1058,8 @@ export function printSummary(args: {
   process.stdout.write(
     `  plan: ${planPath}\n` +
       `  run dir: ${runDir}\n` +
-      `  status: bunx @glrs-dev/harness-opencode pilot status --run ${runId}\n` +
-      `  logs:   bunx @glrs-dev/harness-opencode pilot logs --run ${runId} <task-id>\n`,
+      `  status: bunx @glrs-dev/harness-plugin-opencode pilot status --run ${runId}\n` +
+      `  logs:   bunx @glrs-dev/harness-plugin-opencode pilot logs --run ${runId} <task-id>\n`,
   );
 }
 

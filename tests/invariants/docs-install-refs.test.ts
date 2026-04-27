@@ -33,7 +33,7 @@ const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 // Packages that have been removed or rolled into @glrs-dev/cli. Users
 // should never see install commands pointing at these.
 const DEPRECATED_INSTALLS = [
-  "npm i -g @glrs-dev/harness-opencode",
+  "npm i -g @glrs-dev/harness-plugin-opencode",
   "npm i -g @glrs-dev/agentic",
 ];
 
