@@ -189,7 +189,7 @@ export async function runWorker(deps: WorkerDeps): Promise<WorkerResult> {
           runId: deps.runId,
           taskId: id,
           kind: "task.blocked",
-          payload: { reason: row.last_error },
+          payload: { reason: row.last_error, failedDep: pick.task.id },
         });
       }
     }
@@ -586,6 +586,7 @@ async function runOneTask(
         kind: "task.verify.failed",
         payload: {
           attempt,
+          of: opts.maxAttempts,
           command: lastFailure.command,
           exitCode: lastFailure.exitCode,
           timedOut: verifyResult.failure.timedOut,
