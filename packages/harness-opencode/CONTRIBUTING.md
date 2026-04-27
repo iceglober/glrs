@@ -79,7 +79,7 @@ You don't publish. The maintainer doesn't run `npm publish` either. Changesets d
 3. The maintainer reviews the Version Packages PR and merges it.
 4. The `release` workflow runs again. This time there are no pending changesets, so it runs `changeset publish` — publishing to npm with [provenance attestation](https://docs.npmjs.com/generating-provenance-statements) and pushing the git tag.
 
-The `npm-publish` GitHub environment gates every publish with maintainer approval, so nothing reaches the registry silently.
+Branch protection on `main` is the gate — only maintainers can merge the Version Packages PR, and merging auto-triggers `changeset publish`. No secondary approval step.
 
 ## Tag format
 

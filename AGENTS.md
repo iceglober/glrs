@@ -37,7 +37,7 @@ glrs/
 
 ## Ground rules
 
-1. **One release pipeline.** All publishes go through Changesets. Never run `npm publish` manually. Never run `cargo publish` outside the release workflow. The `npm-publish` GitHub environment gates every publish.
+1. **One release pipeline.** All publishes go through Changesets. Never run `npm publish` manually. Never run `cargo publish` outside the release workflow. Branch protection on `main` is the gate: merging a Version Packages PR auto-publishes.
 
 2. **No postinstall scripts.** The `.npmrc` has `enable-pre-post-scripts=false`. The Rust-as-npm pattern relies on `optionalDependencies` + runtime-detection shim, NOT postinstall downloads.
 

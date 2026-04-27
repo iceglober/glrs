@@ -100,7 +100,7 @@ Releases are automated via [Changesets](https://github.com/changesets/changesets
 - Every user-visible PR must include a changeset (`bunx changeset` → pick bump level → describe).
 - On merge to `main`, `.github/workflows/release.yml` opens or updates a "Version Packages" PR that bumps `package.json`, rewrites `CHANGELOG.md`, and consumes the changeset files.
 - Merging the Version Packages PR triggers `changeset publish`, which runs `npm publish` with provenance and pushes the `@glrs-dev/harness-opencode@<version>` tag.
-- The `npm-publish` GitHub environment gates every publish with maintainer approval.
+- Branch protection on `main` is the publish gate — merging the Version Packages PR auto-publishes.
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full contributor flow and bump-level cheat sheet.
 
