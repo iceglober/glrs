@@ -3,7 +3,7 @@
  * scripts/pack-platform-tarballs.mjs
  *
  * Copy the binaries produced by the rust-build-matrix workflow into each
- * platform package's bin/ directory, so `pnpm publish` picks them up.
+ * platform package's bin/ directory, so `bun publish` picks them up.
  *
  * Input layout (from the release workflow's artifact-download step):
  *   packages/assume/.release-artifacts/darwin-arm64/gs-assume

@@ -30,7 +30,7 @@ The user keeps 7–10 terminal tabs open, each permanently cd'd into a separate 
 What `/fresh` does NOT do:
 
 - It does NOT create a new worktree directory.
-- It does NOT run `gsag wt new` or `git worktree add`.
+- It does NOT run `glrs wt new` or `git worktree add`.
 - It does NOT ask the user to `cd` anywhere — they're already where they need to be.
 - It does NOT touch any other worktree's files, processes, or containers.
 
@@ -57,8 +57,8 @@ What `/fresh` DOES do, in order:
 
 - Run `git rev-parse --is-inside-work-tree` — must print `true`. Abort cleanly if not.
 - Run `git rev-parse --show-toplevel` — capture this as `WORKTREE_DIR`.
-- Run `git rev-parse --git-common-dir` and compare with `git rev-parse --git-dir`. If they match, this is the main checkout, NOT a worktree. Abort with: `/fresh is for long-running worktrees, not the main checkout. Run \`gsag wt new\` first to create one, or cd into an existing worktree tab.`
-- `gsag` is NOT required by this command. (It's the tool the user uses to initially *create* worktree tabs; we don't need it for re-keying.)
+- Run `git rev-parse --git-common-dir` and compare with `git rev-parse --git-dir`. If they match, this is the main checkout, NOT a worktree. Abort with: `/fresh is for long-running worktrees, not the main checkout. Create one first (e.g. `glrs wt new` or `git worktree add`), or cd into an existing worktree tab.`
+- No external worktree tool is required by this command. (Worktree creation is someone else's job; we don't need it for re-keying.)
 
 ## 1. Parse the user's input
 

@@ -8,9 +8,8 @@ Docs: **[glrs.dev](https://glrs.dev)**
 
 | Package | npm | What it is |
 |---|---|---|
-| [`@glrs-dev/cli`](./packages/cli) | `@glrs-dev/cli` | Single `glrs` binary. Dispatches to the three sub-tools below. |
+| [`@glrs-dev/cli`](./packages/cli) | `@glrs-dev/cli` | Single `glrs` binary. Dispatches to harness-opencode and provides worktree management. |
 | [`@glrs-dev/harness-opencode`](./packages/harness-opencode) | `@glrs-dev/harness-opencode` | OpenCode agent harness — PRIME, plan, build, QA, skills, MCP wiring. |
-| [`@glrs-dev/agentic`](./packages/agentic) | `@glrs-dev/agentic` | CLI for agentic workflows, worktree management, plan state. Bins: `gs-agentic`, `gsag`. |
 | [`@glrs-dev/assume`](./packages/assume) | `@glrs-dev/assume` (+ [crates.io](https://crates.io/crates/glrs-assume)) | Rust-based SSO credential manager for AWS/GCP. Bins: `gs-assume`, `gsa`. |
 
 ## Quick start
@@ -21,34 +20,36 @@ npm i -g @glrs-dev/cli
 
 # Use subcommands
 glrs oc install
-glrs agentic wt new my-feature
-glrs assume login aws
+glrs wt new my-feature
+
+# Install assume separately (standalone Rust package)
+npm i -g @glrs-dev/assume
+gsa login aws
 ```
 
 Each package still ships its own bin for direct use:
 
 ```bash
 harness-opencode install
-gsag wt new my-feature
 gsa login aws
 ```
 
 ## Development
 
 ```bash
-pnpm install
-pnpm build
-pnpm test
-pnpm typecheck
+bun install
+bun run build
+bun test
+bun run typecheck
 ```
 
-This repo uses **pnpm workspaces** + **turborepo** for builds, **Changesets** for versioning + publishing. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+This repo uses **Bun workspaces**, **Changesets** for versioning + publishing. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## Releases
 
 Automated via [Changesets](https://github.com/changesets/changesets):
 
-1. Include a changeset in every user-visible PR: `pnpm changeset`
+1. Include a changeset in every user-visible PR: `bun run changeset`
 2. On merge to `main`, a "Version Packages" PR opens / updates
 3. Merging the Version Packages PR publishes to npm and tags releases
 
@@ -58,7 +59,7 @@ The `npm-publish` GitHub environment gates every publish with maintainer approva
 
 This monorepo consolidates two archived repos:
 - [`iceglober/harness-opencode`](https://github.com/iceglober/harness-opencode) → `packages/harness-opencode/` (history preserved)
-- [`iceglober/glorious`](https://github.com/iceglober/glorious) → `packages/agentic/` and `packages/assume/` (history preserved)
+- [`iceglober/glorious`](https://github.com/iceglober/glorious) → `packages/assume/` (history preserved)
 
 ## License
 

@@ -1,35 +1,34 @@
 # `@glrs-dev/cli`
 
-Unified CLI for the [@glrs-dev](https://www.npmjs.com/org/glrs-dev) ecosystem. One binary, three subcommands:
+Unified CLI for the [@glrs-dev](https://www.npmjs.com/org/glrs-dev) ecosystem. One binary, two subcommands:
 
 ```bash
 npm i -g @glrs-dev/cli
 ```
 
 ```bash
-glrs oc install              # → harness-opencode install
-glrs agentic wt new feature  # → gs-agentic wt new feature
-glrs assume login aws        # → gs-assume login aws
+glrs oc install       # → OpenCode harness install
+glrs wt new feature   # create a worktree
+glrs wt list          # list worktrees across repos
+glrs wt switch        # interactive picker
 ```
 
-Each subtool still ships its own direct bin — `harness-opencode`, `gs-agentic` / `gsag`, `gs-assume` / `gsa` — if you prefer typing those. The dispatcher exists to give new users one install command and one entry point to remember.
+Requires [Bun](https://bun.sh) on PATH at runtime.
+
+The `harness-opencode` bin remains available directly for power users who prefer the untagged entry point.
 
 ## How it works
 
-The `glrs` binary is a thin dispatcher. It:
+The `glrs` binary has two subcommands:
 
-1. Reads the first positional arg as the subcommand (`oc`, `agentic`, `assume`)
-2. Resolves the underlying binary via `require.resolve(<package>/package.json)` → reads the `bin` field
-3. Spawns the binary with the remaining argv forwarded, inheriting stdio
-4. Exits with the child's exit code
-
-For the `assume` subcommand, the dispatcher imports `@glrs-dev/assume`'s exported `getBinaryPath()` directly and execs the prebuilt Rust binary — skipping the TS shim middle-layer for interactive credential operations.
+- **`glrs oc <args>`** — dispatches to [`@glrs-dev/harness-opencode`](../harness-opencode/) (bundled as a dependency). Resolves the bin via `require.resolve(<package>/package.json)` → reads the `bin` field → spawns with argv forwarded.
+- **`glrs wt <args>`** — worktree management, handled natively. Commands: `new`, `list`, `switch`, `delete`, `cleanup`. Worktrees are stored in `~/.glorious/worktrees/<repo>/<name>/`.
 
 ## Philosophy
 
-- **Don't duplicate CLI logic.** Every flag, every subcommand, every option lives in the underlying tool. The dispatcher adds no behavior.
-- **Don't fragment muscle memory.** `harness-opencode` / `gsag` / `gsa` keep working forever. `glrs` is additive, not a replacement.
-- **One install, one thing to remember.** For new users in the @glrs-dev ecosystem, `npm i -g @glrs-dev/cli` gets them everything.
+- **Don't duplicate CLI logic.** `glrs oc` is a thin spawn wrapper around `harness-opencode`.
+- **One install, one thing to remember** for the harness + worktree workflow.
+- **Separate concerns stay separate.** The SSO credential tool [`@glrs-dev/assume`](../assume/) is a standalone Rust binary installed separately.
 
 ## Docs
 

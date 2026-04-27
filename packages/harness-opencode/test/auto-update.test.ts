@@ -260,9 +260,11 @@ describe("readOurPackageVersion", () => {
     // with the test file's URL, which lives under test/.
     const version = readOurPackageVersion(import.meta.url);
     expect(typeof version).toBe("string");
-    // Should match the repo's current package.json — read it directly for comparison.
+    // Should match the harness-opencode package.json — find it relative to this
+    // test file rather than process.cwd(), so the test works both when run from
+    // the package dir and from the monorepo root.
     const pkgRaw = fs.readFileSync(
-      path.join(process.cwd(), "package.json"),
+      path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "package.json"),
       "utf8",
     );
     const pkg = JSON.parse(pkgRaw) as { version: string };

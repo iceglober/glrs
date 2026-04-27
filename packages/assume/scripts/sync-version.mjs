@@ -12,7 +12,7 @@
  * This keeps all six npm packages + the Rust crate in lockstep, which is
  * required for the optional-deps pattern to resolve correctly.
  *
- * Invoked by the release workflow after `pnpm changeset version` but before
+ * Invoked by the release workflow after `bunx changeset version` but before
  * `changeset publish`. Can also be run manually when bumping Cargo-side
  * independently (which should be rare; the Changesets `linked` group is the
  * source of truth).
@@ -40,7 +40,7 @@ const version = mainPkg.version;
 if (!version || version === "0.0.0") {
   console.error(
     `[sync-version] Refusing to sync: @glrs-dev/assume version is '${version}'. ` +
-      `This usually means Changesets hasn't run yet. Run 'pnpm changeset version' first.`,
+      `This usually means Changesets hasn't run yet. Run 'bunx changeset version' first.`,
   );
   process.exit(1);
 }

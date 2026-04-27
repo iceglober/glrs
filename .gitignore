@@ -1,7 +1,6 @@
 # Node / TS
 node_modules/
 dist/
-.turbo/
 *.tsbuildinfo
 
 # Rust
@@ -18,7 +17,6 @@ Thumbs.db
 *.log
 npm-debug.log*
 yarn-debug.log*
-pnpm-debug.log*
 
 # Env
 .env
@@ -34,9 +32,6 @@ pnpm-debug.log*
 
 # Bun
 .bun/
-
-# pnpm
-.pnpm-store/
 
 # Astro / docs
 docs/.astro/

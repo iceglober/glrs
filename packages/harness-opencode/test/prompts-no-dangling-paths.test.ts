@@ -26,10 +26,18 @@ const FORBIDDEN_PATTERNS = [
   ".agent/plans",
   // Legacy npm scope. All packages moved to @glrs-dev as part of the
   // iceglober/glorious → iceglober/glrs monorepo consolidation. Any prompt
-  // referencing @glorious/<anything> is dangling. The bin names `gsag`,
-  // `gs-agentic`, `gs-assume`, `gsa` remain stable and fine to reference
-  // as shell commands — only the npm package name is forbidden.
+  // referencing @glorious/<anything> is dangling. Prompts should not
+  // prescribe specific user-installed CLIs — agents describe workflow in
+  // tool-agnostic terms and invoke `git` / `gh` directly when needed.
   "@glorious/",
+  // Removed CLI bins — prompts must not assume these are installed.
+  // The @glrs-dev/agentic package was deleted; gs-agentic/gsag no longer exist.
+  // gs-assume/gsa are a separate SSO tool and prompts should not prescribe
+  // them to users — if credential-refresh is needed, describe the goal
+  // and let the user pick their own tool.
+  "gs-agentic",
+  "gsag",
+  "gs-assume",
 ];
 
 function findMdFiles(dir: string): string[] {

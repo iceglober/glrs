@@ -1,7 +1,7 @@
 {
   "name": "@glrs-dev/cli",
   "version": "0.0.1",
-  "description": "Unified CLI for the @glrs-dev ecosystem. Dispatches to harness-opencode, agentic, and assume sub-tools.",
+  "description": "Unified CLI for the @glrs-dev ecosystem — OpenCode agent harness dispatch + worktree management.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -30,24 +30,29 @@
     "cli",
     "dispatcher",
     "opencode",
-    "agentic",
-    "assume"
+    "worktree"
   ],
   "engines": {
-    "node": ">=20.10"
+    "bun": ">=1.2.0"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean --target node20",
+    "build": "bun scripts/build.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test src/",
     "lint": "echo 'no linter configured yet'"
   },
   "dependencies": {
-    "@glrs-dev/harness-opencode": "workspace:*",
-    "@glrs-dev/agentic": "workspace:*",
-    "@glrs-dev/assume": "workspace:*"
+    "@inquirer/prompts": "^8.4.2",
+    "@opencode-ai/plugin": "^1.14",
+    "@opencode-ai/sdk": "^1.14",
+    "cmd-ts": "^0.15.0",
+    "picomatch": "^4.0.4",
+    "ulid": "^3.0.2",
+    "yaml": "^2.8.3",
+    "zod": "4.1.8"
   },
   "devDependencies": {
+    "@glrs-dev/harness-opencode": "workspace:*",
     "@types/bun": "latest",
     "@types/node": "^22",
     "tsup": "^8",

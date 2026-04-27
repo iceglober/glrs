@@ -5,7 +5,7 @@ name: Release
 #   a "Version Packages" PR (consuming the changesets into a version bump
 #   + CHANGELOG entry).
 # - When that Version PR is merged (next push to main), the action detects
-#   no pending changesets and instead runs `pnpm release` (= `changeset
+#   no pending changesets and instead runs `bun run release` (= `changeset
 #   publish`), which publishes to npm with provenance and pushes git tags.
 #
 # Auth: a GitHub App (APP_ID / APP_PRIVATE_KEY secrets) mints a short-lived
@@ -69,25 +69,22 @@ jobs:
           # Use the app token for checkout so git push inherits it.
           token: ${{ steps.app-token.outputs.token }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       # setup-node writes the .npmrc that NODE_AUTH_TOKEN consumes when
       # `changeset publish` calls `npm publish` under the hood.
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: pnpm
           registry-url: 'https://registry.npmjs.org'
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
       - name: Install deps
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Build all packages
-        run: pnpm turbo run build
+        run: bun run build
 
       # Either opens/updates the Version Packages PR, OR (if no pending
       # changesets exist) runs the publish script. Never both in the
@@ -99,8 +96,8 @@ jobs:
         id: changesets
         uses: changesets/action@v1
         with:
-          publish: pnpm release
-          version: pnpm version-packages
+          publish: bun run release
+          version: bun run version-packages
           commit: "chore: version packages"
           title: "chore: version packages"
         env:

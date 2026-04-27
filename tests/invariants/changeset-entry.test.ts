@@ -1,13 +1,14 @@
 /**
- * Invariant: the deprecation changeset exists, bumps harness-opencode as major,
- * and no changeset entries exist for the now-private packages (assume, agentic,
- * or any @glrs-dev/assume-<platform>).
- * Acceptance criterion a6.
+ * Invariant: changesets don't reference packages that have been removed
+ * or made permanently private. The removed packages are:
+ *   - @glrs-dev/agentic (deleted)
+ *   - @glrs-dev/harness-opencode (now vendored into @glrs-dev/cli,
+ *     never publishes again)
+ *   - @glrs-dev/assume* (all private; the Rust binary is published via
+ *     a separate crates.io path)
  *
- * Note: unrelated changesets for other still-public packages may coexist —
- * we do NOT assert a single-changeset invariant because main can legitimately
- * carry multiple in-flight changes. We only enforce the private-package
- * and deprecation invariants.
+ * Valid changesets reference @glrs-dev/cli only (the one publishable
+ * package in the monorepo right now). Unrelated changes may coexist.
  *
  * This test no-ops when .changeset/ has been consumed by `changeset version`
  * (i.e., no non-README *.md files remain). That happens on the Changesets
@@ -24,13 +25,16 @@ function findRepoRoot(start: string): string {
   let dir = start;
   while (true) {
     try {
-      readFileSync(resolve(dir, "pnpm-workspace.yaml"));
-      return dir;
+      const pkg = JSON.parse(
+        readFileSync(resolve(dir, "package.json"), "utf8"),
+      ) as { name?: string };
+      if (pkg.name === "glrs") return dir;
     } catch {
-      const parent = dirname(dir);
-      if (parent === dir) throw new Error("Could not find repo root");
-      dir = parent;
+      // fallthrough
     }
+    const parent = dirname(dir);
+    if (parent === dir) throw new Error("Could not find repo root");
+    dir = parent;
   }
 }
 
@@ -56,43 +60,26 @@ function extractFrontmatter(content: string): string {
 const CONSUMED = changesetFiles.length === 0;
 
 describe.skipIf(CONSUMED)("changeset entry", () => {
-  test("deprecation changeset exists", () => {
-    expect(changesetFiles).toContain("deprecate-standalone-bins.md");
-  });
-
-  test("deprecation changeset bumps harness-opencode as major", () => {
-    const content = readFileSync(
-      resolve(changesetDir, "deprecate-standalone-bins.md"),
-      "utf8",
-    );
-    expect(content).toContain('"@glrs-dev/harness-opencode": major');
-  });
-
-  test("deprecation changeset does not mention assume, agentic, or cli", () => {
-    const content = readFileSync(
-      resolve(changesetDir, "deprecate-standalone-bins.md"),
-      "utf8",
-    );
-    const frontmatter = extractFrontmatter(content);
-    expect(frontmatter).not.toContain("@glrs-dev/assume");
-    expect(frontmatter).not.toContain("@glrs-dev/agentic");
-    expect(frontmatter).not.toContain("@glrs-dev/cli");
-  });
-
-  test("no changeset references now-private packages (assume, agentic)", () => {
-    // The packages being made private in this PR must not appear in any
-    // changeset's frontmatter — changeset publish skips private packages,
-    // but we enforce the cleaner invariant of not even declaring them.
+  test("no changeset references removed or permanently-private packages", () => {
+    // @glrs-dev/agentic is deleted. @glrs-dev/harness-opencode is
+    // vendored into @glrs-dev/cli and never publishes again. Any
+    // assume-<platform> packages are published via a separate path.
+    // A changeset declaring these packages is dead-code and would
+    // cause `changeset publish` to attempt a no-op or a failing publish.
     for (const { name, content } of allContents) {
       const frontmatter = extractFrontmatter(content);
       expect(
         frontmatter,
-        `${name} should not reference @glrs-dev/assume or @glrs-dev/assume-<platform>`,
-      ).not.toMatch(/"@glrs-dev\/assume(-[a-z0-9-]+)?":\s*/);
-      expect(
-        frontmatter,
         `${name} should not reference @glrs-dev/agentic`,
       ).not.toMatch(/"@glrs-dev\/agentic":\s*/);
+      expect(
+        frontmatter,
+        `${name} should not reference @glrs-dev/harness-opencode`,
+      ).not.toMatch(/"@glrs-dev\/harness-opencode":\s*/);
+      expect(
+        frontmatter,
+        `${name} should not reference @glrs-dev/assume or @glrs-dev/assume-<platform>`,
+      ).not.toMatch(/"@glrs-dev\/assume(-[a-z0-9-]+)?":\s*/);
     }
   });
 });
