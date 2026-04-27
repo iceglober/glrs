@@ -33,6 +33,7 @@ import {
 import { fetchModelsDevProviders, suggestTiersFromModelsDev, pickBedrockTierIds, type ModelsDevProvider } from "./models-dev.js";
 
 const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
+const OLD_PLUGIN_NAME = "@glrs-dev/harness-opencode";
 
 // --- ANSI helpers ----------------------------------------------------------
 
@@ -241,6 +242,28 @@ function detectEnabledMcps(existing: Record<string, any> | null): Set<string> {
 // --- Install logic ---------------------------------------------------------
 
 /**
+ * Extract the plugin name from a plugin array entry (string or tuple form).
+ * Handles version pins like "pkg@1.0.0".
+ */
+function getPluginName(entry: any): string | null {
+  const name = typeof entry === "string" ? entry : Array.isArray(entry) ? entry[0] : null;
+  if (!name) return null;
+  const atIdx = name.indexOf("@", 1); // skip leading @ for scoped packages
+  return atIdx > 0 ? name.slice(0, atIdx) : name;
+}
+
+/**
+ * Extract options from a plugin array entry.
+ * Returns the options object for tuple form, or {} for string form.
+ */
+function getPluginOptions(entry: any): Record<string, unknown> {
+  if (Array.isArray(entry) && entry.length >= 2) {
+    return (entry[1] as Record<string, unknown>) ?? {};
+  }
+  return {};
+}
+
+/**
  * Migrate the legacy `harness` top-level key in opencode.json into the
  * plugin options tuple. Reads the file, checks for a `harness` key,
  * moves its contents into the plugin entry's options, and removes the
@@ -260,8 +283,8 @@ function migrateHarnessKeyToPluginOptions(configPath: string): void {
 
     const plugins: any[] = Array.isArray(config.plugin) ? config.plugin : [];
     const pluginIdx = plugins.findIndex((entry: any) => {
-      const name = typeof entry === "string" ? entry : Array.isArray(entry) ? entry[0] : null;
-      return name === PLUGIN_NAME || String(name ?? "").startsWith(`${PLUGIN_NAME}@`);
+      const name = getPluginName(entry);
+      return name === PLUGIN_NAME || name === OLD_PLUGIN_NAME;
     });
     if (pluginIdx < 0) return;
 
@@ -270,9 +293,7 @@ function migrateHarnessKeyToPluginOptions(configPath: string): void {
     const existingName = typeof current === "string"
       ? current
       : Array.isArray(current) ? current[0] : PLUGIN_NAME;
-    const existingOpts = Array.isArray(current) && current.length >= 2
-      ? (current[1] as Record<string, unknown>)
-      : {};
+    const existingOpts = getPluginOptions(current);
 
     // Merge: harness.models → options.models (existing options win on conflict)
     const merged: Record<string, unknown> = { ...config.harness, ...existingOpts };
@@ -289,6 +310,74 @@ function migrateHarnessKeyToPluginOptions(configPath: string): void {
     info(`Backup: ${bakPath}`);
   } catch {
     // Migration is best-effort. If it fails, the user can fix manually.
+  }
+}
+
+/**
+ * Migrate from the old plugin name (@glrs-dev/harness-opencode) to the new
+ * plugin name (@glrs-dev/harness-plugin-opencode). Transfers any options
+ * (models, etc.) from the old entry to the new one, and removes the old entry.
+ *
+ * No-op if:
+ *   - The file doesn't exist or isn't valid JSON
+ *   - There is no old plugin entry
+ */
+function migrateOldPluginName(configPath: string): boolean {
+  try {
+    if (!fs.existsSync(configPath)) return false;
+    const raw = fs.readFileSync(configPath, "utf8");
+    const config = JSON.parse(raw);
+    const plugins: any[] = Array.isArray(config.plugin) ? config.plugin : [];
+
+    // Find the old plugin entry index
+    const oldIdx = plugins.findIndex((entry: any) => {
+      const name = getPluginName(entry);
+      return name === OLD_PLUGIN_NAME;
+    });
+
+    if (oldIdx < 0) return false; // No old entry to migrate
+
+    // Check if new entry already exists
+    const newIdx = plugins.findIndex((entry: any) => {
+      const name = getPluginName(entry);
+      return name === PLUGIN_NAME;
+    });
+
+    // Extract options from old entry
+    const oldEntry = plugins[oldIdx];
+    const oldOpts = getPluginOptions(oldEntry);
+
+    if (newIdx >= 0) {
+      // New entry exists - merge old options into new entry (old wins on conflict
+      // since it was user's intentional config)
+      const newEntry = plugins[newIdx];
+      const newName = typeof newEntry === "string" ? newEntry : newEntry[0];
+      const newOpts = getPluginOptions(newEntry);
+      const mergedOpts = { ...oldOpts, ...newOpts };
+      plugins[newIdx] = Object.keys(mergedOpts).length > 0
+        ? [newName, mergedOpts]
+        : newName;
+    } else {
+      // New entry doesn't exist - create it with old options
+      const newEntry = Object.keys(oldOpts).length > 0
+        ? [PLUGIN_NAME, oldOpts]
+        : PLUGIN_NAME;
+      plugins.push(newEntry);
+    }
+
+    // Remove the old entry
+    plugins.splice(oldIdx, 1);
+
+    // Write backup + new config
+    const bakPath = `${configPath}.bak.${Date.now()}-${process.pid}`;
+    fs.copyFileSync(configPath, bakPath);
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+    ok(`Migrated plugin from ${OLD_PLUGIN_NAME} to ${PLUGIN_NAME}`);
+    info(`Backup: ${bakPath}`);
+    return true;
+  } catch {
+    // Migration is best-effort
+    return false;
   }
 }
 
@@ -566,6 +655,13 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
   // the plugin tuple: ["@glrs-dev/harness-plugin-opencode", { models: {...} }].
   if (!dryRun) {
     migrateHarnessKeyToPluginOptions(configPath);
+  }
+
+  // Migrate from old plugin name to new plugin name.
+  // The plugin was renamed from @glrs-dev/harness-opencode to
+  // @glrs-dev/harness-plugin-opencode. Transfer any options and remove old entry.
+  if (!dryRun) {
+    migrateOldPluginName(configPath);
   }
 
   // Ensure the OpenCode plugin cache is up to date. The cache can get

@@ -11,6 +11,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 
 const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
+const OLD_PLUGIN_NAME = "@glrs-dev/harness-opencode";
 
 function getOpencodeConfigPath(): string {
   const configHome =
@@ -63,9 +64,15 @@ export function uninstall(opts: UninstallOptions = {}): void {
   const plugins: unknown[] = Array.isArray(config.plugin) ? config.plugin : [];
 
   // Find all entries that match our plugin name (bare, versioned, or tuple)
+  // Also filter out the old plugin name for migration support.
   const filtered = plugins.filter((p) => {
     const name = typeof p === "string" ? p : Array.isArray(p) ? p[0] : null;
-    return name !== PLUGIN_NAME && !String(name ?? "").startsWith(`${PLUGIN_NAME}@`);
+    const strName = String(name ?? "");
+    // Remove new plugin name
+    if (name === PLUGIN_NAME || strName.startsWith(`${PLUGIN_NAME}@`)) return false;
+    // Remove old plugin name (for migration)
+    if (name === OLD_PLUGIN_NAME || strName.startsWith(`${OLD_PLUGIN_NAME}@`)) return false;
+    return true;
   });
 
   if (filtered.length === plugins.length) {

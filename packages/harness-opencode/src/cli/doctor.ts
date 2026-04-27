@@ -11,6 +11,7 @@ import { execSync } from "node:child_process";
 import { validateModelOverride } from "../model-validator.js";
 
 const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
+const OLD_PLUGIN_NAME = "@glrs-dev/harness-opencode";
 
 function getOpencodeConfigPath(): string {
   const configHome =
@@ -60,7 +61,9 @@ export function doctor(): void {
       const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
       const plugins: unknown[] = Array.isArray(config.plugin) ? config.plugin : [];
       let pluginOptions: Record<string, unknown> | null = null;
-      const hasPlugin = plugins.some((p) => {
+
+      // Check for new plugin name
+      const hasNewPlugin = plugins.some((p) => {
         if (typeof p === "string") {
           return p === PLUGIN_NAME || p.startsWith(`${PLUGIN_NAME}@`);
         }
@@ -76,8 +79,26 @@ export function doctor(): void {
         }
         return false;
       });
-      if (hasPlugin) {
+
+      // Check for old plugin name (migration needed)
+      const hasOldPlugin = plugins.some((p) => {
+        if (typeof p === "string") {
+          return p === OLD_PLUGIN_NAME || p.startsWith(`${OLD_PLUGIN_NAME}@`);
+        }
+        if (Array.isArray(p)) {
+          const [name] = p as [unknown, unknown];
+          return name === OLD_PLUGIN_NAME || String(name ?? "").startsWith(`${OLD_PLUGIN_NAME}@`);
+        }
+        return false;
+      });
+
+      if (hasNewPlugin) {
         ok(`"${PLUGIN_NAME}" present in opencode.json plugin array`);
+        if (hasOldPlugin) {
+          warn(`old plugin "${OLD_PLUGIN_NAME}" also present — run: bunx ${PLUGIN_NAME} install to migrate`);
+        }
+      } else if (hasOldPlugin) {
+        warn(`old plugin "${OLD_PLUGIN_NAME}" found — run: bunx ${PLUGIN_NAME} install to migrate to new name`);
       } else {
         warn(`"${PLUGIN_NAME}" NOT in opencode.json plugin array — run: bunx ${PLUGIN_NAME} install`);
       }
