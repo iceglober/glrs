@@ -8,6 +8,12 @@
  * we do NOT assert a single-changeset invariant because main can legitimately
  * carry multiple in-flight changes. We only enforce the private-package
  * and deprecation invariants.
+ *
+ * This test no-ops when .changeset/ has been consumed by `changeset version`
+ * (i.e., no non-README *.md files remain). That happens on the Changesets
+ * "version packages" branch where the version flow has already rolled the
+ * changeset content into CHANGELOG.md and package.json bumps — at which
+ * point there's nothing for this test to police.
  */
 import { describe, test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
@@ -44,7 +50,12 @@ function extractFrontmatter(content: string): string {
   return match ? match[1]! : "";
 }
 
-describe("changeset entry", () => {
+// `changeset version` consumes all non-README changeset files.
+// When that's happened, we have nothing to police — all assertions
+// below are vacuously satisfied. Skip rather than fail.
+const CONSUMED = changesetFiles.length === 0;
+
+describe.skipIf(CONSUMED)("changeset entry", () => {
   test("deprecation changeset exists", () => {
     expect(changesetFiles).toContain("deprecate-standalone-bins.md");
   });
