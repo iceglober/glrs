@@ -76,10 +76,13 @@ async function fetchFromApi(): Promise<Release | null> {
     return null;
   }
 
-  const releases: Array<{
+  // GitHub releases API response shape we consume. Unchecked cast via
+  // `as` — we trust the endpoint and handle missing fields at use sites
+  // rather than running a schema validator for a release-list fetch.
+  const releases = (await res.json()) as Array<{
     tag_name: string;
     assets: Array<{ name: string; browser_download_url: string }>;
-  }> = await res.json();
+  }>;
 
   const release = releases.find((r) => r.tag_name.startsWith(TAG_PREFIX));
   if (!release) return null;
