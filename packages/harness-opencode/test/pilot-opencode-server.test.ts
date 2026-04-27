@@ -21,6 +21,7 @@ import * as path from "node:path";
 import {
   startOpencodeServer,
   resolveTimeoutMs,
+  buildPilotServerConfig,
 } from "../src/pilot/opencode/server.js";
 
 // --- Fixtures --------------------------------------------------------------
@@ -199,4 +200,67 @@ describe("startOpencodeServer — E2E (real server)", () => {
       await started.shutdown();
     }
   }, 60_000);
+});
+
+// --- buildPilotServerConfig ------------------------------------------------
+
+describe("buildPilotServerConfig", () => {
+  // Regression guard for the v0.16.2 "agent not registered" bug.
+  //
+  // Root cause: `opencode serve` (which pilot spawns via the SDK's
+  // createOpencodeServer) does NOT load external plugins. Verified
+  // empirically: `opencode serve --print-logs --log-level DEBUG`
+  // produces zero `service=plugin` lines, while `opencode` (TUI)
+  // logs the plugin load. Without the pilot-builder / pilot-planner
+  // agents in the server's config, `session.promptAsync({ agent:
+  // "pilot-builder" })` was accepted but the prompt silently failed
+  // to dispatch (no agent by that name). We work around by injecting
+  // the agents via createOpencodeServer's `config` option — the SDK
+  // forwards it to the server via OPENCODE_CONFIG_CONTENT env var,
+  // which the server's config loader merges with user config files.
+
+  test("includes pilot-builder and pilot-planner", () => {
+    const config = buildPilotServerConfig();
+    expect(config).toBeDefined();
+    const agents = (config as { agent?: Record<string, unknown> }).agent ?? {};
+    expect(Object.keys(agents)).toContain("pilot-builder");
+    expect(Object.keys(agents)).toContain("pilot-planner");
+  });
+
+  test("pilot-builder has mode=subagent and a non-empty prompt", () => {
+    const config = buildPilotServerConfig();
+    const agents = (config as { agent?: Record<string, { mode?: string; prompt?: string }> }).agent ?? {};
+    const pb = agents["pilot-builder"]!;
+    expect(pb).toBeDefined();
+    expect(pb.mode).toBe("subagent");
+    // The prompt is loaded from dist/agents/prompts/pilot-builder.md via
+    // readFileSync; it's >1KB in practice. If this is missing or tiny,
+    // something broke the prompt bundling pipeline.
+    expect(typeof pb.prompt).toBe("string");
+    expect((pb.prompt ?? "").length).toBeGreaterThan(500);
+  });
+
+  test("pilot-planner has mode=subagent and a non-empty prompt", () => {
+    const config = buildPilotServerConfig();
+    const agents = (config as { agent?: Record<string, { mode?: string; prompt?: string }> }).agent ?? {};
+    const pp = agents["pilot-planner"]!;
+    expect(pp).toBeDefined();
+    expect(pp.mode).toBe("subagent");
+    expect(typeof pp.prompt).toBe("string");
+    expect((pp.prompt ?? "").length).toBeGreaterThan(500);
+  });
+
+  test("does NOT include non-pilot agents (those stay user-controllable)", () => {
+    const config = buildPilotServerConfig();
+    const agents = (config as { agent?: Record<string, unknown> }).agent ?? {};
+    // prime, qa-reviewer, code-searcher, etc. are NOT injected — user
+    // opencode.json or global user config governs those. Narrowing here
+    // protects user overrides: if we spread all plugin agents, we'd
+    // shadow user-customized versions in repos that opt-in via their
+    // own config. Only the two that the pilot worker explicitly
+    // references must be guaranteed present.
+    expect(Object.keys(agents)).not.toContain("prime");
+    expect(Object.keys(agents)).not.toContain("qa-reviewer");
+    expect(Object.keys(agents)).not.toContain("code-searcher");
+  });
 });

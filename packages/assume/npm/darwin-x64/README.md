@@ -16,11 +16,6 @@ If you hit a "platform package not found" error from `@glrs-dev/assume`, you may
 npm i @glrs-dev/assume-darwin-x64
 ```
 
-Or install the native Rust binary directly:
-
-```bash
-cargo install glrs-assume
-```
 
 See the [main package](https://www.npmjs.com/package/@glrs-dev/assume) for usage, or [glrs.dev/assume](https://glrs.dev/assume) for full docs.
 

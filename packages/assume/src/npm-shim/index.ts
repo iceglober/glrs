@@ -42,14 +42,12 @@ const BIN_NAME = process.platform === "win32" ? "gs-assume.exe" : "gs-assume";
 /**
  * Resolve the path to the prebuilt binary for this platform.
  *
- * Throws a detailed error if the matching platform package isn't installed —
- * typically because the user ran `npm install --no-optional` or their package
- * manager's optional-dep resolution failed. In that case the fix is to install
- * the platform package directly:
+ * If you hit a "platform package not found" error, you may have run `npm
+ * install --no-optional` or have a package manager that silently skipped
+ * the optional dep. In that case install the matching platform package
+ * directly:
  *
  *     npm i @glrs-dev/assume-<platform>
- *
- * Or to install the matching Rust crate: `cargo install glrs-assume`.
  */
 export function getBinaryPath(): string {
   const platform = detectPlatform();
@@ -62,8 +60,7 @@ export function getBinaryPath(): string {
     throw new Error(
       `[@glrs-dev/assume] Platform package '${pkgName}' not found. ` +
         `This usually means 'optionalDependencies' were skipped (e.g. 'npm install --no-optional'). ` +
-        `Reinstall with optional deps enabled, or run 'npm i ${pkgName}' directly. ` +
-        `Alternatively, 'cargo install glrs-assume' installs the native Rust binary.`,
+        `Reinstall with optional deps enabled, or run 'npm i ${pkgName}' directly.`,
       { cause: err },
     );
   }
