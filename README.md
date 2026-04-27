@@ -53,7 +53,7 @@ Automated via [Changesets](https://github.com/changesets/changesets):
 2. On merge to `main`, a "Version Packages" PR opens / updates
 3. Merging the Version Packages PR publishes to npm and tags releases
 
-The `npm-publish` GitHub environment gates every publish with maintainer approval.
+Branch protection on `main` is the gate — merging the Version Packages PR is the publish approval.
 
 ## History
 

@@ -38,9 +38,9 @@ jobs:
     # Canonical-repo guard: forks can never publish even with a stolen token.
     if: github.repository == 'iceglober/glrs'
     runs-on: ubuntu-22.04
-    # Maintainer approval required before NPM_TOKEN becomes available
-    # to the job. Protected by the `npm-publish` environment's rules.
-    environment: npm-publish
+    # No approval gate — the PR merge to main IS the approval, and
+    # branch protection ensures only maintainers can merge. Adding an
+    # environment-scoped review here would be a redundant second gate.
     steps:
       # Mint a short-lived token from the GitHub App. Unlike the default
       # GITHUB_TOKEN, pushes made with an app token DO trigger downstream

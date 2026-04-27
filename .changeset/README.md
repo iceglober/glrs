@@ -14,7 +14,7 @@ Pick the bump level (patch / minor / major) per affected package and describe th
 
 ## What happens on merge
 
-The `release.yml` workflow on `main` either opens/updates a "Version Packages" PR or, if that PR is merged, runs `changeset publish` to push tags and publish to npm. The `npm-publish` GitHub environment gates every publish with maintainer approval.
+The `release.yml` workflow on `main` either opens/updates a "Version Packages" PR or, if that PR is merged, runs `changeset publish` to push tags and publish to npm. Branch protection on `main` is the gate — only maintainers can merge the Version PR, and merging auto-triggers publish.
 
 ## Bump-level cheat sheet
 

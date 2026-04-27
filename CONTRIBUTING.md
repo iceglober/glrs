@@ -7,7 +7,7 @@ Thanks for contributing. This monorepo uses **Bun workspaces** and **Changesets*
 3. Add a **changeset** describing the change: `bun run changeset`
 4. Open a PR
 5. On merge, Changesets opens/updates a "Version Packages" PR
-6. Merging that PR publishes to npm (gated by the `npm-publish` GitHub environment)
+6. Merging that PR publishes to npm automatically (branch protection on `main` is the gate)
 
 ## Local setup
 
@@ -84,7 +84,7 @@ Do **not** run `npm publish` manually. The release pipeline is:
 4. Merge the Version Packages PR
 5. GitHub Actions runs `changeset publish` → npm publish with provenance + git tags
 
-The `npm-publish` environment requires maintainer approval before the publish step runs.
+The `main` branch protection rules are the publish gate — merging a Version Packages PR kicks off `changeset publish` automatically.
 
 ### Rollback
 
