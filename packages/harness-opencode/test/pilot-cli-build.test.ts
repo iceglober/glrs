@@ -516,6 +516,14 @@ describe("startStreamingLogger", () => {
       payload: null,
       ts: 1700000000001,
     });
+    // Explicit: attempt=1 with conforming payload also stays suppressed.
+    cb!({
+      runId: "RUN1",
+      taskId: "T1",
+      kind: "task.attempt",
+      payload: { attempt: 1, of: 3 },
+      ts: 1700000000002,
+    });
     expect(lines.join("")).toBe("");
     teardown();
   });
@@ -575,6 +583,8 @@ describe("startStreamingLogger", () => {
   });
 
   test("de-noises blocked cascade", () => {
+    // Updated for a4: first 5 blocked events render inline; any beyond 5
+    // collapse into a "...N more" line. The end-of-run summary still fires.
     const lines: string[] = [];
     let cb:
       | ((e: {
@@ -601,7 +611,7 @@ describe("startStreamingLogger", () => {
       clock: () => 1700000000000,
     });
 
-    // Fire 5 blocked events — none should appear as individual lines.
+    // Fire 5 blocked events — all 5 should appear as individual inline lines.
     for (let i = 0; i < 5; i++) {
       cb!({
         runId: "RUN1",
@@ -609,13 +619,16 @@ describe("startStreamingLogger", () => {
         kind: "task.blocked",
         payload: {
           reason: "dependency \"T1\" failed",
+          failedDep: "T1",
         },
         ts: 1700000000000 + i,
       });
     }
-    // Pre-finished: no blocked lines at all, and no summary.
-    expect(lines.join("")).not.toMatch(/task\.blocked/);
-    expect(lines.join("")).not.toMatch(/blocked:/);
+    // Pre-finished: 5 inline task.blocked lines, no summary yet.
+    const preSummary = lines.join("");
+    const inlineCount = (preSummary.match(/task\.blocked T\d/g) ?? []).length;
+    expect(inlineCount).toBe(5);
+    expect(preSummary).not.toMatch(/blocked: \d+ task/);
 
     // run.finished triggers the summary flush.
     cb!({
@@ -627,8 +640,6 @@ describe("startStreamingLogger", () => {
     });
 
     const out = lines.join("");
-    // Still no per-event blocked lines.
-    expect(out).not.toMatch(/task\.blocked/);
     // One summary line with count + first-reason.
     expect(out).toMatch(
       /blocked: 5 task\(s\) waiting on failed dependency \(dependency "T1" failed\)/,
@@ -683,6 +694,458 @@ describe("startStreamingLogger", () => {
     expect(out).toMatch(/task\.failed T1 in \d+s/);
     // No continuation line.
     expect(out).not.toMatch(/→/);
+    teardown();
+  });
+
+  // -------------------------------------------------------------------------
+  // a1: task.verify.failed renders attempt/command/exitCode
+  // -------------------------------------------------------------------------
+
+  test("renders attempt/command/exitCode on task.verify.failed", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN1",
+      totalTasks: 1,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    cb!({
+      runId: "RUN1",
+      taskId: "T1",
+      kind: "task.verify.failed",
+      payload: { attempt: 2, of: 3, command: "bun test", exitCode: 1, timedOut: false, aborted: false },
+      ts: 1700000000000,
+    });
+
+    const out = lines.join("");
+    expect(out).toMatch(/task\.verify\.failed T1 attempt 2\/3/);
+    expect(out).toMatch(/bun test/);
+    expect(out).toMatch(/exit 1/);
+    teardown();
+  });
+
+  test("renders (timed out) suffix on task.verify.failed when timedOut=true", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN1",
+      totalTasks: 1,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    cb!({
+      runId: "RUN1",
+      taskId: "T1",
+      kind: "task.verify.failed",
+      payload: { attempt: 1, of: 3, command: "bun test", exitCode: 1, timedOut: true, aborted: false },
+      ts: 1700000000000,
+    });
+
+    const out = lines.join("");
+    expect(out).toMatch(/timed out/);
+    teardown();
+  });
+
+  // -------------------------------------------------------------------------
+  // a2: task.failed / task.stopped emit logs-pointer breadcrumb
+  // -------------------------------------------------------------------------
+
+  test("emits logs-pointer breadcrumb after task.failed", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN42",
+      totalTasks: 1,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    cb!({
+      runId: "RUN42",
+      taskId: "T1",
+      kind: "task.started",
+      payload: null,
+      ts: 1700000000000,
+    });
+    cb!({
+      runId: "RUN42",
+      taskId: "T1",
+      kind: "task.failed",
+      payload: null,
+      ts: 1700000010000,
+    });
+
+    const out = lines.join("");
+    // Breadcrumb must mention the task id and run id.
+    expect(out).toMatch(/pilot logs T1/);
+    expect(out).toMatch(/--run RUN42/);
+    teardown();
+  });
+
+  test("emits logs-pointer breadcrumb after task.stopped", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN42",
+      totalTasks: 1,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    cb!({
+      runId: "RUN42",
+      taskId: "T1",
+      kind: "task.stopped",
+      payload: null,
+      ts: 1700000010000,
+    });
+
+    const out = lines.join("");
+    expect(out).toMatch(/pilot logs T1/);
+    expect(out).toMatch(/--run RUN42/);
+    teardown();
+  });
+
+  test("emits breadcrumb even when phase/reason missing", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN99",
+      totalTasks: 1,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    cb!({
+      runId: "RUN99",
+      taskId: "T1",
+      kind: "task.failed",
+      payload: null, // no phase/reason
+      ts: 1700000010000,
+    });
+
+    const out = lines.join("");
+    // Breadcrumb fires regardless of payload shape.
+    expect(out).toMatch(/pilot logs T1/);
+    expect(out).toMatch(/--run RUN99/);
+    teardown();
+  });
+
+  // -------------------------------------------------------------------------
+  // a3: task.stopped renders stopReason inline
+  // -------------------------------------------------------------------------
+
+  test("renders stopReason inline on task.stopped", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN1",
+      totalTasks: 1,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    cb!({
+      runId: "RUN1",
+      taskId: "T1",
+      kind: "task.stopped",
+      payload: { reason: "tool unavailable: git" },
+      ts: 1700000010000,
+    });
+
+    const out = lines.join("");
+    expect(out).toMatch(/task\.stopped T1/);
+    expect(out).toMatch(/tool unavailable: git/);
+    teardown();
+  });
+
+  // -------------------------------------------------------------------------
+  // a4: task.blocked renders inline with cap of 5
+  // -------------------------------------------------------------------------
+
+  test("renders inline task.blocked with failed-dep id", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN1",
+      totalTasks: 3,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    cb!({
+      runId: "RUN1",
+      taskId: "T2",
+      kind: "task.blocked",
+      payload: { reason: "dep failed", failedDep: "T1" },
+      ts: 1700000000000,
+    });
+
+    const out = lines.join("");
+    expect(out).toMatch(/task\.blocked T2/);
+    expect(out).toMatch(/T1/);
+    teardown();
+  });
+
+  test("collapses blocked cascade past 5 inline lines", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN1",
+      totalTasks: 8,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    // Fire 6 blocked events: first 5 should render inline, 6th collapses.
+    for (let i = 0; i < 6; i++) {
+      cb!({
+        runId: "RUN1",
+        taskId: `T${i + 2}`,
+        kind: "task.blocked",
+        payload: { reason: "dep failed", failedDep: "T1" },
+        ts: 1700000000000 + i,
+      });
+    }
+
+    const out = lines.join("");
+    // Exactly 5 inline task.blocked lines.
+    const inlineMatches = out.match(/task\.blocked T\d/g) ?? [];
+    expect(inlineMatches.length).toBe(5);
+    // The 6th triggers the "...N more" collapse line.
+    expect(out).toMatch(/\.\.\.1 more blocked/);
+    teardown();
+  });
+
+  test("still emits end-of-run blocked summary", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN1",
+      totalTasks: 4,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    for (let i = 0; i < 3; i++) {
+      cb!({
+        runId: "RUN1",
+        taskId: `T${i + 2}`,
+        kind: "task.blocked",
+        payload: { reason: "dep failed", failedDep: "T1" },
+        ts: 1700000000000 + i,
+      });
+    }
+
+    cb!({
+      runId: "RUN1",
+      taskId: null,
+      kind: "run.finished",
+      payload: null,
+      ts: 1700000100000,
+    });
+
+    const out = lines.join("");
+    // End-of-run summary still fires.
+    expect(out).toMatch(/blocked: 3 task\(s\)/);
+    teardown();
+  });
+
+  // -------------------------------------------------------------------------
+  // a5: task.attempt tick on attempt >= 2, suppressed on attempt 1
+  // -------------------------------------------------------------------------
+
+  test("prints retry tick on attempt >= 2", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN1",
+      totalTasks: 1,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    cb!({
+      runId: "RUN1",
+      taskId: "T1",
+      kind: "task.attempt",
+      payload: { attempt: 2, of: 3 },
+      ts: 1700000000000,
+    });
+
+    const out = lines.join("");
+    expect(out).toMatch(/attempt 2\/3/);
+    expect(out).toMatch(/retry with fix prompt/);
+    teardown();
+  });
+
+  test("suppresses attempt 1 tick", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN1",
+      totalTasks: 1,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    cb!({
+      runId: "RUN1",
+      taskId: "T1",
+      kind: "task.attempt",
+      payload: { attempt: 1, of: 3 },
+      ts: 1700000000000,
+    });
+
+    const out = lines.join("");
+    // Attempt 1 stays silent.
+    expect(out).toBe("");
     teardown();
   });
 });
