@@ -8,24 +8,25 @@
     "url": "git+https://github.com/iceglober/glrs.git"
   },
   "homepage": "https://glrs.dev",
-  "packageManager": "pnpm@10.33.0",
-  "engines": {
-    "node": ">=20.10",
-    "pnpm": ">=10"
-  },
+  "packageManager": "bun@1.2.0",
+  "workspaces": [
+    "packages/*",
+    "docs",
+    "infra/gcp",
+    "tests/*"
+  ],
   "scripts": {
-    "build": "turbo run build",
-    "test": "turbo run test",
-    "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
-    "changeset": "changeset",
-    "version-packages": "changeset version && pnpm install --lockfile-only --no-frozen-lockfile",
-    "release": "turbo run build --filter='./packages/*' && changeset publish"
+    "build": "bun run --filter=@glrs-dev/cli --filter=@glrs-dev/assume --filter=@glrs-dev/docs --filter=@glrs-dev/infra-gcp build",
+    "test": "bun test",
+    "typecheck": "bun run --filter='*' typecheck",
+    "lint": "bun run --filter='*' lint",
+    "changeset": "bunx @changesets/cli",
+    "version-packages": "bunx @changesets/cli version && bun install",
+    "release": "bun run build && bunx @changesets/cli publish"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.6.0",
     "@changesets/cli": "^2.31.0",
-    "turbo": "^2.5.8",
     "typescript": "^5.7.3"
   }
 }

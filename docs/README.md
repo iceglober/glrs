@@ -5,9 +5,9 @@ Starlight-based static site for the `@glrs-dev` ecosystem. Published to https://
 ## Local dev
 
 ```bash
-pnpm --filter @glrs-dev/docs dev      # http://localhost:4321
-pnpm --filter @glrs-dev/docs build    # → dist/
-pnpm --filter @glrs-dev/docs preview  # serve dist/ locally
+bun run --filter @glrs-dev/docs dev      # http://localhost:4321
+bun run --filter @glrs-dev/docs build    # → dist/
+bun run --filter @glrs-dev/docs preview  # serve dist/ locally
 ```
 
 ## Authoring
@@ -22,7 +22,7 @@ Content is MDX in `src/content/docs/`. Starlight conventions:
 
 Pipeline:
 1. Push to `main` touching `docs/**` triggers `.github/workflows/docs-deploy.yml`
-2. Workflow builds with `pnpm --filter @glrs-dev/docs build` → `docs/dist/`
+2. Workflow builds with `bun run --filter @glrs-dev/docs build` → `docs/dist/`
 3. Authenticates to GCP via Workload Identity Federation (no long-lived keys)
 4. `gsutil -m rsync -d -r docs/dist/ gs://${{ vars.GCP_DOCS_BUCKET }}/`
 5. `gcloud compute url-maps invalidate-cdn-cache` to flush the CDN

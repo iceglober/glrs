@@ -1,0 +1,17 @@
+# Bun monorepo config.
+#
+# Bun installs peer deps automatically by default, does not run
+# pre/post install scripts by default, and auto-links workspace
+# packages. Most pnpm-era flags are no-ops on Bun.
+#
+# Tells bun to ignore lifecycle scripts for any package that isn't
+# explicitly allowed. Mirrors the pnpm `enable-pre-post-scripts=false`
+# setting the repo used to have — the Rust-as-npm pattern here relies
+# on `optionalDependencies` + runtime shim, NOT postinstall downloads.
+[install]
+exact = false
+
+[install.scripts]
+# No packages are allowed to run install-time lifecycle scripts by
+# default. Add specific package names here if legitimately needed.
+allowList = []

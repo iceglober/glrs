@@ -7,18 +7,21 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Walk up from this file to find the repo root (contains pnpm-workspace.yaml).
+// Walk up from this file to find the repo root (contains root package.json with name "glrs").
 function findRepoRoot(start: string): string {
   let dir = start;
   while (true) {
     try {
-      readFileSync(resolve(dir, "pnpm-workspace.yaml"));
-      return dir;
+      const pkg = JSON.parse(
+        readFileSync(resolve(dir, "package.json"), "utf8"),
+      ) as { name?: string };
+      if (pkg.name === "glrs") return dir;
     } catch {
-      const parent = dirname(dir);
-      if (parent === dir) throw new Error("Could not find repo root");
-      dir = parent;
+      // fallthrough
     }
+    const parent = dirname(dir);
+    if (parent === dir) throw new Error("Could not find repo root");
+    dir = parent;
   }
 }
 
@@ -38,12 +41,6 @@ describe("private packages", () => {
 
   test("assume is private and has no publishConfig", () => {
     const pkg = readPkg("packages/assume/package.json");
-    expect(pkg["private"]).toBe(true);
-    expect(pkg["publishConfig"]).toBeUndefined();
-  });
-
-  test("agentic is private and has no publishConfig", () => {
-    const pkg = readPkg("packages/agentic/package.json");
     expect(pkg["private"]).toBe(true);
     expect(pkg["publishConfig"]).toBeUndefined();
   });

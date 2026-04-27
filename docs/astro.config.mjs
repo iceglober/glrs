@@ -12,7 +12,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "glrs",
-      description: "Unified @glrs-dev ecosystem — agent harness, agentic CLI, SSO credentials.",
+      description: "Unified @glrs-dev ecosystem — agent harness, worktree CLI, SSO credentials.",
       social: {
         github: "https://github.com/iceglober/glrs",
       },
@@ -25,20 +25,16 @@ export default defineConfig({
           ],
         },
         {
+          label: "cli",
+          items: [{ label: "Overview", slug: "cli" }],
+        },
+        {
           label: "harness-opencode",
           items: [{ label: "Overview", slug: "harness-opencode" }],
         },
         {
-          label: "agentic",
-          items: [{ label: "Overview", slug: "agentic" }],
-        },
-        {
           label: "assume",
           items: [{ label: "Overview", slug: "assume" }],
-        },
-        {
-          label: "cli",
-          items: [{ label: "Overview", slug: "cli" }],
         },
       ],
       editLink: {

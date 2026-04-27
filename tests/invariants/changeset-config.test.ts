@@ -11,13 +11,16 @@ function findRepoRoot(start: string): string {
   let dir = start;
   while (true) {
     try {
-      readFileSync(resolve(dir, "pnpm-workspace.yaml"));
-      return dir;
+      const pkg = JSON.parse(
+        readFileSync(resolve(dir, "package.json"), "utf8"),
+      ) as { name?: string };
+      if (pkg.name === "glrs") return dir;
     } catch {
-      const parent = dirname(dir);
-      if (parent === dir) throw new Error("Could not find repo root");
-      dir = parent;
+      // fallthrough
     }
+    const parent = dirname(dir);
+    if (parent === dir) throw new Error("Could not find repo root");
+    dir = parent;
   }
 }
 

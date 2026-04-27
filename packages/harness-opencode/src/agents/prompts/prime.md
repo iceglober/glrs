@@ -41,13 +41,12 @@ Users run this harness so they don't have to answer questions about *mechanics*.
 Evaluate these rules in order. Stop at the first match. **No "it depends."** If you're picking between branches, use this table, not judgement.
 
 1. **Trivial request** (Phase 1 "trivial" path: <20 lines, 1 file, no behavior change): stay on current branch unconditionally. No branching, no announcement. A typo fix on `main` stays on `main`.
-2. **Substantial request, on default branch (`main`/`master`/repo default) with `gsag` installed** → auto-invoke `/fresh` with the work description as `$ARGUMENTS` (and a ticket ID if you have one). Announce: `→ Workflow: starting fresh worktree via /fresh (avoiding work on default branch)`.
-3. **Substantial request, on default branch without `gsag`** → `git checkout -b <slug>` from current position, where `<slug>` is derived by: lowercase the description, replace non-alphanumeric runs with `-`, infer verb prefix (`fix/`, `feat/`, `refactor/`, `docs/`, `chore/`), truncate to 50 chars. Announce: `→ Workflow: created branch <slug> on current worktree (gsag not installed — staying here)`.
-4. **Detached HEAD** → same as rule 2 or 3 based on `gsag` availability. Treat detached HEAD as "not on a branch" → needs isolation.
-5. **Substantial request, on default branch, dirty tree** → abort with a single-sentence message: *"Uncommitted changes on `<branch>`; commit or stash them, then re-run."* Do NOT stash automatically — the user's WIP is theirs.
-6. **Substantial request, on a feature branch, dirty tree, work unrelated to branch** → abort: *"On feature branch `<X>` with uncommitted changes; commit or stash before starting unrelated work."*
-7. **Substantial request, on a feature branch (clean), work unrelated to branch** → create a new branch from the default: `git fetch origin && git checkout -b <slug> origin/<default-branch>`. Announce: `→ Workflow: switching from <old-branch> to new branch <slug> for unrelated work`.
-8. **Substantial request, on a feature branch, work plausibly matches the branch** (branch name references same ticket, or same feature keyword) → stay. No announcement (status quo is the expected default).
+2. **Substantial request, on default branch (`main`/`master`/repo default)** → auto-invoke `/fresh` with the work description as `$ARGUMENTS` (and a ticket ID if you have one). Announce: `→ Workflow: starting fresh worktree via /fresh (avoiding work on default branch)`. If `/fresh` is unavailable in this harness install, fall back to `git checkout -b <slug>` from current position, where `<slug>` is derived by: lowercase the description, replace non-alphanumeric runs with `-`, infer verb prefix (`fix/`, `feat/`, `refactor/`, `docs/`, `chore/`), truncate to 50 chars. Announce: `→ Workflow: created branch <slug> on current worktree`.
+3. **Detached HEAD** → same as rule 2. Treat detached HEAD as "not on a branch" → needs isolation.
+4. **Substantial request, on default branch, dirty tree** → abort with a single-sentence message: *"Uncommitted changes on `<branch>`; commit or stash them, then re-run."* Do NOT stash automatically — the user's WIP is theirs.
+5. **Substantial request, on a feature branch, dirty tree, work unrelated to branch** → abort: *"On feature branch `<X>` with uncommitted changes; commit or stash before starting unrelated work."*
+6. **Substantial request, on a feature branch (clean), work unrelated to branch** → create a new branch from the default: `git fetch origin && git checkout -b <slug> origin/<default-branch>`. Announce: `→ Workflow: switching from <old-branch> to new branch <slug> for unrelated work`.
+7. **Substantial request, on a feature branch, work plausibly matches the branch** (branch name references same ticket, or same feature keyword) → stay. No announcement (status quo is the expected default).
 
 ### What "plausibly matches" means
 
@@ -56,14 +55,14 @@ The branch plausibly matches the work if ANY of these hold:
 - The branch name contains ≥2 consecutive slug tokens that also appear in the work description.
 - The user explicitly said something like "continue on this branch" or "add to the current work."
 
-If none match, treat as "unrelated" (rule 7).
+If none match, treat as "unrelated" (rule 6).
 
 ## Announcement rules
 
 - One line of plain chat text, prefixed with `→ Workflow:`.
 - No `question` tool, no notification. Announcements are informational, not gates. Notifications stay reserved for "user action required" so users trust the signal.
-- Never announce for trivial requests (rule 1) or "stay on matching branch" (rule 8) — status quo needs no narration.
-- On abort (rules 5, 6): use plain chat, one sentence, then STOP. Don't continue into Phase 2. The user responds or re-runs.
+- Never announce for trivial requests (rule 1) or "stay on matching branch" (rule 7) — status quo needs no narration.
+- On abort (rules 4, 5): use plain chat, one sentence, then STOP. Don't continue into Phase 2. The user responds or re-runs.
 
 ## Carve-outs
 

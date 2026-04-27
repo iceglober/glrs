@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * glrs — unified CLI entry point.
  *
@@ -7,7 +7,15 @@
  */
 
 import { spawn } from "node:child_process";
-import { HELP_TEXT, SUBCOMMANDS, resolveSubcommand, type Subcommand } from "./index.js";
+import * as path from "node:path";
+import { subcommands, run, binary } from "cmd-ts";
+import { HELP_TEXT, SUBCOMMANDS, resolveSubcommand, WORKTREE_HELP_TEXT } from "./index.js";
+import { create } from "./commands/create.js";
+import { list } from "./commands/list.js";
+import { del } from "./commands/delete.js";
+import { cleanup } from "./commands/cleanup.js";
+import { switchCmd } from "./commands/switch.js";
+import { go } from "./commands/go.js";
 
 const args = process.argv.slice(2);
 
@@ -18,58 +26,95 @@ if (args.length === 0 || args[0] === "--help" || args[0] === "-h" || args[0] ===
 }
 
 if (args[0] === "--version" || args[0] === "-V") {
-  // Read our own package version via JSON import. Avoids baking a constant at
-  // build time that could drift from package.json.
-  const { readFileSync } = await import("node:fs");
-  const { fileURLToPath } = await import("node:url");
-  const { dirname, resolve } = await import("node:path");
-  const pkgPath = resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "package.json",
-  );
-  const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version: string };
+  // Use Bun.file for reading package.json
+  const __dirname = path.dirname(import.meta.url.replace("file://", ""));
+  const pkgPath = path.join(__dirname, "..", "package.json");
+  // @ts-ignore - Bun types
+  const pkg = await Bun.file(pkgPath).json();
   process.stdout.write(`glrs ${pkg.version}\n`);
   process.exit(0);
 }
 
 const sub = args[0];
-if (!SUBCOMMANDS.includes(sub as Subcommand)) {
+
+// Handle worktree subcommands natively
+if (sub === "wt" || sub === "worktree") {
+  const wtArgs = args.slice(1);
+  
+  // Bare `glrs wt` → interactive worktree picker
+  if (wtArgs.length === 0 || wtArgs[0] === "--help" || wtArgs[0] === "-h") {
+    // Check if this is a bare `glrs wt` with no subcommand - go interactive
+    if (wtArgs.length === 0 && process.stdin.isTTY) {
+      await go();
+      process.exit(0);
+    }
+    process.stdout.write(WORKTREE_HELP_TEXT);
+    process.exit(0);
+  }
+
+  // Define worktree subcommands using cmd-ts
+  const wt = subcommands({
+    name: "wt",
+    description: "Worktree management — create, list, and clean up git worktrees",
+    cmds: {
+      new: create,
+      list,
+      switch: switchCmd,
+      delete: del,
+      cleanup,
+    },
+  });
+
+  // Run the worktree command
+  const wtBinary = binary(wt);
+  // Prepend "wt" back to args for cmd-ts
+  await run(wtBinary, ["wt", ...wtArgs]);
+  process.exit(0);
+}
+
+// Dispatch to other subcommands (oc)
+if (!SUBCOMMANDS.includes(sub as "oc" | "wt")) {
   process.stderr.write(
     `[glrs] Unknown subcommand '${sub}'. Run 'glrs --help' for usage.\n`,
   );
   process.exit(2);
 }
 
-let resolved;
-try {
-  resolved = resolveSubcommand(sub as Subcommand);
-} catch (err) {
-  process.stderr.write(`${(err as Error).message}\n`);
+if (sub === "oc") {
+  let resolved;
+  try {
+    resolved = resolveSubcommand(sub as "oc");
+  } catch (err) {
+    process.stderr.write(`${(err as Error).message}\n`);
+    process.exit(1);
+  }
+
+  const forward = args.slice(1);
+  const spawnArgs = [...resolved.preArgs, ...forward];
+
+  // Set GLRS_CLI_DISPATCHED=1 so the spawned bin skips its standalone-redirect guard.
+  const spawnEnv = { ...process.env, GLRS_CLI_DISPATCHED: "1" };
+
+  const child = spawn(resolved.executable, spawnArgs, {
+    stdio: "inherit",
+    windowsHide: false,
+    env: spawnEnv,
+  });
+
+  child.on("error", (err) => {
+    process.stderr.write(`[glrs] Failed to spawn '${sub}': ${err.message}\n`);
+    process.exit(127);
+  });
+
+  child.on("exit", (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal);
+      return;
+    }
+    process.exit(code ?? 0);
+  });
+} else {
+  // Should not reach here
+  process.stderr.write(`[glrs] Internal error: unhandled subcommand '${sub}'\n`);
   process.exit(1);
 }
-
-const forward = args.slice(1);
-const spawnArgs = [...resolved.preArgs, ...forward];
-
-// Set GLRS_CLI_DISPATCHED=1 so the spawned bin skips its standalone-redirect guard.
-const spawnEnv = { ...process.env, GLRS_CLI_DISPATCHED: "1" };
-
-const child = spawn(resolved.executable, spawnArgs, {
-  stdio: "inherit",
-  windowsHide: false,
-  env: spawnEnv,
-});
-
-child.on("error", (err) => {
-  process.stderr.write(`[glrs] Failed to spawn '${sub}': ${err.message}\n`);
-  process.exit(127);
-});
-
-child.on("exit", (code, signal) => {
-  if (signal) {
-    process.kill(process.pid, signal);
-    return;
-  }
-  process.exit(code ?? 0);
-});

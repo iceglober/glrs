@@ -1,6 +1,6 @@
 ---
 title: "@glrs-dev/cli"
-description: Unified glrs binary — dispatches to harness-opencode, agentic, and assume.
+description: Unified glrs binary — OpenCode harness dispatch + worktree management.
 ---
 
 Docs content in progress. See [the package README](https://github.com/iceglober/glrs/tree/main/packages/cli) for the full documentation while this site is being filled in.
@@ -11,23 +11,27 @@ Docs content in progress. See [the package README](https://github.com/iceglober/
 npm i -g @glrs-dev/cli
 ```
 
-This pulls in all three sub-tools as dependencies, so one install covers the whole ecosystem.
+Requires [Bun](https://bun.sh) on PATH at runtime.
 
 ## Usage
 
 ```bash
-glrs oc install                 # → harness-opencode install
-glrs agentic wt new my-feature  # → gs-agentic wt new my-feature
-glrs assume login aws           # → gs-assume login aws
+glrs oc install            # → OpenCode harness install
+glrs wt new my-feature     # create a worktree
+glrs wt list               # list all worktrees
+glrs wt switch             # interactive picker
 
 glrs --help
 glrs <subcommand> --help
 ```
 
-## Why a dispatcher
+## Subcommands
 
-Two reasons:
-- **One install, one mental model.** New users don't need to learn three package names.
-- **Zero CLI-logic duplication.** Each subtool's flags, help, and behavior live in the subtool. The dispatcher is a thin process-spawn layer, no feature drift.
+- `glrs oc <args>` — dispatches to [`@glrs-dev/harness-opencode`](/harness-opencode/) (bundled as a dependency).
+- `glrs wt <args>` — worktree management, handled natively.
 
-Power users can still call `harness-opencode`, `gs-agentic` / `gsag`, `gs-assume` / `gsa` directly — those bins are published by the underlying packages and promised-stable.
+The `harness-opencode` bin remains available directly for power users who prefer the untagged entry point.
+
+## What's not in here
+
+- **`@glrs-dev/assume`** — the SSO credential manager is a standalone Rust binary. Install separately with `npm i -g @glrs-dev/assume`.
