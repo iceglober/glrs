@@ -1,4 +1,39 @@
 # Changelog
+
+## 1.0.0
+
+### Major Changes
+
+- [#6](https://github.com/iceglober/glrs/pull/6) [`689c103`](https://github.com/iceglober/glrs/commit/689c1034bd2b5f5c54af40b18b3c1d3bb3db4bb4) Thanks [@iceglober](https://github.com/iceglober)! - **Breaking change: standalone bin invocation now exits 1 with a redirect notice.**
+
+  The `harness-opencode` and `glrs-oc` bins now print a one-line redirect to stderr and exit with code 1 when invoked directly (i.e., not via `@glrs-dev/cli`'s dispatcher). This is intentional — `@glrs-dev/cli` is the new single install path.
+
+  ## Migration
+
+  ```bash
+  # Before
+  npm i -g @glrs-dev/harness-opencode
+  harness-opencode install
+  glrs-oc pilot run
+
+  # After
+  npm i -g @glrs-dev/cli
+  glrs oc install
+  glrs oc pilot run
+  ```
+
+  The `harness-opencode` and `glrs-oc` bin names continue to exist (bin-name stability is a contract), but they redirect when invoked standalone. When dispatched by `glrs oc`, they run normally.
+
+  ## Why
+
+  `@glrs-dev/cli` is now the unified entry point for the entire `@glrs-dev` ecosystem. Installing one package gives you `glrs oc`, `glrs agentic`, and `glrs assume`. The three sub-packages (`@glrs-dev/harness-opencode`, `@glrs-dev/agentic`, `@glrs-dev/assume`) are now private and will no longer publish to npm. Version `0.16.2` of `@glrs-dev/harness-opencode` is the last published version.
+
+  See [https://glrs.dev/install](https://glrs.dev/install) for the updated install instructions.
+
+### Minor Changes
+
+- [#2](https://github.com/iceglober/glrs/pull/2) [`054cf1a`](https://github.com/iceglober/glrs/commit/054cf1ad516c171a93a1383aacd318ca670155fa) Thanks [@iceglober](https://github.com/iceglober)! - Pilot build: richer stdout progress. `task.verify.failed` now shows attempt/command/exit; `task.failed`/`task.stopped` emit a `pilot logs` breadcrumb; cascade-blocked tasks render inline with the failed upstream dep; retry attempts surface a low-key tick. No config or payload breaking changes.
+
 ## 0.16.2
 
 ### Patch Changes
@@ -6,7 +41,6 @@
 - [#128](https://github.com/iceglober/harness-opencode/pull/128) [`3f34e76`](https://github.com/iceglober/harness-opencode/commit/3f34e762a4fba0dbf14009445a5a478ba01888d9) Thanks [@iceglober](https://github.com/iceglober)! - Fix pilot build stalling with "0 events" at 5min.
 
   Two independent bugs that both blocked pilot from ever running:
-
   1. **Pilot's opencode server had no pilot-builder / pilot-planner
      agents.** `opencode serve` (spawned by the SDK's
      `createOpencodeServer`) does not load external plugins — only the
@@ -33,7 +67,6 @@
      `WorkerDeps.busFactory: (directory: string) => EventBus`.
 
   Also:
-
   - Default `stallMs` raised from 5min to 60min. The 5min default was
     calibrated against a broken stream — with events actually flowing,
     legitimate inter-event gaps during deep subagent work can exceed
@@ -61,8 +94,6 @@
 - [#127](https://github.com/iceglober/harness-opencode/pull/127) [`afe4f8e`](https://github.com/iceglober/harness-opencode/commit/afe4f8e8cdfc360fc8b3b169f1d385db97f84eb4) Thanks [@iceglober](https://github.com/iceglober)! - PRIME now delegates Phase 3 (plan execution) to `@build` via the task tool instead of executing file edits itself. This moves the highest-volume token-consumer in the five-phase workflow off the `deep`/Opus tier and onto the `mid` tier — users can swap Sonnet for Kimi K2, GLM-4.6, Haiku, or any other cheap mid-tier model and see a significant cost reduction on substantial work.
 
   `@build` now uses `mode: "all"` (same pattern as `@plan`): top-level `@build <plan-path>` invocation still works for users who want to execute a plan directly, AND the agent is visible to PRIME's task-tool picker for delegation. `@build`'s prompt is reshaped for the dual invocation: sections trimmed to avoid duplicating PRIME's Phase 4 QA delegation (full-suite test runs + qa-reviewer dispatch moved to PRIME), a structured "Return payload" section added for PRIME-relayed summaries, and the `question` tool is scoped to top-level invocations only (subagent-mode invocations STOP with a blocker payload that PRIME relays). Three regression tests lock the behavioral changes.
-
-
 
 ## 0.16.0
 
@@ -93,7 +124,6 @@
 ### Minor Changes
 
 - [#121](https://github.com/iceglober/harness-opencode/pull/121) [`6089f8e`](https://github.com/iceglober/harness-opencode/commit/6089f8e1b84875aca549b2e1ce64c7beeeefcab5) Thanks [@iceglober](https://github.com/iceglober)! - Pilot UX overhaul: interactive plan picker, positional path resolution, and streaming progress.
-
   - **`pilot build` plan selection** now accepts a positional arg that resolves smartly: absolute path, cwd-relative, plans-dir-relative (with or without `.yaml`/`.yml` suffix). When no arg is given and stdin is a TTY, an `@inquirer/prompts` `select()` picker lists plans from the plans dir sorted by mtime (newest first), labelled with filename + plan name + relative time. `--plan <path>` still works for scripts. Non-TTY with no args falls back to "newest in plans dir" (unchanged v0.1 behavior).
   - **Streaming per-task progress** on stderr during `pilot build`. Lines like `[HH:MM:SS] task.started T1`, `task.verify.passed T1`, `task.succeeded T1 in 42s`, `run.progress 2/7 succeeded`. Suppressed by `--quiet`. Chatty kinds (`task.session.created`, `task.attempt`) stay in the DB; `pilot logs --run` surfaces them. stdout stays clean for the final summary.
   - **Task-level `context:` field** on `pilot.yaml` tasks — optional rich markdown block rendered into the builder's kickoff as a `## Context` section between verify and the task directive. Planner skill gets a new rule (`rules/task-context.md`) and pilot-planner.md tells the planner to populate it for non-trivial tasks. Cover outcome, rationale, code pointers, acceptance shorthand.
@@ -102,7 +132,6 @@
 ### Patch Changes
 
 - [#115](https://github.com/iceglober/harness-opencode/pull/115) [`4d537c0`](https://github.com/iceglober/harness-opencode/commit/4d537c0184a08fdef03f6255d5922f28fb302e08) Thanks [@iceglober](https://github.com/iceglober)! - Security & OSS hygiene — PR1 of a 3-part remediation (follow-ups tracked in [#113](https://github.com/iceglober/harness-opencode/issues/113) and [#114](https://github.com/iceglober/harness-opencode/issues/114)):
-
   - Add `SECURITY.md` with private disclosure channel, response SLA, scope statement, and safe-harbor clause.
   - Validate Catwalk model-catalog responses with a zod schema before any value reaches `opencode.json`; malformed responses fail closed and the installer falls back to built-in presets.
   - Document the threat boundary, outbound network calls, and the explicit "agent bash deny-list is not a sandbox" limit in the README.
@@ -135,7 +164,6 @@
   **Allowlist:** `~/.local/state/**` and `~/.config/crush/**` are now in the default `permission.external_directory` map (before `...existingExtDir`, so user overrides still win).
 
   **Truncation:** raised the base threshold from 2000 → 6000 chars (~150 lines of code) and added per-tool shapes:
-
   - `read`: `"skip"` — Read's own `limit`/`offset` is the single bound.
   - `glob`: `"skip"` — path lists aren't useful when middle-truncated.
   - `bash`: `"tail"` (default 4000 chars) — failures and exit codes are at the end; keeping head loses signal.
@@ -162,7 +190,6 @@
 ### Patch Changes
 
 - [#101](https://github.com/iceglober/harness-opencode/pull/101) [`db74676`](https://github.com/iceglober/harness-opencode/commit/db746761906a725a3d70496c1b5ba0f58bd84b61) Thanks [@iceglober](https://github.com/iceglober)! - Fix agent config and installer model IDs
-
   - Rename remaining "orchestrator" references to "PRIME" in the PRIME agent prompt.
   - Demote pilot-builder and pilot-planner from primary to subagent mode so they no longer appear as tab-selectable agents.
   - Fix docs-maintainer model from bare "sonnet" to "anthropic/claude-sonnet-4-6".
@@ -232,7 +259,6 @@
   **New CLI surface**: `bunx @glrs-dev/harness-opencode pilot <verb>` with verbs `validate`, `plan`, `build`, `status`, `resume`, `retry`, `logs`, `worktrees`, `cost`, and `plan-dir`. Migrated the entire CLI to `cmd-ts` for declarative argument parsing and auto-generated `--help`.
 
   **Two new agents** registered via `createAgents()`:
-
   - **`pilot-builder`** (mid tier, `claude-sonnet-4-6`): unattended task executor. Runs one task at a time inside a per-task git worktree. Permission map denies `git commit/push/tag/branch/checkout/switch/restore/reset` and `gh pr/release` so the worker — not the agent — owns commits. Also denies the `question` tool (unattended invariant). Uses the STOP protocol when blocked.
 
   - **`pilot-planner`** (deep tier, `claude-opus-4-7`): interactive planner. Decomposes a Linear ticket / GitHub issue / free-form description into a `pilot.yaml` task DAG. Edits restricted to the pilot plans directory by both the agent's permission map and the new `pilot-plugin` runtime hook (belt-and-suspenders).
@@ -248,7 +274,6 @@
   **Tested**: 740+ tests, all green. Pre-implementation spikes documented under `docs/pilot/spikes/`.
 
   **Known limitations** (deferred to v0.3+):
-
   - Single-worker only (`--workers >1` clamps to 1 with a warning).
   - No PR creation (pilot stops at committed branches; use `/ship` separately).
   - No cost-cap preemption (cost is reporting-only).
@@ -273,7 +298,6 @@
   The autopilot plugin previously nudged on every unchecked `- [ ]` in `## Acceptance criteria` regardless of plan shape. When pointed at an umbrella plan (18 Linear issues across 7+ branches, multi-week roadmap with production-measurement ACs), it would keep nudging past explicit STOP reports until the 20-iteration cap fired. The cap had a quiet bug: if the "stopped, something's stuck" nudge hit the debounce window, `stopped` stayed unset and the cap could be re-tested on the next idle.
 
   This adds six silent circuit breakers — no user prompts, no permission checks, matching the design rule that autopilot never asks for anything:
-
   - **Plan-shape classifier.** `classifyPlan()` detects **umbrella** plans (has `## Chunks`/`## Milestones`/`## Workstreams` headers, 3+ distinct Linear IDs, or > 50KB), **measurement-gated** plans (phrases like `7-day`, `post-deploy`, `SLO`, `success rate reaches`, `bake time` in the AC section), and **opt-out** plans (magic comment `<!-- autopilot: skip -->`). Non-unit plans stop the session silently with a shape-specific reason.
   - **Branch/plan alignment.** Extracts the first Linear ID from the plan's `## Goal` and compares (case-insensitive) against `git branch --show-current`. Mismatch → silent stop.
   - **PR-state short-circuit.** Shells out to `gh pr view --json state` for the current branch; `MERGED` → silent stop. Cached for 5 minutes per session. Graceful degrade when `gh` is unavailable.
@@ -304,7 +328,6 @@
   This release strips autopilot to what `/autopilot` actually needs to do: detect the slash-command invocation, send one kind of nudge while the plan has unchecked boxes, stop when the boxes are checked or when a max-iterations cap fires.
 
   **What changed**
-
   - `src/plugins/autopilot.ts`: 1344 → 292 lines. One activation gate (`/autopilot` or `AUTOPILOT mode` in the session's first user message only), one nudge string, one max-iterations cap, one debounce. Removed the completion-promise sentinel (`<promise>DONE</promise>`), the orchestrator EXIT sentinel (`<autopilot>EXIT</autopilot>`), the verifier-verdict tokens (`[AUTOPILOT_VERIFIED]` / `[AUTOPILOT_UNVERIFIED]`), the `@autopilot-verifier` delegation, the shipped-probe (spawning `git merge-base` + `gh pr list`), the substrate-hash stagnation detector, the user-stop-token detection, and every piece of state that supported them. Stop conditions now come from the plan file on disk: zero unchecked `- [ ]` under `## Acceptance criteria` → silent stop; max iterations → one final "stopped" nudge, then silence; user types anything → iterations reset.
   - `src/commands/prompts/autopilot.md`: 227 → 77 lines. Replaced the 9-rule preamble with a single paragraph describing the contract. Kept issue-ref classification (Linear, GitHub, Jira MCPs), the five-phase handoff, and the guardrails that matter (never ask scoping questions, never commit/push/open-PR, never invoke `/ship` yourself). Removed the sequence-loop-of-issues feature — it was never actually exercised and the queue file (`.agent/autopilot-queue.json`) added more state drift than it solved.
   - `src/agents/prompts/orchestrator.md`: removed the 3-paragraph `# Autopilot mode` self-check section, the Phase 1.5 autopilot carve-out explaining forbidden tokens, the Phase 4 autopilot-conditional completion-promise emission, and the hard rule forbidding self-activation. Replaced with a 2-paragraph section: autopilot activates only via `/autopilot`; idle nudges are "keep going" signals; stop when all boxes are `[x]`.
@@ -317,7 +340,6 @@
   - `README.md`: removed `autopilot-verifier` from the subagent list.
 
   **Behavior notes**
-
   - Autopilot activation remains strictly opt-in via `/autopilot`. The `detectActivation` helper still scans only the session's FIRST user message, so pasted transcripts or prose that descriptively mention `/autopilot` or `AUTOPILOT mode` do not retroactively activate a vanilla session.
   - `/ship` stays the human gate. The orchestrator prints "Done. Run `/ship <plan>`" and stops.
   - On stop, the plugin no longer writes acknowledgement nudges to the session. Exits are silent — the signal is the plan's boxes or the single max-iterations message.
@@ -330,7 +352,6 @@
   A plan describes work against a codebase, not against a worktree. Tying plan storage to the transient worktree wasted the plan when the worktree rotated and fragmented visibility across terminal tabs. If you drafted a plan in tab A and later switched to tab B (same repo, different worktree), the plan was invisible. If tab A ran `/fresh`, the plan vanished. This change fixes both.
 
   ## What moved
-
   - **Storage location:** `$WORKTREE/.agent/plans/<slug>.md` → `~/.glorious/opencode/<repo-folder>/plans/<slug>.md`.
   - **`<repo-folder>` derivation:** `git rev-parse --git-common-dir` → `basename(dirname(...))`. Two worktrees of the same repo produce the same key, so plans are truly repo-scoped.
   - **Env override:** `$GLORIOUS_PLAN_DIR` overrides the base (default `~/.glorious/opencode`), matching the existing `$GLORIOUS_COST_TRACKER_DIR` precedent. Leading `~` tilde-expands via `os.homedir()`.
@@ -367,7 +388,6 @@
   ## Tests
 
   47 new tests:
-
   - 21 for `src/plan-paths.ts` helpers — `getRepoFolder` (canonical / worktree / non-git / bare / whitespace), `getPlanDir` (default / env / tilde / create / idempotent), `migratePlans` (no-op / move / idempotent / collision-same / collision-differ / partial / non-markdown), plus 4 for the CLI subcommand.
   - 9 for autopilot regex + integration — 5 regex coverage, 3 absolute-path integration (including a regression guard for the `path.isAbsolute` reader bug), plus 1 legacy-path backward-compat assertion.
   - 3 for agent prompt content + the new plan-dir permission shape.
@@ -392,7 +412,6 @@
 ### Patch Changes
 
 - [#65](https://github.com/iceglober/harness-opencode/pull/65) [`c59c875`](https://github.com/iceglober/harness-opencode/commit/c59c8757bfca0311d6eb5de146ae6c46bdd8dd8b) Thanks [@iceglober](https://github.com/iceglober)! - Two friction fixes so `/fresh` is actually friction-free, not just nominally so:
-
   1. **`/fresh` no longer asks to confirm discarding uncommitted changes.** Running `/fresh` is itself the intent to discard; the interactive default has always been "wipe silently" per spec, but the prompt was hedged enough that the agent kept synthesizing a confirmation anyway (notably for untracked non-gitignored files like `.opencode/package-lock.json`). Added a loud top-of-prompt directive enumerating the only two permissible `question`-tool cases (`--confirm` was passed, or the input had no ref) and reinforced the "only under `--confirm`" guard at §3. No behavior change in `--confirm` or `--yes` modes.
 
   2. **Plugin now self-updates the OpenCode cache instead of asking users to run `bun update`.** Context: OpenCode caches the plugin at `~/.cache/opencode/packages/@glrs-dev/harness-opencode@latest/` with an exact version pin baked into that dir's `package.json` and `package-lock.json` — so `bun update` from anywhere else is a no-op, and users silently drift behind for releases. (Symptom: users on 0.1.2 still hitting the `/tmp/**` external-directory prompts that were fixed in 0.3.0.) The daily update check now rewrites that cache dir's pin to the latest version and removes its `node_modules/`, so the next OpenCode restart re-installs fresh. The toast copy is now "next restart will auto-update" instead of "run bun update." Writes are atomic (tmp + rename), skip non-exact user-managed pins, and require name-match against our package. `HARNESS_OPENCODE_AUTO_UPDATE=0` disables just the rewrite; `HARNESS_OPENCODE_UPDATE_CHECK=0` still disables the whole thing.
@@ -402,7 +421,6 @@
 - [#68](https://github.com/iceglober/harness-opencode/pull/68) [`03d5352`](https://github.com/iceglober/harness-opencode/commit/03d5352ba1ed92d4c69452ed7dc9d01148a9194d) Thanks [@iceglober](https://github.com/iceglober)! - **Fix: OpenCode no longer crashes at startup with `TypeError: undefined is not an object (evaluating 'V[G]' / 'S.auth' / 'M.config')` when the harness plugin is enabled.**
 
   This has been silently broken since **v0.3.0** (~commit `e5ffb7c`). Users on v0.3.0–v0.6.0 saw one of several minified-variable error shapes depending on OpenCode version:
-
   - `TypeError: undefined is not an object (evaluating 'V[G]')`
   - `TypeError: undefined is not an object (evaluating 'f.auth')`
   - `TypeError: undefined is not an object (evaluating 'M.config')`
@@ -424,7 +442,6 @@
   ## Regression guard
 
   New test file `test/plugin-entry-single-default-export.test.ts` enforces three invariants:
-
   1. `src/index.ts` has no `export function/const/let/var/class/enum/namespace/{...}` — only `export default`.
   2. `src/index.ts` has exactly one `export default`.
   3. The built `dist/index.js` exposes only `default` on its runtime surface (guards against bundler quirks that might re-surface internals).
@@ -448,7 +465,6 @@
   Root cause: OpenCode's permission resolver merges agent-level `permission.bash` with the **global** `permission.bash` from `applyConfig`. When the agent level was scalar `"allow"` and the global was an object-form rule-map (`{"*": "allow", "git push --force*": "deny", ...}`), the global map was still being re-evaluated on each bash invocation and fell through to an ask for some command shapes — even commands as trivial as `git branch --show-current`. The agent-level scalar was not winning the resolution.
 
   Fix: removed the global `permission.bash` default in `applyConfig` entirely. Subagents that declare `bash: "allow"` now get an unambiguous allow with nothing to fight against. Destructive-command safety is preserved at two surviving layers:
-
   1. **Primary agents (`orchestrator`, `build`) keep their own object-form bash rule-maps** with explicit denies for `rm -rf`, `sudo`, `chmod`, `chown`, `git push --force`, `git push * main`, `git push * master`. These are the only agents that routinely run shell commands with mutation potential, so the safety net is exactly where it's needed.
   2. **Read-only subagents (`plan-reviewer`, `code-searcher`, `gap-analyzer`, `architecture-advisor`, `lib-reader`) declare `bash: "deny"`** entirely — bash is off for them regardless.
 
@@ -465,7 +481,6 @@
   This is the architectural fix for the class of "duplicate autopilot nudge" bug where the plugin's `[autopilot] /fresh re-keyed this worktree to a new task...` message fired twice per session — once legitimately after `/fresh`, and once spuriously after the user had already shipped a PR. The `lastNudgedHandoffMtime` idempotency gate (briefly shipped on a dev branch but never released) was hardening code that shouldn't have existed in the first place.
 
   **Deleted from the plugin (`src/plugins/autopilot.ts`):**
-
   - `lastHandoffMtime` field on `SessionAutopilot` and its 14 preservation sites across every state-write path
   - `HANDOFF_PATH` constant and `getHandoffMtime` helper
   - Signal 2 (fresh-handoff transition) in `detectActivation` — the function is now a one-line first-user-message scan for the `/autopilot` marker
@@ -474,7 +489,6 @@
   - Exit-message `/fresh` references — shipped-exit, user-stop, and stagnation messages now direct the user to open a new session and invoke `/autopilot` instead of suggesting `/fresh` as a re-enable path
 
   **Deleted from the `/fresh` prompt (`src/commands/prompts/fresh.md`):**
-
   - §6 "Write the handoff brief" — the entire markdown template, atomic-write semantics, brief-archival-to-tmp fallback
   - §6a "Reset autopilot state" — the `jq` rewrite of `.agent/autopilot-state.json`, the fallback-to-empty-sessions path, the whole rationale about iteration counters
   - The "read the brief you just wrote" circular step in the orchestrator-kickoff section (§7, formerly §8)
@@ -483,12 +497,10 @@
   Sections renumbered: old §7 (summary) is now §6; old §8 (orchestrator kickoff) is now §7. `RESET_STATUS` labels now go into the summary instead of the brief. The orchestrator-kickoff step uses the user's original input directly (no brief to re-read).
 
   **Deleted from the `/autopilot` prompt (`src/commands/prompts/autopilot.md`):**
-
   - Step 3 of the sequence loop no longer claims `/fresh` writes a brief or resets autopilot state — it now accurately describes `/fresh` as "re-key the worktree and auto-continue into the orchestrator"
   - Step 4 no longer references "the autopilot plugin's continuation nudges now reference the fresh handoff brief" — there are no such nudges
 
   **Deleted from tests (`test/autopilot-plugin.test.js`, `test/fresh-prompt.test.ts`):**
-
   - 5 obsolete `detectActivation` tests exercising Signal 2 (fresh-handoff activation)
   - 1 obsolete `session.idle` integration test for the fresh-transition nudge
   - 1 obsolete "fresh-transition after shipped-exit" regression test
@@ -496,18 +508,15 @@
   - `lastHandoffMtime` preservation assertions in chat.message tests
 
   **Added:**
-
   - 2 new /fresh prompt assertions that fail if the coupling is reintroduced: no reference to `.agent/fresh-handoff.md`, and no reference to `.agent/autopilot-state.json`
 
   **Behavior change for users:**
-
   - `/fresh` is faster and simpler — one less file write, no jq invocation, no autopilot coordination.
   - The autopilot plugin activates ONLY via explicit `/autopilot` invocation. The fresh-handoff activation path is gone. Users who want autopilot run `/autopilot`; users who want a clean workspace run `/fresh`; the two commands are orthogonal.
   - `/autopilot` sequence mode continues to work — its per-iteration loop already drives everything inline: pop ref → `/fresh --yes <ref>` → orchestrator runs on the new ref → loop. No plugin-mediated handoff was ever actually needed.
   - Terminal exits from autopilot (shipped, user-stop, orchestrator EXIT, max-iter, stagnation) are now truly terminal for the current session. Users open a new session and invoke `/autopilot` to resume — previously the messaging mentioned `/fresh` as a re-enable path, which was misleading (post-[#60](https://github.com/iceglober/harness-opencode/issues/60) `/fresh` would auto-continue into the orchestrator, not the autopilot arc).
 
   **Backward compatibility:**
-
   - State files written by older versions with `lastHandoffMtime` keys are still readable — the field is simply ignored (JSON.parse tolerates unknown keys, TypeScript-level shape is structural).
   - Existing handoff-brief files at `.agent/fresh-handoff.md` are left untouched by the new `/fresh`. They're orphaned documentation, safe to delete manually.
   - No migration required.
@@ -521,7 +530,6 @@
 - [#62](https://github.com/iceglober/harness-opencode/pull/62) [`c9a288d`](https://github.com/iceglober/harness-opencode/commit/c9a288daf1ef023dbfa910dcd138ea4a6c2b66bd) Thanks [@iceglober](https://github.com/iceglober)! - Simplify `bash` permission for `qa-reviewer`, `qa-thorough`, and `autopilot-verifier` to the plain string `"allow"`, removing the agent-level object-form rule-map. Eliminates a recurring permission-ask prompt on read-only pipelined commands (e.g. `git show <ref>:<path> | sed -n 'N,Mp'`) during review runs — the OpenCode runtime was apparently misfiring on pipelined shapes despite the catch-all `"*": "allow"` rule, and the agent-level deny list was defense-in-depth anyway.
 
   Destructive-command safety is retained at two layers:
-
   - **Global layer:** the `permission.bash` block in `applyConfig` (src/index.ts) continues to deny `git push --force*`, `rm -rf /*`, `rm -rf ~*`, `chmod *`, `chown *`, `sudo *` for every agent that doesn't override it. A new regression test locks this safety net in place.
   - **Agent-prompt layer:** each read-only reviewer's system prompt explicitly forbids mutating history, force-pushing, or touching the filesystem root.
 
@@ -534,7 +542,6 @@
 ### Minor Changes
 
 - [#60](https://github.com/iceglober/harness-opencode/pull/60) [`6ece868`](https://github.com/iceglober/harness-opencode/commit/6ece86849bc94d6b7aa716365106b83813217c3b) Thanks [@iceglober](https://github.com/iceglober)! - Make `/fresh` faster and lower-friction. Three user-visible changes:
-
   - **`/fresh` now wipes by default in interactive mode.** Previously, a dirty working tree triggered a mandatory `question`-tool prompt ("Worktree is dirty. /fresh will hard-discard ALL uncommitted changes. Proceed?") before any reset ran. The new default trusts the human who typed `/fresh` — if you ran the command, you've already decided you want a fresh workspace. The wipe happens silently; the post-hoc summary in §7 lists what was discarded so there's still a visible receipt. `--confirm` is a new flag that restores the old ask-first behavior for paranoid runs. `--yes` (autopilot) semantics are unchanged — it stays strict, aborting on tracked changes or non-gitignored untracked files to protect unattended loops from silent data loss.
 
   - **`/fresh` auto-continues into the orchestrator on the new task.** New §8 "Kick off the orchestrator on the new task (in the SAME turn)": after printing the summary, `/fresh` reads the handoff brief it just wrote and enters the orchestrator arc inline (Phase 0 → Phase 1 → …) on the new request. You no longer have to type "work on it" after `/fresh`; the re-key and the start-working are one uninterrupted turn. The autopilot plugin's "session idle → nudge to read handoff brief" path becomes a fallback for the interrupted-continuation case rather than the primary mechanism — autopilot loops gain one round-trip saved per issue.
@@ -548,7 +555,6 @@
 ### Minor Changes
 
 - [#58](https://github.com/iceglober/harness-opencode/pull/58) [`9f650b9`](https://github.com/iceglober/harness-opencode/commit/9f650b95e4300da0b09251d538cf08d99fcd1898) Thanks [@iceglober](https://github.com/iceglober)! - Cut qa-reviewer latency on typical diffs and preserve thorough review as an explicit opt-in. Four user-visible changes:
-
   - **qa-reviewer dropped to Sonnet + trust-recent-green.** `qa-reviewer` now runs on `anthropic/claude-sonnet-4-6` (was Opus) and trusts the orchestrator's recent green test/lint/typecheck output within the session when the diff hasn't changed since. Semantic verification and scope-creep checks are unchanged. The trust-recent-green heuristic keys on three literal phrases the orchestrator now emits in its delegation prompt: `tests passed at <timestamp>`, `lint passed at <timestamp>`, `typecheck passed at <timestamp>`. Missing any of the three → qa-reviewer re-runs that specific command itself.
 
   - **New `qa-thorough` subagent for high-risk cases.** Identical-shape permission block, Opus model, re-runs the full lint/test/typecheck suite unconditionally — i.e., the old qa-reviewer behavior. The orchestrator picks this variant automatically for diffs touching >10 files, >500 lines, any file marked `Risk: high` in the plan, or security/auth/crypto/billing/migration paths.
@@ -568,7 +574,6 @@
 - [#52](https://github.com/iceglober/harness-opencode/pull/52) [`62fbbda`](https://github.com/iceglober/harness-opencode/commit/62fbbda1f767b41ef97c926f7d6dc43c0502025f) Thanks [@iceglober](https://github.com/iceglober)! - Harden the autopilot loop against the class of bug where it pressures the orchestrator into user-defying behavior. Introduces the **continuation-guard**: a per-session terminal-exit latch (`exited_reason`) fronted by a single short-circuit at the top of the idle handler, with five independent detectors that can fire it.
 
   **The five detectors:**
-
   - **shipped-probe** — `git merge-base --is-ancestor HEAD origin/main` then `gh pr list --head <branch> --state merged`. Detects when the underlying work has already landed via a different branch / merged PR. Cached 60 s per session; 2 s `AbortController` timeout per subprocess; ENOENT / timeout / invalid JSON collapse to `"unknown"`. Originally motivated by a session where the loop kept firing "Plan has 22 unchecked acceptance criteria" nudges _after_ the work shipped, pressuring the orchestrator into ticking checkboxes on a stale local file to silence the plugin.
   - **user-stop** — `chat.message` handler scans the latest user message for explicit stop signals: uppercase bare `STOP` / `HALT`, plus case-insensitive phrases `stop autopilot` / `kill autopilot` / `disable autopilot` / `exit autopilot`. User-stop always wins.
   - **orchestrator-EXIT sentinel** — `<autopilot>EXIT</autopilot>` on its own line, emitted by the orchestrator when it recognizes the loop is wrong. Cooperative self-cancel. Detected by `AUTOPILOT_EXIT_RE`; wins over `<promise>DONE</promise>` when both appear.
@@ -586,7 +591,6 @@
 - [#55](https://github.com/iceglober/harness-opencode/pull/55) [`c518169`](https://github.com/iceglober/harness-opencode/commit/c518169aa9b4a7b26fdaebbcb3c7567fc589eaa3) Thanks [@iceglober](https://github.com/iceglober)! - Close a self-activation loophole in autopilot mode. The orchestrator was occasionally emitting `<promise>DONE</promise>` and delegating to `@autopilot-verifier` in sessions that were NOT invoked via `/autopilot` — symptoms of the orchestrator self-diagnosing into autopilot mode from ambient text (descriptive references to `/autopilot` or `AUTOPILOT mode` in prompt files, plan files, PR descriptions, etc.).
 
   Two-layer fix:
-
   - **Orchestrator prompt (primary)** — `src/agents/prompts/orchestrator.md` § `# Autopilot mode` rewritten. The activation clause is narrowed from "incoming message body contains the phrase" to "the session's FIRST user message was `/autopilot <args>` or contains the literal marker `AUTOPILOT mode` that the `/autopilot` command injects." An explicit non-trigger list enumerates the false-positive sources (reading prompt files, plan files, PR descriptions, session transcripts of other sessions, prior assistant messages, documents that mention the marker descriptively). A new self-check principle states: _"If you are unsure whether you are in autopilot mode, you are not."_ A new hard rule at the top of `# Hard rules` forbids emitting `<promise>DONE</promise>`, `<autopilot>EXIT</autopilot>`, or delegating to `@autopilot-verifier` outside a user-invoked `/autopilot` session. The Phase 4 description gains a clarifying negation so the `[PASS]` → `<promise>DONE</promise>` + verifier delegation path is explicitly gated on autopilot mode being active.
 
   - **Plugin (defense in depth)** — `src/plugins/autopilot.ts` `detectActivation` Signal 1 is tightened to check ONLY the first user message in the session for the activation marker, rather than scanning every user message. A marker appearing in a later user message is treated as either quoted context, a subsequent turn in an already-activated session (handled by the monotonic `enabled` flag), or a prompt-injection attempt — none of which should retroactively activate a non-`/autopilot`-initiated session. Signal 2 (fresh-handoff transition via `/plan-loop`) is unchanged; it's independent of user-message content.
@@ -594,12 +598,10 @@
   No migration required — the `/autopilot` slash command always lands in the first user message, so legitimate autopilot sessions are unaffected. Sessions that were wrongly self-activating now proceed through the normal five-phase workflow without firing completion-promise + verifier rituals. 6 new tests lock in the tightened gate (`test/autopilot-plugin.test.js`, 110 total tests now pass).
 
 - [#56](https://github.com/iceglober/harness-opencode/pull/56) [`05c1feb`](https://github.com/iceglober/harness-opencode/commit/05c1feba0501e2d04911a3c93cf2148ecc391d1b) Thanks [@iceglober](https://github.com/iceglober)! - Fix two P0 bugs in `/fresh` reported in [#54](https://github.com/iceglober/harness-opencode/issues/54):
-
   - **Rendered prompt coherence.** OpenCode substitutes `$ARGUMENTS` into slash-command prompts wherever the token appears. Our prompts embedded it multiple times as self-reference ("Parse `$ARGUMENTS`", "If `$ARGUMENTS` is empty"), which turned long inputs (URLs, full sentences) into gibberish in the rendered prompt body. Rewrote `fresh.md`, `ship.md`, `autopilot.md`, `review.md`, and `costs.md` to substitute `$ARGUMENTS` exactly once at the top of each file and use semantic referents ("the user's input", "the plan path") everywhere else. Matches the pattern already used in `research.md` and `init-deep.md`. New CI test (`test/prompts-no-dangling-paths.test.ts`) enforces `$ARGUMENTS` occurs at most once per command prompt.
   - **`/fresh` unblocked under default permissions.** Orchestrator permissions now `allow` `git clean *` and `git reset --hard*` (previously `deny` and `ask`). `/fresh`'s destructive-reset step couldn't complete because `git clean` was hard-denied; and `git reset --hard` double-confirmed on top of `/fresh`'s own `question`-tool gate. Both permission-layer prompts were redundant noise for an orchestrator-scoped invocation. Global bash permissions (for user-typed commands) and build-agent permissions are unchanged — the relaxation is orchestrator-scoped.
 
 - [#57](https://github.com/iceglober/harness-opencode/pull/57) [`e5ffb7c`](https://github.com/iceglober/harness-opencode/commit/e5ffb7ccea3be3a089948009c5a8ab0511cd1acc) Thanks [@iceglober](https://github.com/iceglober)! - Fix two permission-layer bugs that caused friction during subagent-delegated work (notably `/qa` runs hitting prompts on `git log`, `git merge-base`, `git diff --name-only`, `git branch --show-current`, and `/tmp/*`):
-
   - **Subagent permissions are now actually wired up.** The nested `permission:` YAML blocks declared in subagent prompt frontmatter (`src/agents/prompts/*.md`) were silently dropped by the flat frontmatter parser, and `agentFromPrompt` never read them. Subagents including `qa-reviewer`, `autopilot-verifier`, `plan-reviewer`, `gap-analyzer`, `code-searcher`, `architecture-advisor`, `lib-reader`, and `agents-md-writer` ran with no declared permissions, falling back to session defaults that prompt on read-only git operations. Fix: per-subagent permission constants (`QA_REVIEWER_PERMISSIONS`, `AUTOPILOT_VERIFIER_PERMISSIONS`, etc.) now live in `src/agents/index.ts` and are passed via the existing `overrides` arg on `agentFromPrompt()` — the same mechanism primary agents use. The dead `permission:` blocks have been stripped from the `.md` files so there's one source of truth.
 
   - **Scratch and XDG directories no longer prompt by default.** Added six paths to the plugin's `external_directory` defaults: `/tmp/**`, `/private/tmp/**` (macOS `/tmp` symlink target), `/var/folders/**/T/**` (macOS `$TMPDIR` expansion), `~/.config/opencode/**` (OpenCode's own config dir — agents read it to inspect current config), `~/.cache/**` (XDG cache; npm/pip/bun write here), and `~/.local/share/**` (XDG data; Linear MCP cache, etc.). Agents read these paths routinely with no security upside to prompting (the user already has access). User values in `opencode.json` still win — set e.g. `"/tmp/**": "deny"` or `"~/.cache/**": "deny"` to clamp any of them back down.
@@ -619,7 +621,6 @@
 - [#44](https://github.com/iceglober/harness-opencode/pull/44) [`950d638`](https://github.com/iceglober/harness-opencode/commit/950d6380958459c5565f4dbbd9b65524db39e4ea) Thanks [@iceglober](https://github.com/iceglober)! - **BREAKING (hook authors only):** `/fresh` no longer runs its built-in reset flow when `.glorious/hooks/fresh-reset` is present and executable. The hook now OWNS the reset strategy end-to-end (discard working tree, switch branch, run project-specific cleanup). Previously the hook was an augment that ran _after_ the built-in flow. Hooks that relied on the built-in flow running first must update to do their own `git reset --hard`, `git clean -fdx`, and `git checkout -b origin/<base>` — or users can pass `--skip-hook` on a case-by-case basis to force the built-in flow. Env-var inputs (`OLD_BRANCH`, `NEW_BRANCH`, `BASE_BRANCH`, `WORKTREE_DIR`, `WORKTREE_NAME`, `FRESH_PASSTHROUGH_ARGS`), pass-through positional args, exit-code semantics, and stdout-JSON-tail-for-enrichment convention are unchanged.
 
   Additional changes that ride along:
-
   - `/fresh` hook invocation now respects the hook's shebang (previously forced `bash <path>` even for hooks with `#!/usr/bin/env python3`, `#!/usr/bin/env zsh`, etc.). This was a latent bug; non-bash hooks now run correctly.
   - `/fresh` `--skip-hook` semantics: "bypass the hook and use the built-in reset." Functionally equivalent for users who only relied on augment-mode hooks (both skip the hook; built-in runs either way). Mental-model rename, not a behavior break for that case.
   - Non-executable `.glorious/hooks/fresh-reset` (hook file present, `+x` bit unset) now emits a WARN in the `/fresh` summary and handoff brief and falls back to the built-in flow. Previously the hook was silently skipped, surprising users who `chmod -x`'d their hook as a kill-switch but got no visible feedback.
