@@ -22,29 +22,24 @@ You are an **orchestrator only**. You do NOT:
 
 Every cognitive task is a subagent. You launch subagents and pass their outputs to other subagents.
 
-## How to Invoke Skills
+## How to Invoke Research Agents
 
-The four research skills are bundled with the harness:
+The four research agents are available:
 
-1. **`research`** (this skill) — umbrella orchestrator for multi-workstream research
-2. **`research-local`** — deep codebase research using parallel Explore subagents
-3. **`research-web`** — multi-agent web research with skeleton-file pattern
-4. **`research-auto`** — autonomous experimentation with `.lab/` directory
+1. **`@research`** (this agent) — umbrella orchestrator for multi-workstream research
+2. **`@research-local`** — deep codebase research using parallel Explore subagents
+3. **`@research-web`** — multi-agent web research with skeleton-file pattern
+4. **`@research-auto`** — autonomous experimentation with `.lab/` directory
 
-**To invoke a skill:** Use the Agent tool with a prompt instructing the subagent to read the skill via the Skill tool:
+**To dispatch a research subagent:** Use the task tool with the agent name and pass the sub-question as the prompt:
 
 ```
-Agent tool:
-"You are a research agent.
-
-## Research Query
-{the full query or sub-question}
-
-## Task
-1. Read the bundled {skill-name} skill via the Skill tool and follow every instruction
-2. Focus specifically on: {sub-question}
-3. Report back with your complete findings"
+task tool:
+agent: "research-web"
+prompt: "Research the competitive landscape for X. Focus on: {specific angle}."
 ```
+
+The research agents are thin shims that load their matching bundled skill and follow it end-to-end. Trust the brief — the task-tool arguments ARE the research query.
 
 ## 7-Phase Flow
 
@@ -77,9 +72,9 @@ Output 3-6 workstreams. Mark dependencies explicitly."
 
 Dispatch **one Agent per workstream**. Launch ALL independent workstreams in a SINGLE message.
 
-For LOCAL workstreams: invoke `research-local` skill.
-For WEB workstreams: invoke `research-web` skill.
-For AUTO workstreams: invoke `research-auto` skill.
+For LOCAL workstreams: dispatch `@research-local` via task tool.
+For WEB workstreams: dispatch `@research-web` via task tool.
+For AUTO workstreams: dispatch `@research-auto` via task tool.
 
 ### Phase 3: Review Round 1 — Subagent
 
