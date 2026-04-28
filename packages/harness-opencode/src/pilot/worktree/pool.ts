@@ -58,6 +58,8 @@ export type WorktreeSlot = {
   prepared: boolean;
   /** Set if `preserveOnFailure` was called — slot is "dirty" and unusable. */
   preserved: boolean;
+  /** True once setup commands have run successfully on this slot. Reset on slot retirement. */
+  setupCompleted: boolean;
 };
 
 export type PoolOptions = {
@@ -158,6 +160,7 @@ export class WorktreePool {
         path: "", // filled by prepare
         prepared: false,
         preserved: false,
+        setupCompleted: false,
       };
       this.slots.set(n, stub);
       return stub;

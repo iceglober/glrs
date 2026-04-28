@@ -45,12 +45,13 @@ Use Serena and grep to map out:
 - Existing tests that already cover related code (the verify commands will likely be variations of those).
 - Existing patterns the change should match.
 - Any module boundaries that suggest natural task splits.
+- **Tooling footprint** — lockfiles, docker-compose services, migration tooling, UI/API/DB test frameworks. You'll use these in Section 3 to propose a `setup:` block and per-surface verify patterns.
 
 Be thorough here. A planner who shipped a sloppy plan because they only skimmed the codebase wastes hours of pilot-builder time chasing bad scope.
 
 ## 3. Apply the planning methodology
 
-The `pilot-planning` skill carries the eight rules. Apply them:
+The `pilot-planning` skill carries the ten rules. Apply them:
 
 1. First-principles task framing.
 2. Decomposition into right-sized tasks.
@@ -60,6 +61,16 @@ The `pilot-planning` skill carries the eight rules. Apply them:
 6. Optional milestone grouping.
 7. Self-review.
 8. Per-task `context:` population (rationale, code pointers, acceptance shorthand).
+9. **Setup-block authoring** — detect lockfiles (pnpm, bun, npm, yarn, Cargo), docker-compose services, and migration tooling (prisma, drizzle-kit, knex, flyway), then propose specific setup commands to the user for confirmation.
+10. **QA-expectations establishment** — detect per-surface test frameworks and propose concrete verify patterns:
+    - **UI**: Playwright, Cypress, or Vitest browser mode for visual/interaction assertions
+    - **API**: curl against local endpoints or OpenAPI-based contract tests
+    - **DB**: Postgres readiness checks and migration verification (prisma migrate, drizzle-kit push)
+    - **Integration**: `test/integration` or `e2e` directory patterns
+    - **Browser-based component**: Storybook or Chromatic visual tests
+    - **CLI**: bin/ smoke tests or `--help` verification
+
+Rules 9 and 10 typically involve ONE bundled `question` tool call to the user — combine setup proposals and per-surface verify proposals into a single round (respecting "talk to the user — once" guidance).
 
 ## 4. Write the YAML
 
@@ -69,6 +80,10 @@ Required schema (see `src/pilot/plan/schema.ts` for the canonical Zod definition
 
 ```yaml
 name: <human-readable plan name>
+setup:                          # optional — run once per worktree before any task
+  - pnpm install --frozen-lockfile
+  - docker compose up -d postgres
+  - pnpm prisma migrate dev
 defaults:                       # optional, override per-task as needed
   agent: pilot-builder          # default
   model: anthropic/claude-sonnet-4-6
