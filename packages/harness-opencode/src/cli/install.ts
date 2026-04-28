@@ -292,6 +292,194 @@ function migrateHarnessKeyToPluginOptions(configPath: string): void {
   }
 }
 
+/**
+ * Deep equality check for JSON-serializable values.
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b) return false;
+  if (a === null || b === null) return a === b;
+  if (typeof a !== "object") return false;
+
+  const aObj = a as Record<string, unknown>;
+  const bObj = b as Record<string, unknown>;
+  const aKeys = Object.keys(aObj);
+  const bKeys = Object.keys(bObj);
+
+  if (aKeys.length !== bKeys.length) return false;
+
+  for (const key of aKeys) {
+    if (!bKeys.includes(key)) return false;
+    if (!deepEqual(aObj[key], bObj[key])) return false;
+  }
+  return true;
+}
+
+/**
+ * Write a specific sub-key to the plugin options tuple in opencode.json.
+ * Handles both plain-string and tuple-form plugin entries, upgrades plain-string
+ * to tuple as needed, and preserves unrelated options.
+ *
+ * Returns { changed: false } when the new value is deep-equal to existing (no-op).
+ */
+export function writePluginOption(
+  configPath: string,
+  subKey: "models" | "mcp",
+  value: unknown,
+  opts: { dryRun: boolean },
+): { changed: boolean; bakPath?: string } {
+  try {
+    if (!fs.existsSync(configPath)) {
+      return { changed: false };
+    }
+
+    const raw = fs.readFileSync(configPath, "utf8");
+    const config = JSON.parse(raw);
+
+    if (!Array.isArray(config.plugin)) {
+      return { changed: false };
+    }
+
+    // Find plugin entry index
+    const pluginIdx = config.plugin.findIndex((entry: any) => {
+      const name = typeof entry === "string" ? entry : Array.isArray(entry) ? entry[0] : null;
+      return name === PLUGIN_NAME || String(name ?? "").startsWith(`${PLUGIN_NAME}@`);
+    });
+
+    if (pluginIdx < 0) {
+      return { changed: false };
+    }
+
+    const current = config.plugin[pluginIdx];
+    const existingName = typeof current === "string"
+      ? current
+      : Array.isArray(current) ? current[0] : PLUGIN_NAME;
+    const existingOpts = Array.isArray(current) && current.length >= 2
+      ? (current[1] as Record<string, unknown>)
+      : {};
+
+    // Check if value is unchanged
+    if (deepEqual(existingOpts[subKey], value)) {
+      return { changed: false };
+    }
+
+    // Prepare new options with the subKey set
+    const newOpts: Record<string, unknown> = { ...existingOpts, [subKey]: value };
+
+    if (opts.dryRun) {
+      info(`[dry-run] Would reconfigure ${subKey} in plugin options`);
+      return { changed: true };
+    }
+
+    // Write backup
+    const bakPath = `${configPath}.bak.${Date.now()}-${process.pid}`;
+    fs.copyFileSync(configPath, bakPath);
+
+    // Update plugin entry to tuple form with new options
+    config.plugin[pluginIdx] = [existingName, newOpts];
+
+    // Write updated config
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+
+    ok(`Reconfigured ${subKey}`);
+    info(`Backup: ${bakPath}`);
+
+    return { changed: true, bakPath };
+  } catch {
+    // Best-effort: if anything fails, return no-change
+    return { changed: false };
+  }
+}
+
+/**
+ * Write MCP toggle selections to the top-level mcp object in opencode.json.
+ * Preserves user-authored MCP entries (names not in MCP_TOGGLES).
+ * For deselected toggles, removes the key entirely.
+ *
+ * enabledSet: Set of MCP toggle names that should be enabled
+ */
+export function writeMcpToggles(
+  configPath: string,
+  enabledSet: Set<string>,
+  opts: { dryRun: boolean },
+): { changed: boolean; bakPath?: string } {
+  try {
+    if (!fs.existsSync(configPath)) {
+      return { changed: false };
+    }
+
+    const raw = fs.readFileSync(configPath, "utf8");
+    const config = JSON.parse(raw);
+
+    const toggleNames = new Set(MCP_TOGGLES.map((t) => t.name));
+    const existingMcp: Record<string, unknown> =
+      config.mcp && typeof config.mcp === "object" ? { ...config.mcp } : {};
+
+    // Build new mcp object: preserve user-authored entries, update toggles
+    const newMcp: Record<string, unknown> = {};
+    let hasChanges = false;
+
+    // First, copy user-authored entries (non-toggle MCPs)
+    for (const [key, val] of Object.entries(existingMcp)) {
+      if (!toggleNames.has(key)) {
+        newMcp[key] = val;
+      }
+    }
+
+    // Then, apply toggle selections
+    for (const toggleName of toggleNames) {
+      if (enabledSet.has(toggleName)) {
+        newMcp[toggleName] = { enabled: true };
+        if (!deepEqual(existingMcp[toggleName], { enabled: true })) {
+          hasChanges = true;
+        }
+      } else {
+        // Toggle deselected: ensure it's not present
+        if (existingMcp[toggleName] !== undefined) {
+          hasChanges = true;
+        }
+      }
+    }
+
+    // Check if the mcp object as a whole changed
+    if (!hasChanges && Object.keys(newMcp).length === Object.keys(existingMcp).length) {
+      // Double-check all keys match
+      const allKeysMatch = Object.keys(newMcp).every(
+        (k) => deepEqual(newMcp[k], existingMcp[k]),
+      );
+      if (allKeysMatch) {
+        return { changed: false };
+      }
+    }
+
+    if (opts.dryRun) {
+      info(`[dry-run] Would reconfigure MCP toggles`);
+      return { changed: true };
+    }
+
+    // Write backup
+    const bakPath = `${configPath}.bak.${Date.now()}-${process.pid}`;
+    fs.copyFileSync(configPath, bakPath);
+
+    // Update or remove mcp key
+    if (Object.keys(newMcp).length > 0) {
+      config.mcp = newMcp;
+    } else {
+      delete config.mcp;
+    }
+
+    // Write updated config
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+
+    ok("Reconfigured MCPs");
+    info(`Backup: ${bakPath}`);
+
+    return { changed: true, bakPath };
+  } catch {
+    return { changed: false };
+  }
+}
+
 export interface InstallOptions {
   dryRun?: boolean;
   pin?: boolean;
@@ -331,6 +519,12 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
   if (existingMcps.size > 0) {
     ok(`MCPs: ${[...existingMcps].join(", ")} enabled`);
   }
+  // Track reconfiguration choices for imperative overwrite path
+  let reconfigureModels = false;
+  let reconfigureMcps = false;
+  let newModelsValue: { deep: string[]; mid: string[]; fast: string[] } | null = null;
+  let newMcpEnabledSet: Set<string> = new Set();
+
   if (hasPlugin && (existingProvider || hasModels)) {
     // Everything that can be prompted for is already set.
     // Check if there are unconfigured MCPs to offer.
@@ -346,9 +540,24 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
         0,
       );
       if (reconfigure === 1) {
+        reconfigureModels = true;
         // Fall through to the model prompt below by clearing hasModels.
         hasModels = false;
-      } else if (unconfiguredMcps.length === 0) {
+      }
+
+      // Offer to reconfigure MCPs if any are already configured.
+      if (existingMcps.size > 0) {
+        const reconfigureMcpChoice = await promptChoice(
+          "  Reconfigure MCPs?",
+          ["No, keep current config", "Yes, reconfigure MCPs"],
+          0,
+        );
+        if (reconfigureMcpChoice === 1) {
+          reconfigureMcps = true;
+        }
+      }
+
+      if (!reconfigureModels && !reconfigureMcps && unconfiguredMcps.length === 0) {
         console.log(`\n${c.bold}Ready.${c.reset} Run ${c.green}opencode${c.reset} to start.\n`);
         return;
       }
@@ -464,6 +673,12 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
         mid: [preset.mid],
         fast: [preset.fast],
       };
+      // Capture for reconfigure path
+      newModelsValue = {
+        deep: [preset.deep],
+        mid: [preset.mid],
+        fast: [preset.fast],
+      };
       ok(`Models configured`);
     } else if (!pluginOpts._skipModels) {
       // Custom: ask for each tier manually.
@@ -478,6 +693,12 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
           mid: [midModel || deepModel],
           fast: [fastModel || midModel || deepModel],
         };
+        // Capture for reconfigure path
+        newModelsValue = {
+          deep: [deepModel],
+          mid: [midModel || deepModel],
+          fast: [fastModel || midModel || deepModel],
+        };
         ok("Models: custom");
       } else {
         ok("Models: OpenCode defaults");
@@ -485,6 +706,26 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
     }
     // Clean up sentinel before writing to config.
     delete pluginOpts._skipModels;
+    console.log();
+  }
+
+  // MCP reconfiguration prompt (when user opted in)
+  if (interactive && reconfigureMcps) {
+    console.log(`${c.dim}Reconfigure MCP servers${c.reset}`);
+    const currentEnabled = new Set(existingMcps);
+    const selected = await promptMulti(
+      "  Select MCPs to enable:",
+      MCP_TOGGLES.map((t) => ({ label: t.label, defaultOn: currentEnabled.has(t.name) })),
+    );
+
+    newMcpEnabledSet = new Set([...selected].map((i) => MCP_TOGGLES[i]!.name));
+
+    const names = [...newMcpEnabledSet].join(", ");
+    if (newMcpEnabledSet.size > 0) {
+      ok(`MCPs to enable: ${names}`);
+    } else {
+      ok("MCPs: all disabled");
+    }
     console.log();
   }
 
@@ -529,6 +770,16 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
   }
 
   // Write to opencode.json
+  // Imperative reconfigure writes happen BEFORE mergeConfig so the merge
+  // sees the freshly-written values (user-wins policy has nothing more to do).
+  if (reconfigureModels && newModelsValue) {
+    writePluginOption(configPath, "models", newModelsValue, { dryRun });
+  }
+
+  if (reconfigureMcps) {
+    writeMcpToggles(configPath, newMcpEnabledSet, { dryRun });
+  }
+
   if (!fs.existsSync(configPath)) {
     if (dryRun) {
       info(`[dry-run] Would create ${configPath}`);
