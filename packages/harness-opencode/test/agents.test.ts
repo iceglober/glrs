@@ -8,10 +8,11 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 15 agents", () => {
-    // 15 agents total: prime (mode:primary), plan + build + research (all mode:all —
-    // primary AND task-tool-dispatchable), 9 pure subagents, 2 pilot subagents.
-    expect(Object.keys(agents).length).toBe(15);
+  it("returns exactly 18 agents", () => {
+    // 18 agents total: prime (mode:primary), plan + build + research + research-web +
+    // research-local + research-auto (all mode:all — primary AND task-tool-dispatchable),
+    // 9 pure subagents, 2 pilot subagents.
+    expect(Object.keys(agents).length).toBe(18);
   });
 
   it("has 2 primary-capable agents besides plan (prime, build; mode=primary or mode=all)", () => {
@@ -27,15 +28,18 @@ describe("createAgents", () => {
     }
   });
 
-  it("has 14 subagent-capable agents (mode=subagent or mode=all)", () => {
+  it("has 17 subagent-capable agents (mode=subagent or mode=all)", () => {
     // "Subagent-capable" means the agent appears in other agents'
     // task-tool picker. mode: "subagent" and mode: "all" both qualify.
-    // plan, build, and research all have mode:"all" — user-invocable AND
-    // task-dispatchable. The other 11 are mode:"subagent" only.
+    // plan, build, research, research-web, research-local, research-auto all have
+    // mode:"all" — user-invocable AND task-dispatchable. The other 11 are mode:"subagent" only.
     const subagentCapable = [
       "plan",
       "build",
       "research",
+      "research-web",
+      "research-local",
+      "research-auto",
       "qa-reviewer",
       "qa-thorough",
       "plan-reviewer",
@@ -370,6 +374,114 @@ describe("research agent", () => {
   it("prime subagent reference lists @research", () => {
     const prime = agents["prime"]!.prompt as string;
     expect(prime).toContain("`@research`");
+  });
+
+  it("research prompt Phase 2 dispatches to @research-web / @research-local / @research-auto by name", () => {
+    const research = agents["research"]!.prompt as string;
+    // Positive assertions: @-names must appear
+    expect(research).toContain("@research-web");
+    expect(research).toContain("@research-local");
+    expect(research).toContain("@research-auto");
+    // Negative assertions: old phrasing must be gone
+    expect(research).not.toContain("Read the bundled research-web skill via the Skill tool");
+    expect(research).not.toContain("Read the bundled research-local skill via the Skill tool");
+    expect(research).not.toContain("Read the bundled research-auto skill via the Skill tool");
+    expect(research).not.toContain("invoke `research-local` skill");
+    expect(research).not.toContain("invoke `research-web` skill");
+    expect(research).not.toContain("invoke `research-auto` skill");
+  });
+});
+
+describe("research-* orchestrator agents", () => {
+  const agents = createAgents();
+
+  test("research-web agent registered with mode=all, opus model, temperature 0.3", () => {
+    const a = agents["research-web"];
+    expect(a).toBeDefined();
+    expect(a!.mode).toBe("all");
+    expect(a!.model).toBe("anthropic/claude-opus-4-7");
+    expect(a!.temperature).toBe(0.3);
+  });
+
+  test("research-local agent registered with mode=all, opus model, temperature 0.3", () => {
+    const a = agents["research-local"];
+    expect(a).toBeDefined();
+    expect(a!.mode).toBe("all");
+    expect(a!.model).toBe("anthropic/claude-opus-4-7");
+    expect(a!.temperature).toBe(0.3);
+  });
+
+  test("research-auto agent registered with mode=all, opus model, temperature 0.3", () => {
+    const a = agents["research-auto"];
+    expect(a).toBeDefined();
+    expect(a!.mode).toBe("all");
+    expect(a!.model).toBe("anthropic/claude-opus-4-7");
+    expect(a!.temperature).toBe(0.3);
+  });
+
+  test("research-* agents have descriptions starting with 'Research orchestrator subagent'", () => {
+    for (const name of ["research-web", "research-local", "research-auto"]) {
+      const desc = (agents[name]!.description ?? "") as string;
+      expect(desc.toLowerCase().startsWith("research orchestrator subagent")).toBe(true);
+    }
+  });
+
+  test("research-* permission shapes match the RESEARCH_PERMISSIONS template", () => {
+    const researchPerm = agents["research"]!.permission as Record<string, unknown>;
+    for (const name of ["research-web", "research-local", "research-auto"]) {
+      const perm = agents[name]!.permission as Record<string, unknown>;
+      expect(perm.edit).toBe(researchPerm.edit);
+      expect(perm.webfetch).toBe(researchPerm.webfetch);
+      expect(perm.tsc_check).toBe(researchPerm.tsc_check);
+      expect(perm.eslint_check).toBe(researchPerm.eslint_check);
+      expect(perm.playwright).toBe(researchPerm.playwright);
+      // Bash shape: object form with "*": "allow"
+      const bash = perm.bash as Record<string, string>;
+      expect(bash["*"]).toBe("allow");
+    }
+  });
+
+  test("research-* bash object form denies destructive commands", () => {
+    for (const name of ["research-web", "research-local", "research-auto"]) {
+      const perm = agents[name]!.permission as Record<string, unknown>;
+      const bash = perm.bash as Record<string, string>;
+      expect(bash["rm -rf /*"]).toBe("deny");
+      expect(bash["git push --force*"]).toBe("deny");
+      expect(bash["sudo *"]).toBe("deny");
+    }
+  });
+
+  test("research-web agent prompt references the research-web skill", () => {
+    const prompt = agents["research-web"]!.prompt as string;
+    expect(prompt).toMatch(/research-web/);
+    expect(prompt.toLowerCase()).toMatch(/skill tool/);
+  });
+
+  test("research-local agent prompt references the research-local skill", () => {
+    const prompt = agents["research-local"]!.prompt as string;
+    expect(prompt).toMatch(/research-local/);
+    expect(prompt.toLowerCase()).toMatch(/skill tool/);
+  });
+
+  test("research-auto agent prompt references the research-auto skill", () => {
+    const prompt = agents["research-auto"]!.prompt as string;
+    expect(prompt).toMatch(/research-auto/);
+    expect(prompt.toLowerCase()).toMatch(/skill tool/);
+  });
+
+  test("AGENT_TIERS contains research-web as deep tier", async () => {
+    const { AGENT_TIERS } = await import("../src/agents/index.js");
+    expect(AGENT_TIERS["research-web"]).toBe("deep");
+  });
+
+  test("AGENT_TIERS contains research-local as deep tier", async () => {
+    const { AGENT_TIERS } = await import("../src/agents/index.js");
+    expect(AGENT_TIERS["research-local"]).toBe("deep");
+  });
+
+  test("AGENT_TIERS contains research-auto as deep tier", async () => {
+    const { AGENT_TIERS } = await import("../src/agents/index.js");
+    expect(AGENT_TIERS["research-auto"]).toBe("deep");
   });
 });
 

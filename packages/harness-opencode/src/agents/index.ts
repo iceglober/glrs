@@ -44,6 +44,9 @@ const agentsMdWriterPrompt = readPrompt("agents-md-writer.md");
 const pilotBuilderPrompt = readPrompt("pilot-builder.md");
 const pilotPlannerPrompt = readPrompt("pilot-planner.md");
 const researchPrompt = readPrompt("research.md");
+const researchWebPrompt = readPrompt("research-web.md");
+const researchLocalPrompt = readPrompt("research-local.md");
+const researchAutoPrompt = readPrompt("research-auto.md");
 
 /** Strip YAML frontmatter (--- ... ---) from a markdown string. */
 function stripFrontmatter(md: string): string {
@@ -689,6 +692,9 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   "gap-analyzer": "deep",
   "pilot-planner": "deep",
   research: "deep",
+  "research-web": "deep",
+  "research-local": "deep",
+  "research-auto": "deep",
   build: "mid",
   "qa-reviewer": "mid",
   "docs-maintainer": "mid",
@@ -775,6 +781,29 @@ export function createAgents(): Record<string, AgentConfig> {
     // Research agent — mode:all for both primary invocation and task-tool dispatch
     research: agentFromPrompt(researchPrompt, {
       description: "Research orchestrator — decomposes a research query into parallel workstreams, dispatches research skills (research / research-web / research-local / research-auto) as subagents, reviews findings for gaps, iterates, and synthesizes. Use when the user asks to investigate, explore, deep-dive, or understand a complex topic that needs multiple workstreams.",
+      mode: "all",
+      model: "anthropic/claude-opus-4-7",
+      temperature: 0.3,
+      permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
+    }),
+
+    // Research subagents — thin shims that load the bundled skills
+    "research-web": agentFromPrompt(researchWebPrompt, {
+      description: "Research orchestrator subagent — Multi-agent web research orchestrator. Decomposes a research question into parallel agent workstreams, launches them, monitors progress, and synthesizes results. Use when user says 'research this topic', 'I need to understand', 'deep dive into', 'investigate the market for', 'what do we know about'. Provide the research topic and context.",
+      mode: "all",
+      model: "anthropic/claude-opus-4-7",
+      temperature: 0.3,
+      permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
+    }),
+    "research-local": agentFromPrompt(researchLocalPrompt, {
+      description: "Research orchestrator subagent — Deep codebase research using parallel Explore subagents. Decomposes a question about the local codebase into research tasks, launches parallel explorations, reviews for gaps, iterates, and synthesizes findings with specific file paths and line numbers. Use when user says 'how does X work in this codebase', 'where is Y implemented', 'trace the data flow for Z', 'what patterns does this repo use', 'explain the architecture of'. Provide the research topic as arguments.",
+      mode: "all",
+      model: "anthropic/claude-opus-4-7",
+      temperature: 0.3,
+      permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
+    }),
+    "research-auto": agentFromPrompt(researchAutoPrompt, {
+      description: "Research orchestrator subagent — Autonomous experimentation skill. Agent interviews the user, sets up a lab, then explores freely (think, test, reflect) until stopped or a target is hit. Works for any domain where you can measure or evaluate a result. Use when user says 'optimize this', 'experiment with', 'find the best approach', 'iterate on', 'research mode'. Do NOT use for binary validation tests (use /spec-lab instead). Based on ResearcherSkill v1.4.4 by krzysztofdudek.",
       mode: "all",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
