@@ -6,7 +6,7 @@
   ],
   "commit": false,
   "fixed": [],
-  "linked": [],
+  "linked": [["@glrs-dev/cli", "@glrs-dev/harness-plugin-opencode"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
