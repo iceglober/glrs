@@ -211,6 +211,7 @@ function makePlan(specs: Array<{
       verify_after_each: [],
     },
     milestones: [],
+    setup: [],
     tasks,
   };
 }
@@ -937,6 +938,247 @@ describe("runWorker — abort signal", () => {
       expect(result.attempted).toEqual([]);
       // T1 still pending — never picked up.
       expect(getTask(opened.db, runId, "T1")?.status).toBe("pending");
+    } finally {
+      opened.close();
+    }
+  });
+});
+
+// --- Setup commands (a3) -----------------------------------------------------
+
+describe("runWorker — setup commands", () => {
+  function makePlanWithSetup(specs: Array<{
+    id: string;
+    touches?: string[];
+    verify?: string[];
+    depends_on?: string[];
+  }>, setup: string[]): Plan {
+    const tasks: PlanTask[] = specs.map((s) => ({
+      id: s.id,
+      title: `task ${s.id}`,
+      prompt: `do ${s.id}`,
+      touches: s.touches ?? [],
+      verify: s.verify ?? [],
+      depends_on: s.depends_on ?? [],
+    }));
+    return {
+      name: "worker test plan with setup",
+      defaults: {
+        model: "anthropic/claude-sonnet-4-6",
+        agent: "pilot-builder",
+        max_turns: 50,
+        max_cost_usd: 5,
+        verify_after_each: [],
+      },
+      milestones: [],
+      setup,
+      tasks,
+    };
+  }
+
+  test("worker runs setup commands once per fresh slot before session.create", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    gitCommitFile(repo, "src/a.ts", "x", "init");
+
+    const wtPath = path.join(tmp, "wt", "00");
+    // Setup creates a marker file; task verify checks it exists.
+    // Include setup-marker.txt in touches since setup creates it.
+    const plan = makePlanWithSetup(
+      [{ id: "T1", touches: ["src/**", "setup-marker.txt"], verify: ["test -f setup-marker.txt"] }],
+      ["touch setup-marker.txt"],
+    );
+    const opened = openStateDb(":memory:");
+    try {
+      const runId = createRun(opened.db, { plan, planPath: "/p", slug: "s" });
+      upsertFromPlan(opened.db, runId, plan);
+      const { bus, pushIdleResult } = makeMockBus();
+      const { client } = makeMockClient();
+      pushIdleResult("ses_test_1", { kind: "idle" });
+
+      const result = await runWorker({
+        db: opened.db,
+        runId,
+        plan,
+        scheduler: makeScheduler({ db: opened.db, runId, plan }),
+        pool: new WorktreePool({
+          repoPath: repo,
+          worktreeDir: async () => wtPath,
+        }),
+        client: client as never,
+        busFactory: (() => bus) as never,
+        branchPrefix: "pilot/x",
+        base: "main",
+        maxAttempts: 1,
+        stallMs: 5_000,
+      });
+
+      expect(result.aborted).toBe(false);
+      expect(getTask(opened.db, runId, "T1")?.status).toBe("succeeded");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("worker skips setup on subsequent tasks that reuse the same slot", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    gitCommitFile(repo, "src/a.ts", "x", "init");
+
+    const wtPath = path.join(tmp, "wt", "00");
+    // Setup creates a marker file with unique content (timestamp).
+    // If setup runs twice, the marker will have different content.
+    // Include setup-timestamp.txt in touches since setup creates it.
+    const plan = makePlanWithSetup(
+      [
+        { id: "T1", touches: ["src/**", "setup-timestamp.txt"], verify: ["true"] },
+        { id: "T2", touches: ["src/**", "setup-timestamp.txt"], verify: ["true"] },
+      ],
+      ["date +%s > setup-timestamp.txt"],
+    );
+    const opened = openStateDb(":memory:");
+    try {
+      const runId = createRun(opened.db, { plan, planPath: "/p", slug: "s" });
+      upsertFromPlan(opened.db, runId, plan);
+      const { bus, pushIdleResult } = makeMockBus();
+      const { client } = makeMockClient();
+      // Both tasks use the same session ID (ses_test_1) by default.
+      pushIdleResult("ses_test_1", { kind: "idle" });
+      pushIdleResult("ses_test_1", { kind: "idle" });
+
+      await runWorker({
+        db: opened.db,
+        runId,
+        plan,
+        scheduler: makeScheduler({ db: opened.db, runId, plan }),
+        pool: new WorktreePool({
+          repoPath: repo,
+          worktreeDir: async () => wtPath,
+        }),
+        client: client as never,
+        busFactory: (() => bus) as never,
+        branchPrefix: "pilot/x",
+        base: "main",
+        maxAttempts: 1,
+        stallMs: 5_000,
+      });
+
+      // Both tasks should succeed — T2 reuses the slot with cached setup.
+      expect(getTask(opened.db, runId, "T1")?.status).toBe("succeeded");
+      expect(getTask(opened.db, runId, "T2")?.status).toBe("succeeded");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("worker re-runs setup when a retired slot is replaced with a fresh one", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    gitCommitFile(repo, "src/a.ts", "x", "init");
+
+    const wtPath = path.join(tmp, "wt", "00");
+    // T1 fails and preserves the slot; T2 runs on a fresh slot.
+    // Include setup-marker.txt in touches since setup creates it.
+    const plan = makePlanWithSetup(
+      [
+        { id: "T1", touches: ["src/**", "setup-marker.txt"], verify: ["false"] },
+        { id: "T2", touches: ["src/**", "setup-marker.txt"], verify: ["true"] },
+      ],
+      ["touch setup-marker.txt"],
+    );
+    const opened = openStateDb(":memory:");
+    try {
+      const runId = createRun(opened.db, { plan, planPath: "/p", slug: "s" });
+      upsertFromPlan(opened.db, runId, plan);
+      const { bus, pushIdleResult } = makeMockBus();
+      const { client } = makeMockClient();
+      // Both tasks use the same session ID (ses_test_1) by default.
+      pushIdleResult("ses_test_1", { kind: "idle" });
+      pushIdleResult("ses_test_1", { kind: "idle" });
+
+      await runWorker({
+        db: opened.db,
+        runId,
+        plan,
+        scheduler: makeScheduler({ db: opened.db, runId, plan }),
+        pool: new WorktreePool({
+          repoPath: repo,
+          worktreeDir: async () => wtPath,
+        }),
+        client: client as never,
+        busFactory: (() => bus) as never,
+        branchPrefix: "pilot/x",
+        base: "main",
+        maxAttempts: 1,
+        stallMs: 5_000,
+      });
+
+      // T1 failed, T2 succeeded on fresh slot.
+      expect(getTask(opened.db, runId, "T1")?.status).toBe("failed");
+      expect(getTask(opened.db, runId, "T2")?.status).toBe("succeeded");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("worker aborts the run and blocks all pending tasks when setup fails", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    gitCommitFile(repo, "src/a.ts", "x", "init");
+
+    const wtPath = path.join(tmp, "wt", "00");
+    // Setup fails; T1 and T2 should both be affected.
+    // No setup file created, so no need to add to touches.
+    const plan = makePlanWithSetup(
+      [
+        { id: "T1", touches: ["src/**"], verify: ["true"] },
+        { id: "T2", touches: ["src/**"], verify: ["true"] },
+      ],
+      ["false"], // setup fails
+    );
+    const opened = openStateDb(":memory:");
+    try {
+      const runId = createRun(opened.db, { plan, planPath: "/p", slug: "s" });
+      upsertFromPlan(opened.db, runId, plan);
+      const { bus } = makeMockBus();
+      const { client } = makeMockClient();
+
+      const result = await runWorker({
+        db: opened.db,
+        runId,
+        plan,
+        scheduler: makeScheduler({ db: opened.db, runId, plan }),
+        pool: new WorktreePool({
+          repoPath: repo,
+          worktreeDir: async () => wtPath,
+        }),
+        client: client as never,
+        busFactory: (() => bus) as never,
+        branchPrefix: "pilot/x",
+        base: "main",
+        maxAttempts: 1,
+        stallMs: 5_000,
+      });
+
+      // Only T1 was attempted; setup failure aborted the run.
+      // T2 is an independent pending task; the setup-failure sweep
+      // blocks all remaining pending/ready tasks (not just dependents)
+      // because an uninstalled environment dooms every downstream
+      // task equally. See plan a3 intent.
+      expect(result.attempted).toEqual(["T1"]);
+      expect(getTask(opened.db, runId, "T1")?.status).toBe("failed");
+      expect(getTask(opened.db, runId, "T2")?.status).toBe("blocked");
+      expect(getTask(opened.db, runId, "T2")?.last_error).toMatch(
+        /setup failed/,
+      );
     } finally {
       opened.close();
     }

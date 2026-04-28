@@ -414,3 +414,50 @@ describe("WorktreePool — shutdown", () => {
     expect(pool.inspect()[0]!.prepared).toBe(true);
   });
 });
+
+// --- setupCompleted field (a2) ---------------------------------------------
+
+describe("WorktreePool — setupCompleted field", () => {
+  let tmp: string;
+  beforeEach(() => { tmp = mkTmpDir(); });
+  afterEach(() => rmTmpDir(tmp));
+
+  test("acquire returns a slot with setupCompleted initially false", () => {
+    const pool = new WorktreePool({
+      repoPath: tmp,
+      worktreeDir: async (n) => path.join(tmp, "wt", String(n)),
+    });
+    const slot = pool.acquire();
+    expect(slot.setupCompleted).toBe(false);
+  });
+
+  test("retired preserved slot mints a fresh stub with setupCompleted false", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    gitCommitFile(repo, "a.txt", "a", "init");
+
+    const pool = new WorktreePool({
+      repoPath: repo,
+      worktreeDir: async (n) => path.join(tmp, "wt", `0${n}`),
+    });
+
+    // T1: acquire → prepare → preserve.
+    const slotT1 = pool.acquire();
+    await pool.prepare({
+      slot: slotT1,
+      taskId: "T1",
+      branchPrefix: "pilot/x",
+      base: "main",
+    });
+    // Simulate setup completing on the first slot.
+    slotT1.setupCompleted = true;
+    pool.preserveOnFailure(slotT1);
+
+    // T2: acquire returns a FRESH stub (not the preserved one).
+    const slotT2 = pool.acquire();
+    expect(slotT2.setupCompleted).toBe(false);
+    expect(slotT2).not.toBe(slotT1);
+  });
+});

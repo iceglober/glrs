@@ -51,3 +51,7 @@ If a verify command flakes, three retries will exhaust attempts and the task fai
 ## Always include a "before" check
 
 For non-trivial tasks, write a verify that would HAVE FAILED before the task ran. This makes the task's value observable. If the verify passed before AND passes after, the task didn't actually move the system.
+
+## Cross-reference: per-surface tooling menu
+
+For the per-surface tooling menu (Playwright for UI, curl for API, Postgres for DB), see rule 10 (`qa-expectations.md`). That rule applies these principles to specific tools; this rule defines the principles themselves.

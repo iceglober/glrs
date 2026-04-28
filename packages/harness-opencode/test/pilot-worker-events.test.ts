@@ -83,6 +83,7 @@ function makePlan(specs: Array<{
       verify_after_each: [],
     },
     milestones: [],
+    setup: [],
     tasks,
   };
 }
@@ -266,6 +267,212 @@ describe("task.blocked payload includes failedDep id", () => {
       expect(t2Blocked).toBeDefined();
       const p = t2Blocked!.payload as { failedDep?: string };
       expect(p.failedDep).toBe("T1");
+    } finally {
+      opened.close();
+    }
+  });
+});
+
+// --- Setup events (a4) -------------------------------------------------------
+
+describe("setup events", () => {
+  function makePlanWithSetup(specs: Array<{
+    id: string;
+    touches?: string[];
+    verify?: string[];
+    depends_on?: string[];
+  }>, setup: string[]): Plan {
+    const tasks: PlanTask[] = specs.map((s) => ({
+      id: s.id,
+      title: `task ${s.id}`,
+      prompt: `do ${s.id}`,
+      touches: s.touches ?? [],
+      verify: s.verify ?? [],
+      depends_on: s.depends_on ?? [],
+    }));
+    return {
+      name: "events test plan with setup",
+      defaults: {
+        model: "anthropic/claude-sonnet-4-6",
+        agent: "pilot-builder",
+        max_turns: 50,
+        max_cost_usd: 5,
+        verify_after_each: [],
+      },
+      milestones: [],
+      setup,
+      tasks,
+    };
+  }
+
+  test("setup.started and setup.completed events fire on fresh slot", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    gitCommitFile(repo, "src/a.ts", "x", "init");
+
+    const wtPath = path.join(tmp, "wt", "00");
+    const plan = makePlanWithSetup(
+      [{ id: "T1", touches: ["src/**"], verify: ["true"] }],
+      ["echo 'setup running'"],
+    );
+    const opened = openStateDb(":memory:");
+    try {
+      const runId = createRun(opened.db, { plan, planPath: "/p", slug: "s" });
+      upsertFromPlan(opened.db, runId, plan);
+      const { bus, pushIdleResult } = makeMockBus();
+      const { client } = makeMockClient();
+      pushIdleResult("ses_test_1", { kind: "idle" });
+
+      await runWorker({
+        db: opened.db,
+        runId,
+        plan,
+        scheduler: makeScheduler({ db: opened.db, runId, plan }),
+        pool: new WorktreePool({
+          repoPath: repo,
+          worktreeDir: async () => wtPath,
+        }),
+        client: client as never,
+        busFactory: (() => bus) as never,
+        branchPrefix: "pilot/x",
+        base: "main",
+        maxAttempts: 1,
+        stallMs: 5_000,
+      });
+
+      const events = readEventsDecoded(opened.db, { runId });
+      const started = events.find((e) => e.kind === "slot.setup.started");
+      const completed = events.find((e) => e.kind === "slot.setup.completed");
+
+      expect(started).toBeDefined();
+      expect(completed).toBeDefined();
+
+      const startedPayload = started!.payload as {
+        slotIndex?: number;
+        commands?: string[];
+        taskId?: string;
+      };
+      expect(startedPayload.slotIndex).toBe(0);
+      expect(startedPayload.commands).toEqual(["echo 'setup running'"]);
+      expect(startedPayload.taskId).toBe("T1");
+
+      const completedPayload = completed!.payload as {
+        slotIndex?: number;
+        durationMs?: number;
+      };
+      expect(completedPayload.slotIndex).toBe(0);
+      expect(typeof completedPayload.durationMs).toBe("number");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("setup.failed event fires with command and exit code", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    gitCommitFile(repo, "src/a.ts", "x", "init");
+
+    const wtPath = path.join(tmp, "wt", "00");
+    const plan = makePlanWithSetup(
+      [{ id: "T1", touches: ["src/**"], verify: ["true"] }],
+      ["echo 'failing setup' && exit 42"],
+    );
+    const opened = openStateDb(":memory:");
+    try {
+      const runId = createRun(opened.db, { plan, planPath: "/p", slug: "s" });
+      upsertFromPlan(opened.db, runId, plan);
+      const { bus } = makeMockBus();
+      const { client } = makeMockClient();
+
+      await runWorker({
+        db: opened.db,
+        runId,
+        plan,
+        scheduler: makeScheduler({ db: opened.db, runId, plan }),
+        pool: new WorktreePool({
+          repoPath: repo,
+          worktreeDir: async () => wtPath,
+        }),
+        client: client as never,
+        busFactory: (() => bus) as never,
+        branchPrefix: "pilot/x",
+        base: "main",
+        maxAttempts: 1,
+        stallMs: 5_000,
+      });
+
+      const events = readEventsDecoded(opened.db, { runId });
+      const failed = events.find((e) => e.kind === "slot.setup.failed");
+
+      expect(failed).toBeDefined();
+      const payload = failed!.payload as {
+        slotIndex?: number;
+        command?: string;
+        exitCode?: number;
+        output?: string;
+        durationMs?: number;
+      };
+      expect(payload.slotIndex).toBe(0);
+      expect(typeof payload.command).toBe("string");
+      expect(payload.exitCode).toBe(42);
+      expect(typeof payload.output).toBe("string");
+      expect(typeof payload.durationMs).toBe("number");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("no setup events when slot is cached", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    gitCommitFile(repo, "src/a.ts", "x", "init");
+
+    const wtPath = path.join(tmp, "wt", "00");
+    const plan = makePlanWithSetup(
+      [
+        { id: "T1", touches: ["src/**"], verify: ["true"] },
+        { id: "T2", touches: ["src/**"], verify: ["true"] },
+      ],
+      ["echo 'setup'"],
+    );
+    const opened = openStateDb(":memory:");
+    try {
+      const runId = createRun(opened.db, { plan, planPath: "/p", slug: "s" });
+      upsertFromPlan(opened.db, runId, plan);
+      const { bus, pushIdleResult } = makeMockBus();
+      const { client } = makeMockClient();
+      pushIdleResult("ses_test_1", { kind: "idle" });
+      pushIdleResult("ses_test_2", { kind: "idle" });
+
+      await runWorker({
+        db: opened.db,
+        runId,
+        plan,
+        scheduler: makeScheduler({ db: opened.db, runId, plan }),
+        pool: new WorktreePool({
+          repoPath: repo,
+          worktreeDir: async () => wtPath,
+        }),
+        client: client as never,
+        busFactory: (() => bus) as never,
+        branchPrefix: "pilot/x",
+        base: "main",
+        maxAttempts: 1,
+        stallMs: 5_000,
+      });
+
+      const events = readEventsDecoded(opened.db, { runId });
+      const setupEvents = events.filter((e) => e.kind.startsWith("slot.setup"));
+
+      // Only one setup.started and one setup.completed for both tasks.
+      expect(setupEvents.filter((e) => e.kind === "slot.setup.started")).toHaveLength(1);
+      expect(setupEvents.filter((e) => e.kind === "slot.setup.completed")).toHaveLength(1);
     } finally {
       opened.close();
     }

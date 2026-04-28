@@ -605,3 +605,53 @@ describe("PlanSchema export", () => {
     expect(r.success).toBe(true);
   });
 });
+
+// --- Setup field (a1) ------------------------------------------------------
+
+describe("parsePlan — setup field", () => {
+  test("parsePlan accepts a top-level setup array of strings", () => {
+    const result = parsePlan({
+      name: "with setup",
+      setup: ["pnpm install", "bun run build"],
+      tasks: [{ id: "T1", title: "t", prompt: "p" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.setup).toEqual(["pnpm install", "bun run build"]);
+  });
+
+  test("parsePlan fills setup with empty array when omitted", () => {
+    const result = parsePlan(minimalValidPlan());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.setup).toEqual([]);
+  });
+
+  test("parsePlan rejects empty strings inside setup", () => {
+    const result = parsePlan({
+      name: "bad setup",
+      setup: ["pnpm install", ""],
+      tasks: [{ id: "T1", title: "t", prompt: "p" }],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(findError(result.errors, "setup[1]")).toBeDefined();
+  });
+
+  test("parsePlan still rejects unknown top-level keys after setup is added", () => {
+    const result = parsePlan({
+      ...minimalValidPlan(),
+      unknown_field: "oops",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.errors.some(
+        (e) =>
+          e.message.toLowerCase().includes("unrecognized") ||
+          e.message.toLowerCase().includes("unknown") ||
+          e.path.includes("unknown_field"),
+      ),
+    ).toBe(true);
+  });
+});

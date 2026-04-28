@@ -68,11 +68,21 @@ Write the minimal code that makes verify pass:
 - Modify existing? Read the surrounding 30 lines first; mirror the existing patterns in indentation, error handling, log format.
 - Add a test? Look at one existing test in the same dir; copy its scaffolding (imports, setup, teardown). Don't invent a new test pattern when the codebase has a strong convention.
 
-## 4. Do NOT install new dependencies unless the task asks for one
+## 4. Dependency rules — task-level vs environment bootstrap
 
-If `task.prompt` says "add lodash to handle deep merging", install it. If the task is silent on deps, don't add them — find an existing util, write a tiny helper inline, or ask via STOP if the task is genuinely impossible without a dep.
+### 4a. Task-level dependencies still require task approval
+
+If `task.prompt` says "add lodash to handle deep merging", install it. If the task is silent on deps, don't add them — find an existing util, write a tiny helper inline, or STOP if the task is genuinely impossible without a dep.
 
 `package.json` / `bun.lock` / `Cargo.lock` etc. are typically NOT in your `touches:` scope. Adding a dep when the scope forbids editing the lock file is a touches violation; the worker will catch it.
+
+### 4b. Environment bootstrap self-heals during the fix-loop
+
+If a verify failure clearly points to an environmental issue — `Cannot find module 'X'` where `X` is a workspace/monorepo dep, `node_modules` absent despite a lockfile committed to the repo, a stale build artifact a typecheck depends on — you ARE expected to run the obvious install command BEFORE giving up with STOP.
+
+Recognise these canonical bootstrap commands: `pnpm install`, `bun install`, `npm install`, `npm ci`, `cargo fetch`, `cargo build`. If the plan declared a `setup:` block, treat that block as the canonical list — run those commands verbatim.
+
+The plugin deny list does not block any of these; they are not task-level dependency additions and they do not require lockfile edits.
 
 ## 5. When you think you're done, just stop
 

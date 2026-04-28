@@ -299,3 +299,37 @@ describe("loadPlan — absPath fidelity", () => {
     expect(path.isAbsolute(schemaErr.ok ? schemaErr.absPath : schemaErr.absPath)).toBe(true);
   });
 });
+
+// --- Setup field (a8) --------------------------------------------------------
+
+describe("loadPlan — setup field", () => {
+  let tmp: string;
+  beforeEach(() => { tmp = mkTmpDir(); });
+  afterEach(() => { rmTmpDir(tmp); });
+
+  test("load omits setup when absent and defaults to empty", async () => {
+    const p = writePlan(tmp, "no-setup.yaml", VALID_PLAN);
+    const result = await loadPlan(p);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.setup).toEqual([]);
+  });
+
+  test("load preserves setup array when present", async () => {
+    const content = `
+name: test plan
+setup:
+  - pnpm install
+  - bun run build
+tasks:
+  - id: T1
+    title: first task
+    prompt: do the thing
+`.trim();
+    const p = writePlan(tmp, "with-setup.yaml", content);
+    const result = await loadPlan(p);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.setup).toEqual(["pnpm install", "bun run build"]);
+  });
+});

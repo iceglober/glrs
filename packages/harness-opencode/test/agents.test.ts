@@ -276,9 +276,52 @@ describe("pilot agents", () => {
     expect(prompt.toLowerCase()).toMatch(/never commit/);
   });
 
+  test("pilot-builder prompt carves out environment bootstrap from the no-new-deps rule", () => {
+    const prompt = agents["pilot-builder"]!.prompt as string;
+    // Should mention environment bootstrap concept.
+    expect(prompt.toLowerCase()).toContain("environment bootstrap");
+    // Should list canonical install commands.
+    expect(prompt).toContain("pnpm install");
+    expect(prompt).toContain("bun install");
+    expect(prompt).toContain("npm install");
+    expect(prompt).toContain("npm ci");
+    expect(prompt).toContain("cargo fetch");
+    // Should reference the plan's setup block.
+    expect(prompt).toContain("setup:");
+  });
+
+  test("pilot-builder prompt still forbids task-level dep additions without prompt request", () => {
+    const prompt = agents["pilot-builder"]!.prompt as string;
+    // Should still require task approval for new deps.
+    expect(prompt.toLowerCase()).toMatch(/task.prompt.*ask|task approval|task-level/);
+    // Should mention that lockfiles are typically out of scope.
+    expect(prompt.toLowerCase()).toContain("package.json");
+    expect(prompt.toLowerCase()).toContain("lock");
+  });
+
   test("pilot-planner prompt references the pilot-planning skill", () => {
     const prompt = agents["pilot-planner"]!.prompt as string;
     expect(prompt).toMatch(/pilot-planning/);
+  });
+
+  test("pilot-planner prompt documents setup-block authoring", () => {
+    const prompt = agents["pilot-planner"]!.prompt as string;
+    // Must reference the setup: key
+    expect(prompt).toMatch(/setup:/);
+    // Must mention package manager or lockfile detection
+    expect(prompt.toLowerCase()).toMatch(/package manager|lockfile/);
+    // Must mention at least one package manager (pnpm, bun, npm, cargo)
+    expect(prompt).toMatch(/pnpm|bun|npm|cargo/i);
+  });
+
+  test("pilot-planner prompt documents QA-expectation establishment", () => {
+    const prompt = agents["pilot-planner"]!.prompt as string;
+    // Must mention Playwright for UI testing
+    expect(prompt).toContain("Playwright");
+    // Must mention curl or API testing
+    expect(prompt.toLowerCase()).toMatch(/curl|api/);
+    // Must mention postgres or migration
+    expect(prompt.toLowerCase()).toMatch(/postgres|migration/);
   });
 });
 

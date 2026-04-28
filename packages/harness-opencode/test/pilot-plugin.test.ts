@@ -148,6 +148,44 @@ describe("enforceBuilderBashDeny", () => {
       __test__.enforceBuilderBashDeny({ random: "stuff" }),
     ).not.toThrow();
   });
+
+  test("enforceBuilderBashDeny allows environment bootstrap install commands", () => {
+    // These commands should NOT throw — they are the canonical
+    // environment bootstrap commands the agent is expected to run.
+    const allowedCommands = [
+      "pnpm install",
+      "bun install",
+      "npm install",
+      "npm ci",
+      "cargo fetch",
+      "cargo build",
+      "pnpm install --frozen-lockfile",
+      "npm install --save-dev typescript",
+    ];
+    for (const cmd of allowedCommands) {
+      expect(() =>
+        __test__.enforceBuilderBashDeny({ command: cmd }),
+      ).not.toThrow(`Command "${cmd}" should be allowed`);
+    }
+  });
+
+  test("enforceBuilderBashDeny still blocks git commit and git push", () => {
+    const deniedCommands = [
+      "git commit -m 'msg'",
+      "git push origin main",
+      "git tag v1.0",
+      "git checkout main",
+      "git switch main",
+      "git branch -d feature",
+      "git restore --source=HEAD~1 file.ts",
+      "git reset --hard HEAD~1",
+    ];
+    for (const cmd of deniedCommands) {
+      expect(() =>
+        __test__.enforceBuilderBashDeny({ command: cmd }),
+      ).toThrow();
+    }
+  });
 });
 
 // --- extractTargetPath -----------------------------------------------------

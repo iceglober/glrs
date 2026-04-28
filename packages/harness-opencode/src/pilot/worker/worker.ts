@@ -78,8 +78,10 @@ import {
   markSucceeded,
   markFailed,
   markAborted,
+  markBlocked,
   setCostUsd,
   getTask,
+  listTasks,
 } from "../state/tasks.js";
 import { appendEvent } from "../state/events.js";
 import { kickoffPrompt, fixPrompt, type LastFailure, type RunContext } from "../opencode/prompts.js";
@@ -192,6 +194,11 @@ export async function runWorker(deps: WorkerDeps): Promise<WorkerResult> {
   // `stallMs` arg on `runWorker`.
   const stallMs = deps.stallMs ?? 60 * 60 * 1000;
 
+  // Flag set by runOneTask when setup fails — signals the run should
+  // abort without picking further tasks.
+  let setupAborted = false;
+  const depsWithAbort = deps as WorkerDeps & { setupAborted?: boolean };
+
   while (true) {
     if (deps.abortSignal?.aborted) {
       return { aborted: true, attempted };
@@ -203,7 +210,13 @@ export async function runWorker(deps: WorkerDeps): Promise<WorkerResult> {
       return { aborted: false, attempted };
     }
     attempted.push(pick.task.id);
-    await runOneTask(deps, pick.task, { maxAttempts, stallMs });
+    await runOneTask(depsWithAbort, pick.task, { maxAttempts, stallMs });
+
+    // Check if setup failed and aborted the run.
+    if (depsWithAbort.setupAborted) {
+      return { aborted: false, attempted };
+    }
+
     // After each task, cascadeFail handles downstream blocking. The
     // call is a no-op when the task succeeded.
     const row = getTask(deps.db, deps.runId, pick.task.id);
@@ -350,7 +363,98 @@ async function runOneTask(
     return;
   }
 
-  // 2. Open session.
+  // 2. Run setup commands (if any) once per fresh slot before session.create.
+  //    Setup runs after prepare (worktree exists) and before session.create
+  //    (session needs the dir but not installed deps).
+  const setupCommands = deps.plan.setup ?? [];
+  if (setupCommands.length > 0 && !slot.setupCompleted) {
+    const setupStart = Date.now();
+    appendEvent(deps.db, {
+      runId: deps.runId,
+      taskId: task.id,
+      kind: "slot.setup.started",
+      payload: {
+        slotIndex: slot.index,
+        commands: deps.plan.setup,
+        taskId: task.id,
+      },
+    });
+
+    const setupResult = await runVerify(setupCommands, {
+      cwd: prepared.path,
+      abortSignal: deps.abortSignal,
+      onLine: deps.onVerifyLine,
+    });
+
+    if (!setupResult.ok) {
+      const durationMs = Date.now() - setupStart;
+      const failure = setupResult.failure;
+      const reason = `setup failed: ${failure.command} → exit ${failure.exitCode}`;
+      appendEvent(deps.db, {
+        runId: deps.runId,
+        taskId: task.id,
+        kind: "slot.setup.failed",
+        payload: {
+          slotIndex: slot.index,
+          command: failure.command,
+          exitCode: failure.exitCode,
+          output: failure.output.slice(0, 4096), // truncate
+          durationMs,
+        },
+      });
+      // Mark current task failed with phase=setup, preserve slot, and abort run.
+      deps.pool.preserveOnFailure(slot);
+      markFailedSafe(deps.db, deps.runId, task.id, reason);
+      // Cascade-block all remaining tasks. Setup failure aborts the
+      // whole run, so we block EVERY pending/ready task (including
+      // ones with no dependency on `task.id`): an uninstalled node_modules
+      // tree means independent tasks can't succeed either. `cascadeFail`
+      // only walks dependents; we follow it up with an explicit sweep
+      // for the independent-pending case.
+      const blocked = new Set(
+        deps.scheduler.cascadeFail(task.id, reason),
+      );
+      // Sweep every other pending/ready task in the run. `cascadeFail`
+      // skips terminal states, so this sweep never transitions out of
+      // one either.
+      for (const row of listTasks(deps.db, deps.runId)) {
+        if (row.task_id === task.id) continue;
+        if (blocked.has(row.task_id)) continue;
+        if (row.status !== "pending" && row.status !== "ready") continue;
+        try {
+          markBlocked(deps.db, deps.runId, row.task_id, reason);
+          blocked.add(row.task_id);
+        } catch {
+          // Racy edge (e.g., task is `running` in another worker). Skip.
+        }
+      }
+      for (const blockedId of blocked) {
+        appendEvent(deps.db, {
+          runId: deps.runId,
+          taskId: blockedId,
+          kind: "task.blocked",
+          payload: { reason, failedDep: task.id },
+        });
+      }
+      // Signal runWorker to stop picking new tasks.
+      (deps as WorkerDeps & { setupAborted?: boolean }).setupAborted = true;
+      return;
+    }
+
+    // Setup succeeded — cache and emit completion event.
+    slot.setupCompleted = true;
+    appendEvent(deps.db, {
+      runId: deps.runId,
+      taskId: task.id,
+      kind: "slot.setup.completed",
+      payload: {
+        slotIndex: slot.index,
+        durationMs: Date.now() - setupStart,
+      },
+    });
+  }
+
+  // 3. Open session.
   let sessionId: string;
   try {
     const created = await deps.client.session.create({

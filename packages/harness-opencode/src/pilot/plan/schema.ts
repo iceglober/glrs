@@ -228,6 +228,9 @@ const MilestoneSchema = z
  *   - `defaults`: see DefaultsSchema.
  *   - `milestones`: see MilestoneSchema. Optional.
  *   - `tasks`: REQUIRED, at least one task. The whole point of a plan.
+ *   - `setup`: optional array of shell commands run once per fresh worktree
+ *     slot before any task uses that slot. Used for environment bootstrap
+ *     (e.g., `pnpm install`). Cached across tasks sharing the slot.
  */
 export const PlanSchema = z
   .object({
@@ -235,6 +238,7 @@ export const PlanSchema = z
     branch_prefix: z.string().min(1).optional(),
     defaults: DefaultsSchema,
     milestones: z.array(MilestoneSchema).default([]),
+    setup: z.array(VerifyCommandSchema).default([]),
     tasks: z.array(TaskSchema).min(1, "plan must declare at least one task"),
   })
   .strict();
