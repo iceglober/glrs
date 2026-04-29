@@ -1,7 +1,7 @@
 {
   "name": "@glrs-dev/assume-linux-x64",
   "version": "0.6.3",
-  "private": true,
+  "publishConfig": { "access": "public" },
   "description": "Prebuilt gs-assume binary for Linux x64. Installed automatically as an optional dependency of @glrs-dev/assume.",
   "license": "MIT",
   "repository": {

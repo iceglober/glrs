@@ -1,6 +1,6 @@
 /**
- * Invariant: all eight sub-packages are private and have no publishConfig.
- * Acceptance criterion a3.
+ * Invariant: platform packages have correct publish configuration.
+ * Acceptance criterion a2.
  */
 import { describe, test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -43,13 +43,13 @@ describe("private packages", () => {
     expect(pkg["publishConfig"]).toMatchObject({ access: "public" });
   });
 
-  test("assume is private and has no publishConfig", () => {
+  test("assume is public with publishConfig.access=public", () => {
     const pkg = readPkg("packages/assume/package.json");
-    expect(pkg["private"]).toBe(true);
-    expect(pkg["publishConfig"]).toBeUndefined();
+    expect(pkg["private"], "assume must NOT be private").toBeUndefined();
+    expect(pkg["publishConfig"]).toMatchObject({ access: "public" });
   });
 
-  test("all five assume-platform packages are private", () => {
+  test("all five assume-platform packages are public with publishConfig.access=public", () => {
     const platforms = [
       "packages/assume/npm/darwin-arm64/package.json",
       "packages/assume/npm/darwin-x64/package.json",
@@ -59,8 +59,8 @@ describe("private packages", () => {
     ];
     for (const relPath of platforms) {
       const pkg = readPkg(relPath);
-      expect(pkg["private"], `${relPath} should be private`).toBe(true);
-      expect(pkg["publishConfig"], `${relPath} should have no publishConfig`).toBeUndefined();
+      expect(pkg["private"], `${relPath} must NOT be private`).toBeUndefined();
+      expect(pkg["publishConfig"], `${relPath} must have publishConfig.access=public`).toMatchObject({ access: "public" });
     }
   });
 });

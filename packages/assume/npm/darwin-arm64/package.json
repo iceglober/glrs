@@ -1,7 +1,7 @@
 {
   "name": "@glrs-dev/assume-darwin-arm64",
   "version": "0.6.3",
-  "private": true,
+  "publishConfig": { "access": "public" },
   "description": "Prebuilt gs-assume binary for macOS arm64 (Apple Silicon). Installed automatically as an optional dependency of @glrs-dev/assume.",
   "license": "MIT",
   "repository": {
