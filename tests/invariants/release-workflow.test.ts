@@ -51,8 +51,9 @@ describe("release workflow", () => {
   test("build-rust calls rust-build-matrix.yml via workflow_call with a version input", () => {
     // Check that build-rust uses the reusable workflow
     expect(releaseYml).toContain("uses: ./.github/workflows/rust-build-matrix.yml");
-    // Check that it passes the version input
-    expect(releaseYml).toMatch(/version:\s*\$\{\{\s*needs\.version-or-check\.outputs\.assume_version\s*\}\}/);
+    // Check that it passes the version input, sourced from version-or-check's assume_version
+    // output (with an optional fallback for the dry-run path).
+    expect(releaseYml).toMatch(/version:\s*\$\{\{[^}]*needs\.version-or-check\.outputs\.assume_version[^}]*\}\}/);
   });
 
   test("publish job downloads all assume-*-<version> artifacts before running pack:platforms", () => {
@@ -83,6 +84,18 @@ describe("release workflow", () => {
     // Check that NPM_CONFIG_DRY_RUN is set based on the input
     expect(releaseYml).toContain("NPM_CONFIG_DRY_RUN:");
     expect(releaseYml).toContain("github.event.inputs.dry_run");
+  });
+
+  test("dry_run path bypasses the version-or-check gate", () => {
+    // The dry-run flow must be able to reach build-rust + publish on a
+    // feature branch that still has pending changesets. Guard against
+    // regressions where a refactor re-adds the hasChangesets gate without
+    // a dry-run bypass.
+    expect(releaseYml).toContain("dry-run-version:");
+    // dry-run-version must output assume_version (consumed by build-rust).
+    expect(releaseYml).toMatch(/dry-run-version:[\s\S]*?outputs:[\s\S]*?assume_version:/);
+    // build-rust's `if` must admit either a no-changesets push OR a successful dry-run-version job.
+    expect(releaseYml).toMatch(/build-rust:[\s\S]*?if:[\s\S]*?dry-run-version\.result == 'success'/);
   });
 
   test("rust-build-matrix.yml still declares workflow_call", () => {

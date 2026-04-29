@@ -40,12 +40,16 @@ permissions:
   id-token: write
 
 jobs:
-  # Phase 1: Version check. Either opens/updates the Version PR, or
-  # (if no pending changesets) signals that we're ready to publish.
+  # Phase 1: Version check. On push events, either opens/updates the Version PR,
+  # or (if no pending changesets) signals that we're ready to publish.
+  #
+  # Skipped on workflow_dispatch with dry_run=true — dry-run bypasses the
+  # version gate so the full build+stage+publish path runs end-to-end
+  # against the current tree (useful on a feature branch before merge).
   version-or-check:
     name: Version PR or check for publish
     # Canonical-repo guard: forks can never publish even with a stolen token.
-    if: github.repository == 'iceglober/glrs'
+    if: github.repository == 'iceglober/glrs' && github.event_name == 'push'
     runs-on: ubuntu-22.04
     outputs:
       hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
@@ -102,21 +106,54 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Assume version: $VERSION"
 
-  # Phase 2: Build Rust binaries (only if no pending changesets = Version PR just merged)
+  # Phase 1b: Extract current assume version for dry-run path (workflow_dispatch only).
+  # This is a tiny job that just reads packages/assume/package.json so build-rust
+  # + publish can get a version input without going through the changesets action.
+  dry-run-version:
+    name: Read version (dry-run only)
+    if: github.repository == 'iceglober/glrs' && github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
+    runs-on: ubuntu-22.04
+    outputs:
+      assume_version: ${{ steps.get-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get assume version
+        id: get-version
+        run: |
+          VERSION=$(cat packages/assume/package.json | grep '"version"' | head -1 | awk -F: '{ print $2 }' | sed 's/[",]//g' | tr -d '[:space:]')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Assume version: $VERSION"
+
+  # Phase 2: Build Rust binaries. Runs when:
+  #   - Normal publish path (push trigger, Version PR just merged → hasChangesets=false), OR
+  #   - Dry-run (workflow_dispatch with dry_run=true, bypassing the version gate)
   build-rust:
     name: Build Rust binaries
-    needs: version-or-check
-    if: needs.version-or-check.outputs.hasChangesets == 'false'
+    needs: [version-or-check, dry-run-version]
+    # `always()` here means: evaluate even if one of `needs` was skipped.
+    # We run when either upstream job produced the version output successfully.
+    if: |
+      always() &&
+      (
+        (needs.version-or-check.result == 'success' && needs.version-or-check.outputs.hasChangesets == 'false') ||
+        (needs.dry-run-version.result == 'success')
+      )
     uses: ./.github/workflows/rust-build-matrix.yml
     with:
-      version: ${{ needs.version-or-check.outputs.assume_version }}
+      version: ${{ needs.version-or-check.outputs.assume_version || needs.dry-run-version.outputs.assume_version }}
     secrets: inherit
 
-  # Phase 3: Publish (only if no pending changesets and Rust build succeeded)
+  # Phase 3: Publish. Runs under the same gate as build-rust, after it succeeds.
   publish:
     name: Publish to npm
-    needs: [version-or-check, build-rust]
-    if: needs.version-or-check.outputs.hasChangesets == 'false'
+    needs: [version-or-check, dry-run-version, build-rust]
+    if: |
+      always() &&
+      needs.build-rust.result == 'success' &&
+      (
+        (needs.version-or-check.result == 'success' && needs.version-or-check.outputs.hasChangesets == 'false') ||
+        (needs.dry-run-version.result == 'success')
+      )
     runs-on: ubuntu-22.04
     steps:
       - name: Generate GitHub App token
@@ -151,7 +188,7 @@ jobs:
       - name: Download Rust artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: assume-*-${{ needs.version-or-check.outputs.assume_version }}
+          pattern: assume-*-${{ needs.version-or-check.outputs.assume_version || needs.dry-run-version.outputs.assume_version }}
           path: packages/assume/.release-artifacts/
           merge-multiple: false
 
