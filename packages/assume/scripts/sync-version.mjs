@@ -23,7 +23,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkgDir = resolve(__dirname, "..");
+const pkgDir = process.env.ASSUME_PKG_DIR ?? resolve(__dirname, "..");
 
 const platforms = [
   "darwin-arm64",
