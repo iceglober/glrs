@@ -102,11 +102,25 @@ describe("release workflow", () => {
     expect(rustMatrixYml).toContain("workflow_call:");
   });
 
-  test("rust-build-matrix.yml still includes all five rust targets", () => {
+  test("rust-build-matrix.yml includes the four supported Unix targets", () => {
+    // Windows (x86_64-pc-windows-msvc) is intentionally NOT built —
+    // the daemon is Unix-architectured (nix, Unix sockets, launchd).
+    // Reintroducing Windows would require substantial porting.
     expect(rustMatrixYml).toContain("x86_64-apple-darwin");
     expect(rustMatrixYml).toContain("aarch64-apple-darwin");
     expect(rustMatrixYml).toContain("x86_64-unknown-linux-gnu");
     expect(rustMatrixYml).toContain("aarch64-unknown-linux-gnu");
-    expect(rustMatrixYml).toContain("x86_64-pc-windows-msvc");
+    // Make sure there's no ACTIVE matrix entry for Windows (the explanatory
+    // comment may mention the target name, but it must not appear as a
+    // `target:` key). Match `target:` followed by any whitespace and then
+    // the Windows triple.
+    expect(rustMatrixYml).not.toMatch(/target:\s*x86_64-pc-windows-msvc/);
+  });
+
+  test("aarch64-linux cross build sets CROSS_NO_WARNINGS=0", () => {
+    // Defends against a future refactor that drops the CROSS_NO_WARNINGS
+    // env — without it, modern cross aborts on internal warnings when
+    // building under Rust 1.95+.
+    expect(rustMatrixYml).toMatch(/CROSS_NO_WARNINGS:\s*"0"/);
   });
 });

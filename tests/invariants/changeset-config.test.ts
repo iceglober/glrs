@@ -8,8 +8,9 @@
  * the two in Changesets' config means every harness-plugin bump forces a
  * matching CLI bump, closing that drift window.
  *
- * @glrs-dev/assume and its five platform siblings are also linked so that
- * version bumps propagate to all six packages simultaneously.
+ * @glrs-dev/assume and its four Unix platform siblings are also linked so
+ * that version bumps propagate to all five packages simultaneously. Windows
+ * (win32-x64) is not currently a supported target — see rust-build-matrix.yml.
  */
 import { describe, test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -49,11 +50,12 @@ describe("changeset config", () => {
     );
   });
 
-  test("assume + five platform packages form a linked group", () => {
+  test("assume + four platform packages form a linked group", () => {
     const config = JSON.parse(
       readFileSync(resolve(repoRoot, ".changeset/config.json"), "utf8"),
     ) as { linked: string[][] };
-    // Find the group containing assume (should be exactly these six packages).
+    // Find the group containing assume (should be exactly these five packages:
+    // main + four Unix platforms; Windows is intentionally excluded).
     const assumeGroup = config.linked.find((g) => g.includes("@glrs-dev/assume"));
     expect(assumeGroup).toBeDefined();
     expect(new Set(assumeGroup!)).toEqual(
@@ -63,7 +65,6 @@ describe("changeset config", () => {
         "@glrs-dev/assume-darwin-x64",
         "@glrs-dev/assume-linux-x64",
         "@glrs-dev/assume-linux-arm64",
-        "@glrs-dev/assume-win32-x64",
       ]),
     );
   });

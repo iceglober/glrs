@@ -4,7 +4,6 @@
 "@glrs-dev/assume-darwin-x64": patch
 "@glrs-dev/assume-linux-x64": patch
 "@glrs-dev/assume-linux-arm64": patch
-"@glrs-dev/assume-win32-x64": patch
 ---
 
 Fix gs-assume daemon auto-refresh — stop launchd respawn loop, verify PID ownership, enable default tracing, truncate oversized log.

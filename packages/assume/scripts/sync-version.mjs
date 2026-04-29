@@ -6,11 +6,14 @@
  * canonical version from @glrs-dev/assume's package.json and propagates it to:
  *
  *   - Cargo.toml (for crates.io publishing)
- *   - npm/<platform>/package.json × 5
+ *   - npm/<platform>/package.json × 4
  *   - optionalDependencies in @glrs-dev/assume's package.json
  *
- * This keeps all six npm packages + the Rust crate in lockstep, which is
+ * This keeps all five npm packages + the Rust crate in lockstep, which is
  * required for the optional-deps pattern to resolve correctly.
+ *
+ * Windows (win32-x64) is intentionally excluded — the daemon is
+ * Unix-architectured. See rust-build-matrix.yml for details.
  *
  * Invoked by the release workflow after `bunx changeset version` but before
  * `changeset publish`. Can also be run manually when bumping Cargo-side
@@ -30,7 +33,6 @@ const platforms = [
   "darwin-x64",
   "linux-x64",
   "linux-arm64",
-  "win32-x64",
 ];
 
 const mainPkgPath = resolve(pkgDir, "package.json");

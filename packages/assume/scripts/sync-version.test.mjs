@@ -25,7 +25,8 @@ function createFixture() {
   writeFileSync(resolve(tempDir, "package.json"), JSON.stringify(mainPkg, null, 2) + "\n");
 
   // Create npm platform directories with package.json at 0.0.0
-  const platforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "win32-x64"];
+  // (Windows is intentionally excluded — see rust-build-matrix.yml.)
+  const platforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"];
   for (const plat of platforms) {
     const platDir = resolve(tempDir, "npm", plat);
     mkdirSync(platDir, { recursive: true });
@@ -74,10 +75,11 @@ describe("sync-version", () => {
     expect(mainPkg.optionalDependencies["@glrs-dev/assume-darwin-x64"]).toBe("9.9.9-test");
     expect(mainPkg.optionalDependencies["@glrs-dev/assume-linux-x64"]).toBe("9.9.9-test");
     expect(mainPkg.optionalDependencies["@glrs-dev/assume-linux-arm64"]).toBe("9.9.9-test");
-    expect(mainPkg.optionalDependencies["@glrs-dev/assume-win32-x64"]).toBe("9.9.9-test");
+    // Windows is intentionally not listed (see rust-build-matrix.yml).
+    expect(mainPkg.optionalDependencies["@glrs-dev/assume-win32-x64"]).toBeUndefined();
 
     // Verify platform packages are updated
-    const platforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "win32-x64"];
+    const platforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"];
     for (const plat of platforms) {
       const platPkg = JSON.parse(readFileSync(resolve(tempDir, "npm", plat, "package.json"), "utf8"));
       expect(platPkg.version).toBe("9.9.9-test");

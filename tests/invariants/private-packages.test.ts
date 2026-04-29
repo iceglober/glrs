@@ -49,13 +49,14 @@ describe("private packages", () => {
     expect(pkg["publishConfig"]).toMatchObject({ access: "public" });
   });
 
-  test("all five assume-platform packages are public with publishConfig.access=public", () => {
+  test("all four assume-platform packages are public with publishConfig.access=public", () => {
+    // Windows (win32-x64) is intentionally not in this list — see
+    // rust-build-matrix.yml for the rationale (daemon is Unix-architectured).
     const platforms = [
       "packages/assume/npm/darwin-arm64/package.json",
       "packages/assume/npm/darwin-x64/package.json",
       "packages/assume/npm/linux-x64/package.json",
       "packages/assume/npm/linux-arm64/package.json",
-      "packages/assume/npm/win32-x64/package.json",
     ];
     for (const relPath of platforms) {
       const pkg = readPkg(relPath);

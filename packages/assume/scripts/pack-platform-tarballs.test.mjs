@@ -16,23 +16,22 @@ const scriptPath = resolve(import.meta.dirname, "pack-platform-tarballs.mjs");
 function createFixture() {
   const tempDir = mkdtempSync(resolve(tmpdir(), "pack-platforms-test-"));
 
-  // Create artifact directories with fake binaries
+  // Create artifact directories with fake binaries (Unix-only; Windows
+  // is intentionally not built — see rust-build-matrix.yml).
   const platforms = [
-    { key: "darwin-arm64", exe: false },
-    { key: "darwin-x64", exe: false },
-    { key: "linux-x64", exe: false },
-    { key: "linux-arm64", exe: false },
-    { key: "win32-x64", exe: true },
+    { key: "darwin-arm64" },
+    { key: "darwin-x64" },
+    { key: "linux-x64" },
+    { key: "linux-arm64" },
   ];
 
-  for (const { key, exe } of platforms) {
+  for (const { key } of platforms) {
     const artifactDir = resolve(tempDir, ".release-artifacts", key);
     mkdirSync(artifactDir, { recursive: true });
 
-    const suffix = exe ? ".exe" : "";
     // Create fake binaries (just empty files for testing)
-    writeFileSync(resolve(artifactDir, `gs-assume${suffix}`), "fake-binary");
-    writeFileSync(resolve(artifactDir, `gsa${suffix}`), "fake-binary");
+    writeFileSync(resolve(artifactDir, "gs-assume"), "fake-binary");
+    writeFileSync(resolve(artifactDir, "gsa"), "fake-binary");
 
     // Create npm platform directory
     const npmDir = resolve(tempDir, "npm", key);
@@ -63,20 +62,12 @@ describe("pack-platforms", () => {
     });
 
     // Verify binaries exist in each platform's bin/ directory
-    const platforms = [
-      { key: "darwin-arm64", exe: false },
-      { key: "darwin-x64", exe: false },
-      { key: "linux-x64", exe: false },
-      { key: "linux-arm64", exe: false },
-      { key: "win32-x64", exe: true },
-    ];
+    const platforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"];
 
-    for (const { key, exe } of platforms) {
+    for (const key of platforms) {
       const binDir = resolve(tempDir, "npm", key, "bin");
-      const suffix = exe ? ".exe" : "";
-
-      expect(existsSync(resolve(binDir, `gs-assume${suffix}`))).toBe(true);
-      expect(existsSync(resolve(binDir, `gsa${suffix}`))).toBe(true);
+      expect(existsSync(resolve(binDir, "gs-assume"))).toBe(true);
+      expect(existsSync(resolve(binDir, "gsa"))).toBe(true);
     }
   });
 
@@ -97,15 +88,15 @@ describe("pack-platforms", () => {
     expect(exitCode).toBe(1);
   });
 
-  test("pack-platforms sets mode 0755 on unix binaries and preserves .exe suffix on windows", () => {
+  test("pack-platforms sets mode 0755 on unix binaries", () => {
     execSync(`bun ${scriptPath}`, {
       env: { ...process.env, ASSUME_PKG_DIR: tempDir },
       stdio: "pipe",
     });
 
-    // Unix platforms should have mode 0755
-    const unixPlatforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"];
-    for (const key of unixPlatforms) {
+    // All four platforms are Unix; all must have executable bit set.
+    const platforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"];
+    for (const key of platforms) {
       const gsAssumeStat = statSync(resolve(tempDir, "npm", key, "bin", "gs-assume"));
       const gsaStat = statSync(resolve(tempDir, "npm", key, "bin", "gsa"));
 
@@ -113,9 +104,5 @@ describe("pack-platforms", () => {
       expect(gsAssumeStat.mode & 0o111).toBeTruthy();
       expect(gsaStat.mode & 0o111).toBeTruthy();
     }
-
-    // Windows platform should have .exe suffix
-    expect(existsSync(resolve(tempDir, "npm", "win32-x64", "bin", "gs-assume.exe"))).toBe(true);
-    expect(existsSync(resolve(tempDir, "npm", "win32-x64", "bin", "gsa.exe"))).toBe(true);
   });
 });
