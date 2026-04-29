@@ -21,7 +21,7 @@
     "typecheck": "bun run --filter='*' typecheck",
     "lint": "bun run --filter='*' lint",
     "changeset": "changeset",
-    "version-packages": "changeset version && bun install",
+    "version-packages": "changeset version && bun run --cwd packages/assume sync:version && bun install",
     "release": "bun run build && changeset publish"
   },
   "devDependencies": {

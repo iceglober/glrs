@@ -37,7 +37,7 @@
   "scripts": {
     "build": "tsup src/npm-shim/index.ts src/npm-shim/cli.ts --format esm --dts --clean",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'rust tests run via cargo'",
+    "test": "bun test scripts/sync-version.test.mjs scripts/pack-platform-tarballs.test.mjs",
     "lint": "echo 'no linter configured yet'",
     "pack:platforms": "bun scripts/pack-platform-tarballs.mjs",
     "sync:version": "bun scripts/sync-version.mjs"
