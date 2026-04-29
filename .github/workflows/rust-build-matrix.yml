@@ -25,7 +25,11 @@ jobs:
       matrix:
         include:
           - target: x86_64-apple-darwin
-            runner: macos-13
+            # Build x86_64 on macos-14 (arm64 runners) via cross-toolchain —
+            # macos-13 (x86_64-native) runners are being deprecated and have
+            # long queue times. Apple ships the x86_64 toolchain as part of
+            # a standard macOS Xcode install, so `cargo build --target` works.
+            runner: macos-14
             platform: darwin-x64
             bin_suffix: ""
             use_cross: false
