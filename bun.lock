@@ -54,9 +54,44 @@
         "@glrs-dev/assume-win32-x64": "0.6.3",
       },
     },
+    "packages/assume/npm/darwin-arm64": {
+      "name": "@glrs-dev/assume-darwin-arm64",
+      "version": "0.6.3",
+      "bin": {
+        "gs-assume-bin": "./bin/gs-assume",
+      },
+    },
+    "packages/assume/npm/darwin-x64": {
+      "name": "@glrs-dev/assume-darwin-x64",
+      "version": "0.6.3",
+      "bin": {
+        "gs-assume-bin": "./bin/gs-assume",
+      },
+    },
+    "packages/assume/npm/linux-arm64": {
+      "name": "@glrs-dev/assume-linux-arm64",
+      "version": "0.6.3",
+      "bin": {
+        "gs-assume-bin": "./bin/gs-assume",
+      },
+    },
+    "packages/assume/npm/linux-x64": {
+      "name": "@glrs-dev/assume-linux-x64",
+      "version": "0.6.3",
+      "bin": {
+        "gs-assume-bin": "./bin/gs-assume",
+      },
+    },
+    "packages/assume/npm/win32-x64": {
+      "name": "@glrs-dev/assume-win32-x64",
+      "version": "0.6.3",
+      "bin": {
+        "gs-assume-bin": "./bin/gs-assume.exe",
+      },
+    },
     "packages/cli": {
       "name": "@glrs-dev/cli",
-      "version": "0.1.0",
+      "version": "0.3.1",
       "bin": {
         "glrs": "./dist/cli.js",
       },
@@ -80,7 +115,7 @@
     },
     "packages/harness-opencode": {
       "name": "@glrs-dev/harness-plugin-opencode",
-      "version": "0.1.0",
+      "version": "0.3.1",
       "bin": {
         "glrs-oc": "dist/cli.js",
         "harness-opencode": "dist/cli.js",
@@ -269,6 +304,16 @@
     "@gar/promise-retry": ["@gar/promise-retry@1.0.3", "", {}, "sha512-GmzA9ckNokPypTg10pgpeHNQe7ph+iIKKmhKu3Ob9ANkswreCx7R3cKmY781K8QK3AqVL3xVh9A42JvIAbkkSA=="],
 
     "@glrs-dev/assume": ["@glrs-dev/assume@workspace:packages/assume"],
+
+    "@glrs-dev/assume-darwin-arm64": ["@glrs-dev/assume-darwin-arm64@workspace:packages/assume/npm/darwin-arm64"],
+
+    "@glrs-dev/assume-darwin-x64": ["@glrs-dev/assume-darwin-x64@workspace:packages/assume/npm/darwin-x64"],
+
+    "@glrs-dev/assume-linux-arm64": ["@glrs-dev/assume-linux-arm64@workspace:packages/assume/npm/linux-arm64"],
+
+    "@glrs-dev/assume-linux-x64": ["@glrs-dev/assume-linux-x64@workspace:packages/assume/npm/linux-x64"],
+
+    "@glrs-dev/assume-win32-x64": ["@glrs-dev/assume-win32-x64@workspace:packages/assume/npm/win32-x64"],
 
     "@glrs-dev/cli": ["@glrs-dev/cli@workspace:packages/cli"],
 
