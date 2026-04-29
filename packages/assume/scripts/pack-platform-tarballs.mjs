@@ -20,9 +20,10 @@
  *   packages/assume/npm/win32-x64/bin/gs-assume.exe
  *   packages/assume/npm/win32-x64/bin/gsa.exe
  *
- * Note: the platform package.json files do NOT list bins — we don't want
- * npm to symlink them. The parent @glrs-dev/assume shim (src/cli.ts)
- * resolves the binary via require.resolve and spawns it directly.
+ * Note: the platform package.json files DO list bins (gs-assume-bin) —
+ * npm symlinks them into node_modules/.bin. The parent @glrs-dev/assume
+ * shim (src/cli.ts) resolves the binary via require.resolve and spawns
+ * it directly.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync, copyFileSync } from "node:fs";
@@ -30,7 +31,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkgDir = resolve(__dirname, "..");
+const pkgDir = process.env.ASSUME_PKG_DIR ?? resolve(__dirname, "..");
 const artifactsDir = resolve(pkgDir, ".release-artifacts");
 
 if (!existsSync(artifactsDir)) {
