@@ -5,8 +5,8 @@ name: Release
 #   a "Version Packages" PR (consuming the changesets into a version bump
 #   + CHANGELOG entry).
 # - When that Version PR is merged (next push to main), the action detects
-#   no pending changesets and instead runs `bun run release` (= `changeset
-#   publish`), which publishes to npm with provenance and pushes git tags.
+#   no pending changesets and instead runs the publish path, which builds
+#   Rust binaries, stages them, and publishes to npm.
 #
 # Auth: a GitHub App (APP_ID / APP_PRIVATE_KEY secrets) mints a short-lived
 # token used for `git push`, the Version Packages PR, and tag creation.
@@ -16,6 +16,13 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run publish in dry-run mode (no actual upload)"
+        required: false
+        default: false
+        type: boolean
 
 # Serialize release runs so overlapping pushes to main don't race on
 # the Version PR or the registry. cancel-in-progress stays false — we
@@ -33,27 +40,18 @@ permissions:
   id-token: write
 
 jobs:
-  release:
-    name: Changesets version PR or publish
+  # Phase 1: Version check. Either opens/updates the Version PR, or
+  # (if no pending changesets) signals that we're ready to publish.
+  version-or-check:
+    name: Version PR or check for publish
     # Canonical-repo guard: forks can never publish even with a stolen token.
     if: github.repository == 'iceglober/glrs'
     runs-on: ubuntu-22.04
-    # No approval gate — the PR merge to main IS the approval, and
-    # branch protection ensures only maintainers can merge. Adding an
-    # environment-scoped review here would be a redundant second gate.
+    outputs:
+      hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
+      assume_version: ${{ steps.get-version.outputs.version }}
     steps:
-      # Mint a short-lived token from the GitHub App. Unlike the default
-      # GITHUB_TOKEN, pushes made with an app token DO trigger downstream
-      # workflows — so CI actually runs on the Version PR's update commits
-      # instead of silently skipping them.
-      #
-      # Setup prerequisites (one-time, done by maintainer):
-      #   1. Install a GitHub App on iceglober/glrs with permissions:
-      #      contents: write, pull-requests: write, metadata: read.
-      #   2. Generate a private key for the app.
-      #   3. Set repo secrets APP_ID (the numeric app id) and
-      #      APP_PRIVATE_KEY (the full PEM contents, including BEGIN/END
-      #      lines).
+      # Mint a short-lived token from the GitHub App.
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v1
@@ -64,17 +62,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Full history so changesets/action can reconcile against prior tags.
           fetch-depth: 0
-          # Use the app token for checkout so git push inherits it.
           token: ${{ steps.app-token.outputs.token }}
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      # setup-node writes the .npmrc that NODE_AUTH_TOKEN consumes when
-      # `changeset publish` calls `npm publish` under the hood.
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -86,27 +80,107 @@ jobs:
       - name: Build all packages
         run: bun run build
 
-      # Either opens/updates the Version Packages PR, OR (if no pending
-      # changesets exist) runs the publish script. Never both in the
-      # same run. The app token in GITHUB_TOKEN makes the PR's commits
-      # trigger downstream CI; without it, the Version PR's updates are
-      # invisible to the `pull_request` trigger and CI has to be manually
-      # re-run (bit us in the old repo before the app-token switch).
-      - name: Create Release Pull Request or Publish
+      # Run changesets/action in version-only mode. This either opens/updates
+      # the Version PR (if changesets exist) or does nothing (if we're on
+      # main after the Version PR merged).
+      - name: Create Version PR or check for publish
         id: changesets
         uses: changesets/action@v1
         with:
-          publish: bun run release
           version: bun run version-packages
+          publish: false
           commit: "chore: version packages"
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      # Read the assume version after potential version bump
+      - name: Get assume version
+        id: get-version
+        run: |
+          VERSION=$(cat packages/assume/package.json | grep '"version"' | head -1 | awk -F: '{ print $2 }' | sed 's/[",]//g' | tr -d '[:space:]')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Assume version: $VERSION"
+
+  # Phase 2: Build Rust binaries (only if no pending changesets = Version PR just merged)
+  build-rust:
+    name: Build Rust binaries
+    needs: version-or-check
+    if: needs.version-or-check.outputs.hasChangesets == 'false'
+    uses: ./.github/workflows/rust-build-matrix.yml
+    with:
+      version: ${{ needs.version-or-check.outputs.assume_version }}
+    secrets: inherit
+
+  # Phase 3: Publish (only if no pending changesets and Rust build succeeded)
+  publish:
+    name: Publish to npm
+    needs: [version-or-check, build-rust]
+    if: needs.version-or-check.outputs.hasChangesets == 'false'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Build all packages
+        run: bun run build
+
+      # Download all platform artifacts produced by build-rust
+      - name: Download Rust artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: assume-*-${{ needs.version-or-check.outputs.assume_version }}
+          path: packages/assume/.release-artifacts/
+          merge-multiple: false
+
+      # Rename artifact subdirs from assume-<platform>-<version> to <platform>
+      # so pack-platform-tarballs.mjs finds them at the expected path
+      - name: Rename artifact directories
+        working-directory: packages/assume/.release-artifacts
+        run: |
+          for dir in assume-*; do
+            if [ -d "$dir" ]; then
+              # Extract platform name: assume-<platform>-<version> -> <platform>
+              platform=$(echo "$dir" | sed 's/assume-\(.*\)-.*/\1/')
+              mv "$dir" "$platform"
+              echo "Renamed $dir -> $platform"
+            fi
+          done
+
+      # Stage binaries into each platform package's bin/ directory
+      - name: Pack platform tarballs
+        run: bun run --cwd packages/assume pack:platforms
+
+      # Publish all packages. NPM_CONFIG_DRY_RUN=true when workflow_dispatch dry_run is true.
+      - name: Publish to npm
+        run: bunx changeset publish
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          # Belt-and-suspenders: some tooling paths (npm publish invoked
-          # from `changeset publish`) read NODE_AUTH_TOKEN instead of or
-          # alongside NPM_TOKEN. Setting both covers both call sites.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || '' }}
 
       # crates.io publishing for the `glrs-assume` crate is deliberately
       # NOT wired here yet. When we're ready to also publish to crates.io:
