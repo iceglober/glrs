@@ -57,7 +57,7 @@ glrs/
 7. **Rust-specific rules (binding on `packages/assume/`).**
    - `cargo fmt --check` + `cargo clippy -- -D warnings` both must be clean on every PR
    - Cross-platform builds use GitHub's matrix + `cross` for non-native targets
-   - `Cargo.toml` `version` and `packages/assume/package.json` `version` are synced at release time via `scripts/sync-version.ts`
+   - `Cargo.toml` `version` and `packages/assume/package.json` `version` are synced at release time via `scripts/sync-version.mjs`
 
 8. **Docs content is separate from scaffold.** `docs/` ships the Starlight scaffold + nav. Authoring docs content is a follow-up effort.
 

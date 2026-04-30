@@ -1,8 +1,13 @@
 use std::fs;
 use std::path::PathBuf;
 
-const REPO: &str = "iceglober/glorious";
-const TAG_PREFIX: &str = "assume-v";
+// Post-monorepo (Apr 2026): releases cut by Changesets on iceglober/glrs
+// with per-package tags like "@glrs-dev/assume@0.6.4". The pre-monorepo
+// tag format "assume-v0.6.3" on iceglober/glorious is frozen — any
+// gs-assume installed before the monorepo migration hits this path on
+// its next run and auto-migrates to the new update channel.
+const REPO: &str = "iceglober/glrs";
+const TAG_PREFIX: &str = "@glrs-dev/assume@";
 const CACHE_TTL_SECS: u64 = 24 * 60 * 60; // 24 hours
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -14,7 +19,7 @@ struct CachedVersion {
 fn cache_path() -> PathBuf {
     let cache_dir = dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join("glorious-assume");
+        .join("gs-assume");
     cache_dir.join("latest-version.json")
 }
 
@@ -81,6 +86,15 @@ fn fetch_latest_version() -> Option<String> {
 
     let stdout = String::from_utf8(output.stdout).ok()?;
     let releases: Vec<serde_json::Value> = serde_json::from_str(&stdout).ok()?;
+    // Find the first release whose tag matches the main package's tag
+    // prefix exactly. Changesets cuts separate releases for the main
+    // package and each platform sibling:
+    //   @glrs-dev/assume@0.6.4          ← main (this is what we want)
+    //   @glrs-dev/assume-darwin-arm64@0.6.4
+    //   @glrs-dev/assume-linux-x64@0.6.4
+    //   ...
+    // strip_prefix is exact-match on the boundary '@' after "assume", so
+    // platform tags (which have '-' there, not '@') are naturally excluded.
     releases.iter().find_map(|r| {
         let tag = r.get("tag_name")?.as_str()?;
         tag.strip_prefix(TAG_PREFIX).map(|v| v.to_string())
@@ -136,6 +150,23 @@ fn detect_platform() -> &'static str {
     }
 }
 
+/// Minimal percent-encoder for git tag names used in GitHub release URLs.
+/// Encodes only `@` and `/` — the two characters Changesets' tag format
+/// (`@glrs-dev/assume@<version>`) introduces that collide with URL path
+/// semantics. Pulled out as a standalone helper so the test matrix is
+/// explicit about which chars round-trip vs which get escaped.
+fn url_encode_tag(tag: &str) -> String {
+    let mut out = String::with_capacity(tag.len() + 8);
+    for ch in tag.chars() {
+        match ch {
+            '@' => out.push_str("%40"),
+            '/' => out.push_str("%2F"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 /// Attempt to download and replace the running binary. Returns true on success.
 /// Tries `gh release download` first, then falls back to `curl`.
 fn try_auto_upgrade(tag: &str) -> bool {
@@ -167,7 +198,12 @@ fn try_auto_upgrade(tag: &str) -> bool {
     let asset_name = format!("gs-assume-{platform}");
     let tmp = format!("{}.tmp", exe_path.to_string_lossy());
 
-    let download_url = format!("https://github.com/{REPO}/releases/download/{tag}/{asset_name}");
+    // Percent-encode the tag for the URL path. Changesets tags include '@'
+    // and '/' (e.g. "@glrs-dev/assume@0.6.4") which must be URL-escaped or
+    // GitHub's release-download endpoint routes incorrectly.
+    let encoded_tag = url_encode_tag(tag);
+    let download_url =
+        format!("https://github.com/{REPO}/releases/download/{encoded_tag}/{asset_name}");
     let result = std::process::Command::new("curl")
         .args(["-fsSL", "--max-time", "30", "-o", &tmp, &download_url])
         .stdin(std::process::Stdio::null())
@@ -299,4 +335,75 @@ pub fn check_for_update() {
             );
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_encode_tag_escapes_at_and_slash() {
+        assert_eq!(
+            url_encode_tag("@glrs-dev/assume@0.6.4"),
+            "%40glrs-dev%2Fassume%400.6.4"
+        );
+    }
+
+    #[test]
+    fn url_encode_tag_leaves_unreserved_chars_alone() {
+        assert_eq!(url_encode_tag("0.6.4"), "0.6.4");
+        assert_eq!(url_encode_tag("v1.2.3-beta.1"), "v1.2.3-beta.1");
+    }
+
+    #[test]
+    fn url_encode_tag_round_trips_legacy_format() {
+        // Legacy pre-monorepo format (`assume-v*`) has no chars that need
+        // escaping — important during the transition window where an
+        // installed pre-monorepo binary still reads old tag names.
+        assert_eq!(url_encode_tag("assume-v0.6.3"), "assume-v0.6.3");
+    }
+
+    fn parse_version_from_releases(json: &str) -> Option<String> {
+        let releases: Vec<serde_json::Value> = serde_json::from_str(json).ok()?;
+        releases.iter().find_map(|r| {
+            let tag = r.get("tag_name")?.as_str()?;
+            tag.strip_prefix(TAG_PREFIX).map(|v| v.to_string())
+        })
+    }
+
+    #[test]
+    fn tag_filter_picks_main_package_not_platform_siblings() {
+        // Simulate the Changesets-produced release set: main package plus
+        // each platform sibling. The filter must pick ONLY the main package.
+        let json = r#"[
+            {"tag_name": "@glrs-dev/assume-darwin-arm64@0.6.4"},
+            {"tag_name": "@glrs-dev/assume@0.6.4"},
+            {"tag_name": "@glrs-dev/assume-linux-x64@0.6.4"}
+        ]"#;
+        assert_eq!(parse_version_from_releases(json), Some("0.6.4".to_string()));
+    }
+
+    #[test]
+    fn tag_filter_rejects_platform_only_releases() {
+        // Hypothetical: only platform releases exist, main is absent.
+        // Filter should return None (not accidentally strip a platform tag).
+        let json = r#"[
+            {"tag_name": "@glrs-dev/assume-darwin-arm64@0.6.4"},
+            {"tag_name": "@glrs-dev/assume-linux-x64@0.6.4"}
+        ]"#;
+        assert_eq!(parse_version_from_releases(json), None);
+    }
+
+    #[test]
+    fn tag_filter_ignores_unrelated_releases() {
+        // Other packages in the monorepo (cli, harness-plugin-opencode)
+        // produce their own Changesets tags on the same repo. The filter
+        // must ignore them.
+        let json = r#"[
+            {"tag_name": "@glrs-dev/cli@0.3.2"},
+            {"tag_name": "@glrs-dev/harness-plugin-opencode@0.3.2"},
+            {"tag_name": "@glrs-dev/assume@0.6.4"}
+        ]"#;
+        assert_eq!(parse_version_from_releases(json), Some("0.6.4".to_string()));
+    }
 }

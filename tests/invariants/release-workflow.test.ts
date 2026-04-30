@@ -1,7 +1,10 @@
 /**
- * Invariant: release.yml no longer references rust-build machinery;
- * rust-build-matrix.yml still has workflow_call and all five targets.
- * Acceptance criterion a5.
+ * Invariant: release.yml has the expected structure for the assume release pipeline.
+ * - Three jobs: version-or-check, build-rust, publish
+ * - build-rust calls rust-build-matrix.yml via workflow_call
+ * - publish downloads artifacts, runs pack:platforms, then changeset publish
+ * - dry_run workflow_dispatch input sets NPM_CONFIG_DRY_RUN
+ * Acceptance criterion a6.
  */
 import { describe, test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -37,27 +40,105 @@ const rustMatrixYml = readFileSync(
 );
 
 describe("release workflow", () => {
-  test("release.yml does not reference rust-build job", () => {
-    expect(releaseYml).not.toContain("rust-build");
+  test("has version-or-check, build-rust, and publish jobs", () => {
+    // Check for the three job definitions
+    expect(releaseYml).toContain("jobs:");
+    expect(releaseYml).toContain("version-or-check:");
+    expect(releaseYml).toContain("build-rust:");
+    expect(releaseYml).toContain("publish:");
   });
 
-  test("release.yml does not reference pack:platforms", () => {
-    expect(releaseYml).not.toContain("pack:platforms");
+  test("build-rust calls rust-build-matrix.yml via workflow_call with a version input", () => {
+    // Check that build-rust uses the reusable workflow
+    expect(releaseYml).toContain("uses: ./.github/workflows/rust-build-matrix.yml");
+    // Check that it passes the version input, sourced from version-or-check's assume_version
+    // output (with an optional fallback for the dry-run path).
+    expect(releaseYml).toMatch(/version:\s*\$\{\{[^}]*needs\.version-or-check\.outputs\.assume_version[^}]*\}\}/);
   });
 
-  test("release.yml does not reference sync:version", () => {
-    expect(releaseYml).not.toContain("sync:version");
+  test("publish job downloads all assume-*-<version> artifacts before running pack:platforms", () => {
+    // Check for download-artifact step
+    expect(releaseYml).toContain("actions/download-artifact@v4");
+    // Check for the pattern that matches all assume artifacts
+    expect(releaseYml).toMatch(/pattern:\s*assume-\*-\$\{\{/);
+    // Check that path is set to the expected location
+    expect(releaseYml).toContain("packages/assume/.release-artifacts/");
+  });
+
+  test("publish job runs pack:platforms before changeset publish", () => {
+    // Check for pack:platforms step
+    expect(releaseYml).toContain("pack:platforms");
+    // Check for changeset publish step
+    expect(releaseYml).toContain("changeset publish");
+    // Verify pack:platforms appears before changeset publish (by line position)
+    const packIndex = releaseYml.indexOf("pack:platforms");
+    const publishIndex = releaseYml.indexOf("changeset publish");
+    expect(packIndex).toBeGreaterThan(0);
+    expect(publishIndex).toBeGreaterThan(packIndex);
+  });
+
+  test("dry_run workflow_dispatch input sets NPM_CONFIG_DRY_RUN=true on the publish step", () => {
+    // Check for workflow_dispatch trigger with dry_run input
+    expect(releaseYml).toContain("workflow_dispatch:");
+    expect(releaseYml).toContain("dry_run:");
+    // Check that NPM_CONFIG_DRY_RUN is set based on the input
+    expect(releaseYml).toContain("NPM_CONFIG_DRY_RUN:");
+    expect(releaseYml).toContain("github.event.inputs.dry_run");
+  });
+
+  test("dry_run path bypasses the version-or-check gate", () => {
+    // The dry-run flow must be able to reach build-rust + publish on a
+    // feature branch that still has pending changesets. Guard against
+    // regressions where a refactor re-adds the hasChangesets gate without
+    // a dry-run bypass.
+    expect(releaseYml).toContain("dry-run-version:");
+    // dry-run-version must output assume_version (consumed by build-rust).
+    expect(releaseYml).toMatch(/dry-run-version:[\s\S]*?outputs:[\s\S]*?assume_version:/);
+    // build-rust's `if` must admit either a no-changesets push OR a successful dry-run-version job.
+    expect(releaseYml).toMatch(/build-rust:[\s\S]*?if:[\s\S]*?dry-run-version\.result == 'success'/);
   });
 
   test("rust-build-matrix.yml still declares workflow_call", () => {
     expect(rustMatrixYml).toContain("workflow_call:");
   });
 
-  test("rust-build-matrix.yml still includes all five rust targets", () => {
+  test("rust-build-matrix.yml includes the four supported Unix targets", () => {
+    // Windows (x86_64-pc-windows-msvc) is intentionally NOT built —
+    // the daemon is Unix-architectured (nix, Unix sockets, launchd).
+    // Reintroducing Windows would require substantial porting.
     expect(rustMatrixYml).toContain("x86_64-apple-darwin");
     expect(rustMatrixYml).toContain("aarch64-apple-darwin");
     expect(rustMatrixYml).toContain("x86_64-unknown-linux-gnu");
     expect(rustMatrixYml).toContain("aarch64-unknown-linux-gnu");
-    expect(rustMatrixYml).toContain("x86_64-pc-windows-msvc");
+    // Make sure there's no ACTIVE matrix entry for Windows (the explanatory
+    // comment may mention the target name, but it must not appear as a
+    // `target:` key). Match `target:` followed by any whitespace and then
+    // the Windows triple.
+    expect(rustMatrixYml).not.toMatch(/target:\s*x86_64-pc-windows-msvc/);
+  });
+
+  test("aarch64-linux cross build sets CROSS_NO_WARNINGS=0", () => {
+    // Defends against a future refactor that drops the CROSS_NO_WARNINGS
+    // env — without it, modern cross aborts on internal warnings when
+    // building under Rust 1.95+.
+    expect(rustMatrixYml).toMatch(/CROSS_NO_WARNINGS:\s*"0"/);
+  });
+
+  test("publish job attaches platform binaries to the GitHub release", () => {
+    // Auto-upgrade (packages/assume/src/core/update_check.rs) fetches
+    // raw binaries from GitHub release assets. Releasing to npm alone
+    // leaves existing installs stranded. Guard against a refactor that
+    // drops the attach step.
+    expect(releaseYml).toContain("Attach platform binaries to GitHub release");
+    expect(releaseYml).toContain("gh release upload");
+    // Assets must be named with the legacy `*-amd64` suffix so
+    // pre-monorepo gs-assume installs can auto-upgrade (their
+    // detect_platform returns `amd64`, not `x64`).
+    expect(releaseYml).toContain("gs-assume-darwin-amd64");
+    expect(releaseYml).toContain("gs-assume-linux-amd64");
+    expect(releaseYml).toContain("gs-assume-darwin-arm64");
+    expect(releaseYml).toContain("gs-assume-linux-arm64");
+    // Skip on dry-run (no real tag to attach to).
+    expect(releaseYml).toMatch(/if:\s*\$\{\{\s*github\.event\.inputs\.dry_run\s*!=\s*'true'\s*\}\}/);
   });
 });

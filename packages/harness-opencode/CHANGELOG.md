@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.1
+
+### Patch Changes
+
+- [#19](https://github.com/iceglober/glrs/pull/19) [`6e942c5`](https://github.com/iceglober/glrs/commit/6e942c5099a535a7d1cda161a1bbc1692f937008) Thanks [@iceglober](https://github.com/iceglober)! - Link `@glrs-dev/cli` and `@glrs-dev/harness-plugin-opencode` versions in Changesets config so they always release together. The CLI vendors the harness plugin's `dist/` at build time (via `packages/cli/scripts/vendor-harness.ts`), so plugin fixes don't reach users running `glrs oc install` until a CLI release is cut. Linking the two ensures every harness-plugin bump produces a matching CLI bump, closing the gap where a plugin fix sat on npm without a CLI tarball that bundled it.
+
+  This bump also forces a CLI republish that vendors `@glrs-dev/harness-plugin-opencode@0.3.0` so users get the recent `glrs oc install` reconfigure fix via `glrs oc install`, not just `glrs-oc install` directly.
+
+## 0.3.0
+
+### Minor Changes
+
+- [#18](https://github.com/iceglober/glrs/pull/18) [`3384687`](https://github.com/iceglober/glrs/commit/3384687debcf601d1134434531895330731442d8) Thanks [@iceglober](https://github.com/iceglober)! - The pilot-planner agent now detects package managers, docker-compose services, migration tooling, and UI/API/DB test frameworks during planning, and proposes a top-level `setup:` block + per-surface `verify:` patterns for user confirmation before writing the YAML. Two new rule files (`setup-authoring.md`, `qa-expectations.md`) back the new behaviour.
+
+- [#15](https://github.com/iceglober/glrs/pull/15) [`eadb193`](https://github.com/iceglober/glrs/commit/eadb193092001cd15c5e70dd3bfb2034c614977b) Thanks [@iceglober](https://github.com/iceglober)! - Register `research-web`, `research-local`, `research-auto` as OpenCode agents (previously bundled only as skills). `@research` now dispatches by name instead of via a generic subagent loading the Skill tool. Direct invocation (`@research-web`, task-tool dispatch) now works.
+
+### Patch Changes
+
+- [#17](https://github.com/iceglober/glrs/pull/17) [`0bb833f`](https://github.com/iceglober/glrs/commit/0bb833fa00a943cb325404156d0f6b5cf70ca50c) Thanks [@iceglober](https://github.com/iceglober)! - Fix `glrs-oc install` silently dropping reconfigured models and MCPs on re-run. When a user answers "Yes, reconfigure models" (or the new "Yes, reconfigure MCPs") prompt, the installer now writes the new selections into `opencode.json` via an imperative-edit path rather than letting the non-destructive merge policy preserve the existing values. Other plugin options and user-authored MCPs are preserved; a `.bak.<epoch>-<pid>` sibling is written before mutation.
+
+- [#18](https://github.com/iceglober/glrs/pull/18) [`3384687`](https://github.com/iceglober/glrs/commit/3384687debcf601d1134434531895330731442d8) Thanks [@iceglober](https://github.com/iceglober)! - pilot: add top-level `setup:` for environment bootstrap + relax builder rule 4 to let environmental fumbles self-heal during the fix-loop
+
+  - **Harness-level**: Added `setup:` field to `pilot.yaml` schema. Commands run once per fresh worktree slot before any task uses that slot. Cached across tasks; re-run on slot retirement after `preserveOnFailure`. Setup failure hard-aborts the run with all pending tasks marked `blocked`.
+
+  - **Agent-level**: Rewrote pilot-builder rule 4 to distinguish task-level dependency additions (still require task prompt approval) from environment bootstrap (expected during fix-loop when verify fails with obvious environmental errors like missing `node_modules`). Recognises canonical install commands: `pnpm install`, `bun install`, `npm install`, `npm ci`, `cargo fetch` / `cargo build`.
+
+  - **Defence-in-depth**: Added tests ensuring the plugin bash-deny list continues to permit standard install commands.
+
 ## 0.2.0
 
 ### Minor Changes
