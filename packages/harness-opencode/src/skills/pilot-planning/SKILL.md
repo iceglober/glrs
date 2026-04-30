@@ -11,7 +11,7 @@ A good plan trades a planning-session's worth of patient thought for hours of un
 
 ## Workflow
 
-Apply these ten rules in order. Each rule has its own file in `rules/` for the full text:
+Apply these nine rules in order. Each rule has its own file in `rules/` for the full text:
 
 1. [`first-principles.md`](rules/first-principles.md) — Frame the task FROM the user's intent, not from a templated checklist. Ask "what does the user actually want done?" before "what files might change?"
 
@@ -25,29 +25,56 @@ Apply these ten rules in order. Each rule has its own file in `rules/` for the f
 
 6. [`milestones.md`](rules/milestones.md) — Optional grouping. Use when several tasks share a "is this batch done?" check (e.g. integration tests after a chunk of unit-test work).
 
-7. [`self-review.md`](rules/self-review.md) — Before declaring the plan ready, run through a 7-question checklist. Find the holes yourself; the validator only catches schema errors.
+7. [`self-review.md`](rules/self-review.md) — Before declaring the plan ready, run through a 7-question checklist. Find the holes yourself; the validator only catches schema errors. And before declaring "refuse", revisit the bundle-vs-split decision below.
 
 8. [`task-context.md`](rules/task-context.md) — Every non-trivial task carries a `context:` block. Thin plans fail because the builder works each task from scratch with no carry-over; rich context pre-loads what the builder needs to work confidently. Cover outcome, rationale, code pointers, acceptance.
 
-9. [`setup-authoring.md`](rules/setup-authoring.md) — Detect → propose → confirm the top-level `setup:` block. Covers package manager install, docker-compose services, and migration tooling detection.
-
-10. [`qa-expectations.md`](rules/qa-expectations.md) — Detect → propose → confirm per-surface verify patterns for UI, API, DB, integration, browser-based component, and CLI surfaces.
+9. [`qa-expectations.md`](rules/qa-expectations.md) — Detect → propose → confirm per-surface verify patterns for UI, API, DB, integration, browser-based component, and CLI surfaces.
 
 ## After applying the rules
 
 1. Save the YAML to the path returned by `bunx @glrs-dev/harness-plugin-opencode pilot plan-dir`.
-2. Run `bunx @glrs-dev/harness-plugin-opencode pilot validate <path>` and fix every error / warning.
-3. Hand off to the user with: `Plan saved to <path>. Next: bunx @glrs-dev/harness-plugin-opencode pilot build`.
+2. Remind the user the plan assumes their dev stack is already running (install, compose, migrate, seed). Plans no longer bootstrap their own environment.
+3. Run `bunx @glrs-dev/harness-plugin-opencode pilot validate <path>` and fix every error / warning.
+4. Hand off to the user with: `Plan saved to <path>. Next: bunx @glrs-dev/harness-plugin-opencode pilot build`.
 
 Do NOT summarize the plan in chat. The user can read the YAML.
 
+## When to bundle vs. split plans
+
+Multi-issue cross-cutting plans are a first-class pilot shape. When a user's scope spans 2–4 related issues, default to **one plan** covering all of them — as long as they share:
+
+- Same repo (or monorepo).
+- Same package manager / install command.
+- Same `docker-compose` (or equivalent local-infra) stack.
+- Same test runner and verify style.
+- Same migrations/seed pipeline.
+
+Bundling amortizes setup cost (install, compose up, migrate, seed — minutes each, paid once per pilot run) across all the work. Tasks from different issues typically form disconnected subtrees in the DAG — see [`dag-shape.md`](rules/dag-shape.md)'s "Disconnected" pattern. Task-level `cascadeFail` only blocks transitive dependents, so a failure in one subtree does NOT cascade into its siblings.
+
+**Split into separate pilot plans when:**
+
+- Issues live in different repositories.
+- Issues require fundamentally different setup environments.
+- Issues have fundamentally different acceptance shapes (e.g., automated typecheck vs. manual operator playbook).
+
+See [`decomposition.md`](rules/decomposition.md) "Plan sizing — count of tasks" for more.
+
 ## When to refuse
 
-If, after applying the methodology, you cannot produce a plan with at least:
+Refuse ONLY when the **work itself** is underspecified or ambiguous — no concrete acceptance criteria, no clear "done" condition. Examples that warrant refusal:
 
-- 2 tasks
-- Each with non-trivial verify
-- Each with tight `touches`
-- A coherent DAG
+- "Make the API better."
+- "Refactor auth."
+- "Clean up tech debt."
 
-…tell the user the work isn't ready for pilot. Suggest they break it down themselves first, or use the regular `/plan` agent (markdown plans, human-driven execution). It is far better to refuse than to ship a bad plan.
+These don't name specific behaviors the pilot-builder can verify. Ask the user to narrow the scope before planning.
+
+**Do NOT refuse for:**
+
+- Plan size (5–30 tasks is fine; even more is fine when the work is well-defined).
+- Multi-issue scope (2–4 related issues in one plan is first-class — see "When to bundle" above).
+- Disconnected-subtree DAG shape (tasks from different concerns don't need artificial edges).
+- Concerns about PR shape (that's a reviewer decision; the pilot run can produce one PR or several).
+
+When you do refuse: tell the user honestly and specifically what's missing. Suggest the regular `/plan` agent (markdown plans, human-driven execution) for ambiguous work that needs human iteration before it's pilotable. It is far better to refuse an unspecified request than to ship a plan full of `echo done` verifies — but narrow what "bad plan" means. Ambitious is not bad; ambiguous is bad.

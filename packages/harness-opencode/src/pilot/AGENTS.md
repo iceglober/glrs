@@ -1,6 +1,8 @@
-# src/pilot — unattended task execution subsystem
+# src/pilot — unattended task execution subsystem (cwd mode)
 
-The pilot decomposes a feature into a `pilot.yaml` DAG (planner agent), then executes tasks from the DAG unattended (builder agent), coordinated by a worker loop that manages git worktrees, opencode sessions, and a SQLite state store.
+The pilot decomposes a feature into a `pilot.yaml` DAG (planner agent), then executes tasks from the DAG unattended (builder agent) directly in the user's current worktree. The worker loop coordinates opencode sessions and a SQLite state store, committing each task's output on HEAD of the user's feature branch after verify passes.
+
+**No worktree pool. No setup phase. No per-task branch.** The user prepares their own environment (install, compose, migrate, seed) on a feature branch — optionally via a `.glrs/hooks/pilot_setup` script that pilot auto-runs before the task loop — then invokes `pilot build` and walks away.
 
 The root AGENTS.md covers the high-level registration model (rule 10). This file is the drill-down.
 
@@ -16,10 +18,9 @@ pilot/
 │   ├── globs.ts      # picomatch-based touches-scope matching
 │   └── slug.ts       # deterministic task-id slugs
 ├── state/            # SQLite: runs/tasks/events + migrations + accessors
-├── worktree/         # git worktree pool (git.ts + pool.ts)
 ├── opencode/         # opencode server lifecycle, SSE EventBus, builder prompts
 ├── verify/           # verify-runner (runs verify-command + enforces touches scope)
-├── worker/           # worker.ts (main loop) + stop-detect.ts (STOP protocol)
+├── worker/           # worker.ts (main loop) + safety-gate.ts + stop-detect.ts
 ├── scheduler/        # ready-set.ts (which tasks are ready to claim)
 └── cli/              # `pilot <verb>` cmd-ts subcommands (see table below)
 ```
@@ -29,24 +30,24 @@ pilot/
 ```
 ~/.glorious/opencode/<repo>/pilot/
 ├── state.sqlite      # runs, tasks, events
-├── runs/<run-id>/
-│   ├── plan.yaml     # frozen copy of pilot.yaml for this run
-│   └── tasks/<task-id>/
-│       ├── session.jsonl    # opencode session events
-│       ├── verify.log       # verify-runner output
-│       └── status.json
-└── worktrees/        # git worktrees managed by the pool
+└── runs/<run-id>/
+    ├── plan.yaml     # frozen copy of pilot.yaml for this run
+    └── tasks/<task-id>/
+        ├── session.jsonl    # opencode session events
+        ├── verify.log       # verify-runner output
+        └── status.json
 ```
 
-`<repo>` derives from `git rev-parse --git-common-dir` → per-repo key, same strategy as `src/plan-paths.ts`. Worktrees share the same pilot state.
+`<repo>` derives from `git rev-parse --git-common-dir` → per-repo key, same strategy as `src/plan-paths.ts`.
 
 ## Invariants
 
 1. **Builder never commits.** `src/plugins/pilot-plugin.ts` denies `git commit`/`push`/`tag`/`branch`/`checkout`/`switch`/`reset` for the builder session. The worker commits on its behalf after verify succeeds.
 2. **Planner only edits plans.** Same plugin denies edit/write/patch/multiedit outside the plans directory for the planner session.
 3. **Touches-scope enforced by verify-runner.** Every task declares globs it may modify; verify-runner rejects edits outside scope before advancing.
-4. **State DB and worktrees are per-repo, not per-worktree.** Don't sprinkle state under individual worktree dirs.
-5. **The plugin is the second fence.** Agent permission maps are the first; don't collapse them into one.
+4. **Pilot runs in the user's current worktree (cwd).** Pre-flight refuses to run on main/master/default-branch or with a dirty tree. Tasks that fail halt the run; the user recovers via `pilot build-resume`. There is no worktree pool, no setup phase, no per-task branch.
+5. **The tree is clean between every task.** After every task — success OR failure — the worker guarantees `git status --porcelain` is empty before picking the next task. Success paths commit via `commitAll`; failure paths `git reset --hard HEAD && git clean -fd` (gitignored files preserved). Forensic record of what the failed task did lives in `runs/<runId>/tasks/<taskId>/session.jsonl`, NOT in the working tree. If post-task cleanup itself fails, the run halts — subsequent tasks cannot safely run on a mixed tree.
+6. **The plugin is the second fence.** Agent permission maps are the first; don't collapse them into one.
 
 ## CLI surface
 
@@ -55,14 +56,11 @@ pilot/
 | Verb | Purpose |
 |---|---|
 | `pilot plan` | Invoke pilot-planner → emit pilot.yaml |
-| `pilot build` | Run the worker loop against a pilot.yaml |
+| `pilot build` | Run the worker loop against a pilot.yaml (in cwd) |
+| `pilot build-resume` | Continue a partially-completed run from where it left off |
 | `pilot validate` | Lint a pilot.yaml without running it |
 | `pilot status` | Inspect current run state |
 | `pilot logs` | Tail task event log |
-| `pilot resume` | Resume a run after human intervention |
-| `pilot retry` | Retry a failed task |
-| `pilot discover` | List known runs/tasks |
-| `pilot worktrees` | Inspect worktree pool |
 | `pilot cost` | Usage accounting |
 | `pilot plan-dir` | Print the per-repo plan dir (used by the PRIME's bootstrap probe) |
 
@@ -75,6 +73,6 @@ pilot/
 
 ## Spikes
 
-See `docs/pilot/spikes/` (S1-S6) for Phase-0 de-risking notes — opencode CLI flags, SDK session methods, SSE event shapes, session resumability, picomatch globs conflict, serve startup line. Read before touching `opencode/server.ts` or `opencode/events.ts`.
+See `docs/pilot/spikes/` (S1-S6) for Phase-0 de-risking notes.
 
-`PILOT_TODO.md` at the repo root tracks the v0.1+v0.2 combined-release ship checklist.
+`PILOT_TODO.md` at the repo root tracks the ship checklist.

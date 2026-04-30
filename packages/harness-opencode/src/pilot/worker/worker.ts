@@ -1,16 +1,15 @@
 /**
- * Pilot worker loop.
+ * Pilot worker loop — cwd mode.
  *
- * Single-worker for v0.1. Picks a ready task from the scheduler,
- * prepares a worktree, opens an opencode session, sends the kickoff
- * prompt, waits for idle, runs verify, enforces touches, commits,
- * marks succeeded — or fails with the appropriate state transition
- * and event log on any failure mode along the way.
+ * Picks a ready task from the scheduler, opens an opencode session
+ * scoped to the user's cwd, sends the kickoff prompt, waits for idle,
+ * runs verify, enforces touches, commits on HEAD — or fails with the
+ * appropriate state transition and event log on any failure mode.
  *
  * The function `runWorker(deps)` consumes a dependency bag — every
- * subsystem (state, scheduler, pool, bus, runner, prompts) is
- * injected. This makes the worker testable: pass in mocks and observe
- * the resulting state-DB transitions.
+ * subsystem (state, scheduler, bus, runner, prompts) is injected. This
+ * makes the worker testable: pass in mocks and observe the resulting
+ * state-DB transitions.
  *
  * The worker DOES NOT spawn the opencode server itself — that's the
  * caller's job (the CLI's `pilot build`). The dep bag includes a
@@ -19,42 +18,25 @@
  *
  * Main loop semantics:
  *
+ *   pre-flight: checkCwdSafety(cwd) — refuses on main/master/dirty
  *   while not complete:
  *     pick = scheduler.next()
- *     if pick is null:
- *       break  (no ready tasks; either everything's done OR all
- *               remaining tasks are blocked on deps that haven't
- *               settled yet, in which case the scheduler's
- *               isComplete() is also false; we loop with a tiny
- *               delay until something changes)
+ *     if pick is null: break
  *     await runOneTask(pick.task)
- *
- * v0.1 has only one worker, so the "blocked on in-flight task" case
- * cannot happen — once `next()` returns null, the run is done.
  *
  * Per-task lifecycle (with all the failure handling):
  *
- *   1. pool.prepare → sinceSha, branch, path
- *   2. session.create → sessionId
- *   3. state.markRunning(sessionId, branch, path)
+ *   1. sinceSha = headSha(cwd)
+ *   2. session.create (directory: cwd) → sessionId
+ *   3. state.markRunning(sessionId, worktreePath=cwd)
  *   4. attempt loop (up to maxAttempts):
  *      a. promptAsync(kickoff or fix prompt)
  *      b. bus.waitForIdle
- *         - kind:"stall" → state.markFailed("stall"); pool.preserve
- *         - kind:"abort" → state.markAborted; pool.preserve
- *         - kind:"session-error" → mark failed; pool.preserve
- *         - kind:"idle" → continue
- *      c. STOP detected during waitForIdle → markFailed; pool.preserve
+ *      c. STOP detected → markFailed
  *      d. runVerify
- *         - on fail with attempts remaining: build fixPrompt, loop
- *         - on fail with no attempts left: markFailed; pool.preserve
- *         - on success: enforceTouches
  *      e. enforceTouches
- *         - violation: mark failed (if no attempts left) OR
- *           build fixPrompt with touchesViolators and loop
- *         - clean: commitAll → markSucceeded
- *
- *   5. cascadeFail dependents on failure
+ *   5. commitAll(cwd) on success → markSucceeded
+ *   6. cascadeFail dependents on failure
  *
  * Cost tracking:
  *
@@ -67,10 +49,11 @@
 import type { Database } from "bun:sqlite";
 import type { OpencodeClient } from "@opencode-ai/sdk";
 import * as fsSync from "node:fs";
+import { execFile as execFileCb } from "node:child_process";
+import { promisify as promisifyUtil } from "node:util";
 
 import type { Plan, PlanTask } from "../plan/schema.js";
 import type { Scheduler } from "../scheduler/ready-set.js";
-import type { WorktreePool, WorktreeSlot } from "../worktree/pool.js";
 import type { EventBus, EventLike } from "../opencode/events.js";
 
 import {
@@ -78,18 +61,87 @@ import {
   markSucceeded,
   markFailed,
   markAborted,
-  markBlocked,
   setCostUsd,
   getTask,
-  listTasks,
 } from "../state/tasks.js";
 import { appendEvent } from "../state/events.js";
 import { kickoffPrompt, fixPrompt, type LastFailure, type RunContext } from "../opencode/prompts.js";
 import { runVerify } from "../verify/runner.js";
 import { enforceTouches } from "../verify/touches.js";
-import { commitAll, headSha } from "../worktree/git.js";
 import { getTaskJsonlPath } from "../paths.js";
 import { StopDetector } from "./stop-detect.js";
+import { checkCwdSafety, headSha } from "./safety-gate.js";
+
+const execFileWorker = promisifyUtil(execFileCb);
+
+/**
+ * Commit every tracked + untracked change in `cwd` with the given subject.
+ * Returns the new HEAD sha on success. Throws on failure (e.g. nothing to
+ * commit, pre-commit hook rejects).
+ */
+async function commitAll(
+  cwd: string,
+  subject: string,
+  authorName?: string,
+  authorEmail?: string,
+): Promise<string> {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  if (authorName) env.GIT_AUTHOR_NAME = authorName;
+  if (authorEmail) env.GIT_AUTHOR_EMAIL = authorEmail;
+  if (authorName) env.GIT_COMMITTER_NAME = authorName;
+  if (authorEmail) env.GIT_COMMITTER_EMAIL = authorEmail;
+
+  await execFileWorker("git", ["add", "-A"], { cwd, timeout: 10_000 });
+  await execFileWorker("git", ["commit", "-m", subject], {
+    cwd,
+    timeout: 30_000,
+    env,
+  });
+  const { stdout } = await execFileWorker("git", ["rev-parse", "HEAD"], {
+    cwd,
+    timeout: 10_000,
+  });
+  return stdout.toString().trim();
+}
+
+/**
+ * Reset the working tree to a clean state after a failed/aborted task.
+ *
+ *   git reset --hard HEAD    — discard all tracked-file modifications
+ *   git clean -fd            — remove untracked files AND directories
+ *                              (but NOT .gitignored files — those stay)
+ *
+ * The contract this enforces: **the tree is clean after every task,
+ * success or failure.** A successful task's work is captured via
+ * `commitAll`; a failed task's work is discarded. The forensic record
+ * (which files the agent touched, what the verify output was) lives
+ * in the per-task session.jsonl under the pilot run dir, NOT in the
+ * working tree.
+ *
+ * If cleanup itself fails (locked ref, permission error, etc.), the
+ * caller must treat it as a hard STOP — the next task can't safely
+ * run on a half-reverted tree. Returns `true` on success; `false` on
+ * failure (writes the error to stderr for diagnostics).
+ */
+async function resetTree(cwd: string): Promise<boolean> {
+  try {
+    await execFileWorker("git", ["reset", "--hard", "HEAD"], {
+      cwd,
+      timeout: 30_000,
+    });
+    await execFileWorker("git", ["clean", "-fd"], {
+      cwd,
+      timeout: 30_000,
+    });
+    return true;
+  } catch (err) {
+    const e = err as { stderr?: Buffer | string; message?: string };
+    process.stderr.write(
+      `[pilot] tree cleanup failed: ${(e.stderr ?? e.message ?? "").toString()}\n`,
+    );
+    return false;
+  }
+}
 
 // --- Public types ----------------------------------------------------------
 
@@ -98,63 +150,38 @@ export type WorkerDeps = {
   runId: string;
   plan: Plan;
   scheduler: Scheduler;
-  pool: WorktreePool;
   client: OpencodeClient;
   /**
    * Factory that produces a per-task EventBus scoped to the given
-   * worktree directory. The factory must scope its SSE subscription
-   * to that directory (via `new EventBus(client, directory)`) — the
-   * opencode server's `/event` endpoint filters session-level events
-   * by subscriber directory, and a bus without a directory receives
-   * only server-wide events (heartbeats, connected, file-watcher).
-   *
-   * Why a factory instead of a single shared bus: opencode's SSE
-   * directory-scope is exact-match, not prefix-match. A single bus
-   * scoped to the run's worktrees-parent directory receives ZERO
-   * events for per-task sessions whose directories are children of
-   * that parent. Each task must therefore have its own bus scoped to
-   * its own worktree.
+   * directory. The factory must scope its SSE subscription to that
+   * directory (via `new EventBus(client, directory)`) — the opencode
+   * server's `/event` endpoint filters session-level events by
+   * subscriber directory.
    *
    * Contract: the worker creates ONE bus per task and closes it at
-   * task end (in the same `finally`-style cleanup block that disposes
-   * forensics). Callers (build.ts) wire this up as
+   * task end. Callers (build.ts) wire this up as
    * `(directory) => new EventBus(client, directory)`.
    */
   busFactory: (directory: string) => EventBus;
 
   /**
-   * Branch prefix derived from the plan slug (e.g. `pilot/eng-1234`).
-   * The worker forms each task's branch as `<branchPrefix>/<task.id>`.
-   */
-  branchPrefix: string;
-
-  /** Base ref the worktree is created from (typically `main` HEAD). */
-  base: string;
-
-  /**
-   * Maximum verify-fix iterations per task. Default 3. Each iteration
-   * is one prompt + one verify. The kickoff is iteration 1; fixes are
-   * 2..maxAttempts.
+   * Maximum verify-fix iterations per task. Default 3.
    */
   maxAttempts?: number;
 
   /**
-   * Stall timeout per `waitForIdle`. Default 5 minutes (matches the
-   * EventBus default).
+   * Stall timeout per `waitForIdle`. Default 60 minutes.
    */
   stallMs?: number;
 
   /**
-   * Optional abort signal — when fired, the worker:
-   *   1. Aborts the in-flight session (`session.abort`).
-   *   2. Marks the running task `aborted`.
-   *   3. Returns from `runWorker` with `{ aborted: true }`.
+   * Optional abort signal — when fired, the worker aborts the in-flight
+   * session, marks the running task `aborted`, and returns.
    */
   abortSignal?: AbortSignal;
 
   /**
-   * Optional `onLine` callback for verify-runner output. Pipes the
-   * worker's per-attempt verify output to e.g. a JSONL log.
+   * Optional `onLine` callback for verify-runner output.
    */
   onVerifyLine?: Parameters<typeof runVerify>[1]["onLine"];
 
@@ -164,10 +191,17 @@ export type WorkerDeps = {
    */
   authorName?: string;
   authorEmail?: string;
+
+  /**
+   * Optional cwd override for testing. Defaults to process.cwd().
+   * In cwd mode, this is the directory where the agent edits files
+   * and where verify commands run.
+   */
+  cwd?: string;
 };
 
 export type WorkerResult = {
-  /** True if the worker observed an abort signal. */
+  /** True if the worker observed an abort signal or safety gate refusal. */
   aborted: boolean;
   /** Task IDs the worker attempted (in order). */
   attempted: string[];
@@ -178,26 +212,45 @@ export type WorkerResult = {
 /**
  * Run the worker until the scheduler reports nothing more is ready.
  *
- * Returns a summary; deeper detail lives in the events table and the
- * task rows (the CLI's `pilot status` is the consumer).
+ * Pre-flight safety gate runs once at the top: refuses if cwd is on
+ * main/master/default branch, outside a git repo, or has a dirty tree.
+ * After task 1 commits, HEAD has moved; we do NOT re-check the gate.
+ *
+ * Task failure halts the run (no cascade-sweep beyond direct dependents).
  */
 export async function runWorker(deps: WorkerDeps): Promise<WorkerResult> {
   const attempted: string[] = [];
-  const maxAttempts = deps.maxAttempts ?? 3;
-  // Default 60min per waitForIdle. Tasks legitimately do minutes of
-  // work between events — planning passes, tool-heavy grounding
-  // phases, plan-reviewer delegations. 5min (the pre-v0.16.2 default)
-  // was only ever long enough because the stream was broken and no
-  // events ever fired anyway; with events flowing, the wait timer
-  // measures real-world inter-event gaps, which can exceed 5min for
-  // deep subagent work. Users can still override per-run via the
-  // `stallMs` arg on `runWorker`.
+  const maxAttempts = deps.maxAttempts ?? 5;
   const stallMs = deps.stallMs ?? 60 * 60 * 1000;
 
-  // Flag set by runOneTask when setup fails — signals the run should
-  // abort without picking further tasks.
-  let setupAborted = false;
-  const depsWithAbort = deps as WorkerDeps & { setupAborted?: boolean };
+  // Resolve cwd: tests inject via deps, production falls back to process.cwd().
+  const cwd = deps.cwd ?? process.cwd();
+
+  // Pre-flight safety gate — runs exactly once, never re-checked per task.
+  const gate = await checkCwdSafety(cwd);
+  if (!gate.ok) {
+    process.stderr.write(`[pilot] ${gate.reason}\n`);
+    return { aborted: true, attempted: [] };
+  }
+  // Tolerated-dirt warnings (framework noise the user didn't author).
+  // Print so the user sees what pilot is ignoring; if they had
+  // intentional work in one of these paths they can ctrl-c.
+  for (const w of gate.warnings) {
+    process.stderr.write(`[pilot] ${w}\n`);
+  }
+
+  // Load repo-level pilot config (.glrs/pilot.json). Provides project-wide
+  // baseline and after_each commands that apply to every plan.
+  const { loadPilotConfig } = await import("./pilot-config.js");
+  let pilotConfig: Awaited<ReturnType<typeof loadPilotConfig>>;
+  try {
+    pilotConfig = await loadPilotConfig(cwd);
+  } catch (err) {
+    process.stderr.write(
+      `[pilot] ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return { aborted: true, attempted: [] };
+  }
 
   while (true) {
     if (deps.abortSignal?.aborted) {
@@ -205,20 +258,24 @@ export async function runWorker(deps: WorkerDeps): Promise<WorkerResult> {
     }
     const pick = deps.scheduler.next();
     if (pick === null) {
-      // No more ready tasks. v0.1 has no concurrency, so this means
-      // the run is structurally done.
       return { aborted: false, attempted };
     }
     attempted.push(pick.task.id);
-    await runOneTask(depsWithAbort, pick.task, { maxAttempts, stallMs });
+    await runOneTask(deps, pick.task, { maxAttempts, stallMs, cwd, pilotConfig });
 
-    // Check if setup failed and aborted the run.
-    if (depsWithAbort.setupAborted) {
-      return { aborted: false, attempted };
+    // If the post-task tree cleanup failed, we can't safely continue —
+    // subsequent tasks would run on a dirty tree with stale edits from
+    // the last task. Halt the run.
+    if ((deps as WorkerDeps & { treeCleanupFailed?: boolean })
+      .treeCleanupFailed) {
+      process.stderr.write(
+        `[pilot] halting run: tree cleanup failed after task ${pick.task.id}; ` +
+          `subsequent tasks cannot safely run on a dirty tree\n`,
+      );
+      return { aborted: true, attempted };
     }
 
-    // After each task, cascadeFail handles downstream blocking. The
-    // call is a no-op when the task succeeded.
+    // After each task, cascadeFail handles downstream blocking.
     const row = getTask(deps.db, deps.runId, pick.task.id);
     if (row && (row.status === "failed" || row.status === "aborted")) {
       const blocked = deps.scheduler.cascadeFail(
@@ -239,28 +296,9 @@ export async function runWorker(deps: WorkerDeps): Promise<WorkerResult> {
 
 // --- One-task workflow -----------------------------------------------------
 
-/**
- * Per-task forensics: the JSONL writer for SSE events + the
- * last-event-ts / event-count counters read by stall payloads.
- *
- * One `Forensics` instance lives for the duration of a single task's
- * session. It:
- *   - Subscribes to the bus for the task's session exactly once.
- *   - Appends every incoming event as a JSON line to the task's
- *     session.jsonl (`<runDir>/tasks/<taskId>/session.jsonl`).
- *   - Tracks `lastEventTs` + `eventCount` so the stall handler can
- *     surface "N events, last Xms ago" in the task.failed payload.
- *
- * Every failure path in `runOneTask` MUST call `dispose()` before
- * returning — otherwise the bus keeps calling the handler long after
- * the task has moved on.
- */
 type Forensics = {
-  /** Snapshot current counters; safe to read repeatedly. */
   counters(): { lastEventTs: number | null; eventCount: number };
-  /** Unsubscribe and close the JSONL writer. Idempotent. */
   dispose(): void;
-  /** Path to the JSONL file (for testing / debugging). */
   jsonlPath: string;
 };
 
@@ -273,13 +311,10 @@ function openForensics(args: {
   let eventCount = 0;
   let disposed = false;
 
-  // Ensure the file exists (empty JSONL is still a valid zero-line file).
-  // Parent directory is already created by getTaskJsonlPath.
   try {
     fsSync.appendFileSync(args.jsonlPath, "");
   } catch {
-    // If the initial touch fails, later appendFileSync calls will also
-    // fail — we swallow both; forensics are best-effort.
+    // best-effort
   }
 
   const unsubscribe = args.bus.on(args.sessionId, (event: EventLike) => {
@@ -291,7 +326,7 @@ function openForensics(args: {
       const line = JSON.stringify({ ts, type: event.type, properties: event.properties }) + "\n";
       fsSync.appendFileSync(args.jsonlPath, line);
     } catch {
-      // Forensics failure must NOT fail the task; swallow.
+      // best-effort
     }
   });
 
@@ -310,12 +345,52 @@ function openForensics(args: {
   };
 }
 
+/**
+ * Per-task entry. Thin wrapper around `runOneTaskImpl` that enforces the
+ * tree-clean-between-tasks invariant: AFTER the task finishes (success
+ * OR failure), `git reset --hard HEAD && git clean -fd` runs to guarantee
+ * the working tree is pristine for the next task.
+ *
+ * Success paths have already committed via `commitAll`, so the reset is
+ * a no-op there. Failure paths leave partial edits, and this is where
+ * they get reverted.
+ *
+ * If the reset itself fails, we set a run-level flag (`treeCleanupFailed`)
+ * on the deps object. The main loop in `runWorker` checks this after each
+ * task and halts the run if set — subsequent tasks can't safely run on a
+ * dirty tree.
+ */
 async function runOneTask(
   deps: WorkerDeps,
   task: PlanTask,
-  opts: { maxAttempts: number; stallMs: number },
+  opts: { maxAttempts: number; stallMs: number; cwd: string; pilotConfig: { baseline: readonly string[]; after_each: readonly string[] } },
 ): Promise<void> {
-  const cwd = process.cwd();
+  try {
+    await runOneTaskImpl(deps, task, opts);
+  } finally {
+    const ok = await resetTree(opts.cwd);
+    if (!ok) {
+      (deps as WorkerDeps & { treeCleanupFailed?: boolean }).treeCleanupFailed =
+        true;
+      appendEvent(deps.db, {
+        runId: deps.runId,
+        taskId: task.id,
+        kind: "run.cleanup.failed",
+        payload: {
+          reason:
+            "git reset --hard HEAD && git clean -fd failed after task; subsequent tasks aborted",
+        },
+      });
+    }
+  }
+}
+
+async function runOneTaskImpl(
+  deps: WorkerDeps,
+  task: PlanTask,
+  opts: { maxAttempts: number; stallMs: number; cwd: string; pilotConfig: { baseline: readonly string[]; after_each: readonly string[] } },
+): Promise<void> {
+  const cwd = opts.cwd;
   appendEvent(deps.db, {
     runId: deps.runId,
     taskId: task.id,
@@ -323,143 +398,28 @@ async function runOneTask(
     payload: {},
   });
 
-  // 1. Acquire + prepare worktree.
-  let slot: WorktreeSlot;
-  let prepared: { sinceSha: string; branch: string; path: string };
+  // 1. Capture sinceSha at task start (HEAD of the user's branch).
+  let sinceSha: string;
   try {
-    slot = deps.pool.acquire();
-    prepared = await deps.pool.prepare({
-      slot,
-      taskId: task.id,
-      branchPrefix: deps.branchPrefix,
-      base: deps.base,
-    });
+    sinceSha = await headSha(cwd);
   } catch (err) {
-    const reason = `worktree prepare failed: ${errorMessage(err)}`;
-    // Mark failed without ever transitioning to running — the state
-    // module allows markFailed from `pending` (Phase B2).
-    try {
-      // Need to land in `ready` first since markFailed allows ready/running.
-      // But we may already be in ready (scheduler.next did that).
-      const row = getTask(deps.db, deps.runId, task.id);
-      if (row?.status === "pending") {
-        // We never moved to ready — markFailed expects ready/running.
-        // Roll forward: mark ready, then fail. (The schema's CHECK
-        // doesn't care about the intermediate.)
-        // Practically scheduler.next() already moved to ready, so
-        // this branch is rare.
-        deps.scheduler.next(); // best-effort to mark ready (no-op if other tasks)
-      }
-      markFailed(deps.db, deps.runId, task.id, reason);
-    } catch {
-      // already in some terminal state — give up gracefully.
-    }
+    const reason = `headSha failed: ${errorMessage(err)}`;
+    markFailedSafe(deps.db, deps.runId, task.id, reason);
     appendEvent(deps.db, {
       runId: deps.runId,
       taskId: task.id,
       kind: "task.failed",
-      payload: { phase: "prepare", reason },
+      payload: { phase: "headSha", reason },
     });
     return;
   }
 
-  // 2. Run setup commands (if any) once per fresh slot before session.create.
-  //    Setup runs after prepare (worktree exists) and before session.create
-  //    (session needs the dir but not installed deps).
-  const setupCommands = deps.plan.setup ?? [];
-  if (setupCommands.length > 0 && !slot.setupCompleted) {
-    const setupStart = Date.now();
-    appendEvent(deps.db, {
-      runId: deps.runId,
-      taskId: task.id,
-      kind: "slot.setup.started",
-      payload: {
-        slotIndex: slot.index,
-        commands: deps.plan.setup,
-        taskId: task.id,
-      },
-    });
-
-    const setupResult = await runVerify(setupCommands, {
-      cwd: prepared.path,
-      abortSignal: deps.abortSignal,
-      onLine: deps.onVerifyLine,
-    });
-
-    if (!setupResult.ok) {
-      const durationMs = Date.now() - setupStart;
-      const failure = setupResult.failure;
-      const reason = `setup failed: ${failure.command} → exit ${failure.exitCode}`;
-      appendEvent(deps.db, {
-        runId: deps.runId,
-        taskId: task.id,
-        kind: "slot.setup.failed",
-        payload: {
-          slotIndex: slot.index,
-          command: failure.command,
-          exitCode: failure.exitCode,
-          output: failure.output.slice(0, 4096), // truncate
-          durationMs,
-        },
-      });
-      // Mark current task failed with phase=setup, preserve slot, and abort run.
-      deps.pool.preserveOnFailure(slot);
-      markFailedSafe(deps.db, deps.runId, task.id, reason);
-      // Cascade-block all remaining tasks. Setup failure aborts the
-      // whole run, so we block EVERY pending/ready task (including
-      // ones with no dependency on `task.id`): an uninstalled node_modules
-      // tree means independent tasks can't succeed either. `cascadeFail`
-      // only walks dependents; we follow it up with an explicit sweep
-      // for the independent-pending case.
-      const blocked = new Set(
-        deps.scheduler.cascadeFail(task.id, reason),
-      );
-      // Sweep every other pending/ready task in the run. `cascadeFail`
-      // skips terminal states, so this sweep never transitions out of
-      // one either.
-      for (const row of listTasks(deps.db, deps.runId)) {
-        if (row.task_id === task.id) continue;
-        if (blocked.has(row.task_id)) continue;
-        if (row.status !== "pending" && row.status !== "ready") continue;
-        try {
-          markBlocked(deps.db, deps.runId, row.task_id, reason);
-          blocked.add(row.task_id);
-        } catch {
-          // Racy edge (e.g., task is `running` in another worker). Skip.
-        }
-      }
-      for (const blockedId of blocked) {
-        appendEvent(deps.db, {
-          runId: deps.runId,
-          taskId: blockedId,
-          kind: "task.blocked",
-          payload: { reason, failedDep: task.id },
-        });
-      }
-      // Signal runWorker to stop picking new tasks.
-      (deps as WorkerDeps & { setupAborted?: boolean }).setupAborted = true;
-      return;
-    }
-
-    // Setup succeeded — cache and emit completion event.
-    slot.setupCompleted = true;
-    appendEvent(deps.db, {
-      runId: deps.runId,
-      taskId: task.id,
-      kind: "slot.setup.completed",
-      payload: {
-        slotIndex: slot.index,
-        durationMs: Date.now() - setupStart,
-      },
-    });
-  }
-
-  // 3. Open session.
+  // 2. Open session scoped to cwd.
   let sessionId: string;
   try {
     const created = await deps.client.session.create({
       body: { title: `pilot/${deps.runId}/${task.id}` },
-      query: { directory: prepared.path },
+      query: { directory: cwd },
     });
     if (!created.data?.id) {
       throw new Error(`session.create returned no id`);
@@ -467,7 +427,6 @@ async function runOneTask(
     sessionId = created.data.id;
   } catch (err) {
     const reason = `session.create failed: ${errorMessage(err)}`;
-    deps.pool.preserveOnFailure(slot);
     markFailedSafe(deps.db, deps.runId, task.id, reason);
     appendEvent(deps.db, {
       runId: deps.runId,
@@ -478,60 +437,43 @@ async function runOneTask(
     return;
   }
 
-  // 2b. Open a per-task EventBus scoped to the worktree directory.
-  //     opencode's SSE `/event` endpoint filters session-level events
-  //     by subscriber directory (exact-match). Without this scope the
-  //     bus receives only server-wide events (heartbeats, file-watcher),
-  //     never session.idle / message.updated / message.part.updated —
-  //     which is what caused pilot to "stall" for every task until
-  //     v0.16.2. One bus per task; torn down alongside forensics.
-  const bus = deps.busFactory(prepared.path);
-  // Give the SSE stream a moment to connect before the caller starts
-  // sending prompts. Without this, fast tasks can complete their
-  // first message.part.updated before our subscription handshake
-  // finishes, and we'd miss it.
+  // 2b. Open a per-task EventBus scoped to cwd.
+  const bus = deps.busFactory(cwd);
   await new Promise((r) => setTimeout(r, 200));
   const disposeBus = async () => {
     try {
       await bus.close();
     } catch {
-      // closing is best-effort; never fail a task on teardown
+      // best-effort
     }
   };
 
-  // 2c. Open forensics — JSONL writer + counters — before any bus
-  // traffic we care about. Must be disposed before every return path
-  // below; helper `finishForensics` closes over this scope.
+  // 2c. Open forensics.
   let forensics: Forensics | null = null;
   try {
     const jsonlPath = await getTaskJsonlPath(cwd, deps.runId, task.id);
     forensics = openForensics({ bus, sessionId, jsonlPath });
   } catch {
-    // Forensics failure must not fail the task — swallow.
     forensics = null;
   }
   const disposeForensics = () => {
     if (forensics) forensics.dispose();
-    // Fire-and-forget bus close — the caller doesn't need to await
-    // since the subsequent task gets its own fresh bus anyway.
     void disposeBus();
   };
   const forensicsCounters = () =>
     forensics ? forensics.counters() : { lastEventTs: null, eventCount: 0 };
 
-  // 3. Mark running with the session/branch/worktree info.
+  // 3. Mark running. In cwd mode, `branch` is empty and `worktreePath` = cwd.
   try {
     markRunning(deps.db, {
       runId: deps.runId,
       taskId: task.id,
       sessionId,
-      branch: prepared.branch,
-      worktreePath: prepared.path,
+      branch: "",
+      worktreePath: cwd,
     });
   } catch (err) {
-    // Race or invariant violation; fail gracefully.
     disposeForensics();
-    deps.pool.preserveOnFailure(slot);
     const reason = `markRunning failed: ${errorMessage(err)}`;
     markFailedSafe(deps.db, deps.runId, task.id, reason);
     appendEvent(deps.db, {
@@ -547,14 +489,14 @@ async function runOneTask(
     runId: deps.runId,
     taskId: task.id,
     kind: "task.session.created",
-    payload: { sessionId, branch: prepared.branch, worktreePath: prepared.path },
+    payload: { sessionId, branch: "", worktreePath: cwd },
   });
 
   // 4. Attempt loop.
   const ctx: RunContext = {
     planName: deps.plan.name,
-    branch: prepared.branch,
-    worktreePath: prepared.path,
+    branch: "",
+    worktreePath: cwd,
     milestone: task.milestone,
     verifyAfterEach: deps.plan.defaults.verify_after_each,
     verifyMilestone:
@@ -563,11 +505,76 @@ async function runOneTask(
         : [],
   };
 
+  // allVerify = task-specific + plan-level + milestone + pilot.json after_each.
+  // This is what runs AFTER the agent finishes each attempt.
   const allVerify = [
     ...task.verify,
     ...deps.plan.defaults.verify_after_each,
     ...ctx.verifyMilestone,
+    ...opts.pilotConfig.after_each,
   ];
+
+  // baselineVerify = ONLY the broad regression checks (plan-level +
+  // milestone + pilot.json). Task-specific verify is EXCLUDED because
+  // it often tests code the agent is about to CREATE — of course it
+  // fails before the agent starts. That's TDD, not a broken environment.
+  //
+  // The baseline catches: wrong port, missing migration, cross-package
+  // type breakage from prior tasks. It does NOT catch "the test file
+  // doesn't exist yet" — that's the agent's job.
+  const baselineVerify = [
+    ...deps.plan.defaults.verify_after_each,
+    ...ctx.verifyMilestone,
+    ...opts.pilotConfig.after_each,
+    ...opts.pilotConfig.baseline.filter(
+      (c) =>
+        !deps.plan.defaults.verify_after_each.includes(c) &&
+        !ctx.verifyMilestone.includes(c) &&
+        !opts.pilotConfig.after_each.includes(c),
+    ),
+  ];
+
+  // 4a. Baseline check — verify commands must pass on the CLEAN tree
+  //     BEFORE the agent starts. If they don't, the task's verify
+  //     contract is broken (pre-existing failures, missing infra, wrong
+  //     port). Abort immediately with a clear message rather than
+  //     wasting the agent's retry budget on something it can't fix.
+  if (baselineVerify.length > 0) {
+    const baselineResult = await runVerify(baselineVerify, {
+      cwd,
+      abortSignal: deps.abortSignal,
+      onLine: deps.onVerifyLine,
+      env: process.env,
+    });
+    if (!baselineResult.ok) {
+      const f = baselineResult.failure;
+      const reason =
+        `baseline verify failed: ${f.command} → exit ${f.exitCode}. ` +
+        `This command fails on the clean tree BEFORE the agent starts — ` +
+        `fix your environment or narrow the verify scope.`;
+      disposeForensics();
+      markFailedSafe(deps.db, deps.runId, task.id, reason);
+      appendEvent(deps.db, {
+        runId: deps.runId,
+        taskId: task.id,
+        kind: "task.baseline.failed",
+        payload: {
+          phase: "baseline",
+          command: f.command,
+          exitCode: f.exitCode,
+          output: f.output.slice(0, 4096),
+          reason,
+        },
+      });
+      return;
+    }
+    appendEvent(deps.db, {
+      runId: deps.runId,
+      taskId: task.id,
+      kind: "task.baseline.passed",
+      payload: { commands: allVerify.length },
+    });
+  }
 
   let lastFailure: LastFailure | null = null;
   let stopReason: string | null = null;
@@ -577,7 +584,6 @@ async function runOneTask(
       await abortSession(deps, sessionId);
       markAbortedSafe(deps.db, deps.runId, task.id, "abort signal");
       disposeForensics();
-      deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
@@ -599,7 +605,6 @@ async function runOneTask(
         ? kickoffPrompt(task, ctx)
         : fixPrompt(task, lastFailure!);
 
-    // Subscribe a stop detector for this session (single-shot).
     let unsubStop = () => {};
     const stopDet = new StopDetector({
       sessionID: sessionId,
@@ -611,11 +616,10 @@ async function runOneTask(
       stopDet.consume(e);
     });
 
-    // Send the prompt.
     try {
       await deps.client.session.promptAsync({
         path: { id: sessionId },
-        query: { directory: prepared.path },
+        query: { directory: cwd },
         body: {
           agent: task.agent ?? deps.plan.defaults.agent,
           parts: [{ type: "text", text: promptText }],
@@ -625,7 +629,6 @@ async function runOneTask(
       unsubStop();
       const reason = `promptAsync failed: ${errorMessage(err)}`;
       disposeForensics();
-      deps.pool.preserveOnFailure(slot);
       markFailedSafe(deps.db, deps.runId, task.id, reason);
       appendEvent(deps.db, {
         runId: deps.runId,
@@ -636,22 +639,18 @@ async function runOneTask(
       return;
     }
 
-    // Wait for idle (or stall / abort / session-error).
     const idleResult = await bus.waitForIdle(sessionId, {
       stallMs: opts.stallMs,
       abortSignal: deps.abortSignal,
     });
     unsubStop();
 
-    // Update cost (best-effort) on every idle (whether or not the
-    // outcome was idle — cost may have accrued before a stall).
     await pollCost(deps, sessionId, task.id);
 
     if (idleResult.kind === "abort") {
       await abortSession(deps, sessionId);
       markAbortedSafe(deps.db, deps.runId, task.id, "abort signal");
       disposeForensics();
-      deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
@@ -671,11 +670,10 @@ async function runOneTask(
       try {
         await abortSession(deps, sessionId);
       } catch {
-        // best effort
+        // best-effort
       }
       disposeForensics();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
-      deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
@@ -695,7 +693,6 @@ async function runOneTask(
       const reason = `session error: ${JSON.stringify(idleResult.properties)}`;
       disposeForensics();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
-      deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
@@ -709,11 +706,9 @@ async function runOneTask(
       return;
     }
 
-    // STOP detected during the wait.
     if (stopReason !== null) {
       disposeForensics();
       markFailedSafe(deps.db, deps.runId, task.id, stopReason);
-      deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
@@ -723,11 +718,12 @@ async function runOneTask(
       return;
     }
 
-    // 5. Verify.
+    // 5. Verify — runs in cwd with the user's env verbatim.
     const verifyResult = await runVerify(allVerify, {
-      cwd: prepared.path,
+      cwd,
       abortSignal: deps.abortSignal,
       onLine: deps.onVerifyLine,
+      env: process.env,
     });
 
     if (!verifyResult.ok) {
@@ -747,22 +743,18 @@ async function runOneTask(
           exitCode: lastFailure.exitCode,
           timedOut: verifyResult.failure.timedOut,
           aborted: verifyResult.failure.aborted,
+          output: verifyResult.failure.output.slice(-2048),
         },
       });
-      // Aborted-during-verify: same disposition as abort during idle.
       if (verifyResult.failure.aborted) {
         disposeForensics();
         markAbortedSafe(deps.db, deps.runId, task.id, "abort signal during verify");
-        deps.pool.preserveOnFailure(slot);
         return;
       }
-      // Try again if attempts remain.
       if (attempt < opts.maxAttempts) continue;
-      // Out of attempts.
       const reason = `verify failed after ${opts.maxAttempts} attempts: ${lastFailure.command} → exit ${lastFailure.exitCode}`;
       disposeForensics();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
-      deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
@@ -779,14 +771,17 @@ async function runOneTask(
       payload: { attempt },
     });
 
-    // 6. Enforce touches.
+    // 6. Enforce touches (diff since sinceSha against task.touches).
+    //    Union with task.tolerate and built-in DEFAULT_TOLERATE inside
+    //    enforceTouches — framework-generated files (next-env.d.ts,
+    //    snapshot updates, tsbuildinfo) aren't treated as violations.
     const touches = await enforceTouches({
-      worktree: prepared.path,
-      sinceSha: prepared.sinceSha,
+      cwd,
+      sinceSha,
       allowed: task.touches,
+      tolerate: task.tolerate,
     });
     if (!touches.ok) {
-      // Build a touches-violation fixPrompt and try again if attempts remain.
       lastFailure = {
         command: "touches enforcement",
         exitCode: -1,
@@ -803,7 +798,6 @@ async function runOneTask(
       const reason = `touches violation after ${opts.maxAttempts} attempts: ${touches.violators.join(", ")}`;
       disposeForensics();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
-      deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
@@ -813,14 +807,11 @@ async function runOneTask(
       return;
     }
 
-    // 7. Commit.
+    // 7. Commit on HEAD of the user's current branch.
     if (touches.changed.length === 0) {
-      // No edits — verify passed but nothing to commit. This is
-      // legitimate for verify-only tasks; mark succeeded without
-      // commit.
+      // No edits — verify-only task, mark succeeded without commit.
       disposeForensics();
       markSucceeded(deps.db, deps.runId, task.id);
-      deps.pool.release(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
@@ -831,15 +822,14 @@ async function runOneTask(
     }
     try {
       const commitMessage = `${task.id}: ${task.title}`;
-      const sha = await commitAll({
-        worktree: prepared.path,
-        message: commitMessage,
-        authorName: deps.authorName,
-        authorEmail: deps.authorEmail,
-      });
+      const sha = await commitAll(
+        cwd,
+        commitMessage,
+        deps.authorName,
+        deps.authorEmail,
+      );
       disposeForensics();
       markSucceeded(deps.db, deps.runId, task.id);
-      deps.pool.release(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
@@ -848,26 +838,40 @@ async function runOneTask(
       });
       return;
     } catch (err) {
-      const reason = `commit failed: ${errorMessage(err)}`;
+      // Commit failed — typically a pre-commit hook rejection (TODO
+      // scanner, lint-staged, PHI scan, etc.). Route back through the
+      // fix-prompt loop so the agent can fix the issue and retry.
+      const errMsg = errorMessage(err);
+      lastFailure = {
+        command: "git commit (pre-commit hook)",
+        exitCode: 1,
+        output: errMsg.slice(0, 8192),
+      };
+      appendEvent(deps.db, {
+        runId: deps.runId,
+        taskId: task.id,
+        kind: "task.commit.failed",
+        payload: { attempt, error: errMsg.slice(0, 4096) },
+      });
+      if (attempt < opts.maxAttempts) continue;
+      // Out of attempts — terminal failure.
+      const reason = `commit failed after ${opts.maxAttempts} attempts: ${errMsg.slice(0, 500)}`;
       disposeForensics();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
-      deps.pool.preserveOnFailure(slot);
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
         kind: "task.failed",
-        payload: { phase: "commit", reason },
+        payload: { phase: "commit", reason, attempts: opts.maxAttempts },
       });
       return;
     }
   }
 
-  // Unreachable in normal flow — every loop branch returns.
-  // If we DO get here, something went off-script.
+  // Unreachable in normal flow.
   const reason = "worker loop exited unexpectedly";
   disposeForensics();
   markFailedSafe(deps.db, deps.runId, task.id, reason);
-  deps.pool.preserveOnFailure(slot);
   appendEvent(deps.db, {
     runId: deps.runId,
     taskId: task.id,
@@ -878,13 +882,6 @@ async function runOneTask(
 
 // --- Helpers ---------------------------------------------------------------
 
-/**
- * Best-effort cost update. Reads `client.session.get` and copies the
- * cost field (if present) onto the task row.
- *
- * Tolerant of every possible failure — cost reporting is informational
- * for v0.1.
- */
 async function pollCost(
   deps: WorkerDeps,
   sessionId: string,
@@ -894,16 +891,12 @@ async function pollCost(
     const r = await deps.client.session.get({
       path: { id: sessionId },
     });
-    // Cost may live on the messages aggregate (per the SDK shape: cost
-    // is on AssistantMessage, not the Session). Best-effort: try a
-    // few common field paths.
     const session = r.data as Record<string, unknown> | undefined;
     let cost: number | null = null;
     if (session && typeof session.cost === "number") {
       cost = session.cost;
     }
     if (cost === null) {
-      // Fall back to messages aggregate.
       try {
         const m = await deps.client.session.messages({
           path: { id: sessionId },
@@ -911,22 +904,20 @@ async function pollCost(
         const list = (m.data ?? []) as Array<Record<string, unknown>>;
         let total = 0;
         for (const entry of list) {
-          // Each entry shape varies; AssistantMessage has `info.cost`
-          // or top-level `cost` depending on the API version.
           const info = (entry.info ?? entry) as Record<string, unknown>;
           const c = typeof info.cost === "number" ? info.cost : 0;
           total += c;
         }
         cost = total;
       } catch {
-        // best effort
+        // best-effort
       }
     }
     if (cost !== null && Number.isFinite(cost) && cost >= 0) {
       try {
         setCostUsd(deps.db, deps.runId, taskId, cost);
       } catch {
-        // ignore — cost is informational
+        // ignore
       }
     }
   } catch {
@@ -941,15 +932,10 @@ async function abortSession(
   try {
     await deps.client.session.abort({ path: { id: sessionId } });
   } catch {
-    // best effort
+    // best-effort
   }
 }
 
-/**
- * Mark failed swallowing illegal-transition errors. Used in error
- * paths where we don't want a secondary state mismatch to mask the
- * primary failure.
- */
 function markFailedSafe(
   db: Database,
   runId: string,
@@ -959,8 +945,7 @@ function markFailedSafe(
   try {
     markFailed(db, runId, taskId, reason);
   } catch {
-    // already in a terminal state (failed/succeeded/aborted/blocked) —
-    // leave it.
+    // already terminal
   }
 }
 
@@ -986,8 +971,3 @@ function errorMessage(err: unknown): string {
     return String(err);
   }
 }
-
-// Avoid unused import warning when headSha is not directly invoked
-// by the worker today (it's called via pool.prepare). Keeps the
-// import as a reservation for future lifecycle hooks.
-void headSha;

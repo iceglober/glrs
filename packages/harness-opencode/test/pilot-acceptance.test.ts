@@ -13,9 +13,8 @@
 // What this test DOES cover (the wiring + protocol layer):
 //   - validate on a hand-written plan.
 //   - build --dry-run shape.
-//   - status / logs / cost / worktrees against a seeded run.
-//   - retry resetting a failed task.
-//   - resume's error paths.
+//   - status / logs / cost against a seeded run.
+//   - validates the cwd-mode safety gate refuses on deleted CLI verbs.
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { execFileSync } from "node:child_process";
@@ -26,10 +25,8 @@ import * as path from "node:path";
 import { runValidate } from "../src/pilot/cli/validate.js";
 import { runBuild } from "../src/pilot/cli/build.js";
 import { runStatus } from "../src/pilot/cli/status.js";
-import { runRetry } from "../src/pilot/cli/retry.js";
 import { runLogs } from "../src/pilot/cli/logs.js";
 import { runCost } from "../src/pilot/cli/cost.js";
-import { runWorktreesList } from "../src/pilot/cli/worktrees.js";
 import { openStateDb } from "../src/pilot/state/db.js";
 import {
   upsertFromPlan,
@@ -163,7 +160,7 @@ async function withRepoEnv<T>(
 // --- Acceptance flow -------------------------------------------------------
 
 describe("Phase J — synthetic acceptance flow", () => {
-  test("validate → build --dry-run → seed run → status / logs / cost / retry / worktrees", async () => {
+  test("validate → build --dry-run → seed run → status / logs / cost", async () => {
     // 1. Set up a tmp repo + pilot dirs.
     const repo = path.join(tmp, "repo");
     fs.mkdirSync(repo);
@@ -267,27 +264,6 @@ describe("Phase J — synthetic acceptance flow", () => {
       const c = await captured(() => runCost({ runId }));
       expect(c.code).toBe(0);
       expect(c.stdout).toMatch(/total.*\$1\.52/);
-
-      // 10. retry T2 — resets to pending; preserves attempts/cost.
-      const r = await captured(() => runRetry({ taskId: "T2", runId }));
-      expect(r.code).toBe(0);
-      expect(r.stdout).toMatch(/T2 reset to pending.*was failed/);
-
-      // 11. status again — T2 now pending, attempts/cost preserved.
-      const s2 = await captured(() => runStatus({ runId, json: true }));
-      const parsed2 = JSON.parse(s2.stdout);
-      const t2 = parsed2.tasks.find(
-        (t: { task_id: string }) => t.task_id === "T2",
-      );
-      expect(t2.status).toBe("pending");
-      expect(t2.attempts).toBe(1);
-      expect(t2.cost_usd).toBe(1.1);
-
-      // 12. worktrees list — no real worktrees were created (no
-      //     `git worktree add` was called); should report none.
-      const w = await captured(() => runWorktreesList({ runId }));
-      expect(w.code).toBe(0);
-      expect(w.stdout).toMatch(/no pilot worktrees/);
     });
   });
 });
@@ -333,5 +309,71 @@ describe("Phase J — manual E2E checklist (OPENCODE_E2E=1)", () => {
     // pass. There's no cheap way to assert it from inside a unit test
     // — that's the point of `OPENCODE_E2E=1` gating.
     expect(true).toBe(true);
+  });
+});
+
+// --- Deletion lockdowns (cwd-mode rollback) -------------------------------
+
+describe("cwd-mode rollback deletion lockdowns", () => {
+  test("no source file imports WorktreePool, pool.ts, or git.ts worktree helpers", () => {
+    const srcDir = path.join(import.meta.dirname, "..", "src");
+    const forbidden = [
+      "WorktreePool",
+      "../worktree/pool.js",
+      "./worktree/pool.js",
+      "../worktree/git.js",
+      "./worktree/git.js",
+    ];
+
+    const offenders: Array<{ file: string; match: string }> = [];
+
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (entry.isFile() && entry.name.endsWith(".ts")) {
+          const content = fs.readFileSync(full, "utf8");
+          for (const f of forbidden) {
+            if (content.includes(f)) {
+              offenders.push({ file: path.relative(srcDir, full), match: f });
+            }
+          }
+        }
+      }
+    };
+    walk(srcDir);
+
+    if (offenders.length > 0) {
+      const report = offenders
+        .map((o) => `  ${o.file}: contains "${o.match}"`)
+        .join("\n");
+      throw new Error(
+        `Found ${offenders.length} source file(s) with forbidden worktree-pool refs:\n${report}`,
+      );
+    }
+    expect(offenders.length).toBe(0);
+  });
+
+  test("pilot CLI subcommand tree does not include worktrees/resume/retry", async () => {
+    const { pilotSubcommand } = await import("../src/pilot/cli/index.js");
+    // cmd-ts subcommands object has a `cmds` property via its internals;
+    // we probe the shape defensively.
+    const shape = pilotSubcommand as unknown as { cmds?: Record<string, unknown> };
+    const keys =
+      shape.cmds !== undefined ? Object.keys(shape.cmds) : [];
+    // If probing the cmd-ts internals fails, just check the index source.
+    const indexSrc = fs.readFileSync(
+      path.join(import.meta.dirname, "..", "src", "pilot", "cli", "index.ts"),
+      "utf8",
+    );
+    expect(indexSrc).not.toMatch(/\bresumeCmd\b/);
+    expect(indexSrc).not.toMatch(/\bretryCmd\b/);
+    expect(indexSrc).not.toMatch(/\bworktreesCmd\b/);
+    if (keys.length > 0) {
+      expect(keys).not.toContain("resume");
+      expect(keys).not.toContain("retry");
+      expect(keys).not.toContain("worktrees");
+    }
   });
 });

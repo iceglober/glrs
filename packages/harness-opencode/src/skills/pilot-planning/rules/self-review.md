@@ -16,7 +16,7 @@ The validator catches schema, DAG, and glob errors. It cannot catch "this verify
 
 5. **Are there missing edges?** Look at every pair of tasks that share files in their `touches:`. Do they need an order? If T2's verify exercises code T1 introduces, T2 depends on T1 — even if their `touches:` don't overlap.
 
-6. **Can the plan recover from a per-task failure?** If T3 fails, the cascade-fail blocks T4 onward. Is the resulting "failed=T3, blocked=[T4..T7]" state useful for the human operator? Or did you concentrate too much value into T3 such that its failure is catastrophic?
+6. **Does the DAG concentrate too much value in one task?** Task-level `cascadeFail` only blocks transitive DEPENDENTS of the failed task — sibling subtrees in a disconnected DAG keep running. So plan size is not itself a risk. The real risk is a task everything else depends on: a schema migration that all downstream work reads, a core-type definition all imports reference, a shared config every consumer parses. If THAT task fails, the whole run stalls. Is there such a task in your plan? If yes, can it be simplified — smaller diff, tighter verify, higher success probability? Don't over-concentrate; a plan where 80% of tasks depend on T1 and T1 is complex is fragile by design.
 
 7. **Could you read this plan in 6 months and understand it?** Plan names + task titles + prompts should be a self-explanatory summary of the work. If the plan needs a verbal preamble to make sense, rewrite the prompts.
 

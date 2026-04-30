@@ -18,6 +18,8 @@
 //   - milestones list
 
 import { describe, test, expect } from "bun:test";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import {
   parsePlan,
   PlanSchema,
@@ -606,39 +608,97 @@ describe("PlanSchema export", () => {
   });
 });
 
-// --- Setup field (a1) ------------------------------------------------------
+// --- Task-level tolerate: field ------------------------------------------
+
+describe("parsePlan — task.tolerate field", () => {
+  test("task.tolerate defaults to empty array when omitted", () => {
+    const r = parsePlan(minimalValidPlan());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.plan.tasks[0]!.tolerate).toEqual([]);
+  });
+
+  test("parsePlan accepts a task with a tolerate array of globs", () => {
+    const r = parsePlan({
+      name: "with tolerate",
+      tasks: [
+        {
+          id: "T1",
+          title: "t",
+          prompt: "p",
+          touches: ["src/**"],
+          tolerate: ["prisma/client/**", "graphql/generated/**"],
+        },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.plan.tasks[0]!.tolerate).toEqual([
+      "prisma/client/**",
+      "graphql/generated/**",
+    ]);
+  });
+
+  test("parsePlan rejects non-string entries in tolerate", () => {
+    const r = parsePlan({
+      name: "bad tolerate",
+      tasks: [
+        {
+          id: "T1",
+          title: "t",
+          prompt: "p",
+          touches: ["src/**"],
+          tolerate: [42],
+        },
+      ],
+    });
+    expect(r.ok).toBe(false);
+  });
+});
+
+// --- Setup field rejection (cwd-mode rollback) ----------------------------
 
 describe("parsePlan — setup field", () => {
-  test("parsePlan accepts a top-level setup array of strings", () => {
+  test("parsePlan rejects plans containing a setup: field with a clear message", () => {
     const result = parsePlan({
       name: "with setup",
       setup: ["pnpm install", "bun run build"],
       tasks: [{ id: "T1", title: "t", prompt: "p" }],
     });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.plan.setup).toEqual(["pnpm install", "bun run build"]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Either the strict-mode unrecognized-key error OR our superRefine
+    // custom message satisfies the rejection. Both paths are acceptable;
+    // we only care that the user sees SOMETHING mentioning setup.
+    expect(
+      result.errors.some(
+        (e) =>
+          e.path.includes("setup") ||
+          e.message.toLowerCase().includes("setup"),
+      ),
+    ).toBe(true);
   });
 
-  test("parsePlan fills setup with empty array when omitted", () => {
-    const result = parsePlan(minimalValidPlan());
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.plan.setup).toEqual([]);
-  });
-
-  test("parsePlan rejects empty strings inside setup", () => {
+  test("parsePlan rejects plans with a setup: field with the friendly message", () => {
     const result = parsePlan({
-      name: "bad setup",
-      setup: ["pnpm install", ""],
+      name: "with setup",
+      setup: ["pnpm install"],
       tasks: [{ id: "T1", title: "t", prompt: "p" }],
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(findError(result.errors, "setup[1]")).toBeDefined();
+    // Our superRefine adds a message mentioning "no longer supported"
+    // (or "cwd-mode rollback" / "removed"). At least one error should
+    // match that pattern.
+    expect(
+      result.errors.some(
+        (e) =>
+          /no longer|removed|rollback/i.test(e.message),
+      ),
+    ).toBe(true);
   });
 
-  test("parsePlan still rejects unknown top-level keys after setup is added", () => {
+  test("parsePlan still rejects other unknown top-level keys", () => {
     const result = parsePlan({
       ...minimalValidPlan(),
       unknown_field: "oops",
@@ -653,5 +713,17 @@ describe("parsePlan — setup field", () => {
           e.path.includes("unknown_field"),
       ),
     ).toBe(true);
+  });
+});
+
+describe("parsePlan — schema doc comments", () => {
+  test("schema doc block mentions the cwd-mode rollback for setup", () => {
+    // After the cwd-mode rollback, the schema doc block should reference
+    // that setup was REMOVED, not how it works.
+    const schemaSrc = fs.readFileSync(
+      path.join(__dirname, "..", "src", "pilot", "plan", "schema.ts"),
+      "utf8",
+    );
+    expect(schemaSrc).toMatch(/setup[\s\S]{0,200}?(REMOVED|rollback|no longer)/i);
   });
 });

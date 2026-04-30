@@ -300,22 +300,20 @@ describe("loadPlan — absPath fidelity", () => {
   });
 });
 
-// --- Setup field (a8) --------------------------------------------------------
+// --- Setup field rejection (cwd-mode rollback) ------------------------------
 
 describe("loadPlan — setup field", () => {
   let tmp: string;
   beforeEach(() => { tmp = mkTmpDir(); });
   afterEach(() => { rmTmpDir(tmp); });
 
-  test("load omits setup when absent and defaults to empty", async () => {
+  test("load succeeds on a plan without a setup field", async () => {
     const p = writePlan(tmp, "no-setup.yaml", VALID_PLAN);
     const result = await loadPlan(p);
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.plan.setup).toEqual([]);
   });
 
-  test("load preserves setup array when present", async () => {
+  test("load rejects a plan that declares a setup: array", async () => {
     const content = `
 name: test plan
 setup:
@@ -328,8 +326,16 @@ tasks:
 `.trim();
     const p = writePlan(tmp, "with-setup.yaml", content);
     const result = await loadPlan(p);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.plan.setup).toEqual(["pnpm install", "bun run build"]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Either the strict-mode error or the friendly superRefine message
+    // surface the string "setup" in the error path or message.
+    expect(
+      result.errors.some(
+        (e) =>
+          e.path.includes("setup") ||
+          e.message.toLowerCase().includes("setup"),
+      ),
+    ).toBe(true);
   });
 });

@@ -290,8 +290,7 @@ describe("pilot agents", () => {
     expect(prompt).toContain("npm install");
     expect(prompt).toContain("npm ci");
     expect(prompt).toContain("cargo fetch");
-    // Should reference the plan's setup block.
-    expect(prompt).toContain("setup:");
+    // The setup: plan-block reference was removed in the cwd-mode rollback.
   });
 
   test("pilot-builder prompt still forbids task-level dep additions without prompt request", () => {
@@ -308,14 +307,11 @@ describe("pilot agents", () => {
     expect(prompt).toMatch(/pilot-planning/);
   });
 
-  test("pilot-planner prompt documents setup-block authoring", () => {
+  test("pilot-planner prompt documents cwd-mode contract (no setup block)", () => {
     const prompt = agents["pilot-planner"]!.prompt as string;
-    // Must reference the setup: key
-    expect(prompt).toMatch(/setup:/);
-    // Must mention package manager or lockfile detection
-    expect(prompt.toLowerCase()).toMatch(/package manager|lockfile/);
-    // Must mention at least one package manager (pnpm, bun, npm, cargo)
-    expect(prompt).toMatch(/pnpm|bun|npm|cargo/i);
+    // Must NOT reference the removed setup: key as part of planner output.
+    // The planner may mention it only in the context of noting it's removed.
+    expect(prompt.toLowerCase()).toMatch(/cwd|removed|rollback|dev stack/);
   });
 
   test("pilot-planner prompt documents QA-expectation establishment", () => {

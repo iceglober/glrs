@@ -573,8 +573,9 @@ describe("startStreamingLogger", () => {
     });
 
     const out = lines.join("");
-    // Original header line still present.
-    expect(out).toMatch(/task\.failed T1 in \d+s/);
+    // Original header line still present. Duration format is "Xs" under 60s
+    // and "Xm Ys" at 60s+.
+    expect(out).toMatch(/task\.failed T1 in (\d+s|\d+m \d+s)/);
     // New continuation line with phase + reason.
     expect(out).toMatch(
       /→ waitForIdle\.stall: stalled after 300000ms \(0 events, last none\)/,
@@ -1313,7 +1314,7 @@ describe("printSummary — failure block", () => {
       );
       expect(output).toMatch(/session: {2}ses_abc123/);
       expect(output).toMatch(/worktree: \/tmp\/wt\/00/);
-      expect(output).toMatch(/elapsed: {2}306s {3}attempts: 1/);
+      expect(output).toMatch(/elapsed: {2}5m 6s {3}attempts: 1/);
       // T3 block — phase from event, reason falls back to last_error.
       expect(output).toMatch(/T3-PREPFAIL/);
       expect(output).toMatch(/phase: {4}prepare/);

@@ -273,6 +273,64 @@ export function countByStatus(
   return out;
 }
 
+// --- Resume support --------------------------------------------------------
+
+/**
+ * Reset every non-succeeded task in a run back to `pending` for a resume
+ * operation. Intended to be called by `pilot build-resume` before the
+ * worker loop picks up.
+ *
+ * For each task row whose status is NOT `succeeded`:
+ *   - status → `pending`
+ *   - attempts → 0 (fresh retry budget)
+ *   - session_id → null (old session is dead)
+ *   - last_error → null
+ *   - started_at → null (task hasn't started in this attempt yet)
+ *   - finished_at → null
+ *   - branch → null, worktree_path → null (stale worktree refs from pre-cwd-mode
+ *     runs; cleared for consistency)
+ *
+ * PRESERVED:
+ *   - cost_usd (already paid — don't inflate the run total on retry)
+ *
+ * Returns the list of task IDs that were reset (for logging / events).
+ * Succeeded tasks are left untouched and NOT included in the return value.
+ *
+ * Throws if any non-succeeded task is currently `running` — the caller
+ * must handle that (stale-process detection) before resume. In practice
+ * this happens only if a prior `pilot build` was `kill -9`'d; the safer
+ * interpretation is "the previous process is dead" and we do reset
+ * running tasks too.
+ */
+export function resetTasksForResume(
+  db: Database,
+  runId: string,
+): string[] {
+  const rows = listTasks(db, runId);
+  const resettable = rows.filter((r) => r.status !== "succeeded");
+  if (resettable.length === 0) return [];
+
+  const stmt = db.prepare(
+    `UPDATE tasks
+     SET status='pending',
+         attempts=0,
+         session_id=NULL,
+         last_error=NULL,
+         started_at=NULL,
+         finished_at=NULL,
+         branch=NULL,
+         worktree_path=NULL
+     WHERE run_id=? AND task_id=? AND status != 'succeeded'`,
+  );
+
+  const tx = db.transaction(() => {
+    for (const r of resettable) stmt.run(runId, r.task_id);
+  });
+  tx();
+
+  return resettable.map((r) => r.task_id);
+}
+
 // --- Internals -------------------------------------------------------------
 
 /**
