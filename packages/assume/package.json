@@ -1,7 +1,9 @@
 {
   "name": "@glrs-dev/assume",
-  "version": "0.6.3",
-  "publishConfig": { "access": "public" },
+  "version": "0.6.4",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Unified SSO credential manager for AWS, GCP, and more — npm distribution of the glrs-assume Rust binary.",
   "license": "MIT",
   "repository": {
@@ -49,9 +51,9 @@
     "typescript": "^5"
   },
   "optionalDependencies": {
-    "@glrs-dev/assume-darwin-arm64": "0.6.3",
-    "@glrs-dev/assume-darwin-x64": "0.6.3",
-    "@glrs-dev/assume-linux-x64": "0.6.3",
-    "@glrs-dev/assume-linux-arm64": "0.6.3"
+    "@glrs-dev/assume-darwin-arm64": "0.6.4",
+    "@glrs-dev/assume-darwin-x64": "0.6.4",
+    "@glrs-dev/assume-linux-x64": "0.6.4",
+    "@glrs-dev/assume-linux-arm64": "0.6.4"
   }
 }

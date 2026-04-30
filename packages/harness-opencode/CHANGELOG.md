@@ -1,5 +1,195 @@
 # Changelog
 
+## 1.0.0
+
+### Major Changes
+
+- [#26](https://github.com/iceglober/glrs/pull/26) [`6cec227`](https://github.com/iceglober/glrs/commit/6cec227eeb4360344a8a5cb9b944f3070459084c) Thanks [@iceglober](https://github.com/iceglober)! - pilot: scorched-earth rollback of worktree isolation — cwd mode is the only execution shape
+
+  **Breaking change.** The pilot subsystem no longer manages a per-task worktree pool. `pilot build` now runs each task directly in the user's current worktree (`process.cwd()`), committing on HEAD of the user's feature branch after each task's verify passes.
+
+  User-visible changes:
+
+  - **Pre-flight safety gate.** `pilot build` refuses to run when the working tree is on `main`/`master`/the remote's default branch, outside a git repo, or has uncommitted changes. Match `/fresh --yes` semantics.
+  - **`setup:` field removed.** Plans that declare a top-level `setup:` array fail `pilot validate` with a friendly message pointing at `src/pilot/AGENTS.md`. Users should run setup manually (install, compose, migrate, seed) before invoking `pilot build`.
+  - **CLI verbs removed.** `pilot resume`, `pilot retry`, and `pilot worktrees` are deleted. cwd-mode resume/retry semantics are future work.
+  - **No `PILOT_*` env injection.** Verify commands inherit `process.env` verbatim. The COMPOSE_PROJECT_NAME default is gone.
+  - **Auto-commit contract preserved.** The worker still auto-commits after each successful task — just on HEAD of the user's current branch instead of a throwaway per-task branch.
+
+  Internal:
+
+  - Deleted `src/pilot/worktree/` directory and its `pool.ts`/`git.ts` modules.
+  - New `src/pilot/worker/safety-gate.ts` with `checkCwdSafety()`.
+  - `enforceTouches()` now takes `cwd` instead of `worktree`.
+  - Plan schema uses `.passthrough().superRefine(...)` to surface the friendly setup-removal message alongside standard unknown-key rejection.
+  - `pilot-planning` skill is now 9 rules (was 10); `setup-authoring.md` deleted.
+
+### Minor Changes
+
+- [#26](https://github.com/iceglober/glrs/pull/26) [`6cec227`](https://github.com/iceglober/glrs/commit/6cec227eeb4360344a8a5cb9b944f3070459084c) Thanks [@iceglober](https://github.com/iceglober)! - pilot: add `pilot build-resume` — continue a partially-completed run
+
+  When `pilot build` fails mid-run (task failure, stall, abort), previously the only recovery was to rerun from scratch or finish manually. `pilot build-resume` picks up where the run left off:
+
+  - Discovers the latest non-terminal run in the repo (or honors `--run <id>`).
+  - Skips `succeeded` tasks — their commits are already on HEAD.
+  - Resets every non-succeeded task (failed/blocked/aborted/running) to `pending` with `attempts=0` and a fresh retry budget. Cost is preserved.
+  - Re-marks the run as `running`, clears `finished_at`.
+  - Pre-flight: same safety gate as `pilot build` (clean tree, feature branch) PLUS a branch-match check — refuses if the current branch name doesn't equal the branch recorded on any succeeded task from the run. Prevents "I switched branches since" mistakes.
+  - Loads the plan from the path recorded on the run row. If the user edited the plan between runs, the resume picks up the edited version.
+
+  Usage:
+
+  ```bash
+  # resume the latest failed/blocked run in this repo
+  pilot build-resume
+
+  # or target a specific run
+  pilot build-resume --run 01KQDEDKGMAF6NGSKNS2H8QB4V
+  ```
+
+  Exit codes:
+
+  - `0` — resume succeeded (every remaining task completed).
+  - `1` — wiring failure, branch mismatch, or safety gate refusal.
+  - `2` — no resumable tasks (all succeeded, or no runs found).
+  - `3` — resume ran but at least one task failed.
+  - `130` — SIGINT.
+
+  New state accessors: `resetTasksForResume()`, `markRunResumed()`.
+
+- [#26](https://github.com/iceglober/glrs/pull/26) [`6cec227`](https://github.com/iceglober/glrs/commit/6cec227eeb4360344a8a5cb9b944f3070459084c) Thanks [@iceglober](https://github.com/iceglober)! - pilot: clean the working tree after every task (success OR failure)
+
+  The worker now guarantees the tree is pristine between tasks. After every task the worker runs `git reset --hard HEAD && git clean -fd` (preserves `.gitignored`). This makes the tree-clean-between-tasks invariant explicit: `git status --porcelain` is empty before the next task starts.
+
+  - **Success paths** already had this implicitly via `commitAll`. No behavior change — the reset is a no-op on an already-clean tree.
+  - **Failure paths** previously left partial agent edits in the working tree. Now they're reverted. The forensic record of what the failed task did lives in `runs/<runId>/tasks/<taskId>/session.jsonl` — unchanged.
+
+  Consequences:
+
+  1. `pilot build-resume` no longer trips on a dirty tree left behind by the failed run — the failed task's own cleanup already handled it. Resume just works.
+  2. Subsequent tasks in the same run start from a known-clean state. No more "task B silently ran on top of task A's partial edits."
+  3. If the post-task cleanup itself fails (locked ref, permissions), the worker halts the whole run with a clear error and emits a `run.cleanup.failed` event. Subsequent tasks cannot safely run on a mixed tree.
+
+  Users who need to inspect what a failed task produced should open the session's JSONL log under `~/.glorious/opencode/<repo>/pilot/runs/<runId>/tasks/<taskId>/session.jsonl` — the git diff is no longer the canonical record.
+
+- [#26](https://github.com/iceglober/glrs/pull/26) [`6cec227`](https://github.com/iceglober/glrs/commit/6cec227eeb4360344a8a5cb9b944f3070459084c) Thanks [@iceglober](https://github.com/iceglober)! - pilot-planner: accept multi-issue cross-cutting plans as a first-class shape
+
+  The pilot-planning skill previously encouraged the planner to refuse
+  ambitious multi-issue scopes — pushing users to run multiple pilot
+  sessions with 3× the setup cost. Skill rework:
+
+  - `decomposition.md` gains a "Plan sizing" section: 5–30 tasks is the
+    sweet spot, and bundling 2–4 related issues into one plan is first-
+    class when they share repo + package manager + docker-compose + test
+    runner. Cross-references `dag-shape.md`'s "Disconnected" pattern.
+  - `SKILL.md` gains a "When to bundle vs. split plans" section placed
+    before "When to refuse". The refuse section is rewritten to refuse
+    ONLY for underspecified / ambiguous / no-concrete-acceptance work
+    (e.g., "refactor auth", "clean up tech debt"), explicitly stating
+    plan size, multi-issue scope, and disconnected-subtree shape are
+    NOT refusal reasons.
+  - `self-review.md` question 6 is rewritten: task-level `cascadeFail`
+    only blocks DEPENDENTS of the failing task, not siblings in
+    disconnected subtrees. The question now asks whether the dependency
+    graph concentrates too much value in one critical task (a real
+    anti-pattern), not whether the plan is "too big" (a false one).
+
+  Observable effect: the planner now bundles cross-cutting work like
+  "rule-engine cleanup + cache invalidation + admin UI" into one plan
+  instead of refusing the scope.
+
+- [#26](https://github.com/iceglober/glrs/pull/26) [`6cec227`](https://github.com/iceglober/glrs/commit/6cec227eeb4360344a8a5cb9b944f3070459084c) Thanks [@iceglober](https://github.com/iceglober)! - pilot: safety gate tolerates framework-owned dirty files (`.opencode/**`, `next-env.d.ts`, etc.)
+
+  When opencode auto-updates its plugin dep in the background, it bumps `.opencode/package.json` + `.opencode/package-lock.json`. Previously the pilot safety gate rejected those dirty files as "user uncommitted work," blocking `pilot build` on something the user didn't do and couldn't preempt.
+
+  **Fix:** A new `SAFETY_GATE_TOLERATE` list mirrors the post-task `DEFAULT_TOLERATE` pattern. Dirt ONLY in these paths is allowed; pilot proceeds with a one-line warning showing which framework-owned files were modified. Genuine user dirt (anywhere else) still refuses as before. Mixed dirty trees (framework + user) refuse and surface the user-owned path in the error message.
+
+  Tolerated paths:
+
+  - `.opencode/**` — opencode plugin installer churn.
+  - `**/next-env.d.ts`, `**/.next/types/**`, `**/.next/dev/types/**` — Next.js artifacts.
+  - `**/*.tsbuildinfo` — TypeScript incremental build cache.
+  - `**/__snapshots__/**`, `**/*.snap` — test snapshot files.
+
+  User-visible:
+
+  - `pilot build` prints `[pilot] working tree has N modified file(s) in framework-owned paths; treating tree as clean:` followed by the first 5 paths before starting.
+  - `pilot build-resume` does the same.
+
+  Also fixed a porcelain-parser bug that ate the leading space off `git status --porcelain` lines; new tests cover the round-trip.
+
+- [#26](https://github.com/iceglober/glrs/pull/26) [`6cec227`](https://github.com/iceglober/glrs/commit/6cec227eeb4360344a8a5cb9b944f3070459084c) Thanks [@iceglober](https://github.com/iceglober)! - pilot: add `.glrs/hooks/pilot_setup` — repo-level setup hook
+
+  A user-authored shell script at `.glrs/hooks/pilot_setup` (relative to the repo root) is auto-invoked once at the start of `pilot build` and `pilot build-resume`, before any task runs. Its job is to make the dev stack ready: install deps, start docker services, run migrations, seed data — whatever the plan's verify commands expect to already be running.
+
+  Contract:
+
+  - **Missing file → skip silently.** No hook = no setup = the old behavior.
+  - **Present + executable → run it.** stdout/stderr stream live to the terminal so the user sees install progress.
+  - **Non-zero exit → abort the pilot run.** User fixes their env first.
+  - **10-minute timeout → abort.** Prevents hung installs from blocking indefinitely.
+  - **Not executable → abort with a clear message** (`chmod +x .glrs/hooks/pilot_setup`).
+
+  Why this instead of the old plan-level `setup:` field:
+
+  - It's version-controlled in the user's repo, not LLM-authored.
+  - One hook per repo covers every plan — no cross-plan drift.
+  - The user controls exactly what runs (no pilot-opinionated defaults).
+  - It's idempotent by convention — safe to re-run on resume.
+
+  Example `.glrs/hooks/pilot_setup`:
+
+  ```bash
+  #!/bin/sh
+  set -e
+  pnpm install --frozen-lockfile
+  docker compose up -d postgres redis
+  pnpm prisma migrate dev --skip-generate
+  ```
+
+- [#26](https://github.com/iceglober/glrs/pull/26) [`6cec227`](https://github.com/iceglober/glrs/commit/6cec227eeb4360344a8a5cb9b944f3070459084c) Thanks [@iceglober](https://github.com/iceglober)! - pilot: add `tolerate:` task field + default allowlist for framework-generated files
+
+  **Problem:** Tasks with verify steps like `next build` would fail touches-enforcement on files the framework itself rewrites (`next-env.d.ts`, `.next/types/**`), not files the agent edited. The fix-loop couldn't recover — reverting the file just made the next verify regenerate it.
+
+  **Fix:** Two complementary escape hatches.
+
+  1. **Built-in default allowlist.** `enforceTouches` now accepts a small, opinionated set of framework-generated globs without requiring plan authors to list them:
+
+     - `**/next-env.d.ts`
+     - `**/.next/types/**`, `**/.next/dev/types/**`
+     - `**/*.tsbuildinfo`
+     - `**/__snapshots__/**`, `**/*.snap`
+
+  2. **Task-level `tolerate:` field.** Plan authors can extend the allowlist per-task for project-specific codegen (prisma/client, graphql/generated, etc.). `tolerate:` is unioned with `touches:` and defaults at enforcement time.
+
+  **Behavior change:** Tasks that previously failed touches-enforcement on these paths will now pass. `touches: []` (verify-only) tasks where ONLY tolerated/default-allowed files change also pass. Real drift (file outside touches + tolerate + defaults) still fails as before.
+
+  Planner prompt and `pilot-planning/rules/touches-scope.md` both updated with the new `tolerate:` contract and examples.
+
+- [#26](https://github.com/iceglober/glrs/pull/26) [`6cec227`](https://github.com/iceglober/glrs/commit/6cec227eeb4360344a8a5cb9b944f3070459084c) Thanks [@iceglober](https://github.com/iceglober)! - pilot: inject PILOT\_\* env vars into setup and verify commands
+
+  Pilot setup and per-task verify commands now run with a fixed set of `PILOT_*` env vars plus a default `COMPOSE_PROJECT_NAME` injected by the harness. This lets plan authors isolate per-worktree local infrastructure (docker-compose projects, host ports, named volumes) so parallel and retried pilot worktrees don't collide with each other or with a developer's background dev stack.
+
+  Injected vars:
+
+  - `PILOT_RUN_ID` — ULID of the current run.
+  - `PILOT_TASK_ID` — stable task id.
+  - `PILOT_SLOT_INDEX` — pool slot index (0 in v0.1).
+  - `PILOT_SLOT_SEQ` — unique sequence `= slot_index * 100 + retry_counter`.
+  - `PILOT_WORKTREE_DIR` — absolute worktree path.
+  - `PILOT_PORT_BASE` — opinionated port base `= 10000 + PILOT_SLOT_SEQ * 100`.
+  - `COMPOSE_PROJECT_NAME` — default `pilot-<runIdShort>-<slotSeq>`, only when unset (user/CI intent preserved).
+
+  Plan authors using docker-compose for local infra no longer need to hand-roll slot-unique project names or port offsets. See `src/skills/pilot-planning/rules/setup-authoring.md` (updated) for a worked example.
+
+### Patch Changes
+
+- [#27](https://github.com/iceglober/glrs/pull/27) [`cf74f2d`](https://github.com/iceglober/glrs/commit/cf74f2dca60ee099a92a500d90de1c1886b6aed0) Thanks [@iceglober](https://github.com/iceglober)! - chore(changesets): move @glrs-dev/cli and @glrs-dev/harness-plugin-opencode from `linked` to `fixed`
+
+  The `linked` group synchronizes versions only among packages that are ALREADY being bumped — it does not force a package into a release. A changeset that named only the harness (as most of our changesets do) would ship a new harness on npm without republishing the CLI, even though the CLI vendors the harness `dist/` at build time (`packages/cli/scripts/vendor-harness.ts`). End users running `glrs oc ...` would keep getting the old vendored harness until somebody remembered to write a no-op CLI changeset.
+
+  Moving the pair to `fixed` guarantees any harness publish drags the CLI along at a matching version, so a fresh CLI tarball always re-vendors the latest harness `dist/`. The trade-off — CLI-only changesets now also force a no-op harness republish — is cheap because CLI-only changes are rare in this repo.
+
 ## 0.3.1
 
 ### Patch Changes
