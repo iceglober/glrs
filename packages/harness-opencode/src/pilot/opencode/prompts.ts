@@ -182,6 +182,19 @@ export function kickoffPrompt(
     }
   }
 
+  sections.push(``, `## Progress updates`, ``);
+  sections.push(
+    `A \`provide_status_update\` tool is available. Use it to emit one-sentence progress updates during long-running work.`,
+    ``,
+    `Guidelines:`,
+    `- Keep messages under 200 characters`,
+    `- One sentence only — describe what you're currently working on`,
+    `- Rate limited to once per 60 seconds per task`,
+    `- Call it sparingly; the user sees these interleaved with the task log`,
+    ``,
+    `Example: "Writing the route handler for /api/users" or "Running typecheck after edits"`,
+  );
+
   if (task.context !== undefined && task.context.trim().length > 0) {
     // Placed BEFORE the task directive so the directive is the last
     // thing in the builder's kickoff context — the most recent, most
