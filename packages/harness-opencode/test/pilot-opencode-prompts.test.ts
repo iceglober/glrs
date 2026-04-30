@@ -161,6 +161,31 @@ describe("kickoffPrompt — structure and required content", () => {
     const out = kickoffPrompt(makeTask({ verify: [] }), makeCtx());
     expect(out).toMatch(/No verify commands|without protest/i);
   });
+
+  test("includes progress updates section with tool availability", () => {
+    const out = kickoffPrompt(makeTask(), makeCtx());
+    expect(out).toMatch(/## Progress updates/);
+    expect(out).toMatch(/provide_status_update/);
+  });
+
+  test("progress updates section mentions 200 char limit", () => {
+    const out = kickoffPrompt(makeTask(), makeCtx());
+    expect(out).toMatch(/200 characters/);
+  });
+
+  test("progress updates section mentions 60 second throttle", () => {
+    const out = kickoffPrompt(makeTask(), makeCtx());
+    expect(out).toMatch(/60 seconds/);
+  });
+
+  test("progress updates section appears after verify section", () => {
+    const out = kickoffPrompt(makeTask(), makeCtx());
+    const verifyIdx = out.indexOf("## Verify commands");
+    const progressIdx = out.indexOf("## Progress updates");
+    expect(verifyIdx).toBeGreaterThan(-1);
+    expect(progressIdx).toBeGreaterThan(-1);
+    expect(progressIdx).toBeGreaterThan(verifyIdx);
+  });
 });
 
 // --- kickoffPrompt: optional context section -----------------------------

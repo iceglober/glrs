@@ -71,6 +71,8 @@ import { enforceTouches } from "../verify/touches.js";
 import { getTaskJsonlPath } from "../paths.js";
 import { StopDetector } from "./stop-detect.js";
 import { checkCwdSafety, headSha } from "./safety-gate.js";
+import { registerSession, unregisterSession } from "../mcp/session-registry.js";
+import { getRunDir } from "../paths.js";
 
 const execFileWorker = promisifyUtil(execFileCb);
 
@@ -106,22 +108,6 @@ async function commitAll(
 
 /**
  * Reset the working tree to a clean state after a failed/aborted task.
- *
- *   git reset --hard HEAD    — discard all tracked-file modifications
- *   git clean -fd            — remove untracked files AND directories
- *                              (but NOT .gitignored files — those stay)
- *
- * The contract this enforces: **the tree is clean after every task,
- * success or failure.** A successful task's work is captured via
- * `commitAll`; a failed task's work is discarded. The forensic record
- * (which files the agent touched, what the verify output was) lives
- * in the per-task session.jsonl under the pilot run dir, NOT in the
- * working tree.
- *
- * If cleanup itself fails (locked ref, permission error, etc.), the
- * caller must treat it as a hard STOP — the next task can't safely
- * run on a half-reverted tree. Returns `true` on success; `false` on
- * failure (writes the error to stderr for diagnostics).
  */
 async function resetTree(cwd: string): Promise<boolean> {
   try {
@@ -137,7 +123,8 @@ async function resetTree(cwd: string): Promise<boolean> {
   } catch (err) {
     const e = err as { stderr?: Buffer | string; message?: string };
     process.stderr.write(
-      `[pilot] tree cleanup failed: ${(e.stderr ?? e.message ?? "").toString()}\n`,
+      `[pilot] tree cleanup failed: ${(e.stderr ?? e.message ?? "").toString()}
+`,
     );
     return false;
   }
@@ -437,6 +424,15 @@ async function runOneTaskImpl(
     return;
   }
 
+  // 3a. Register session in MCP registry for status updates.
+  const runDir = await getRunDir(process.cwd(), deps.runId);
+  await registerSession({
+    runDir,
+    sessionId,
+    runId: deps.runId,
+    taskId: task.id,
+  });
+
   // 2b. Open a per-task EventBus scoped to cwd.
   const bus = deps.busFactory(cwd);
   await new Promise((r) => setTimeout(r, 200));
@@ -459,6 +455,16 @@ async function runOneTaskImpl(
   const disposeForensics = () => {
     if (forensics) forensics.dispose();
     void disposeBus();
+  };
+
+  // Helper to unregister session from MCP registry.
+  // Called alongside disposeForensics in every terminal path.
+  const unregisterSessionSafe = async () => {
+    try {
+      await unregisterSession({ runDir, sessionId });
+    } catch {
+      // Best-effort cleanup; never fail the task on registry errors.
+    }
   };
   const forensicsCounters = () =>
     forensics ? forensics.counters() : { lastEventTs: null, eventCount: 0 };
@@ -584,6 +590,7 @@ async function runOneTaskImpl(
       await abortSession(deps, sessionId);
       markAbortedSafe(deps.db, deps.runId, task.id, "abort signal");
       disposeForensics();
+      await unregisterSessionSafe();
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
@@ -629,6 +636,7 @@ async function runOneTaskImpl(
       unsubStop();
       const reason = `promptAsync failed: ${errorMessage(err)}`;
       disposeForensics();
+      await unregisterSessionSafe();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
       appendEvent(deps.db, {
         runId: deps.runId,
@@ -651,6 +659,7 @@ async function runOneTaskImpl(
       await abortSession(deps, sessionId);
       markAbortedSafe(deps.db, deps.runId, task.id, "abort signal");
       disposeForensics();
+      await unregisterSessionSafe();
       appendEvent(deps.db, {
         runId: deps.runId,
         taskId: task.id,
@@ -673,6 +682,7 @@ async function runOneTaskImpl(
         // best-effort
       }
       disposeForensics();
+      await unregisterSessionSafe();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
       appendEvent(deps.db, {
         runId: deps.runId,
@@ -692,6 +702,7 @@ async function runOneTaskImpl(
     if (idleResult.kind === "session-error") {
       const reason = `session error: ${JSON.stringify(idleResult.properties)}`;
       disposeForensics();
+      await unregisterSessionSafe();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
       appendEvent(deps.db, {
         runId: deps.runId,
@@ -708,6 +719,7 @@ async function runOneTaskImpl(
 
     if (stopReason !== null) {
       disposeForensics();
+      await unregisterSessionSafe();
       markFailedSafe(deps.db, deps.runId, task.id, stopReason);
       appendEvent(deps.db, {
         runId: deps.runId,
@@ -748,12 +760,14 @@ async function runOneTaskImpl(
       });
       if (verifyResult.failure.aborted) {
         disposeForensics();
+        await unregisterSessionSafe();
         markAbortedSafe(deps.db, deps.runId, task.id, "abort signal during verify");
         return;
       }
       if (attempt < opts.maxAttempts) continue;
       const reason = `verify failed after ${opts.maxAttempts} attempts: ${lastFailure.command} → exit ${lastFailure.exitCode}`;
       disposeForensics();
+      await unregisterSessionSafe();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
       appendEvent(deps.db, {
         runId: deps.runId,
@@ -797,6 +811,7 @@ async function runOneTaskImpl(
       if (attempt < opts.maxAttempts) continue;
       const reason = `touches violation after ${opts.maxAttempts} attempts: ${touches.violators.join(", ")}`;
       disposeForensics();
+      await unregisterSessionSafe();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
       appendEvent(deps.db, {
         runId: deps.runId,
@@ -811,6 +826,7 @@ async function runOneTaskImpl(
     if (touches.changed.length === 0) {
       // No edits — verify-only task, mark succeeded without commit.
       disposeForensics();
+      await unregisterSessionSafe();
       markSucceeded(deps.db, deps.runId, task.id);
       appendEvent(deps.db, {
         runId: deps.runId,
@@ -829,6 +845,7 @@ async function runOneTaskImpl(
         deps.authorEmail,
       );
       disposeForensics();
+      await unregisterSessionSafe();
       markSucceeded(deps.db, deps.runId, task.id);
       appendEvent(deps.db, {
         runId: deps.runId,
@@ -857,6 +874,7 @@ async function runOneTaskImpl(
       // Out of attempts — terminal failure.
       const reason = `commit failed after ${opts.maxAttempts} attempts: ${errMsg.slice(0, 500)}`;
       disposeForensics();
+      await unregisterSessionSafe();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
       appendEvent(deps.db, {
         runId: deps.runId,
@@ -871,6 +889,7 @@ async function runOneTaskImpl(
   // Unreachable in normal flow.
   const reason = "worker loop exited unexpectedly";
   disposeForensics();
+  await unregisterSessionSafe();
   markFailedSafe(deps.db, deps.runId, task.id, reason);
   appendEvent(deps.db, {
     runId: deps.runId,

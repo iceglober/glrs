@@ -33,6 +33,7 @@
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   createOpencodeServer,
   createOpencodeClient,
@@ -40,6 +41,7 @@ import {
 import type { OpencodeClient, Config } from "@opencode-ai/sdk";
 
 import { createAgents } from "../../agents/index.js";
+import { getSessionsPath } from "../mcp/session-registry.js";
 
 // --- Constants -------------------------------------------------------------
 
@@ -116,6 +118,13 @@ export type StartOpencodeServerOptions = {
    * see `startOpencodeServer` implementation for details.
    */
   serverLogPath?: string;
+
+  /**
+   * Optional run context for injecting the pilot_status MCP server.
+   * When provided, the MCP config includes the status server with
+   * environment variables pointing to the sessions registry and state DB.
+   */
+  runContext?: { runDir: string; dbPath: string; runId: string };
 };
 
 // --- Public API ------------------------------------------------------------
@@ -161,7 +170,10 @@ export async function startOpencodeServer(
   //    is accepted but never dispatched to an LLM, and the session
   //    stalls until the worker's stall timer fires. This was the root
   //    cause of every pilot build failing since v0.16.x.
-  const serverConfig = buildPilotServerConfig();
+  //
+  //    When runContext is provided, also inject the pilot_status MCP
+  //    server so the builder can emit progress updates.
+  const serverConfig = buildPilotServerConfig(options.runContext);
 
   // 4. cwd: v0.1 sets this to the main repo root; per-task workspaces
   //    override via `client.session.create({ query: { directory:
@@ -233,9 +245,14 @@ export async function startOpencodeServer(
  * loader merges OPENCODE_CONFIG_CONTENT with the user's config files,
  * so anything set here is additive unless it shares a key.
  *
+ * When `runContext` is provided, also injects the `mcp.pilot_status`
+ * entry pointing at the bundled MCP status server.
+ *
  * Exported for tests.
  */
-export function buildPilotServerConfig(): Config {
+export function buildPilotServerConfig(
+  runContext?: { runDir: string; dbPath: string; runId: string },
+): Config {
   const agents = createAgents();
   // Narrow the full agent map to only the pilot agents. Exposing the
   // whole set would shadow user overrides for agents like `prime`,
@@ -244,9 +261,40 @@ export function buildPilotServerConfig(): Config {
   for (const name of ["pilot-builder", "pilot-planner"]) {
     if (name in agents) pilotAgents[name] = (agents as Record<string, unknown>)[name];
   }
-  return {
+
+  const config: Record<string, unknown> = {
     agent: pilotAgents,
-  } as Config;
+  };
+
+  // Inject MCP status server config when run context is provided
+  if (runContext) {
+    const sessionsPath = getSessionsPath(runContext.runDir);
+    // Resolve the bundled status server path relative to this module's
+    // location. After tsup bundles, this code lives in `dist/cli.js` and
+    // the status server is at `dist/pilot/mcp/status-server.js`. Using
+    // fileURLToPath + dirname gives us the dist/ directory at runtime.
+    const distDir = path.dirname(fileURLToPath(import.meta.url));
+    const statusServerPath = path.resolve(
+      distDir,
+      "pilot",
+      "mcp",
+      "status-server.js",
+    );
+    config.mcp = {
+      pilot_status: {
+        type: "local",
+        command: ["bun", "run", statusServerPath],
+        env: {
+          PILOT_SESSIONS_PATH: sessionsPath,
+          PILOT_STATE_DB_PATH: runContext.dbPath,
+          PILOT_RUN_ID: runContext.runId,
+        },
+        enabled: true,
+      },
+    };
+  }
+
+  return config as Config;
 }
 
 // --- Internals -------------------------------------------------------------
