@@ -25,7 +25,11 @@ jobs:
       matrix:
         include:
           - target: x86_64-apple-darwin
-            runner: macos-13
+            # Build x86_64 on macos-14 (arm64 runners) via cross-toolchain —
+            # macos-13 (x86_64-native) runners are being deprecated and have
+            # long queue times. Apple ships the x86_64 toolchain as part of
+            # a standard macOS Xcode install, so `cargo build --target` works.
+            runner: macos-14
             platform: darwin-x64
             bin_suffix: ""
             use_cross: false
@@ -44,11 +48,14 @@ jobs:
             platform: linux-arm64
             bin_suffix: ""
             use_cross: true
-          - target: x86_64-pc-windows-msvc
-            runner: windows-2022
-            platform: win32-x64
-            bin_suffix: ".exe"
-            use_cross: false
+          # Windows (x86_64-pc-windows-msvc) is not currently a supported
+          # target. The daemon is Unix-architectured (nix crate for signals,
+          # tokio::net::UnixListener, launchd, ps-based PID identity), and
+          # the `exec` crate used for re-exec-after-auto-upgrade is Unix-only.
+          # Windows support would require substantial porting (cfg-gating nix,
+          # named pipes instead of Unix sockets, Windows-equivalent auto-start
+          # mechanism). Tracked as future work; reintroduce this matrix entry
+          # if/when the daemon gains Windows support.
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -64,6 +71,12 @@ jobs:
       - name: Build release (cross)
         if: matrix.use_cross
         working-directory: packages/assume
+        # CROSS_NO_WARNINGS=0 — cross treats its internal warnings as
+        # fatal by default under Rust 1.95+. The warnings are about
+        # conflicting [package.metadata.cross] blocks in transitive
+        # deps (getrandom, etc.) and are informational, not errors.
+        env:
+          CROSS_NO_WARNINGS: "0"
         run: cross build --release --target ${{ matrix.target }}
       - name: Collect binaries
         shell: bash

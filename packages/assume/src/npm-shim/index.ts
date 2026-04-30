@@ -20,8 +20,7 @@ type Platform =
   | "darwin-arm64"
   | "darwin-x64"
   | "linux-x64"
-  | "linux-arm64"
-  | "win32-x64";
+  | "linux-arm64";
 
 function detectPlatform(): Platform {
   const { platform, arch } = process;
@@ -29,15 +28,16 @@ function detectPlatform(): Platform {
   if (platform === "darwin" && arch === "x64") return "darwin-x64";
   if (platform === "linux" && arch === "x64") return "linux-x64";
   if (platform === "linux" && arch === "arm64") return "linux-arm64";
-  if (platform === "win32" && arch === "x64") return "win32-x64";
   throw new Error(
     `[@glrs-dev/assume] Unsupported platform: ${platform}-${arch}. ` +
-      `Supported: darwin-arm64, darwin-x64, linux-x64, linux-arm64, win32-x64. ` +
-      `File an issue at https://github.com/iceglober/glrs/issues if you need another target.`,
+      `Supported: darwin-arm64, darwin-x64, linux-x64, linux-arm64. ` +
+      `Windows support is not currently available — the daemon is ` +
+      `Unix-architectured. File an issue at ` +
+      `https://github.com/iceglober/glrs/issues if you need another target.`,
   );
 }
 
-const BIN_NAME = process.platform === "win32" ? "gs-assume.exe" : "gs-assume";
+const BIN_NAME = "gs-assume";
 
 /**
  * Resolve the path to the prebuilt binary for this platform.

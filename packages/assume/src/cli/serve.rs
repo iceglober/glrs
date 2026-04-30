@@ -48,8 +48,25 @@ pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config)
     }
 
     // Check if daemon is already running
-    if daemon::is_daemon_running() {
-        anyhow::bail!("Daemon is already running. Use 'gsa logout' or stop it first.");
+    let action = daemon::serve_action_for_current_state();
+    match action {
+        daemon::ServeAction::NoopHealthy => {
+            eprintln!("gs-assume daemon already running and healthy; exiting 0.");
+            return Ok(());
+        }
+        daemon::ServeAction::RemoveStalePidAndStart => {
+            tracing::warn!("Removing stale PID file (process not gs-assume or not healthy)");
+            daemon::remove_pid_file();
+        }
+        daemon::ServeAction::StartFresh => {
+            // Continue with normal startup
+        }
+    }
+
+    // Truncate oversized log file before starting
+    let log_path = config::config_dir().join("daemon.stderr.log");
+    if let Err(e) = daemon::truncate_oversized_log(&log_path, 10 * 1024 * 1024) {
+        tracing::warn!("Failed to truncate log file: {e}");
     }
 
     config::ensure_config_dir()?;

@@ -5,11 +5,10 @@
  *   - @glrs-dev/harness-opencode (renamed to @glrs-dev/harness-plugin-opencode;
  *     the old name was deprecated at v0.16.2 on npm and must never be
  *     referenced in a new changeset)
- *   - @glrs-dev/assume* (all private; the Rust binary is published via
- *     a separate path, not via changesets)
  *
- * Valid changesets reference @glrs-dev/cli and @glrs-dev/harness-plugin-opencode
- * (the two publishable packages in the monorepo). Unrelated changes may coexist.
+ * Valid changesets reference @glrs-dev/cli, @glrs-dev/harness-plugin-opencode,
+ * and @glrs-dev/assume* (the six publishable packages in the monorepo).
+ * Unrelated changes may coexist.
  *
  * This test no-ops when .changeset/ has been consumed by `changeset version`
  * (i.e., no non-README *.md files remain). That happens on the Changesets
@@ -74,10 +73,7 @@ describe.skipIf(CONSUMED)("changeset entry", () => {
         frontmatter,
         `${name} should not reference @glrs-dev/harness-opencode (renamed — use @glrs-dev/harness-plugin-opencode)`,
       ).not.toMatch(/"@glrs-dev\/harness-opencode":\s*/);
-      expect(
-        frontmatter,
-        `${name} should not reference @glrs-dev/assume or @glrs-dev/assume-<platform> (private)`,
-      ).not.toMatch(/"@glrs-dev\/assume(-[a-z0-9-]+)?":\s*/);
+
     }
   });
 });

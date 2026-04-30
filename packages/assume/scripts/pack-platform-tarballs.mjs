@@ -10,19 +10,23 @@
  *   packages/assume/.release-artifacts/darwin-arm64/gsa
  *   packages/assume/.release-artifacts/darwin-x64/gs-assume
  *   ...
- *   packages/assume/.release-artifacts/win32-x64/gs-assume.exe
- *   packages/assume/.release-artifacts/win32-x64/gsa.exe
+ *   packages/assume/.release-artifacts/linux-arm64/gs-assume
+ *   packages/assume/.release-artifacts/linux-arm64/gsa
  *
  * Output layout:
  *   packages/assume/npm/darwin-arm64/bin/gs-assume  (mode 0o755)
  *   packages/assume/npm/darwin-arm64/bin/gsa        (mode 0o755)
  *   ...
- *   packages/assume/npm/win32-x64/bin/gs-assume.exe
- *   packages/assume/npm/win32-x64/bin/gsa.exe
+ *   packages/assume/npm/linux-arm64/bin/gs-assume
+ *   packages/assume/npm/linux-arm64/bin/gsa
  *
- * Note: the platform package.json files do NOT list bins — we don't want
- * npm to symlink them. The parent @glrs-dev/assume shim (src/cli.ts)
- * resolves the binary via require.resolve and spawns it directly.
+ * Note: the platform package.json files DO list bins (gs-assume-bin) —
+ * npm symlinks them into node_modules/.bin. The parent @glrs-dev/assume
+ * shim (src/cli.ts) resolves the binary via require.resolve and spawns
+ * it directly.
+ *
+ * Windows (win32-x64) is intentionally not built — the daemon is
+ * Unix-architectured (see rust-build-matrix.yml).
  */
 
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync, copyFileSync } from "node:fs";
@@ -30,7 +34,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkgDir = resolve(__dirname, "..");
+const pkgDir = process.env.ASSUME_PKG_DIR ?? resolve(__dirname, "..");
 const artifactsDir = resolve(pkgDir, ".release-artifacts");
 
 if (!existsSync(artifactsDir)) {
@@ -46,7 +50,6 @@ const platforms = [
   { key: "darwin-x64", exe: false },
   { key: "linux-x64", exe: false },
   { key: "linux-arm64", exe: false },
-  { key: "win32-x64", exe: true },
 ];
 
 let errors = 0;

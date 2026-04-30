@@ -6,6 +6,7 @@ use anyhow::{Context as _, Result};
 use chrono::Utc;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -99,6 +100,29 @@ impl DaemonState {
     }
 }
 
+/// Check if a PID belongs to a gs-assume process by examining the process name.
+/// Uses `ps -p <pid> -o comm=` which works on both macOS and Linux.
+/// On Linux, comm is truncated to 15 chars (kernel TASK_COMM_LEN limit),
+/// which is fine for "gs-assume" (9 chars).
+fn pid_belongs_to_gs_assume(pid: i32) -> bool {
+    let output = std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let comm = String::from_utf8_lossy(&out.stdout);
+            let comm = comm.trim();
+            // Accept both "gs-assume" and "gsa" (symlinked binary name)
+            comm == "gs-assume" || comm == "gsa"
+        }
+        _ => {
+            // If ps fails, be conservative and return false
+            false
+        }
+    }
+}
+
 /// Check if the daemon is already running by examining the PID file
 pub fn is_daemon_running() -> bool {
     let pid_file = config::pid_path();
@@ -111,12 +135,104 @@ pub fn is_daemon_running() -> bool {
                 // Check if process is alive using nix
                 use nix::sys::signal;
                 use nix::unistd::Pid;
-                signal::kill(Pid::from_raw(pid), None).is_ok()
+                let signal_ok = signal::kill(Pid::from_raw(pid), None).is_ok();
+                // Also verify process identity to avoid recycled PID issues
+                signal_ok && pid_belongs_to_gs_assume(pid)
             } else {
                 false
             }
         }
         Err(_) => false,
+    }
+}
+
+/// Action to take when serving, based on current daemon state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServeAction {
+    /// Daemon is running and healthy — exit 0, no-op
+    NoopHealthy,
+    /// PID file exists but process is not gs-assume or not healthy — remove stale PID and start
+    RemoveStalePidAndStart,
+    /// No PID file — start fresh
+    StartFresh,
+}
+
+/// Determine the action to take when `gs-assume serve` is invoked.
+/// This is extracted as a pure function for testability.
+pub fn serve_action_for_current_state() -> ServeAction {
+    let pid_file = config::pid_path();
+    if !pid_file.exists() {
+        return ServeAction::StartFresh;
+    }
+
+    match std::fs::read_to_string(&pid_file) {
+        Ok(content) => {
+            if let Ok(pid) = content.trim().parse::<i32>() {
+                use nix::sys::signal;
+                use nix::unistd::Pid;
+
+                // Check if process is alive
+                let signal_ok = signal::kill(Pid::from_raw(pid), None).is_ok();
+
+                if signal_ok {
+                    // Process exists — verify it's actually gs-assume
+                    if pid_belongs_to_gs_assume(pid) {
+                        // It's gs-assume — check if healthy
+                        if is_daemon_healthy() {
+                            ServeAction::NoopHealthy
+                        } else {
+                            // Process exists but not responding to health check
+                            ServeAction::RemoveStalePidAndStart
+                        }
+                    } else {
+                        // PID belongs to a different process (recycled)
+                        ServeAction::RemoveStalePidAndStart
+                    }
+                } else {
+                    // Process doesn't exist
+                    ServeAction::RemoveStalePidAndStart
+                }
+            } else {
+                // Invalid PID in file
+                ServeAction::RemoveStalePidAndStart
+            }
+        }
+        Err(_) => ServeAction::RemoveStalePidAndStart,
+    }
+}
+
+/// Truncate an oversized log file to prevent unbounded growth.
+/// Returns Ok(()) on success or if the file doesn't exist.
+/// Logs warnings on failure but doesn't fail.
+pub fn truncate_oversized_log(path: &Path, max_bytes: u64) -> Result<()> {
+    match std::fs::metadata(path) {
+        Ok(metadata) => {
+            if metadata.len() > max_bytes {
+                tracing::info!("Truncating oversized log file: {} bytes", metadata.len());
+                // Truncate by opening with truncate=true
+                match std::fs::OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(path)
+                {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        tracing::warn!("Failed to truncate log file {}: {e}", path.display());
+                        Ok(()) // Best-effort: continue even if truncate fails
+                    }
+                }
+            } else {
+                Ok(())
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // File doesn't exist — that's fine
+            Ok(())
+        }
+        Err(e) => {
+            tracing::warn!("Failed to stat log file {}: {e}", path.display());
+            Ok(()) // Best-effort: continue even if stat fails
+        }
     }
 }
 
@@ -176,6 +292,37 @@ pub async fn run_refresh_loop(state: SharedDaemonState) {
     }
 }
 
+/// Helper to fetch credentials for the active context.
+/// Returns Ok(Some(creds)) on success, Ok(None) if no active context,
+/// and Err(ProviderError) on failure.
+async fn fetch_credentials_for_active_context(
+    state: &SharedDaemonState,
+    provider_id: &str,
+    active_ctx: &Context,
+    tokens: &AuthTokens,
+) -> Result<Option<Credentials>, ProviderError> {
+    let provider = {
+        let s = state.read().await;
+        match s.registry.get(provider_id) {
+            Some(p) => Arc::clone(p),
+            None => return Ok(None),
+        }
+    };
+
+    let fetch_timeout = std::time::Duration::from_secs(15);
+    let fetch_result =
+        tokio::time::timeout(fetch_timeout, provider.get_credentials(tokens, active_ctx)).await;
+
+    match fetch_result {
+        Err(_) => {
+            tracing::warn!("Credential fetch timed out for {provider_id}");
+            Ok(None) // Timeout — will retry next tick
+        }
+        Ok(Ok(creds)) => Ok(Some(creds)),
+        Ok(Err(e)) => Err(e),
+    }
+}
+
 /// Refresh a single provider's credentials and tokens
 async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Result<()> {
     let (provider, plugin_state) = {
@@ -216,26 +363,24 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
             .unwrap_or(true);
 
         if needs_cred_refresh {
-            let fetch_timeout = std::time::Duration::from_secs(15);
-            let fetch_result =
-                tokio::time::timeout(fetch_timeout, provider.get_credentials(&tokens, active_ctx))
-                    .await;
-            match fetch_result {
-                Err(_) => {
-                    tracing::warn!("Credential fetch timed out for {provider_id}");
-                    return Ok(()); // Retry next tick
-                }
-                Ok(Ok(creds)) => {
+            match fetch_credentials_for_active_context(state, provider_id, active_ctx, &tokens)
+                .await
+            {
+                Ok(Some(creds)) => {
                     let mut s = state.write().await;
                     if let Some(ps) = s.plugin_states.get_mut(provider_id) {
                         ps.credential_cache.insert(active_ctx.id.clone(), creds);
                     }
                     tracing::debug!("Refreshed credentials for {provider_id}:{}", active_ctx.id);
                 }
-                Ok(Err(ProviderError::AccessTokenExpired)) => {
-                    // Fall through to session refresh below
+                Ok(None) => {
+                    // Timeout or no active context — will retry next tick
                 }
-                Ok(Err(ProviderError::RefreshTokenExpired)) => {
+                Err(ProviderError::AccessTokenExpired) => {
+                    // Fall through to session refresh below
+                    // After successful session refresh, we'll retry credentials
+                }
+                Err(ProviderError::RefreshTokenExpired) => {
                     let display_name = provider.display_name().to_string();
                     {
                         let mut s = state.write().await;
@@ -246,11 +391,11 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
                     notify_session_expired(&display_name);
                     return Ok(());
                 }
-                Ok(Err(ProviderError::NetworkError(msg))) => {
+                Err(ProviderError::NetworkError(msg)) => {
                     tracing::warn!("Network error refreshing {provider_id}: {msg}");
                     return Ok(()); // Retry next tick
                 }
-                Ok(Err(ProviderError::ContextNotFound(msg))) => {
+                Err(ProviderError::ContextNotFound(msg)) => {
                     tracing::warn!("Context no longer valid for {provider_id}: {msg}");
                     let mut s = state.write().await;
                     if let Some(ps) = s.plugin_states.get_mut(provider_id) {
@@ -258,7 +403,7 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
                     }
                     return Ok(());
                 }
-                Ok(Err(e)) => {
+                Err(e) => {
                     tracing::error!("Error refreshing credentials for {provider_id}: {e}");
                     return Ok(());
                 }
@@ -279,9 +424,76 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
                 keychain::store_tokens(provider_id, &new_tokens)?;
                 let mut s = state.write().await;
                 if let Some(ps) = s.plugin_states.get_mut(provider_id) {
-                    ps.tokens = Some(new_tokens);
+                    ps.tokens = Some(new_tokens.clone());
                 }
                 tracing::info!("Session refreshed for {provider_id}");
+
+                // After successful session refresh, retry credential fetch
+                // if we have an active context that needs credentials
+                if let Some(ref active_ctx) = plugin_state.active_context {
+                    let needs_cred_refresh = plugin_state
+                        .credential_cache
+                        .get(&active_ctx.id)
+                        .map(|cred| cred.expires_at - buffer < now)
+                        .unwrap_or(true);
+
+                    if needs_cred_refresh {
+                        match fetch_credentials_for_active_context(
+                            state,
+                            provider_id,
+                            active_ctx,
+                            &new_tokens,
+                        )
+                        .await
+                        {
+                            Ok(Some(creds)) => {
+                                let mut s = state.write().await;
+                                if let Some(ps) = s.plugin_states.get_mut(provider_id) {
+                                    ps.credential_cache.insert(active_ctx.id.clone(), creds);
+                                }
+                                tracing::info!(
+                                    "Refreshed credentials for {provider_id}:{} after session refresh",
+                                    active_ctx.id
+                                );
+                            }
+                            Ok(None) => {
+                                // Timeout — will retry next tick
+                            }
+                            Err(ProviderError::AccessTokenExpired) => {
+                                // Session was just refreshed, but credentials still expired
+                                // This shouldn't happen — warn and retry next tick
+                                tracing::warn!(
+                                    "Credentials still expired after session refresh for {provider_id}"
+                                );
+                            }
+                            Err(ProviderError::RefreshTokenExpired) => {
+                                // Shouldn't happen since we just refreshed
+                                tracing::warn!(
+                                    "Refresh token expired immediately after refresh for {provider_id}"
+                                );
+                            }
+                            Err(ProviderError::NetworkError(msg)) => {
+                                tracing::warn!(
+                                    "Network error fetching credentials after session refresh for {provider_id}: {msg}"
+                                );
+                            }
+                            Err(ProviderError::ContextNotFound(msg)) => {
+                                tracing::warn!(
+                                    "Context no longer valid after session refresh for {provider_id}: {msg}"
+                                );
+                                let mut s = state.write().await;
+                                if let Some(ps) = s.plugin_states.get_mut(provider_id) {
+                                    ps.active_context = None;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Error fetching credentials after session refresh for {provider_id}: {e}"
+                                );
+                            }
+                        }
+                    }
+                }
             }
             Ok(Err(ProviderError::RefreshTokenExpired)) => {
                 tracing::warn!("Refresh token expired for {provider_id}");
@@ -720,6 +932,208 @@ fn try_credential_fetch(url: &str, auth: &str) -> EndpointStatus {
 mod tests {
     use super::*;
 
+    // ── serve_action_for_current_state tests (a1) ────────────────────
+    // Note: These tests use serial_test or similar isolation because
+    // they modify the GS_ASSUME_CONFIG_DIR environment variable.
+
+    #[test]
+    fn serve_action_exits_ok_when_daemon_already_healthy() {
+        // Test: No PID file → StartFresh
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+        let action = serve_action_for_current_state();
+        assert_eq!(action, ServeAction::StartFresh);
+    }
+
+    #[test]
+    fn serve_action_remove_stale_pid_when_file_invalid() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+
+        // Write an invalid PID (nonexistent process)
+        let pid_file = temp_dir.path().join("daemon.pid");
+        std::fs::write(&pid_file, "999999\n").unwrap();
+
+        let action = serve_action_for_current_state();
+        assert_eq!(action, ServeAction::RemoveStalePidAndStart);
+    }
+
+    #[test]
+    fn serve_action_remove_stale_pid_when_pid_is_init() {
+        // PID 1 is init/launchd — guaranteed to exist and NOT be gs-assume
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+
+        let pid_file = temp_dir.path().join("daemon.pid");
+        std::fs::write(&pid_file, "1\n").unwrap();
+
+        let action = serve_action_for_current_state();
+        assert_eq!(action, ServeAction::RemoveStalePidAndStart);
+    }
+
+    // ── is_daemon_running tests (a2) ─────────────────────────────────
+
+    #[test]
+    fn is_daemon_running_false_when_pid_file_missing() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+
+        assert!(!is_daemon_running());
+    }
+
+    #[test]
+    fn is_daemon_running_false_when_pid_nonexistent() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+
+        // Write a PID that is extremely unlikely to exist
+        let pid_file = temp_dir.path().join("daemon.pid");
+        std::fs::write(&pid_file, "999999\n").unwrap();
+
+        assert!(!is_daemon_running());
+    }
+
+    #[test]
+    fn is_daemon_running_rejects_pid_owned_by_other_process() {
+        // PID 1 is init/launchd — guaranteed to exist and NOT be gs-assume
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+
+        let pid_file = temp_dir.path().join("daemon.pid");
+        std::fs::write(&pid_file, "1\n").unwrap();
+
+        // Should return false because PID 1 is not gs-assume
+        assert!(!is_daemon_running());
+    }
+
+    /// Serializes env-var mutation across parallel tests.
+    /// `std::env::{set_var, remove_var}` are process-global and not thread-safe
+    /// under Rust's testing concurrency model, so any test that mutates env
+    /// state must acquire this lock for the duration of its run.
+    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Helper to temporarily set an environment variable and restore it on drop.
+    /// This provides test isolation without needing external crates.
+    ///
+    /// Holds `ENV_MUTEX` for the guard's lifetime to serialize against other
+    /// env-touching tests. `MutexGuard` must be stored alongside the old value
+    /// so the lock is released when the guard drops.
+    struct EnvVarGuard {
+        key: String,
+        old_value: Option<String>,
+        // Held for the lifetime of the guard; dropped alongside env restore.
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl EnvVarGuard {
+        fn new(key: &str, value: &str) -> Self {
+            // Recover from a poisoned lock (prior test panicked); the guard
+            // semantics are still correct because we set_var immediately below.
+            let lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+            let old_value = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self {
+                key: key.to_string(),
+                old_value,
+                _lock: lock,
+            }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.old_value {
+                Some(v) => std::env::set_var(&self.key, v),
+                None => std::env::remove_var(&self.key),
+            }
+            // _lock drops here, releasing the mutex for the next test.
+        }
+    }
+
+    fn env_var_guard(key: &str, value: &str) -> EnvVarGuard {
+        EnvVarGuard::new(key, value)
+    }
+
+    // ── truncate_oversized_log tests (a4) ────────────────────────────
+
+    #[test]
+    fn truncate_oversized_log_truncates_large_file() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("daemon.stderr.log");
+
+        // Create a 20 MB file
+        let content = vec![b'x'; 20 * 1024 * 1024];
+        std::fs::write(&log_path, &content).unwrap();
+
+        assert_eq!(
+            std::fs::metadata(&log_path).unwrap().len(),
+            20 * 1024 * 1024
+        );
+
+        // Truncate at 10 MB threshold
+        truncate_oversized_log(&log_path, 10 * 1024 * 1024).unwrap();
+
+        // File should now be empty
+        assert_eq!(std::fs::metadata(&log_path).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn truncate_oversized_log_leaves_small_file_alone() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("daemon.stderr.log");
+
+        // Create a 1 MB file
+        let content = vec![b'x'; 1024 * 1024];
+        std::fs::write(&log_path, &content).unwrap();
+
+        // Truncate at 10 MB threshold
+        truncate_oversized_log(&log_path, 10 * 1024 * 1024).unwrap();
+
+        // File should still be 1 MB
+        assert_eq!(std::fs::metadata(&log_path).unwrap().len(), 1024 * 1024);
+    }
+
+    #[test]
+    fn truncate_oversized_log_noop_when_missing() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("nonexistent.log");
+
+        // Should not panic and return Ok
+        assert!(truncate_oversized_log(&log_path, 10 * 1024 * 1024).is_ok());
+    }
+
+    // ── generate_launchd_plist tests (a3) ──────────────────────────────
+
+    #[test]
+    fn generated_launchd_plist_includes_default_rust_log() {
+        let plist = generate_launchd_plist("/usr/local/bin/gs-assume");
+
+        // Check for RUST_LOG environment variable
+        assert!(
+            plist.contains("<key>RUST_LOG</key>"),
+            "Plist should contain RUST_LOG key"
+        );
+        assert!(
+            plist.contains("info,hyper=warn"),
+            "Plist should contain default RUST_LOG value"
+        );
+    }
+
+    #[test]
+    fn generated_launchd_plist_includes_throttle_interval() {
+        let plist = generate_launchd_plist("/usr/local/bin/gs-assume");
+
+        // Check for ThrottleInterval key
+        assert!(
+            plist.contains("<key>ThrottleInterval</key>"),
+            "Plist should contain ThrottleInterval key"
+        );
+        assert!(
+            plist.contains("<integer>10</integer>"),
+            "Plist should contain ThrottleInterval value of 10"
+        );
+    }
+
     // ── classify_http_status unit tests ──────────────────────────────
 
     #[test]
@@ -1040,6 +1454,20 @@ pub fn install() -> Result<Vec<String>> {
         let plist_dir = plist_path.parent().unwrap();
         std::fs::create_dir_all(plist_dir)?;
 
+        // Detect pre-monorepo install: if an existing plist points at a
+        // different binary path, log the migration so the user sees it.
+        if plist_path.exists() {
+            if let Ok(existing_plist) = std::fs::read_to_string(&plist_path) {
+                let new_binary_path = dest.to_string_lossy();
+                if !existing_plist.contains(new_binary_path.as_ref()) {
+                    actions.push(format!(
+                        "Migrating: existing plist pointed at a different binary — replacing with {}",
+                        new_binary_path
+                    ));
+                }
+            }
+        }
+
         let plist = generate_launchd_plist(&dest.to_string_lossy());
         std::fs::write(&plist_path, &plist)
             .with_context(|| format!("Failed to write plist to {}", plist_path.display()))?;
@@ -1143,6 +1571,13 @@ pub fn generate_launchd_plist(binary_path: &str) -> String {
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>RUST_LOG</key>
+        <string>info,hyper=warn</string>
+    </dict>
     <key>StandardOutPath</key>
     <string>{log_dir}/daemon.stdout.log</string>
     <key>StandardErrorPath</key>
