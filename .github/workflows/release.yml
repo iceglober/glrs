@@ -220,13 +220,6 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || '' }}
 
-      # Push tags created by `changeset publish` so gh release --verify-tag
-      # can find them on the remote.
-      - name: Push tags
-        run: git push --tags
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-
       # Create a GitHub release for the main package and attach platform
       # binaries as release assets. Auto-upgrade in gs-assume (update_check.rs)
       # downloads from this URL pattern:
@@ -250,14 +243,21 @@ jobs:
           set -euo pipefail
           TAG="@glrs-dev/assume@${VERSION}"
 
-          # Create the GitHub release for the main package tag if it doesn't
-          # already exist. `changeset publish` creates the git tag but not a
-          # GitHub release — we layer one on top so `gh release upload` works.
+          # Ensure the tag exists on the remote. `changeset publish` only
+          # creates tags for packages it actually publishes in that run —
+          # if a prior run already published to npm but failed at this step,
+          # the re-run won't create tags. Create it ourselves if missing.
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag "$TAG" HEAD
+            echo "Created local tag $TAG"
+          fi
+          git push origin "$TAG" --force 2>/dev/null || true
+
+          # Create the GitHub release if it doesn't already exist.
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --title "@glrs-dev/assume@${VERSION}" \
-              --notes "See packages/assume/CHANGELOG.md for details." \
-              --verify-tag
+              --notes "See packages/assume/CHANGELOG.md for details."
             echo "Created release $TAG"
           else
             echo "Release $TAG already exists — appending assets"
