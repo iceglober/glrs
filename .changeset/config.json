@@ -5,9 +5,10 @@
     { "repo": "iceglober/glrs" }
   ],
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    ["@glrs-dev/cli", "@glrs-dev/harness-plugin-opencode"]
+  ],
   "linked": [
-    ["@glrs-dev/cli", "@glrs-dev/harness-plugin-opencode"],
     ["@glrs-dev/assume", "@glrs-dev/assume-darwin-arm64", "@glrs-dev/assume-darwin-x64", "@glrs-dev/assume-linux-x64", "@glrs-dev/assume-linux-arm64"]
   ],
   "access": "public",

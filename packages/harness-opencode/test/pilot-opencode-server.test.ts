@@ -263,4 +263,35 @@ describe("buildPilotServerConfig", () => {
     expect(Object.keys(agents)).not.toContain("qa-reviewer");
     expect(Object.keys(agents)).not.toContain("code-searcher");
   });
+
+  test("without runContext, does NOT include mcp config", () => {
+    const config = buildPilotServerConfig();
+    expect((config as { mcp?: unknown }).mcp).toBeUndefined();
+  });
+
+  test("with runContext, includes pilot_status MCP server", () => {
+    const config = buildPilotServerConfig({
+      runDir: "/run/dir",
+      dbPath: "/db/path.db",
+      runId: "run-123",
+    });
+    const mcp = (config as { mcp?: Record<string, unknown> }).mcp;
+    expect(mcp).toBeDefined();
+    expect(mcp).toHaveProperty("pilot_status");
+  });
+
+  test("pilot_status MCP has correct env vars", () => {
+    const config = buildPilotServerConfig({
+      runDir: "/run/dir",
+      dbPath: "/db/path.db",
+      runId: "run-123",
+    });
+    const mcp = (config as { mcp?: Record<string, { env?: Record<string, string> }> }).mcp;
+    const pilotStatus = mcp?.pilot_status;
+    expect(pilotStatus).toBeDefined();
+    expect(pilotStatus?.env).toBeDefined();
+    expect(pilotStatus?.env?.PILOT_SESSIONS_PATH).toMatch(/sessions\.json$/);
+    expect(pilotStatus?.env?.PILOT_STATE_DB_PATH).toBe("/db/path.db");
+    expect(pilotStatus?.env?.PILOT_RUN_ID).toBe("run-123");
+  });
 });

@@ -1149,6 +1149,84 @@ describe("startStreamingLogger", () => {
     expect(out).toBe("");
     teardown();
   });
+
+  // -------------------------------------------------------------------------
+  // a6: task.progress renders taskId > message
+  // -------------------------------------------------------------------------
+
+  test("renders task.progress as taskId > message", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN1",
+      totalTasks: 1,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    cb!({
+      runId: "RUN1",
+      taskId: "T1-API-ROUTE",
+      kind: "task.progress",
+      payload: { message: "writing route handler" },
+      ts: 1700000010000,
+    });
+
+    const out = lines.join("");
+    expect(out).toMatch(/T1-API-ROUTE/);
+    expect(out).toMatch(/writing route handler/);
+    expect(out).toMatch(/T1-API-ROUTE > writing route handler/);
+    teardown();
+  });
+
+  test("renders task.progress with fallback when message missing", () => {
+    const lines: string[] = [];
+    let cb:
+      | ((e: {
+          runId: string;
+          taskId: string | null;
+          kind: string;
+          payload: unknown;
+          ts: number;
+        }) => void)
+      | null = null;
+    const subscribe = (handler: typeof cb) => {
+      cb = handler;
+      return () => { cb = null; };
+    };
+    const teardown = startStreamingLogger({
+      stderrWriter: (s: string) => lines.push(s),
+      runId: "RUN1",
+      totalTasks: 1,
+      subscribe: subscribe as Parameters<typeof startStreamingLogger>[0]["subscribe"],
+      clock: () => 1700000000000,
+    });
+
+    cb!({
+      runId: "RUN1",
+      taskId: "T1",
+      kind: "task.progress",
+      payload: {},
+      ts: 1700000010000,
+    });
+
+    const out = lines.join("");
+    expect(out).toMatch(/T1 > \(no message\)/);
+    teardown();
+  });
 });
 
 // --- Branch naming (regression guard for cross-run worktree collision) ----

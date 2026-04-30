@@ -29,6 +29,7 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     cli: "src/cli.ts",
+    "pilot/mcp/status-server": "src/pilot/mcp/status-server.ts",
   },
   format: ["esm"],
   dts: true,

@@ -362,10 +362,19 @@ export async function executeRun(args: {
     args.stderrWriter ?? ((s: string) => void process.stderr.write(s));
 
   // 6. Spawn server.
+  // Resolve paths for MCP status server injection
+  const runDirForMcp = await getRunDir(cwd, runId);
+  const dbPathForMcp = await getStateDbPath(cwd, runId);
+
   let server;
   try {
     server = await startOpencodeServer({
       port: args.opencodePort ?? 0,
+      runContext: {
+        runDir: runDirForMcp,
+        dbPath: dbPathForMcp,
+        runId,
+      },
     });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
@@ -421,6 +430,7 @@ export async function executeRun(args: {
       runId,
       totalTasks: plan.tasks.length,
       subscribe: subscribeToEvents,
+      db: db.db,
     });
     cleanup.push(() => unsubLogger());
   }
@@ -738,6 +748,15 @@ export function startStreamingLogger(args: {
   totalTasks: number;
   subscribe: typeof import("../state/events.js").subscribeToEvents;
   clock?: () => number;
+  /**
+   * Optional: the state DB instance. When provided, the logger polls for
+   * `task.progress` events written by the MCP subprocess (which can't
+   * trigger the in-process fan-out). Without this, progress events from
+   * the MCP server won't appear in the streaming log.
+   */
+  db?: import("bun:sqlite").Database;
+  /** Polling interval for MCP-written progress events. Default 2000ms. */
+  progressPollMs?: number;
 }): () => void {
   const { stderrWriter, runId, totalTasks, subscribe } = args;
   const clock = args.clock ?? (() => Date.now());
@@ -953,6 +972,13 @@ export function startStreamingLogger(args: {
       case "task.touches.violation":
         write(`task.touches.violation ${id ?? "?"}`);
         break;
+      case "task.progress": {
+        // Format: [HH:MM:SS] <taskId> > <message>
+        const p = event.payload as { message?: string } | null;
+        const message = p?.message ?? "(no message)";
+        write(`${id ?? "?"} > ${message}`);
+        break;
+      }
       // Other kinds (task.session.created, run.*) are intentionally
       // suppressed — too chatty for stdout. `pilot logs` carries the
       // full trace.
@@ -961,11 +987,60 @@ export function startStreamingLogger(args: {
     }
   });
 
+  // Poll the DB for task.progress events written by the MCP subprocess.
+  // The MCP server is a separate process that writes directly to SQLite;
+  // it can't trigger the in-process appendEvent fan-out. This poller
+  // bridges that gap by reading new progress events and rendering them.
+  let progressPollTimer: ReturnType<typeof setInterval> | null = null;
+  let lastProgressId = 0;
+  if (args.db) {
+    const pollDb = args.db;
+    const pollMs = args.progressPollMs ?? 2000;
+    // Seed lastProgressId to the current max so we don't replay old events.
+    try {
+      const row = pollDb
+        .query(
+          `SELECT MAX(id) as maxId FROM events WHERE run_id=? AND kind='task.progress'`,
+        )
+        .get(runId) as { maxId: number | null } | null;
+      lastProgressId = row?.maxId ?? 0;
+    } catch {
+      // Table may not exist yet or be empty — start from 0.
+    }
+    progressPollTimer = setInterval(() => {
+      try {
+        const rows = pollDb
+          .query(
+            `SELECT id, task_id, ts, payload FROM events WHERE run_id=? AND kind='task.progress' AND id > ? ORDER BY id`,
+          )
+          .all(runId, lastProgressId) as Array<{
+          id: number;
+          task_id: string | null;
+          ts: number;
+          payload: string;
+        }>;
+        for (const row of rows) {
+          lastProgressId = row.id;
+          try {
+            const p = JSON.parse(row.payload) as { message?: string };
+            const message = p?.message ?? "(no message)";
+            write(`${row.task_id ?? "?"} > ${message}`);
+          } catch {
+            // Malformed payload — skip.
+          }
+        }
+      } catch {
+        // DB read failure — swallow; next poll will retry.
+      }
+    }, pollMs);
+  }
+
   return () => {
     // Flush blocked summary on teardown too, in case run.finished
     // never fired (SIGINT, server crash, etc.) — the user should
     // still see the count on their way out.
     flushBlockedSummary();
+    if (progressPollTimer) clearInterval(progressPollTimer);
     unsub();
   };
 }
