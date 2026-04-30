@@ -212,12 +212,74 @@ jobs:
 
       # Publish all packages. NPM_CONFIG_DRY_RUN=true when workflow_dispatch dry_run is true.
       - name: Publish to npm
+        id: npm-publish
         run: bunx changeset publish
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || '' }}
+
+      # Create a GitHub release for the main package and attach platform
+      # binaries as release assets. Auto-upgrade in gs-assume (update_check.rs)
+      # downloads from this URL pattern:
+      #
+      #   https://github.com/iceglober/glrs/releases/download/
+      #     @glrs-dev/assume@<version>/gs-assume-<platform>
+      #
+      # Asset names use the legacy `*-amd64` suffix (NOT `*-x64`) so that
+      # pre-monorepo installs of gs-assume 0.6.3 and earlier, whose
+      # detect_platform() returns `amd64`, can auto-upgrade to the new
+      # binaries. Keeping `-amd64` frozen is the transition contract.
+      #
+      # Skipped on dry-run — no real tag exists, and we don't want to create
+      # release artifacts when NPM_CONFIG_DRY_RUN=true.
+      - name: Attach platform binaries to GitHub release
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ needs.version-or-check.outputs.assume_version || needs.dry-run-version.outputs.assume_version }}
+        run: |
+          set -euo pipefail
+          TAG="@glrs-dev/assume@${VERSION}"
+
+          # Create the GitHub release for the main package tag if it doesn't
+          # already exist. `changeset publish` creates the git tag but not a
+          # GitHub release — we layer one on top so `gh release upload` works.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "@glrs-dev/assume@${VERSION}" \
+              --notes "See packages/assume/CHANGELOG.md for details." \
+              --verify-tag
+            echo "Created release $TAG"
+          else
+            echo "Release $TAG already exists — appending assets"
+          fi
+
+          # Upload binaries under legacy `*-amd64` names so pre-monorepo
+          # installs can auto-upgrade. Our artifact dirs are `*-x64`; map
+          # on upload.
+          declare -A ASSET_MAP=(
+            ["darwin-arm64"]="gs-assume-darwin-arm64"
+            ["darwin-x64"]="gs-assume-darwin-amd64"
+            ["linux-arm64"]="gs-assume-linux-arm64"
+            ["linux-x64"]="gs-assume-linux-amd64"
+          )
+
+          cd packages/assume/.release-artifacts
+          for plat in "${!ASSET_MAP[@]}"; do
+            asset_name="${ASSET_MAP[$plat]}"
+            src="$plat/gs-assume"
+            if [ ! -f "$src" ]; then
+              echo "MISSING: $src" >&2
+              exit 1
+            fi
+            # Re-upload atomically via `--clobber` so re-running the
+            # workflow (e.g. after a transient failure) replaces partial
+            # uploads instead of erroring.
+            gh release upload "$TAG" "$src#$asset_name" --clobber
+            echo "Attached $asset_name (from $plat/gs-assume)"
+          done
 
       # crates.io publishing for the `glrs-assume` crate is deliberately
       # NOT wired here yet. When we're ready to also publish to crates.io:

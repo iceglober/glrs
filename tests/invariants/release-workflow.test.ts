@@ -123,4 +123,22 @@ describe("release workflow", () => {
     // building under Rust 1.95+.
     expect(rustMatrixYml).toMatch(/CROSS_NO_WARNINGS:\s*"0"/);
   });
+
+  test("publish job attaches platform binaries to the GitHub release", () => {
+    // Auto-upgrade (packages/assume/src/core/update_check.rs) fetches
+    // raw binaries from GitHub release assets. Releasing to npm alone
+    // leaves existing installs stranded. Guard against a refactor that
+    // drops the attach step.
+    expect(releaseYml).toContain("Attach platform binaries to GitHub release");
+    expect(releaseYml).toContain("gh release upload");
+    // Assets must be named with the legacy `*-amd64` suffix so
+    // pre-monorepo gs-assume installs can auto-upgrade (their
+    // detect_platform returns `amd64`, not `x64`).
+    expect(releaseYml).toContain("gs-assume-darwin-amd64");
+    expect(releaseYml).toContain("gs-assume-linux-amd64");
+    expect(releaseYml).toContain("gs-assume-darwin-arm64");
+    expect(releaseYml).toContain("gs-assume-linux-arm64");
+    // Skip on dry-run (no real tag to attach to).
+    expect(releaseYml).toMatch(/if:\s*\$\{\{\s*github\.event\.inputs\.dry_run\s*!=\s*'true'\s*\}\}/);
+  });
 });

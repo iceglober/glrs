@@ -1454,6 +1454,20 @@ pub fn install() -> Result<Vec<String>> {
         let plist_dir = plist_path.parent().unwrap();
         std::fs::create_dir_all(plist_dir)?;
 
+        // Detect pre-monorepo install: if an existing plist points at a
+        // different binary path, log the migration so the user sees it.
+        if plist_path.exists() {
+            if let Ok(existing_plist) = std::fs::read_to_string(&plist_path) {
+                let new_binary_path = dest.to_string_lossy();
+                if !existing_plist.contains(new_binary_path.as_ref()) {
+                    actions.push(format!(
+                        "Migrating: existing plist pointed at a different binary — replacing with {}",
+                        new_binary_path
+                    ));
+                }
+            }
+        }
+
         let plist = generate_launchd_plist(&dest.to_string_lossy());
         std::fs::write(&plist_path, &plist)
             .with_context(|| format!("Failed to write plist to {}", plist_path.display()))?;
