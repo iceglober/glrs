@@ -16,7 +16,16 @@ import {
   enforceTouches,
   enforceTouchesPure,
 } from "../src/pilot/verify/touches.js";
-import { gitIsAvailable } from "../src/pilot/worktree/git.js";
+
+// Inline gitIsAvailable check (was in deleted ../src/pilot/worktree/git.js).
+async function gitIsAvailable(): Promise<boolean> {
+  try {
+    execFileSync("git", ["--version"], { stdio: "ignore", timeout: 5_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // --- Fixtures --------------------------------------------------------------
 
@@ -155,7 +164,7 @@ describe("enforceTouches (real git)", () => {
     fs.writeFileSync(path.join(repo, "src/api/b.ts"), "x\n");
 
     const r = await enforceTouches({
-      worktree: repo,
+      cwd: repo,
       sinceSha: sha,
       allowed: ["src/api/**"],
     });
@@ -178,7 +187,7 @@ describe("enforceTouches (real git)", () => {
     fs.writeFileSync(path.join(repo, "src/web/leak.ts"), "leak\n");
 
     const r = await enforceTouches({
-      worktree: repo,
+      cwd: repo,
       sinceSha: sha,
       allowed: ["src/api/**"],
     });
@@ -197,7 +206,7 @@ describe("enforceTouches (real git)", () => {
     const sha = gitCommitFile(repo, "src/a.ts", "x\n", "init");
 
     const r = await enforceTouches({
-      worktree: repo,
+      cwd: repo,
       sinceSha: sha,
       allowed: ["src/**"],
     });
@@ -215,7 +224,7 @@ describe("enforceTouches (real git)", () => {
     fs.writeFileSync(path.join(repo, "a.ts"), "edited\n");
 
     const r = await enforceTouches({
-      worktree: repo,
+      cwd: repo,
       sinceSha: sha,
       allowed: [],
     });
@@ -233,12 +242,154 @@ describe("enforceTouches (real git)", () => {
     fs.writeFileSync(path.join(repo, "rogue.txt"), "untracked\n");
 
     const r = await enforceTouches({
-      worktree: repo,
+      cwd: repo,
       sinceSha: sha,
       allowed: ["src/**"],
     });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.violators).toEqual(["rogue.txt"]);
+  });
+
+  // --- Default tolerate + task-level tolerate ------------------------------
+
+  test("built-in default tolerate allows next-env.d.ts changes", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    fs.mkdirSync(path.join(repo, "apps", "web-app"), { recursive: true });
+    const sha = gitCommitFile(
+      repo,
+      "apps/web-app/next-env.d.ts",
+      "/// <reference types=\"next\" />\n",
+      "init",
+    );
+    // Agent edited an in-scope file.
+    fs.writeFileSync(
+      path.join(repo, "apps", "web-app", "page.tsx"),
+      "export default () => null\n",
+    );
+    // Next.js "rewrote" next-env.d.ts during build.
+    fs.writeFileSync(
+      path.join(repo, "apps", "web-app", "next-env.d.ts"),
+      "/// <reference types=\"next\" />\nimport \"./.next/types/routes.d.ts\";\n",
+    );
+
+    const r = await enforceTouches({
+      cwd: repo,
+      sinceSha: sha,
+      allowed: ["apps/web-app/page.tsx"],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // Both the in-scope and the tolerated file show up in `changed`.
+    expect(r.changed.sort()).toEqual([
+      "apps/web-app/next-env.d.ts",
+      "apps/web-app/page.tsx",
+    ]);
+  });
+
+  test("built-in default tolerate allows .tsbuildinfo and __snapshots__", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    const sha = gitCommitFile(repo, "src/a.ts", "x\n", "init");
+    fs.writeFileSync(path.join(repo, "src", "a.ts"), "y\n");
+    fs.writeFileSync(path.join(repo, "tsconfig.tsbuildinfo"), "{}\n");
+    fs.mkdirSync(path.join(repo, "test", "__snapshots__"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, "test", "__snapshots__", "foo.test.ts.snap"),
+      "exports['x'] = 'y';\n",
+    );
+
+    const r = await enforceTouches({
+      cwd: repo,
+      sinceSha: sha,
+      allowed: ["src/**"],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  test("task-level tolerate extends the allowlist", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    const sha = gitCommitFile(repo, "src/a.ts", "x\n", "init");
+    fs.writeFileSync(path.join(repo, "src", "a.ts"), "y\n");
+    // Project-specific codegen output.
+    fs.mkdirSync(path.join(repo, "prisma", "client"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, "prisma", "client", "index.d.ts"),
+      "export {};\n",
+    );
+
+    // Without tolerate: violation.
+    const r1 = await enforceTouches({
+      cwd: repo,
+      sinceSha: sha,
+      allowed: ["src/**"],
+    });
+    expect(r1.ok).toBe(false);
+
+    // With tolerate: ok.
+    const r2 = await enforceTouches({
+      cwd: repo,
+      sinceSha: sha,
+      allowed: ["src/**"],
+      tolerate: ["prisma/client/**"],
+    });
+    expect(r2.ok).toBe(true);
+  });
+
+  test("tolerate does not turn a pure-tolerate diff into a success when touches is empty", async () => {
+    // Verify-only tasks (touches=[]) should pass if ONLY tolerated
+    // files changed. But if an agent edits files outside both, the
+    // task still fails.
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    fs.mkdirSync(path.join(repo, "apps"), { recursive: true });
+    const sha = gitCommitFile(repo, "apps/foo.ts", "x\n", "init");
+    // Only next-env.d.ts changes — this is the "ran next build, nothing else" case.
+    fs.writeFileSync(
+      path.join(repo, "apps", "next-env.d.ts"),
+      "/// <reference types=\"next\" />\n",
+    );
+
+    const r = await enforceTouches({
+      cwd: repo,
+      sinceSha: sha,
+      allowed: [], // verify-only
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  test("out-of-scope edits still fail even when tolerate+defaults are set", async () => {
+    if (!GIT_OK) return;
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    gitInit(repo);
+    const sha = gitCommitFile(repo, "src/a.ts", "x\n", "init");
+    fs.writeFileSync(path.join(repo, "src", "a.ts"), "y\n");
+    // Agent drifted into unrelated-service file.
+    fs.mkdirSync(path.join(repo, "services", "other"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, "services", "other", "index.ts"),
+      "drift\n",
+    );
+
+    const r = await enforceTouches({
+      cwd: repo,
+      sinceSha: sha,
+      allowed: ["src/**"],
+      tolerate: ["prisma/**"],
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.violators).toEqual(["services/other/index.ts"]);
   });
 });

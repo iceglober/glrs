@@ -164,6 +164,11 @@ const VerifyCommandSchema = z.string().min(1, "verify entries must be non-empty"
  *     stays crisp and the context ("because Y, see Z") is addressable
  *     separately in status output and review.
  *   - `touches`: glob patterns. Empty array = "no edits" (verify-only task).
+ *   - `tolerate`: optional extra globs that may appear in the diff
+ *     without counting as a violation — project-specific codegen,
+ *     framework side-effects beyond the built-in defaults, etc. Union
+ *     with `touches` at enforcement. Planner populates when a verify
+ *     step runs a codegen tool (prisma generate, graphql codegen, etc.).
  *   - `verify`: shell commands run after the agent reports done. ALL must
  *     pass for the task to succeed.
  *   - `depends_on`: list of task IDs this task waits for. Validated as
@@ -182,6 +187,7 @@ const TaskSchema = z
     prompt: z.string().min(1, "task prompt must be non-empty"),
     context: z.string().optional(),
     touches: TouchesSchema.default([]),
+    tolerate: TouchesSchema.default([]),
     verify: z.array(VerifyCommandSchema).default([]),
     depends_on: z
       .array(z.string().regex(TASK_ID_PATTERN, "depends_on entries must be valid task IDs"))
@@ -228,9 +234,9 @@ const MilestoneSchema = z
  *   - `defaults`: see DefaultsSchema.
  *   - `milestones`: see MilestoneSchema. Optional.
  *   - `tasks`: REQUIRED, at least one task. The whole point of a plan.
- *   - `setup`: optional array of shell commands run once per fresh worktree
- *     slot before any task uses that slot. Used for environment bootstrap
- *     (e.g., `pnpm install`). Cached across tasks sharing the slot.
+ *
+ * The `setup:` field was REMOVED in the cwd-mode rollback. Plans that
+ * still declare it fail schema validation with a friendly message.
  */
 export const PlanSchema = z
   .object({
@@ -238,10 +244,40 @@ export const PlanSchema = z
     branch_prefix: z.string().min(1).optional(),
     defaults: DefaultsSchema,
     milestones: z.array(MilestoneSchema).default([]),
-    setup: z.array(VerifyCommandSchema).default([]),
     tasks: z.array(TaskSchema).min(1, "plan must declare at least one task"),
   })
-  .strict();
+  .passthrough()
+  .superRefine((val, ctx) => {
+    // Known keys on the top-level plan (after passthrough preserves the raw input).
+    const known = new Set([
+      "name",
+      "branch_prefix",
+      "defaults",
+      "milestones",
+      "tasks",
+    ]);
+    if (typeof val !== "object" || val === null) return;
+    const v = val as Record<string, unknown>;
+    for (const key of Object.keys(v)) {
+      if (known.has(key)) continue;
+      if (key === "setup") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["setup"],
+          message:
+            "The 'setup:' field was removed in the cwd-mode rollback. " +
+            "Run setup commands manually before 'pilot build' — see " +
+            "src/pilot/AGENTS.md for the new contract.",
+        });
+      } else {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `Unrecognized key: ${JSON.stringify(key)}`,
+        });
+      }
+    }
+  });
 
 // --- Public types ----------------------------------------------------------
 

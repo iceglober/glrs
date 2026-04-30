@@ -45,7 +45,6 @@ import {
   getPlansDir,
   getRunDir,
   getStateDbPath,
-  getWorktreeDir,
 } from "../paths.js";
 import { openStateDb } from "../state/db.js";
 import {
@@ -57,8 +56,6 @@ import { upsertFromPlan, countByStatus, listTasks } from "../state/tasks.js";
 import { appendEvent, subscribeToEvents, readEventsDecoded } from "../state/events.js";
 import { startOpencodeServer } from "../opencode/server.js";
 import { EventBus } from "../opencode/events.js";
-import { WorktreePool } from "../worktree/pool.js";
-import { headSha } from "../worktree/git.js";
 import { makeScheduler } from "../scheduler/ready-set.js";
 import { runWorker } from "../worker/worker.js";
 import { promises as fs } from "node:fs";
@@ -264,6 +261,52 @@ export async function runBuild(opts: {
   });
 
   // From here on, the per-run execution is shared with `pilot resume`.
+  // Run the setup hook BEFORE handing to executeRun (which spawns the
+  // opencode server + worker). The hook makes the dev stack ready.
+  const { runSetupHook, SETUP_HOOK_RELATIVE_PATH } = await import(
+    "../worker/setup-hook.js"
+  );
+  const hookResult = await runSetupHook({
+    cwd,
+    onLine: (c) => stderrWriter(c),
+  });
+  switch (hookResult.kind) {
+    case "skipped":
+      break;
+    case "ok":
+      stderrWriter(
+        `[pilot] setup hook ${SETUP_HOOK_RELATIVE_PATH} passed (${Math.round(hookResult.durationMs / 1000)}s)\n`,
+      );
+      break;
+    case "not-executable":
+      stderrWriter(
+        `[pilot] setup hook ${hookResult.hookPath} is not executable. ` +
+          `Run \`chmod +x ${SETUP_HOOK_RELATIVE_PATH}\` and re-run pilot.\n`,
+      );
+      await runCleanup(cleanup);
+      return 1;
+    case "timed-out":
+      stderrWriter(
+        `[pilot] setup hook ${hookResult.hookPath} timed out after ${Math.round(hookResult.timeoutMs / 1000)}s\n`,
+      );
+      await runCleanup(cleanup);
+      return 1;
+    case "failed":
+      stderrWriter(
+        `[pilot] setup hook ${hookResult.hookPath} exited ${hookResult.exitCode} ` +
+          `(after ${Math.round(hookResult.durationMs / 1000)}s). ` +
+          `Fix the environment and re-run pilot.\n`,
+      );
+      await runCleanup(cleanup);
+      return 1;
+    case "spawn-error":
+      stderrWriter(
+        `[pilot] setup hook ${hookResult.hookPath} failed to spawn: ${hookResult.error}\n`,
+      );
+      await runCleanup(cleanup);
+      return 1;
+  }
+
   return executeRun({
     db: real,
     runId,
@@ -350,31 +393,10 @@ export async function executeRun(args: {
   const busFactory = (directory: string) =>
     new EventBus(server!.client, directory);
 
-  // 7. Build pool + scheduler.
-  const pool = new WorktreePool({
-    repoPath: cwd,
-    worktreeDir: async (n) => getWorktreeDir(cwd, runId, n),
-  });
-  cleanup.push(() => pool.shutdown({ keepPreserved: true }));
-
+  // 7. Build scheduler.
   const scheduler = makeScheduler({ db: db.db, runId, plan });
 
-  // 8. Determine the base ref.
-  let base: string;
-  try {
-    base = await headSha(cwd);
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`pilot: cannot resolve HEAD sha: ${reason}\n`);
-    appendEvent(db.db, {
-      runId,
-      kind: "run.error",
-      payload: { phase: "head-sha", reason },
-    });
-    markRunFinished(db.db, runId, "failed");
-    await runCleanup(cleanup);
-    return 1;
-  }
+  // 8. No base ref needed in cwd mode — worker captures sinceSha per task.
 
   // 9. Run the worker.
   const aborter = new AbortController();
@@ -389,6 +411,11 @@ export async function executeRun(args: {
   // under --quiet. Teardown runs before DB close; we push it to cleanup
   // so SIGINT paths also clean up the subscription.
   if (args.quiet !== true) {
+    // Write the banner BEFORE subscribing to events — prevents the
+    // first task.started event from interleaving with the banner line.
+    stderrWriter(
+      `pilot build: run ${runId} started (${plan.tasks.length} tasks)\n`,
+    );
     const unsubLogger = startStreamingLogger({
       stderrWriter,
       runId,
@@ -396,9 +423,6 @@ export async function executeRun(args: {
       subscribe: subscribeToEvents,
     });
     cleanup.push(() => unsubLogger());
-    stderrWriter(
-      `pilot build: run ${runId} started (${plan.tasks.length} tasks)\n`,
-    );
   }
 
   const result = await runWorker({
@@ -406,11 +430,8 @@ export async function executeRun(args: {
     runId,
     plan,
     scheduler,
-    pool,
     client: server.client,
     busFactory,
-    branchPrefix,
-    base,
     abortSignal: aborter.signal,
   });
 
@@ -675,6 +696,19 @@ function relativeTimeFromNow(thenMs: number): string {
   return `${d}d ago`;
 }
 
+/**
+ * Format a duration in ms as a human-readable string.
+ *   < 60s  → "42s"
+ *   ≥ 60s  → "Xm Ys" (rounded to the nearest second)
+ */
+export function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
 function isExitPromptError(err: unknown): boolean {
   return (
     err !== null &&
@@ -731,12 +765,15 @@ export function startStreamingLogger(args: {
   };
 
   const write = (line: string) => {
-    stderrWriter(`[${formatTs(clock())}] ${line}\n`);
+    // Atomic single-call write — prevents interleaving when multiple
+    // event handlers fire in the same tick. process.stderr.write with
+    // a complete string (including \n) is guaranteed to be written as
+    // one chunk on POSIX (up to PIPE_BUF = 4096 bytes).
+    const msg = `[${formatTs(clock())}] ${line}\n`;
+    stderrWriter(msg);
   };
 
   const writeRaw = (line: string) => {
-    // Continuation / summary lines without a timestamp prefix — appears
-    // visually attached to the previous event line.
     stderrWriter(`${line}\n`);
   };
 
@@ -787,6 +824,15 @@ export function startStreamingLogger(args: {
           write(
             `task.verify.failed ${id ?? "?"} attempt ${p.attempt}/${p.of} (${p.command} → exit ${p.exitCode}${timedOutSuffix})`,
           );
+          // Show the tail of the output so the user can see what failed
+          // without opening the full logs.
+          const output = typeof (p as { output?: unknown }).output === "string"
+            ? ((p as { output: string }).output)
+            : null;
+          if (output !== null && output.length > 0) {
+            const tail = output.trim().split("\n").slice(-3).map((l) => `    ${l}`).join("\n");
+            writeRaw(tail);
+          }
         } else {
           write(`task.verify.failed ${id ?? "?"}`);
         }
@@ -795,14 +841,14 @@ export function startStreamingLogger(args: {
       case "task.succeeded": {
         succeeded += 1;
         const ms = id !== null ? event.ts - (taskStart.get(id) ?? event.ts) : 0;
-        write(`task.succeeded ${id ?? "?"} in ${Math.round(ms / 1000)}s`);
+        write(`task.succeeded ${id ?? "?"} in ${formatDuration(ms)}`);
         write(`run.progress ${succeeded}/${totalTasks} succeeded`);
         break;
       }
       case "task.failed": {
         failed += 1;
         const ms = id !== null ? event.ts - (taskStart.get(id) ?? event.ts) : 0;
-        write(`task.failed ${id ?? "?"} in ${Math.round(ms / 1000)}s`);
+        write(`task.failed ${id ?? "?"} in ${formatDuration(ms)}`);
         // Render phase+reason continuation if the worker populated
         // them (post-v0.2 task.failed payload). Tolerate missing
         // fields — events from pre-v0.2 code paths may not have them.
@@ -1039,15 +1085,15 @@ export function printSummary(args: {
         const worktree = t.worktree_path ?? "(none)";
         const elapsed =
           t.started_at !== null && t.finished_at !== null
-            ? Math.round((t.finished_at - t.started_at) / 1000)
-            : 0;
+            ? formatDuration(t.finished_at - t.started_at)
+            : "0s";
         process.stdout.write(
           `  ${t.task_id}\n` +
             `    phase:    ${phase}\n` +
             `    reason:   ${truncateSummary(reason, 300)}\n` +
             `    session:  ${session}\n` +
             `    worktree: ${worktree}\n` +
-            `    elapsed:  ${elapsed}s   attempts: ${t.attempts}\n` +
+            `    elapsed:  ${elapsed}   attempts: ${t.attempts}\n` +
             `\n`,
         );
       }

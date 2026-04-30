@@ -21,7 +21,6 @@ import {
   getPilotDir,
   getPlansDir,
   getRunDir,
-  getWorktreeDir,
   getStateDbPath,
   getWorkerJsonlPath,
   getTaskJsonlPath,
@@ -350,53 +349,6 @@ describe("getRunDir / file paths", () => {
       await expect(getRunDir(repo, ".hidden")).rejects.toThrow(/safe/);
       await expect(getRunDir(repo, "")).rejects.toThrow(/safe/);
       await expect(getRunDir(repo, "has space")).rejects.toThrow(/safe/);
-    }),
-  );
-});
-
-// --- getWorktreeDir --------------------------------------------------------
-
-describe("getWorktreeDir", () => {
-  let tmp: string;
-  beforeEach(() => {
-    tmp = mkTmpDir();
-  });
-  afterEach(() => rmTmpDir(tmp));
-
-  test(
-    "creates parent `worktrees/<runId>/` and returns padded leaf path",
-    withCleanEnv(async () => {
-      const repo = path.join(tmp, "wt-test");
-      fs.mkdirSync(repo);
-      gitInit(repo);
-
-      process.env.GLORIOUS_PILOT_DIR = path.join(tmp, "wt-base");
-      const wt0 = await getWorktreeDir(repo, "01ARZ3NDEKTSV4RRFFQ69G5FAB", 0);
-      expect(path.basename(wt0)).toBe("00");
-      // Parent created.
-      expect(fs.existsSync(path.dirname(wt0))).toBe(true);
-      // Leaf NOT created (git worktree add owns that).
-      expect(fs.existsSync(wt0)).toBe(false);
-
-      const wt12 = await getWorktreeDir(repo, "01ARZ3NDEKTSV4RRFFQ69G5FAB", 12);
-      expect(path.basename(wt12)).toBe("12");
-    }),
-  );
-
-  test(
-    "rejects negative or non-integer worker index",
-    withCleanEnv(async () => {
-      const repo = path.join(tmp, "wt-bad-n");
-      fs.mkdirSync(repo);
-      gitInit(repo);
-      process.env.GLORIOUS_PILOT_DIR = path.join(tmp, "wbn");
-
-      await expect(
-        getWorktreeDir(repo, "01ARZ3NDEKTSV4RRFFQ69G5FAB", -1),
-      ).rejects.toThrow(/non-negative/);
-      await expect(
-        getWorktreeDir(repo, "01ARZ3NDEKTSV4RRFFQ69G5FAB", 1.5),
-      ).rejects.toThrow(/integer/);
     }),
   );
 });

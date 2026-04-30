@@ -170,6 +170,24 @@ tasks:
     expect(r.code).toBe(1);
     expect(r.stderr).toMatch(/cannot stat|ENOENT/i);
   });
+
+  test("pilot validate rejects a plan with setup: and exits 2", async () => {
+    const p = writePlan(
+      "with-setup.yaml",
+      `
+name: rollback-test
+tasks:
+  - id: T1
+    title: x
+    prompt: p
+setup:
+  - pnpm install
+`.trimStart(),
+    );
+    const r = await captured(() => runValidate({ planPath: p }));
+    expect(r.code).toBe(2);
+    expect(r.stderr.toLowerCase()).toContain("setup");
+  });
 });
 
 // --- DAG errors ------------------------------------------------------------

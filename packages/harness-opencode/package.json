@@ -23,7 +23,9 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "lint": "echo 'no linter configured yet'"
+    "lint": "echo 'no linter configured yet'",
+    "dev": "bun run build && bash -c 'PKG_DIR=\"$PWD\"; cd \"${INIT_CWD:-$PWD}\" && GLRS_CLI_DISPATCHED=1 exec bun \"$PKG_DIR/dist/cli.js\" \"$@\"' --",
+    "dev:nobuild": "bash -c 'PKG_DIR=\"$PWD\"; cd \"${INIT_CWD:-$PWD}\" && GLRS_CLI_DISPATCHED=1 exec bun \"$PKG_DIR/dist/cli.js\" \"$@\"' --"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": "^1.14",

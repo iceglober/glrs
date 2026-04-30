@@ -45,13 +45,13 @@ Use Serena and grep to map out:
 - Existing tests that already cover related code (the verify commands will likely be variations of those).
 - Existing patterns the change should match.
 - Any module boundaries that suggest natural task splits.
-- **Tooling footprint** — lockfiles, docker-compose services, migration tooling, UI/API/DB test frameworks. You'll use these in Section 3 to propose a `setup:` block and per-surface verify patterns.
+- **Tooling footprint** — lockfiles, docker-compose services, migration tooling, UI/API/DB test frameworks. Understanding these informs your per-surface verify patterns in Section 3.
 
 Be thorough here. A planner who shipped a sloppy plan because they only skimmed the codebase wastes hours of pilot-builder time chasing bad scope.
 
 ## 3. Apply the planning methodology
 
-The `pilot-planning` skill carries the ten rules. Apply them:
+The `pilot-planning` skill carries the nine rules. Apply them:
 
 1. First-principles task framing.
 2. Decomposition into right-sized tasks.
@@ -61,8 +61,7 @@ The `pilot-planning` skill carries the ten rules. Apply them:
 6. Optional milestone grouping.
 7. Self-review.
 8. Per-task `context:` population (rationale, code pointers, acceptance shorthand).
-9. **Setup-block authoring** — detect lockfiles (pnpm, bun, npm, yarn, Cargo), docker-compose services, and migration tooling (prisma, drizzle-kit, knex, flyway), then propose specific setup commands to the user for confirmation.
-10. **QA-expectations establishment** — detect per-surface test frameworks and propose concrete verify patterns:
+9. **QA-expectations establishment** — detect per-surface test frameworks and propose concrete verify patterns:
     - **UI**: Playwright, Cypress, or Vitest browser mode for visual/interaction assertions
     - **API**: curl against local endpoints or OpenAPI-based contract tests
     - **DB**: Postgres readiness checks and migration verification (prisma migrate, drizzle-kit push)
@@ -70,7 +69,9 @@ The `pilot-planning` skill carries the ten rules. Apply them:
     - **Browser-based component**: Storybook or Chromatic visual tests
     - **CLI**: bin/ smoke tests or `--help` verification
 
-Rules 9 and 10 typically involve ONE bundled `question` tool call to the user — combine setup proposals and per-surface verify proposals into a single round (respecting "talk to the user — once" guidance).
+Rule 9 typically involves ONE bundled `question` tool call to the user for QA verify patterns (respecting "talk to the user — once" guidance).
+
+Note: The `setup:` field was removed in the cwd-mode rollback. Plans assume the user's dev stack is already running (install, compose, migrate, seed) before `pilot build` is invoked. Remind the user of this at hand-off.
 
 ## 4. Write the YAML
 
@@ -80,10 +81,6 @@ Required schema (see `src/pilot/plan/schema.ts` for the canonical Zod definition
 
 ```yaml
 name: <human-readable plan name>
-setup:                          # optional — run once per worktree before any task
-  - pnpm install --frozen-lockfile
-  - docker compose up -d postgres
-  - pnpm prisma migrate dev
 defaults:                       # optional, override per-task as needed
   agent: pilot-builder          # default
   model: anthropic/claude-sonnet-4-6
@@ -114,6 +111,17 @@ tasks:
     touches:
       - src/api/**
       - test/api/**
+    tolerate:                   # optional — files that may appear in
+                                # the diff but aren't part of the task's
+                                # scope (project-specific codegen,
+                                # framework side-effects beyond the
+                                # built-in defaults like next-env.d.ts).
+                                # Common entries: prisma/client/**,
+                                # graphql/generated/**, schema.graphql.
+                                # Built-in defaults already cover
+                                # next-env.d.ts, .next/types/**,
+                                # *.tsbuildinfo, __snapshots__/**.
+      - prisma/client/**
     verify:
       - bun test test/api
     depends_on: [ ]              # other task ids
@@ -153,6 +161,8 @@ Don't elaborate. Don't summarize the plan in chat. The user can read it.
 - **Test files outside `touches:`.** When the task adds source code, the verify command usually adds or edits a test. Both files need to be in `touches:`.
 
 - **Asking the human to clarify mid-build.** Don't write tasks whose prompts contain things like "ask the user about X". Pilot is unattended. If you don't know X, either ASK NOW (during the planning session) or design the task to discover X via reading code.
+
+- **YAML quoting errors in titles/prompts.** If a string contains double quotes, wrap it in single quotes: `title: '"Test rule set" UI + hook'`. If it contains single quotes, use double quotes with escaped inner quotes: `title: "it's a \"test\""`. NEVER write `title: "word" more words` — YAML closes the scalar at the second `"`. Run `pilot validate` after saving; it catches these.
 
 # What "done" looks like
 

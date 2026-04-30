@@ -85,6 +85,26 @@ export function markRunFinished(
 }
 
 /**
+ * Transition a run from a terminal status (`failed` / `aborted`) back to
+ * `running` for a resume. Clears `finished_at` so the run's timing
+ * reflects the current attempt.
+ *
+ * Refuses to resume a `completed` run (nothing to do). Allows resume
+ * from `pending` (edge case: interrupted before markRunRunning) or
+ * `running` (edge case: prior process died without marking finished).
+ */
+export function markRunResumed(db: Database, runId: string): void {
+  const cur = getRun(db, runId);
+  if (!cur) throw new Error(`markRunResumed: run ${JSON.stringify(runId)} not found`);
+  if (cur.status === "completed") {
+    throw new Error(
+      `markRunResumed: run ${JSON.stringify(runId)} is already completed; nothing to resume`,
+    );
+  }
+  db.run("UPDATE runs SET status='running', finished_at=NULL WHERE id=?", [runId]);
+}
+
+/**
  * Read a single run by id. Returns `null` if not found (caller decides
  * whether that's an error).
  */

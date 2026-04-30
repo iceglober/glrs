@@ -10,7 +10,6 @@
  *       runs/<runId>/              one dir per `pilot build` invocation
  *         state.db                 sqlite (Phase B1)
  *         workers/<n>.jsonl        per-worker structured logs (Phase E1)
- *       worktrees/<runId>/<n>/     git worktrees for tasks (Phase C1)
  *
  * Where:
  *   - `<base>` = `$GLORIOUS_PILOT_DIR` (with leading `~` expanded), else
@@ -22,7 +21,6 @@
  *     `/plan`) live as siblings under the same per-repo directory.
  *   - `<runId>` is a ULID (Phase B1 picks the format; this module is
  *     opaque to it).
- *   - Worker `<n>` is a 0-padded integer (e.g. `00`, `01`).
  *
  * Why a separate module from `plan-paths.ts`:
  *   - `plan-paths.ts` is consumed by the existing `/plan` flow
@@ -92,17 +90,7 @@ export function resolveBaseDir(): string {
   return path.join(os.homedir(), ".glorious", "opencode");
 }
 
-/**
- * Pad a worker index to two digits. `0` → `"00"`, `12` → `"12"`,
- * `100` → `"100"` (no truncation; we let the rare 3-digit case
- * sort lexically wrong rather than overflow).
- */
-function padWorker(n: number): string {
-  if (!Number.isInteger(n) || n < 0) {
-    throw new RangeError(`worker index must be a non-negative integer, got ${n}`);
-  }
-  return n.toString().padStart(2, "0");
-}
+
 
 // --- Public API ------------------------------------------------------------
 
@@ -152,29 +140,7 @@ export async function getRunDir(cwd: string, runId: string): Promise<string> {
   return dir;
 }
 
-/**
- * Resolve `<pilot>/worktrees/<runId>/<n>/` — the directory that will be
- * passed to `git worktree add`. Created if missing (parent only; git
- * itself creates the leaf when the worktree is added).
- *
- * `n` is the worker index (0 for v0.1's single worker; up to v0.3's
- * configured pool size).
- */
-export async function getWorktreeDir(
-  cwd: string,
-  runId: string,
-  n: number,
-): Promise<string> {
-  if (!isSafeRunId(runId)) {
-    throw new Error(
-      `getWorktreeDir: runId ${JSON.stringify(runId)} is not a safe filesystem segment`,
-    );
-  }
-  const pilot = await getPilotDir(cwd);
-  const parent = path.join(pilot, "worktrees", runId);
-  await fs.mkdir(parent, { recursive: true });
-  return path.join(parent, padWorker(n));
-}
+
 
 /**
  * Resolve `<runDir>/state.db`. Does NOT create or open the database —
@@ -203,7 +169,9 @@ export async function getWorkerJsonlPath(
   const runDir = await getRunDir(cwd, runId);
   const workersDir = path.join(runDir, "workers");
   await fs.mkdir(workersDir, { recursive: true });
-  return path.join(workersDir, `${padWorker(n)}.jsonl`);
+  // Pad worker index to two digits (0 -> "00", 12 -> "12")
+  const padded = n.toString().padStart(2, "0");
+  return path.join(workersDir, `${padded}.jsonl`);
 }
 
 /**

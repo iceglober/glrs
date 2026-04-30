@@ -45,3 +45,37 @@ If the verify commands would FAIL without edits, an empty `touches` is a STOP �
 - **Including the migrations dir for a non-migration task.** Tight scope.
 
 When in doubt, write the tightest possible scope first. If the task fails verify with "touches violation: src/X.ts", the worker shows you which file got touched — broaden then.
+
+## `tolerate:` — files allowed in the diff but outside the contract
+
+When a task's verify step runs a tool that writes files as a side-effect (codegen, build, snapshots), those files will appear in `git diff` even though the agent didn't author them. Add them to `tolerate:` so enforcement accepts them without counting them as part of the task's output.
+
+Two categories to watch for:
+
+**Built-in defaults (already tolerated — don't list these):**
+- `**/next-env.d.ts` — Next.js regenerates on every `next build`.
+- `**/.next/types/**`, `**/.next/dev/types/**` — Next.js app-router generated types.
+- `**/*.tsbuildinfo` — TypeScript project-reference build cache.
+- `**/__snapshots__/**`, `**/*.snap` — Jest / Vitest snapshot files rewritten by `-u`.
+
+**Project-specific (list in `tolerate:` per task):**
+- Prisma client output (e.g., `prisma/client/**` if `prisma generate` runs in verify).
+- GraphQL codegen output (`graphql/generated/**`, `*.graphql.d.ts`).
+- OpenAPI codegen output (`api-types/generated/**`).
+- Anywhere you have a build step that writes type declarations downstream of the agent's source edits.
+
+A good test: if the task's verify step runs `prisma generate`, `pnpm codegen`, `next build`, or similar, ask: "does that command write files anywhere?" If yes, those paths go in `tolerate:`.
+
+### Example
+
+```yaml
+- id: T-ADD-RULE-MODEL
+  touches:
+    - prisma/schema.prisma
+    - src/models/rule.ts
+  tolerate:
+    - prisma/client/**        # prisma generate output
+  verify:
+    - pnpm prisma generate
+    - pnpm --filter core test rule-model
+```
