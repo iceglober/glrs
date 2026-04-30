@@ -66,11 +66,12 @@ describe("skills bundle", () => {
     expect(fs.existsSync(DIST_SKILLS)).toBe(true);
   });
 
-  it("has exactly 10 skill directories", () => {
+  it("has exactly 11 skill directories", () => {
     const dirs = fs.readdirSync(DIST_SKILLS, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name);
     expect(dirs.sort()).toEqual([
+      "adr",
       "agent-estimation",
       "pilot-planning",
       "research",
