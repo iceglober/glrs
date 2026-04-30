@@ -1,7 +1,9 @@
 {
   "name": "@glrs-dev/assume-linux-x64",
-  "version": "0.6.3",
-  "publishConfig": { "access": "public" },
+  "version": "0.6.4",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Prebuilt gs-assume binary for Linux x64. Installed automatically as an optional dependency of @glrs-dev/assume.",
   "license": "MIT",
   "repository": {
@@ -13,8 +15,12 @@
   "bugs": {
     "url": "https://github.com/iceglober/glrs/issues"
   },
-  "os": ["linux"],
-  "cpu": ["x64"],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
   "files": [
     "bin"
   ],
