@@ -220,6 +220,13 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || '' }}
 
+      # Push tags created by `changeset publish` so gh release --verify-tag
+      # can find them on the remote.
+      - name: Push tags
+        run: git push --tags
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
       # Create a GitHub release for the main package and attach platform
       # binaries as release assets. Auto-upgrade in gs-assume (update_check.rs)
       # downloads from this URL pattern:
