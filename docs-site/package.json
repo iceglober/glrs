@@ -5,9 +5,10 @@
   "description": "Docs site for the @glrs-dev ecosystem. Published to https://glrs.dev.",
   "type": "module",
   "scripts": {
-    "dev": "astro dev",
+    "stage": "bun run scripts/stage-docs.mjs",
+    "dev": "bun run stage && astro dev",
     "start": "astro dev",
-    "build": "astro build",
+    "build": "bun run stage && astro build",
     "preview": "astro preview",
     "astro": "astro",
     "typecheck": "astro check",
