@@ -18,7 +18,8 @@ glrs/
 │           ├── linux-x64/
 │           ├── linux-arm64/
 │           └── win32-x64/
-├── docs/                    # Starlight → glrs.dev
+├── docs/                    # Shared ecosystem markdown (consumed by docs-site loader)
+├── docs-site/               # Starlight → glrs.dev
 ├── infra/
 │   └── gcp/                 # Pulumi stack: GCS bucket, CDN, managed TLS, WIF
 ├── .changeset/              # Changesets config + pending changesets
@@ -59,7 +60,7 @@ glrs/
    - Cross-platform builds use GitHub's matrix + `cross` for non-native targets
    - `Cargo.toml` `version` and `packages/assume/package.json` `version` are synced at release time via `scripts/sync-version.mjs`
 
-8. **Docs content is separate from scaffold.** `docs/` ships the Starlight scaffold + nav. Authoring docs content is a follow-up effort.
+8. **Docs content is separate from scaffold.** `docs-site/` ships the Starlight scaffold + nav. `docs/` holds shared ecosystem markdown consumed by the docs-site custom content loader. Authoring docs content is a follow-up effort.
 
 9. **Philosophy.** This is meant to feel inevitable, not clever. If you're tempted to add a "cool" feature, ask: does it reduce the friction of the published packages? If no, leave it out.
 
@@ -68,5 +69,5 @@ glrs/
 - `packages/harness-opencode/AGENTS.md` — OpenCode plugin invariants (most complex set)
 - `packages/assume/` — Rust toolchain + build matrix
 - `packages/cli/` — dispatcher conventions
-- `docs/` — Starlight + content conventions
+- `docs-site/` — Starlight + content conventions + custom loader
 - `infra/gcp/` — Pulumi stack conventions
