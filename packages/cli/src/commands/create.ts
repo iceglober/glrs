@@ -11,14 +11,14 @@ const INDEX_DIR = path.join(os.homedir(), ".glorious");
 const INDEX_FILE = path.join(INDEX_DIR, "repos.json");
 
 function existsSync(filePath: string): boolean {
-  // @ts-ignore - Bun types
-  return Bun.file(filePath).existsSync();
+  const { existsSync: _fs } = require("node:fs");
+  return _fs(filePath);
 }
 
 function readTextSync(filePath: string): string | null {
   try {
-    // @ts-ignore - Bun types
-    return Bun.file(filePath).textSync();
+    const { readFileSync } = require("node:fs");
+    return readFileSync(filePath, "utf8");
   } catch {
     return null;
   }

@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { existsSync as fsExistsSync, mkdirSync as fsMkdirSync } from "node:fs";
 import {
   defaultBranchIn,
   gitIn,
@@ -27,13 +28,11 @@ export interface CreateResult {
 }
 
 function existsSync(filePath: string): boolean {
-  // @ts-ignore - Bun types
-  return Bun.file(filePath).existsSync();
+  return fsExistsSync(filePath);
 }
 
 function mkdirSync(dirPath: string, opts?: { recursive?: boolean }): void {
-  // @ts-ignore - Bun types
-  Bun.mkdir(dirPath, opts);
+  fsMkdirSync(dirPath, opts);
 }
 
 /**

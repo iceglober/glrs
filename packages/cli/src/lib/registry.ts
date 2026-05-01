@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as os from "node:os";
+import * as fs from "node:fs";
 
 export interface RegistryEntry {
   repo: string;
@@ -13,27 +14,23 @@ const REGISTRY_DIR = path.join(os.homedir(), ".glorious");
 const REGISTRY_FILE = path.join(REGISTRY_DIR, "worktrees.json");
 
 function ensureDir(): void {
-  // @ts-ignore - Bun types
-  Bun.mkdir(REGISTRY_DIR, { recursive: true });
+  fs.mkdirSync(REGISTRY_DIR, { recursive: true });
 }
 
 function existsSync(filePath: string): boolean {
-  // @ts-ignore - Bun types
-  return Bun.file(filePath).existsSync();
+  return fs.existsSync(filePath);
 }
 
 function readTextSync(filePath: string): string | null {
   try {
-    // @ts-ignore - Bun types
-    return Bun.file(filePath).textSync();
+    return fs.readFileSync(filePath, "utf8");
   } catch {
     return null;
   }
 }
 
 function writeTextSync(filePath: string, content: string): void {
-  // @ts-ignore - Bun types
-  Bun.file(filePath).writer().write(content);
+  fs.writeFileSync(filePath, content, "utf8");
 }
 
 /** Load registry, pruning entries whose worktree paths no longer exist. */
