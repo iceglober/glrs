@@ -34,8 +34,8 @@ yarn-debug.log*
 .bun/
 
 # Astro / docs
-docs/.astro/
-docs/dist/
+docs-site/.astro/
+docs-site/dist/
 
 # Terraform / Pulumi
 **/.terraform/
