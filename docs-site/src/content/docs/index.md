@@ -13,3 +13,21 @@ hero:
       link: https://github.com/iceglober/glrs
       icon: external
 ---
+
+### @glrs-dev/cli
+
+The unified `glrs` binary. Dispatches to the harness and manages worktrees.
+
+→ [Read more](/cli/)
+
+### @glrs-dev/harness-plugin-opencode
+
+Agent harness for OpenCode. PRIME routing, plan/build/QA flow, skills, MCP wiring.
+
+→ [Read more](/harness-opencode/)
+
+### @glrs-dev/assume
+
+Multi-cloud SSO credentials via a standalone Rust binary. Installs separately.
+
+→ [Read more](/assume/)
