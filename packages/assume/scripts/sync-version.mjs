@@ -76,12 +76,18 @@ const cargoUpdated = cargoRaw.replace(
   `version = "${version}"`,
 );
 if (cargoUpdated === cargoRaw) {
-  console.error(
-    `[sync-version] Failed to find 'version = "..."' line in Cargo.toml`,
-  );
-  process.exit(1);
+  // Check if the version already matches (no-op) vs genuinely missing.
+  if (cargoRaw.includes(`version = "${version}"`)) {
+    console.log(`[sync-version]   ✓ Cargo.toml already at ${version} (no-op)`);
+  } else {
+    console.error(
+      `[sync-version] Failed to find 'version = "..."' line in Cargo.toml`,
+    );
+    process.exit(1);
+  }
+} else {
+  writeFileSync(cargoPath, cargoUpdated);
+  console.log(`[sync-version]   ✓ Cargo.toml → ${version}`);
 }
-writeFileSync(cargoPath, cargoUpdated);
-console.log(`[sync-version]   ✓ Cargo.toml → ${version}`);
 
 console.log(`[sync-version] Done.`);
