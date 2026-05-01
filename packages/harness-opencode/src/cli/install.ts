@@ -31,6 +31,7 @@ import {
   getOpenCodeCachePackageDir,
 } from "../auto-update.js";
 import { fetchModelsDevProviders, suggestTiersFromModelsDev, pickBedrockTierIds, type ModelsDevProvider } from "./models-dev.js";
+// (model-family detection removed — tier-based approach)
 
 const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
 
@@ -680,6 +681,30 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
         fast: [preset.fast],
       };
       ok(`Models configured`);
+
+      // Optional mid-execute tier: strict executor for build/pilot-builder.
+      // If the user picks a model here, those agents get the strict-executor
+      // prompt (narrower scope, escalation-first, no self-correction).
+      // If skipped, they use the mid model with the reasoning prompt.
+      const midExecIdx = await promptChoice(
+        "  Use a strict executor for build agents? (recommended for Kimi/Qwen/DeepSeek)",
+        ["No (use mid model as reasoning builder)", "Yes (configure mid-execute model)"],
+        0,
+      );
+      if (midExecIdx === 1) {
+        const { input } = await import("@inquirer/prompts");
+        const midExecModel = await input({
+          message: "  mid-execute model ID:",
+          default: preset.mid,
+        });
+        if (midExecModel) {
+          (pluginOpts.models as Record<string, string[]>)["mid-execute"] = [midExecModel];
+          (newModelsValue as Record<string, string[]>)["mid-execute"] = [midExecModel];
+          info(`  mid-execute → ${midExecModel} (strict executor prompts)`);
+        }
+      } else {
+        info(`  mid-execute: skipped (build agents use mid model with reasoning prompts)`);
+      }
     } else if (!pluginOpts._skipModels) {
       // Custom: ask for each tier manually.
       info("Enter model IDs in <provider>/<model-id> format (e.g. amazon-bedrock/global.anthropic.claude-opus-4-7)");
@@ -688,18 +713,29 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
       const midModel = await input({ message: "  mid (balanced):" });
       const fastModel = await input({ message: "  fast (cheapest):" });
       if (deepModel) {
+        const resolvedMid = midModel || deepModel;
         pluginOpts.models = {
           deep: [deepModel],
-          mid: [midModel || deepModel],
+          mid: [resolvedMid],
           fast: [fastModel || midModel || deepModel],
         };
         // Capture for reconfigure path
         newModelsValue = {
           deep: [deepModel],
-          mid: [midModel || deepModel],
+          mid: [resolvedMid],
           fast: [fastModel || midModel || deepModel],
         };
         ok("Models: custom");
+
+        // Optional mid-execute tier for custom path.
+        const midExecModel = await input({ message: "  mid-execute (optional strict executor, press Enter to skip):" });
+        if (midExecModel) {
+          (pluginOpts.models as Record<string, string[]>)["mid-execute"] = [midExecModel];
+          (newModelsValue as Record<string, string[]>)["mid-execute"] = [midExecModel];
+          info(`  mid-execute → ${midExecModel} (strict executor prompts)`);
+        } else {
+          info(`  mid-execute: skipped (build agents use mid model with reasoning prompts)`);
+        }
       } else {
         ok("Models: OpenCode defaults");
       }

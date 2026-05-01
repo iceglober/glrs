@@ -10,7 +10,7 @@ describe("AGENT_TIERS", () => {
   });
 
   it("every value is a valid tier", () => {
-    const validTiers = new Set(["deep", "mid", "fast"]);
+    const validTiers = new Set(["deep", "mid", "mid-execute", "fast"]);
     for (const [name, tier] of Object.entries(AGENT_TIERS)) {
       expect(validTiers.has(tier)).toBe(true);
     }
@@ -23,6 +23,10 @@ describe("AGENT_TIERS", () => {
       .sort();
     const mid = Object.entries(AGENT_TIERS)
       .filter(([, t]) => t === "mid")
+      .map(([n]) => n)
+      .sort();
+    const midExecute = Object.entries(AGENT_TIERS)
+      .filter(([, t]) => t === "mid-execute")
       .map(([n]) => n)
       .sort();
     const fast = Object.entries(AGENT_TIERS)
@@ -45,9 +49,11 @@ describe("AGENT_TIERS", () => {
     ]);
     expect(mid).toEqual([
       "agents-md-writer",
-      "build",
       "docs-maintainer",
       "lib-reader",
+    ]);
+    expect(midExecute).toEqual([
+      "build",
       "pilot-builder",
       "qa-reviewer",
     ]);

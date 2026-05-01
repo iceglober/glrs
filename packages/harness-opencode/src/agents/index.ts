@@ -32,7 +32,9 @@ function readPrompt(name: string): string {
 const primePrompt = readPrompt("prime.md");
 const planPrompt = readPrompt("plan.md");
 const buildPrompt = readPrompt("build.md");
+const buildOpenPrompt = readPrompt("build.open.md");
 const qaReviewerPrompt = readPrompt("qa-reviewer.md");
+const qaReviewerOpenPrompt = readPrompt("qa-reviewer.open.md");
 const qaThoroughPrompt = readPrompt("qa-thorough.md");
 const planReviewerPrompt = readPrompt("plan-reviewer.md");
 const codeSearcherPrompt = readPrompt("code-searcher.md");
@@ -42,11 +44,47 @@ const docsMaintainerPrompt = readPrompt("docs-maintainer.md");
 const libReaderPrompt = readPrompt("lib-reader.md");
 const agentsMdWriterPrompt = readPrompt("agents-md-writer.md");
 const pilotBuilderPrompt = readPrompt("pilot-builder.md");
+const pilotBuilderOpenPrompt = readPrompt("pilot-builder.open.md");
 const pilotPlannerPrompt = readPrompt("pilot-planner.md");
 const researchPrompt = readPrompt("research.md");
 const researchWebPrompt = readPrompt("research-web.md");
 const researchLocalPrompt = readPrompt("research-local.md");
 const researchAutoPrompt = readPrompt("research-auto.md");
+
+/**
+ * Agents that have a strict-executor prompt variant, used when the agent
+ * is assigned to the `mid-execute` tier. The `reasoning` prompt is used
+ * when the agent falls back to the `mid` tier (no `mid-execute` configured).
+ */
+const EXECUTOR_VARIANT_AGENTS: Record<string, { reasoning: string; strict: string }> = {
+  build: { reasoning: buildPrompt, strict: buildOpenPrompt },
+  "qa-reviewer": { reasoning: qaReviewerPrompt, strict: qaReviewerOpenPrompt },
+  "pilot-builder": { reasoning: pilotBuilderPrompt, strict: pilotBuilderOpenPrompt },
+};
+
+/**
+ * Returns the strict-executor prompt for an agent, or throws if the agent
+ * has no strict variant registered.
+ */
+export function getStrictPrompt(agentName: string): string {
+  const variants = EXECUTOR_VARIANT_AGENTS[agentName];
+  if (!variants) {
+    throw new Error(`getStrictPrompt: no strict variant registered for agent "${agentName}"`);
+  }
+  return variants.strict;
+}
+
+/**
+ * Returns the reasoning (standard) prompt for an agent, or throws if the
+ * agent has no variant registered.
+ */
+export function getReasoningPrompt(agentName: string): string {
+  const variants = EXECUTOR_VARIANT_AGENTS[agentName];
+  if (!variants) {
+    throw new Error(`getReasoningPrompt: no variant registered for agent "${agentName}"`);
+  }
+  return variants.reasoning;
+}
 
 /** Strip YAML frontmatter (--- ... ---) from a markdown string. */
 function stripFrontmatter(md: string): string {
@@ -670,15 +708,19 @@ const RESEARCH_PERMISSIONS = {
 
 // ---- Tier map ----
 
-export type ModelTier = "deep" | "mid" | "fast";
+export type ModelTier = "deep" | "mid" | "mid-execute" | "fast";
 
 /**
  * Maps every agent name to its model tier. Used by the harness.models
  * config resolution in src/config-hook.ts.
  *
- * - deep: expensive, high-capability models (opus-class)
- * - mid:  balanced cost/capability (sonnet-class)
- * - fast: cheap, low-latency (haiku-class)
+ * - deep:        expensive, high-capability models (opus-class)
+ * - mid:         balanced cost/capability, reasoning builder (sonnet-class)
+ * - mid-execute: optional strict executor tier — narrower prompts, no
+ *                self-correction, escalation-first. Falls back to `mid`
+ *                if not configured. Use for Kimi K2.x, Qwen3-Coder, or
+ *                any model the user wants to run as a strict executor.
+ * - fast:        cheap, low-latency (haiku-class)
  *
  * Adding an agent to createAgents() without adding it here will fail
  * the AGENT_TIERS completeness test — that's intentional.
@@ -695,12 +737,12 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   "research-web": "deep",
   "research-local": "deep",
   "research-auto": "deep",
-  build: "mid",
-  "qa-reviewer": "mid",
+  build: "mid-execute",
+  "qa-reviewer": "mid-execute",
+  "pilot-builder": "mid-execute",
   "docs-maintainer": "mid",
   "lib-reader": "mid",
   "agents-md-writer": "mid",
-  "pilot-builder": "mid",
   "code-searcher": "fast",
 };
 
