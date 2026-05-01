@@ -1,5 +1,11 @@
 # @glrs-dev/cli
 
+## 1.1.0
+
+### Patch Changes
+
+- [#38](https://github.com/iceglober/glrs/pull/38) [`cedbc0a`](https://github.com/iceglober/glrs/commit/cedbc0a6d98fb5b91c78ec6168322593c4c98b20) Thanks [@iceglober](https://github.com/iceglober)! - Fix `glrs wt` subcommand dispatch (was printing help instead of executing) and replace Bun APIs unavailable in released versions with Node.js fs equivalents.
+
 ## 1.0.1
 
 ### Patch Changes

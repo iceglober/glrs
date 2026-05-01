@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+### Minor Changes
+
+- [#39](https://github.com/iceglober/glrs/pull/39) [`e4a5b67`](https://github.com/iceglober/glrs/commit/e4a5b678d4d04f54f77586fb32021aef1b3f17ae) Thanks [@iceglober](https://github.com/iceglober)! - Add `mid-execute` model tier for strict-executor agents. When configured via `glrs oc install` or `models["mid-execute"]` in plugin options, `build`, `qa-reviewer`, and `pilot-builder` agents use strict-executor prompts (narrower scope, escalation-first, no self-correction). When not configured, those agents fall back to the `mid` tier model with reasoning prompts (existing behavior). Installer now asks an optional "Use a strict executor for build agents?" question after the standard deep/mid/fast picker.
+
 ## 1.0.1
 
 ## 1.0.0
