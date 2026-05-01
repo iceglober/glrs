@@ -1,5 +1,11 @@
 # @glrs-dev/cli
 
+## 1.0.1
+
+### Patch Changes
+
+- [#33](https://github.com/iceglober/glrs/pull/33) [`b3a79cc`](https://github.com/iceglober/glrs/commit/b3a79cc0a9ad2f6247c4d889ee9a08a3cf0f8b41) Thanks [@iceglober](https://github.com/iceglober)! - Rewrite `packages/cli/README.md` as the single source of truth for CLI documentation. Document the bare-`glrs wt` interactive picker behavior (previously undocumented). Content for `glrs.dev/cli/` is now generated from this README via the docs-site custom content loader; there is no longer a separate site overview page to drift from.
+
 ## 1.0.0
 
 ### Patch Changes
