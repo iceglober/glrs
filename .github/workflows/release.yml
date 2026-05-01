@@ -281,10 +281,11 @@ jobs:
               echo "MISSING: $src" >&2
               exit 1
             fi
-            # Re-upload atomically via `--clobber` so re-running the
-            # workflow (e.g. after a transient failure) replaces partial
-            # uploads instead of erroring.
-            gh release upload "$TAG" "$src#$asset_name" --clobber
+            # gh release upload uses the filename (not the #label) as the
+            # asset name. Copy to a correctly-named file so each platform
+            # gets its own asset instead of all four clobbering "gs-assume".
+            cp "$src" "$asset_name"
+            gh release upload "$TAG" "$asset_name" --clobber
             echo "Attached $asset_name (from $plat/gs-assume)"
           done
 

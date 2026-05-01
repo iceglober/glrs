@@ -244,43 +244,36 @@ fn test_use_outputs_credential_uri_with_context_id() {
     );
 }
 
-// ── Standalone-redirect guard tests ──────────────────────────────────────────
+// ── Standalone nudge tests ───────────────────────────────────────────────────
 
-/// gs-assume exits 1 with a redirect notice when GLRS_CLI_DISPATCHED is unset.
+/// gs-assume prints a migration nudge when GLRS_CLI_DISPATCHED is unset,
+/// but still runs the command successfully.
 #[test]
-fn test_redirect_when_not_dispatched() {
+fn test_nudge_when_not_dispatched() {
     Command::cargo_bin("gs-assume")
         .unwrap()
         .env_remove("GLRS_CLI_DISPATCHED")
+        .arg("--version")
         .assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains(
-            "This binary is deprecated when invoked standalone.",
-        ))
-        .stderr(predicate::str::contains("@glrs-dev/cli"))
-        .stderr(predicate::str::contains("glrs.dev/install"));
+        .success()
+        .stderr(predicate::str::contains("npm i -g @glrs-dev/assume"));
 }
 
-/// gsa exits 1 with a redirect notice when GLRS_CLI_DISPATCHED is unset.
-/// gsa is a separate [[bin]] in Cargo.toml pointing to the same src/main.rs.
+/// gsa prints a migration nudge when GLRS_CLI_DISPATCHED is unset.
 #[test]
-fn test_gsa_redirect_when_not_dispatched() {
+fn test_gsa_nudge_when_not_dispatched() {
     Command::cargo_bin("gsa")
         .unwrap()
         .env_remove("GLRS_CLI_DISPATCHED")
+        .arg("--version")
         .assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains(
-            "This binary is deprecated when invoked standalone.",
-        ))
-        .stderr(predicate::str::contains("@glrs-dev/cli"));
+        .success()
+        .stderr(predicate::str::contains("npm i -g @glrs-dev/assume"));
 }
 
-/// gs-assume runs normally (no redirect) when GLRS_CLI_DISPATCHED=1.
+/// gs-assume suppresses the nudge when GLRS_CLI_DISPATCHED=1.
 #[test]
-fn test_no_redirect_when_dispatched() {
+fn test_no_nudge_when_dispatched() {
     Command::cargo_bin("gs-assume")
         .unwrap()
         .env("GLRS_CLI_DISPATCHED", "1")
@@ -288,5 +281,5 @@ fn test_no_redirect_when_dispatched() {
         .assert()
         .success()
         .stdout(predicate::str::contains("gs-assume"))
-        .stderr(predicate::str::contains("deprecated").not());
+        .stderr(predicate::str::contains("npm i -g").not());
 }
