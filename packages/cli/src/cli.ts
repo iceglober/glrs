@@ -8,7 +8,7 @@
 
 import { spawn } from "node:child_process";
 import * as path from "node:path";
-import { subcommands, run, binary } from "cmd-ts";
+import { subcommands, run } from "cmd-ts";
 import { HELP_TEXT, SUBCOMMANDS, resolveSubcommand, WORKTREE_HELP_TEXT } from "./index.js";
 import { create } from "./commands/create.js";
 import { list } from "./commands/list.js";
@@ -65,10 +65,9 @@ if (sub === "wt" || sub === "worktree") {
     },
   });
 
-  // Run the worktree command
-  const wtBinary = binary(wt);
-  // Prepend "wt" back to args for cmd-ts
-  await run(wtBinary, ["wt", ...wtArgs]);
+  // Run the worktree command — pass subcommand args directly to cmd-ts
+  // (binary() adds an argv[0] stripping layer that breaks dispatch)
+  await run(wt, wtArgs);
   process.exit(0);
 }
 
