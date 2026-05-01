@@ -85,6 +85,13 @@ For each file:
 - Change: <what>
 - Why: <one sentence>
 - Risk: <none | low | medium | high>
+- Mirror: <path/to/similar/existing/file>   ← include for CREATE actions; point to a sibling file the executor should pattern-match against
+- Verify: <exact bash command>               ← include when a file-scoped test or check exists (e.g. `bun test test/foo.test.ts`)
+
+## Non-goals
+- <Explicit "do NOT" statements — things the executor must not touch>
+- <e.g. "Do NOT modify src/auth/session.ts">
+- <e.g. "Do NOT add new dependencies">
 
 ## Test plan
 - <Specific tests to add or update, with file paths>

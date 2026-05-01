@@ -246,6 +246,11 @@ For reference (you do NOT write this — `@plan` does), the plan file follows th
 - Change: <what>
 - Why: <one sentence>
 - Risk: <none | low | medium | high>
+- Mirror: <path/to/similar/existing/file>   ← optional; for CREATE actions, point to a sibling file the executor should pattern-match
+- Verify: <exact bash command>               ← optional; per-file verification command (e.g. `bun test test/foo.test.ts`)
+
+## Non-goals
+- <Explicit "do NOT" statements — things the executor must not touch>
 
 ## Test plan
 - <Specific tests to add or update>
@@ -266,6 +271,39 @@ For substantial work (a plan exists), you do NOT execute the plan yourself. Dele
 Pass a single `prompt` to `@build` containing the absolute plan path and nothing else structural — `@build` reads the plan itself. Example prompt shape:
 
 > Execute the plan at `<absolute-plan-path>`. Return with (a) commit SHAs from `git log --oneline <base>..HEAD`, (b) any plan mutations you made (threshold bumps, scope expansions under the 2-file limit), (c) pre-existing failures encountered and logged to the plan's `## Open questions`, (d) any STOP condition that requires me to re-dispatch. Do NOT invoke `@qa-reviewer` — I own QA dispatch in Phase 4.
+
+### Structured handoff for strict executors
+
+When `@build` is running as a strict executor (the `mid-execute` tier is configured — check whether the plan's file-level changes are detailed enough), supplement the delegation prompt with a structured context block. Strict executors refuse to proceed without explicit file lists and tests; they pattern-match better than they instruction-follow. The research is clear: feeding the executor the *exact tests it must satisfy* drops regressions 70% vs procedural TDD advice.
+
+Include this block in your delegation prompt (after the plan path) when delegating to a strict executor:
+
+```
+Structured context (supplements the plan):
+
+Files you may touch (ONLY these):
+  - <path> (<CREATE|EDIT|DELETE>)  ← mirror: <sibling-file-path>
+  - <path> (<EDIT>)
+  ...
+
+Verify commands (run after each file, must exit 0):
+  - <exact bash command for file-scoped test>
+  - <typecheck command>
+  - <lint command scoped to changed paths>
+
+Non-goals (do NOT do these):
+  - Do NOT modify <file/module outside scope>
+  - Do NOT add new dependencies
+  - Do NOT change the public API of <symbol>
+  ...
+```
+
+**Rules for the structured block:**
+- **Files**: copy from the plan's `## File-level changes`. For CREATE actions, include the `Mirror:` field value if present — this is the single most reliable hint for small models.
+- **Verify commands**: derive from the plan's per-file `Verify:` fields, the `## Test plan`, and the repo's standard commands (`bun test`, `bun run typecheck`, `bun run lint`). Be specific — `bun test test/foo.test.ts` beats `bun test`.
+- **Non-goals**: copy from the plan's `## Non-goals` section. If the plan doesn't have one, derive from `## Out of scope` + the implicit boundary (files NOT in the file-level changes list).
+- **When to include**: always include when `mid-execute` is configured. When `@build` is on the standard `mid` tier (reasoning builder), the plan path alone is sufficient — the reasoning prompt handles inference from context.
+- **Keep it under 2K tokens**: the structured block is context, not a second plan. If it exceeds 2K tokens, you're over-specifying — the plan itself should carry the detail.
 
 ### On `@build`'s return
 
