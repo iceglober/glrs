@@ -1,5 +1,11 @@
 # @glrs-dev/assume
 
+## 0.6.5
+
+### Patch Changes
+
+- [#35](https://github.com/iceglober/glrs/pull/35) [`1bcd92c`](https://github.com/iceglober/glrs/commit/1bcd92c55c15b5c5947f445ec75e8afb12b4cd1f) Thanks [@iceglober](https://github.com/iceglober)! - Remove standalone invocation guard that blocked direct gsa/gs-assume usage with exit(1). Replace with a non-blocking nudge toward npm install. Fix release workflow to upload platform binaries with correct filenames.
+
 ## 0.6.4
 
 ### Patch Changes
