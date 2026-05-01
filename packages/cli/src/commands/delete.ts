@@ -11,8 +11,8 @@ import { multiSelect, type Group } from "../lib/select.js";
 import { ok, warn, bold, dim, red } from "../lib/fmt.js";
 
 function existsSync(filePath: string): boolean {
-  // @ts-ignore - Bun types
-  return Bun.file(filePath).existsSync();
+  const { existsSync: _fs } = require("node:fs");
+  return _fs(filePath);
 }
 
 export const del = command({
