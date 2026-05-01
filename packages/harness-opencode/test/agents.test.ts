@@ -1018,6 +1018,79 @@ describe("prompt content assertions", () => {
   });
 });
 
+describe("mid-tier prompt variant selection", () => {
+  // Verifies that resolveHarnessModels applies strict-executor prompts
+  // when the mid-execute tier is configured.
+
+  it("build prompt changes to strict variant when mid-execute is configured", () => {
+    const config: any = {};
+    const pluginOptions = {
+      models: { "mid-execute": "moonshotai/kimi-k2-6", mid: "anthropic/claude-sonnet-4-6" },
+    };
+    applyConfig(config, pluginOptions);
+    const buildPrompt = config.agent["build"].prompt as string;
+    expect(buildPrompt).toContain("STRICT_EXECUTOR_VARIANT");
+    expect(buildPrompt).toContain("Zero out-of-plan files");
+  });
+
+  it("build prompt stays reasoning when mid-execute is NOT configured", () => {
+    const config: any = {};
+    const pluginOptions = { models: { mid: "anthropic/claude-sonnet-4-6" } };
+    applyConfig(config, pluginOptions);
+    const buildPrompt = config.agent["build"].prompt as string;
+    expect(buildPrompt).not.toContain("STRICT_EXECUTOR_VARIANT");
+    expect(buildPrompt).toContain("Fenced plans");
+  });
+
+  it("qa-reviewer prompt changes to strict variant when mid-execute is configured", () => {
+    const config: any = {};
+    const pluginOptions = {
+      models: { "mid-execute": "qwen/qwen3-coder-480b", mid: "anthropic/claude-sonnet-4-6" },
+    };
+    applyConfig(config, pluginOptions);
+    const qaPrompt = config.agent["qa-reviewer"].prompt as string;
+    expect(qaPrompt).toContain("STRICT_EXECUTOR_VARIANT");
+    expect(qaPrompt).not.toContain("trust-recent-green");
+  });
+
+  it("pilot-builder prompt changes to strict variant when mid-execute is configured", () => {
+    const config: any = {};
+    const pluginOptions = {
+      models: { "mid-execute": "deepseek/deepseek-coder-v3", mid: "anthropic/claude-sonnet-4-6" },
+    };
+    applyConfig(config, pluginOptions);
+    const pilotPrompt = config.agent["pilot-builder"].prompt as string;
+    expect(pilotPrompt).toContain("STRICT_EXECUTOR_VARIANT");
+  });
+
+  it("mid-execute agents fall back to mid model when mid-execute not configured", () => {
+    const config: any = {};
+    const pluginOptions = { models: { mid: "anthropic/claude-sonnet-4-6" } };
+    applyConfig(config, pluginOptions);
+    expect(config.agent["build"].model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent["qa-reviewer"].model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent["pilot-builder"].model).toBe("anthropic/claude-sonnet-4-6");
+  });
+
+  it("user-wins: user agent override is not clobbered by tier resolution", () => {
+    const config: any = {
+      agent: {
+        build: {
+          prompt: "user custom prompt",
+          model: "moonshotai/kimi-k2-6",
+          mode: "all",
+        },
+      },
+    };
+    const pluginOptions = {
+      models: { "mid-execute": "moonshotai/kimi-k2-6", mid: "anthropic/claude-sonnet-4-6" },
+    };
+    applyConfig(config, pluginOptions);
+    // User-wins: their override takes final precedence.
+    expect(config.agent["build"].prompt).toBe("user custom prompt");
+  });
+});
+
 describe("applyConfig — permission.bash behavior", () => {
   // Regression: we intentionally do NOT ship a global permission.bash
   // default. An earlier object-form rule-map at this layer caused

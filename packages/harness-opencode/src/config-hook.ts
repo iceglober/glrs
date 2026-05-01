@@ -29,7 +29,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
-import { createAgents, AGENT_TIERS } from "./agents/index.js";
+import { createAgents, AGENT_TIERS, getStrictPrompt } from "./agents/index.js";
 import type { AgentConfig } from "@opencode-ai/sdk";
 import { createCommands } from "./commands/index.js";
 import { createMcpConfig } from "./mcp/index.js";
@@ -110,6 +110,10 @@ export function writePermDebugSnapshot(config: Config): void {
  * v1 uses the first element only; the array shape is forward-compatible
  * with runtime fallback in a future version.
  *
+ * After resolving models, rebuilds the prompt for mid-tier variant agents
+ * (build, qa-reviewer, pilot-builder) using the variant-aware loader so
+ * the prompt matches the resolved tier assignment.
+ *
  * Mutates `agents` in place — returns the same reference for convenience.
  */
 export function resolveHarnessModels(
@@ -123,6 +127,9 @@ export function resolveHarnessModels(
     | Record<string, string | string[]>
     | undefined;
   if (!modelsConfig) return agents;
+
+  // Determine whether mid-execute tier is explicitly configured.
+  const midExecuteConfigured = modelsConfig["mid-execute"] !== undefined;
 
   // Dedupe warnings within a single resolve call — one bad tier
   // override can hit many agents; the user wants to see each bad
@@ -149,17 +156,38 @@ export function resolveHarnessModels(
       continue;
     }
 
-    // 2. Tier override
+    // 2. Tier override (with mid-execute → mid fallback)
     const tier = AGENT_TIERS[agentName];
     if (tier) {
-      const perTier = modelsConfig[tier];
+      let perTier = modelsConfig[tier];
+      // mid-execute fallback: if the agent is mid-execute but no
+      // mid-execute model is configured, fall back to the mid tier.
+      if (tier === "mid-execute" && perTier === undefined) {
+        perTier = modelsConfig["mid"];
+      }
       if (perTier !== undefined) {
         const picked = Array.isArray(perTier) ? perTier[0]! : perTier;
         agentCfg.model = picked;
-        warnIfInvalid(picked, `models.${tier}`);
+        warnIfInvalid(picked, `models.${tier === "mid-execute" && !midExecuteConfigured ? "mid (fallback)" : tier}`);
       }
     }
     // 3. No match — plugin default stays
+  }
+
+  // After model resolution, apply strict-executor prompts to mid-execute
+  // agents IF the mid-execute tier is explicitly configured. When mid-execute
+  // is not configured (agents fell back to mid), they keep the reasoning prompt.
+  if (midExecuteConfigured) {
+    const EXECUTOR_AGENTS = ["build", "qa-reviewer", "pilot-builder"];
+    for (const agentName of EXECUTOR_AGENTS) {
+      const agentCfg = agents[agentName];
+      if (!agentCfg) continue;
+      try {
+        agentCfg.prompt = getStrictPrompt(agentName);
+      } catch {
+        // Defensive: if the agent has no strict variant, keep the default.
+      }
+    }
   }
 
   return agents;
