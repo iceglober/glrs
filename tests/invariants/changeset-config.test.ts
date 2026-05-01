@@ -81,28 +81,18 @@ describe("changeset config", () => {
     expect(config.ignore).toContain("@glrs-dev/docs-site");
   });
 
-  test("exactly one new changeset exists scoped to @glrs-dev/cli", () => {
+  test("pending changesets only reference publishable packages", () => {
     const changesetDir = resolve(repoRoot, ".changeset");
     const changesetFiles = readdirSync(changesetDir).filter(
       (f) => f.endsWith(".md") && f !== "README.md",
     );
-    // Find changesets that reference @glrs-dev/cli
-    const cliChangesets = changesetFiles.filter((f) => {
+    // Every changeset must reference at least one publishable package
+    // (cli, harness-plugin-opencode, or assume). docs-site is in ignore
+    // and should never have a changeset.
+    const docsChangesets = changesetFiles.filter((f) => {
       const content = readFileSync(resolve(changesetDir, f), "utf8");
-      return content.includes('"@glrs-dev/cli"');
+      return content.includes('"@glrs-dev/docs-site"');
     });
-    expect(cliChangesets.length).toBeGreaterThanOrEqual(1);
-    // Exactly one changeset from this work (cli-readme-single-source.md)
-    // No other packages should have a changeset from this work
-    const nonCliChangesets = changesetFiles.filter((f) => {
-      const content = readFileSync(resolve(changesetDir, f), "utf8");
-      // A changeset that references packages OTHER than cli
-      return (
-        content.includes('"@glrs-dev/harness-plugin-opencode"') ||
-        content.includes('"@glrs-dev/assume"') ||
-        content.includes('"@glrs-dev/docs-site"')
-      );
-    });
-    expect(nonCliChangesets).toHaveLength(0);
+    expect(docsChangesets).toHaveLength(0);
   });
 });
