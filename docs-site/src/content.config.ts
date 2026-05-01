@@ -5,7 +5,7 @@ import { defineCollection } from "astro:content";
 export const collections = {
   docs: defineCollection({
     loader: glrsContentLoader([
-      { base: "src/content/docs", slugPrefix: "/", include: ["*.mdx"] },
+      { base: "src/content/docs", slugPrefix: "/", include: ["*.md"] },
       { base: "../docs", slugPrefix: "/", include: ["**/*.md"] },
       {
         base: "../packages/cli",
@@ -24,7 +24,7 @@ export const collections = {
         base: "../packages/harness-opencode/docs",
         slugPrefix: "/harness-opencode/",
         include: ["**/*.md"],
-        ignore: ["pilot/spikes/**", "archive/**"],
+        ignore: ["pilot/spikes/**", "archive/**", "spike-results.md"],
       },
       {
         base: "../packages/assume",
