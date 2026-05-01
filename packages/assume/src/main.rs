@@ -90,6 +90,11 @@ fn build_registry(cfg: &config::Config) -> anyhow::Result<PluginRegistry> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Nudge standalone users toward the npm-hosted package. Non-blocking —
+    // prints once per invocation to stderr, never exits or blocks.
+    if std::env::var("GLRS_CLI_DISPATCHED").map(|v| v.is_empty()).unwrap_or(true) {
+        eprintln!("\x1b[2m[gs-assume] migrate to the npm package: npm i -g @glrs-dev/assume\x1b[0m");
+    }
 
     // Initialize tracing with a default filter if RUST_LOG is not set
     // Default: info level for our code, warn for hyper (too verbose at info)
