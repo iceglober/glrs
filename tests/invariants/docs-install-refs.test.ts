@@ -37,7 +37,8 @@ const DEPRECATED_INSTALLS = [
   "npm i -g @glrs-dev/agentic",
 ];
 
-function checkMdx(relPath: string): void {
+/** Check that a file contains the CLI install command AND no deprecated installs. */
+function checkInstallPage(relPath: string): void {
   const full = resolve(repoRoot, relPath);
   if (!existsSync(full)) {
     // Files removed during cleanup are fine — skip.
@@ -52,20 +53,37 @@ function checkMdx(relPath: string): void {
   }
 }
 
+/** Check that a file does not promote deprecated installs (no CLI install requirement). */
+function checkNoDeprecatedInstalls(relPath: string): void {
+  const full = resolve(repoRoot, relPath);
+  if (!existsSync(full)) {
+    // Files removed during cleanup are fine — skip.
+    return;
+  }
+  const content = readFileSync(full, "utf8");
+  for (const deprecated of DEPRECATED_INSTALLS) {
+    expect(content, `${relPath} should not contain '${deprecated}'`).not.toContain(deprecated);
+  }
+}
+
 describe("docs install refs", () => {
-  test("install.mdx installs @glrs-dev/cli", () => {
-    checkMdx("docs/src/content/docs/install.mdx");
+  test("install.md installs @glrs-dev/cli", () => {
+    checkInstallPage("docs/install.md");
   });
 
   test("index.mdx installs @glrs-dev/cli", () => {
-    checkMdx("docs/src/content/docs/index.mdx");
+    checkInstallPage("docs-site/src/content/docs/index.mdx");
   });
 
-  test("harness-opencode/index.mdx installs @glrs-dev/cli", () => {
-    checkMdx("docs/src/content/docs/harness-opencode/index.mdx");
+  test("packages/harness-opencode/README.md does not promote deprecated installs", () => {
+    checkNoDeprecatedInstalls("packages/harness-opencode/README.md");
   });
 
-  test("assume/index.mdx installs @glrs-dev/cli (and may also show @glrs-dev/assume)", () => {
-    checkMdx("docs/src/content/docs/assume/index.mdx");
+  test("packages/assume/README.md does not promote deprecated installs", () => {
+    checkNoDeprecatedInstalls("packages/assume/README.md");
+  });
+
+  test("packages/cli/README.md installs @glrs-dev/cli", () => {
+    checkInstallPage("packages/cli/README.md");
   });
 });

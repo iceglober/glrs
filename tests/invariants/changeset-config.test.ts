@@ -18,7 +18,7 @@
  * supported target — see rust-build-matrix.yml.
  */
 import { describe, test, expect } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -74,10 +74,35 @@ describe("changeset config", () => {
     );
   });
 
-  test("ignore still includes @glrs-dev/docs", () => {
+  test("ignore still includes @glrs-dev/docs-site", () => {
     const config = JSON.parse(
       readFileSync(resolve(repoRoot, ".changeset/config.json"), "utf8"),
     ) as { ignore: string[] };
-    expect(config.ignore).toContain("@glrs-dev/docs");
+    expect(config.ignore).toContain("@glrs-dev/docs-site");
+  });
+
+  test("exactly one new changeset exists scoped to @glrs-dev/cli", () => {
+    const changesetDir = resolve(repoRoot, ".changeset");
+    const changesetFiles = readdirSync(changesetDir).filter(
+      (f) => f.endsWith(".md") && f !== "README.md",
+    );
+    // Find changesets that reference @glrs-dev/cli
+    const cliChangesets = changesetFiles.filter((f) => {
+      const content = readFileSync(resolve(changesetDir, f), "utf8");
+      return content.includes('"@glrs-dev/cli"');
+    });
+    expect(cliChangesets.length).toBeGreaterThanOrEqual(1);
+    // Exactly one changeset from this work (cli-readme-single-source.md)
+    // No other packages should have a changeset from this work
+    const nonCliChangesets = changesetFiles.filter((f) => {
+      const content = readFileSync(resolve(changesetDir, f), "utf8");
+      // A changeset that references packages OTHER than cli
+      return (
+        content.includes('"@glrs-dev/harness-plugin-opencode"') ||
+        content.includes('"@glrs-dev/assume"') ||
+        content.includes('"@glrs-dev/docs-site"')
+      );
+    });
+    expect(nonCliChangesets).toHaveLength(0);
   });
 });

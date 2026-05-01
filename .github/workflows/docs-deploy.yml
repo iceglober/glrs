@@ -4,7 +4,10 @@ on:
   push:
     branches: [main]
     paths:
+      - "docs-site/**"
       - "docs/**"
+      - "packages/*/README.md"
+      - "packages/*/docs/**"
       - ".github/workflows/docs-deploy.yml"
   workflow_dispatch:
     inputs:
@@ -36,7 +39,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build docs
-        run: bun run --filter=@glrs-dev/docs build
+        run: bun run --filter=@glrs-dev/docs-site build
 
       - name: Authenticate to GCP
         id: auth
@@ -56,7 +59,7 @@ jobs:
       - name: Rsync to GCS bucket
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run == false }}
         run: |
-          gsutil -m rsync -d -r docs/dist/ gs://${{ vars.GCP_DOCS_BUCKET }}/
+          gsutil -m rsync -d -r docs-site/dist/ gs://${{ vars.GCP_DOCS_BUCKET }}/
 
       - name: Invalidate CDN cache
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run == false }}
@@ -70,6 +73,6 @@ jobs:
       - name: Dry-run summary
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
         run: |
-          echo "DRY RUN: would rsync docs/dist/ → gs://${{ vars.GCP_DOCS_BUCKET }}/"
+          echo "DRY RUN: would rsync docs-site/dist/ → gs://${{ vars.GCP_DOCS_BUCKET }}/"
           echo "DRY RUN: would invalidate cache on url-map ${{ vars.GCP_URL_MAP }}"
-          ls -la docs/dist/ | head -20
+          ls -la docs-site/dist/ | head -20
