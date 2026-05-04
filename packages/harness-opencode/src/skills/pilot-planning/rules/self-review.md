@@ -8,7 +8,7 @@ The validator catches schema, DAG, and glob errors. It cannot catch "this verify
 
 1. **Is each task right-sized?** Reread each task's prompt. Could the pilot-builder do it in ~20 minutes with the standard `max_turns: 50`? If a task feels like 2 hours of work, split it. If it feels like 2 minutes, merge it.
 
-2. **Does each verify command HAVE to fail before the task runs?** For each task, mentally checkout the pre-task state. Would the verify command fail there? If not, the verify isn't observing the task's effect — fix it.
+2. **Does each verify command HAVE to fail before the task runs?** For each task, mentally checkout the pre-task state. Would the verify command fail there? If not, the verify isn't observing the task's effect — fix it. **Also check milestone and defaults verify commands:** mentally walk the DAG in order and confirm that `defaults.verify_after_each` and each milestone's `verify` pass at every task boundary — including right after scaffold tasks that create a test runner config but zero test files. If a broad `test` command would exit 1 on "no test files found", add `--passWithNoTests` (vitest/jest) or equivalent.
 
 3. **Is each `touches:` glob the tightest fit?** For each task, list the files the agent will need to edit. Are they all matched? Are there ANY paths matched that the agent SHOULDN'T touch? If yes to either, refine.
 
