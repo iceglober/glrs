@@ -1,5 +1,7 @@
 # @glrs-dev/cli
 
+## 1.2.0
+
 ## 1.1.0
 
 ### Patch Changes
