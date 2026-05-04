@@ -75,7 +75,8 @@ glorious-opencode/
 1. Create `src/skills/<name>/SKILL.md` with required frontmatter (`name` matching dirname, `description`).
 2. The build's `onSuccess` step copies `src/skills/` to `dist/skills/` automatically.
 3. Add a file-count assertion in `test/skills-bundle.test.ts`.
-4. Run `bun run build && bun test test/skills-bundle.test.ts`.
+4. Add a changeset: `bunx changeset` → pick `minor` (new skills are user-visible additions) → describe the skill.
+5. Run `bun run build && bun test`.
 
 ## When adding a new slash command
 
