@@ -25,6 +25,10 @@ import type { EventRow } from "./types.js";
  * `taskId` is optional: events scoped to the run (e.g. "run started",
  * "server up") use `null`. Per-task events name the task.
  *
+ * `phase` is optional: events associated with a specific workflow phase
+ * pass the phase name (e.g. `'build'`). Legacy callers that don't pass
+ * `phase` get `null`, preserving backward compatibility.
+ *
  * `now` is injectable for deterministic tests; production callers
  * usually omit it.
  */
@@ -35,6 +39,7 @@ export function appendEvent(
     taskId?: string | null;
     kind: string;
     payload: unknown;
+    phase?: string | null;
     now?: number;
   },
 ): void {
@@ -52,8 +57,8 @@ export function appendEvent(
     });
   }
   db.run(
-    `INSERT INTO events (run_id, task_id, ts, kind, payload) VALUES (?, ?, ?, ?, ?)`,
-    [args.runId, args.taskId ?? null, ts, args.kind, payloadStr],
+    `INSERT INTO events (run_id, task_id, ts, kind, payload, phase) VALUES (?, ?, ?, ?, ?, ?)`,
+    [args.runId, args.taskId ?? null, ts, args.kind, payloadStr, args.phase ?? null],
   );
   // Fan out to live subscribers. Subscribers observe events in
   // insertion order after they're durably persisted, so a subscriber
@@ -69,6 +74,7 @@ export function appendEvent(
           taskId: args.taskId ?? null,
           kind: args.kind,
           payload: args.payload,
+          phase: args.phase ?? null,
           ts,
         });
       } catch {
@@ -95,6 +101,7 @@ export type EventSubscriber = (event: {
   taskId: string | null;
   kind: string;
   payload: unknown;
+  phase: string | null;
   ts: number;
 }) => void;
 

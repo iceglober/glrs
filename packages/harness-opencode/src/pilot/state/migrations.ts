@@ -128,6 +128,80 @@ CREATE INDEX IF NOT EXISTS idx_events_run_task ON events(run_id, task_id, id);
 `.trim();
 
 /**
+ * v2 — workflows, phases, artifacts tables + events.phase column.
+ *
+ * New tables:
+ *   - `workflows`: one row per workflow (maps 1:1 with runs for backfilled
+ *     rows; new workflows are created independently). `id` is shared with
+ *     `runs.id` for backfilled rows — no FK constraint to avoid circular
+ *     deps, shared by convention.
+ *   - `phases`: one row per (workflow, phase-name) pair. Composite PK.
+ *     `name` is a closed enum enforced by CHECK constraint.
+ *   - `artifacts`: detailed artifact manifest. `kind` is open TEXT (no
+ *     CHECK) — future phases define their own kinds.
+ *
+ * Schema changes to existing tables:
+ *   - `events.phase`: nullable TEXT column. Backfilled to 'build' for all
+ *     pre-existing rows. New events from callers that don't pass `phase`
+ *     get NULL.
+ *
+ * Backfill:
+ *   - Every existing `runs` row gets a `workflows` row with the same id,
+ *     goal derived from plan_slug, current_phase='build'.
+ *   - Every existing `runs` row gets a `phases` row with name='build' and
+ *     status mirrored from the run.
+ *   - All pre-existing `events` rows get phase='build'.
+ *
+ * The ALTER TABLE for events.phase runs exactly once per DB because
+ * `_migrations` tracking prevents re-execution. We trust that guard
+ * rather than adding a conditional check.
+ */
+const V2_SQL = `
+CREATE TABLE IF NOT EXISTS workflows (
+  id            TEXT    NOT NULL PRIMARY KEY,
+  goal          TEXT    NOT NULL,
+  started_at    INTEGER NOT NULL,
+  finished_at   INTEGER,
+  status        TEXT    NOT NULL CHECK (status IN ('pending','running','completed','aborted','failed')),
+  current_phase TEXT
+);
+
+CREATE TABLE IF NOT EXISTS phases (
+  workflow_id   TEXT    NOT NULL,
+  name          TEXT    NOT NULL CHECK (name IN ('scope','plan','build','qa','followup')),
+  status        TEXT    NOT NULL CHECK (status IN ('pending','running','completed','aborted','failed')),
+  started_at    INTEGER,
+  finished_at   INTEGER,
+  artifact_path TEXT,
+  PRIMARY KEY (workflow_id, name),
+  FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS artifacts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  workflow_id TEXT    NOT NULL,
+  phase       TEXT    NOT NULL,
+  kind        TEXT    NOT NULL,
+  path        TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL,
+  sha256      TEXT,
+  FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_workflow_phase ON artifacts(workflow_id, phase);
+
+ALTER TABLE events ADD COLUMN phase TEXT;
+
+INSERT INTO workflows (id, goal, started_at, finished_at, status, current_phase)
+SELECT id, plan_slug, started_at, finished_at, status, 'build' FROM runs;
+
+INSERT INTO phases (workflow_id, name, status, started_at, finished_at, artifact_path)
+SELECT id, 'build', status, started_at, finished_at, NULL FROM runs;
+
+UPDATE events SET phase = 'build' WHERE phase IS NULL;
+`.trim();
+
+/**
  * Ordered migrations. APPEND-ONLY — never reorder or delete entries.
  */
 export const MIGRATIONS: ReadonlyArray<Migration> = [
@@ -135,6 +209,11 @@ export const MIGRATIONS: ReadonlyArray<Migration> = [
     version: 1,
     description: "initial pilot schema (runs/tasks/events)",
     sql: V1_SQL,
+  },
+  {
+    version: 2,
+    description: "workflows/phases/artifacts tables + events.phase column",
+    sql: V2_SQL,
   },
 ];
 

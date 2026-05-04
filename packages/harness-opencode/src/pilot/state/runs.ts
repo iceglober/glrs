@@ -26,6 +26,11 @@ import type { RunRow, RunStatus } from "./types.js";
  *
  * Returns the generated run-id (ULID). The caller pairs this with
  * `Tasks.upsertFromPlan(runId, plan)` to populate the task rows.
+ *
+ * @deprecated Use `createWorkflow` from `./workflows.js` instead.
+ * The `runs` table is superseded by the `workflows`/`phases` tables
+ * introduced in the v2 migration. Existing callers continue to work
+ * unchanged; new code should use the workflow API.
  */
 export function createRun(
   db: Database,
@@ -48,6 +53,8 @@ export function createRun(
 /**
  * Transition a run to `running`. Idempotent — a no-op if the run is
  * already in `running`. Throws if the run does not exist.
+ *
+ * @deprecated Use `markWorkflowRunning` from `./workflows.js` instead.
  */
 export function markRunRunning(db: Database, runId: string): void {
   const cur = getRun(db, runId);
@@ -65,6 +72,8 @@ export function markRunRunning(db: Database, runId: string): void {
  * Terminate a run with `completed` / `aborted` / `failed`. Stamps
  * `finished_at` to `now`. Throws if `runId` doesn't exist or `status` is
  * not a terminal status.
+ *
+ * @deprecated Use `markWorkflowFinished` from `./workflows.js` instead.
  */
 export function markRunFinished(
   db: Database,
@@ -92,6 +101,8 @@ export function markRunFinished(
  * Refuses to resume a `completed` run (nothing to do). Allows resume
  * from `pending` (edge case: interrupted before markRunRunning) or
  * `running` (edge case: prior process died without marking finished).
+ *
+ * @deprecated Use the workflow API from `./workflows.js` instead.
  */
 export function markRunResumed(db: Database, runId: string): void {
   const cur = getRun(db, runId);
@@ -107,6 +118,8 @@ export function markRunResumed(db: Database, runId: string): void {
 /**
  * Read a single run by id. Returns `null` if not found (caller decides
  * whether that's an error).
+ *
+ * @deprecated Use `getWorkflow` from `./workflows.js` instead.
  */
 export function getRun(db: Database, runId: string): RunRow | null {
   const row = db
@@ -118,6 +131,8 @@ export function getRun(db: Database, runId: string): RunRow | null {
 /**
  * List runs, newest-first. Default limit 100; `pilot status` and
  * `pilot logs` use this for "latest run" lookups.
+ *
+ * @deprecated Use `listWorkflows` from `./workflows.js` instead.
  */
 export function listRuns(db: Database, limit = 100): RunRow[] {
   return db
@@ -128,6 +143,8 @@ export function listRuns(db: Database, limit = 100): RunRow[] {
 /**
  * Latest run (newest `started_at`). Convenience wrapper for the most
  * common CLI lookup. Returns `null` if no runs exist.
+ *
+ * @deprecated Use `latestWorkflow` from `./workflows.js` instead.
  */
 export function latestRun(db: Database): RunRow | null {
   const row = db
