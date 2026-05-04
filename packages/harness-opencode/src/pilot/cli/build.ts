@@ -763,12 +763,12 @@ export function startStreamingLogger(args: {
   const taskStart = new Map<string, number>();
   let succeeded = 0;
   let failed = 0;
-  // Blocked-cascade: render the first INLINE_BLOCKED_CAP events inline as
-  // they arrive; collapse any beyond the cap into a single "...N more"
-  // continuation. The end-of-run summary (flushBlockedSummary) still fires
-  // with the total count + first-reason, which remains useful at high
-  // cascade counts.
-  const INLINE_BLOCKED_CAP = 5;
+  // Blocked-cascade: suppress individual blocked lines entirely — the
+  // summary line (flushBlockedSummary) shows the total count + reason,
+  // which is all the user needs. Individual "task.blocked T8 (blocked
+  // by failed task T1)" lines are noise when 13 tasks cascade from one
+  // baseline failure.
+  const INLINE_BLOCKED_CAP = 0;
   let blockedCount = 0;
   let blockedInlineEmitted = 0;
   let blockedOverflowEmitted = false;
@@ -818,6 +818,42 @@ export function startStreamingLogger(args: {
         if (id !== null) taskStart.set(id, event.ts);
         write(`task.started ${id ?? "?"}`);
         break;
+      case "task.baseline.passed":
+        // Suppressed — baseline passing is the expected default.
+        break;
+      case "task.baseline.failed": {
+        // Surface the command output tail so the user sees WHY the
+        // baseline failed without having to run `pilot logs`.
+        const bp = event.payload as {
+          command?: unknown;
+          exitCode?: unknown;
+          output?: unknown;
+        } | null;
+        if (
+          bp !== null &&
+          typeof bp === "object" &&
+          typeof bp.command === "string" &&
+          typeof bp.exitCode === "number"
+        ) {
+          write(
+            `task.baseline.failed ${id ?? "?"} (${bp.command} → exit ${bp.exitCode})`,
+          );
+          const output =
+            typeof bp.output === "string" ? bp.output : null;
+          if (output !== null && output.trim().length > 0) {
+            const tail = output
+              .trim()
+              .split("\n")
+              .slice(-6)
+              .map((l) => `    ${l}`)
+              .join("\n");
+            writeRaw(tail);
+          }
+        } else {
+          write(`task.baseline.failed ${id ?? "?"}`);
+        }
+        break;
+      }
       case "task.verify.passed":
         write(`task.verify.passed ${id ?? "?"}`);
         break;
@@ -950,9 +986,8 @@ export function startStreamingLogger(args: {
         break;
       }
       case "task.attempt": {
-        // Render a low-key continuation line for attempt >= 2 (retry with
-        // fix prompt). Attempt 1 stays suppressed — first attempts are the
-        // default and don't need a tick.
+        // Render a timestamped retry line for attempt >= 2. Attempt 1
+        // stays suppressed — first attempts are the default.
         const p = event.payload as { attempt?: unknown; of?: unknown } | null;
         if (
           p !== null &&
@@ -961,7 +996,7 @@ export function startStreamingLogger(args: {
           typeof p.of === "number" &&
           p.attempt >= 2
         ) {
-          writeRaw(`  attempt ${p.attempt}/${p.of} (retry with fix prompt)`);
+          write(`task.retry ${id ?? "?"} attempt ${p.attempt}/${p.of}`);
         }
         // attempt === 1 or non-conforming payload: stay suppressed.
         break;
@@ -1168,9 +1203,21 @@ export function printSummary(args: {
             `    reason:   ${truncateSummary(reason, 300)}\n` +
             `    session:  ${session}\n` +
             `    worktree: ${worktree}\n` +
-            `    elapsed:  ${elapsed}   attempts: ${t.attempts}\n` +
-            `\n`,
+            `    elapsed:  ${elapsed}   attempts: ${t.attempts}\n`,
         );
+        // For baseline failures, surface the command output tail so the
+        // user sees WHY without running `pilot logs`.
+        const baselineOutput = resolveBaselineOutput(db, runId, t.task_id);
+        if (baselineOutput !== null) {
+          const tail = baselineOutput
+            .trim()
+            .split("\n")
+            .slice(-6)
+            .map((l) => `      ${l}`)
+            .join("\n");
+          process.stdout.write(`    output:\n${tail}\n`);
+        }
+        process.stdout.write(`\n`);
       }
     }
   }
@@ -1216,6 +1263,28 @@ function resolveFailureDetail(
     phase: "unknown",
     reason: row.last_error ?? "(no reason recorded)",
   };
+}
+
+/**
+ * Extract the captured output from a `task.baseline.failed` event, if
+ * one exists for this task. Returns null when the task didn't fail at
+ * baseline or the event has no output field.
+ */
+function resolveBaselineOutput(
+  db: Database,
+  runId: string,
+  taskId: string,
+): string | null {
+  const events = readEventsDecoded(db, { runId, taskId });
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!;
+    if (e.kind !== "task.baseline.failed") continue;
+    const p = e.payload as { output?: unknown } | null;
+    if (p !== null && typeof p === "object" && typeof p.output === "string") {
+      return p.output;
+    }
+  }
+  return null;
 }
 
 function truncateSummary(s: string, maxChars: number): string {
