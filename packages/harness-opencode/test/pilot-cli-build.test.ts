@@ -612,7 +612,7 @@ describe("startStreamingLogger", () => {
       clock: () => 1700000000000,
     });
 
-    // Fire 5 blocked events — all 5 should appear as individual inline lines.
+    // Fire 5 blocked events — all suppressed (INLINE_BLOCKED_CAP = 0).
     for (let i = 0; i < 5; i++) {
       cb!({
         runId: "RUN1",
@@ -625,10 +625,10 @@ describe("startStreamingLogger", () => {
         ts: 1700000000000 + i,
       });
     }
-    // Pre-finished: 5 inline task.blocked lines, no summary yet.
+    // Pre-finished: zero inline task.blocked lines, no summary yet.
     const preSummary = lines.join("");
     const inlineCount = (preSummary.match(/task\.blocked T\d/g) ?? []).length;
-    expect(inlineCount).toBe(5);
+    expect(inlineCount).toBe(0);
     expect(preSummary).not.toMatch(/blocked: \d+ task/);
 
     // run.finished triggers the summary flush.
@@ -945,7 +945,7 @@ describe("startStreamingLogger", () => {
   // a4: task.blocked renders inline with cap of 5
   // -------------------------------------------------------------------------
 
-  test("renders inline task.blocked with failed-dep id", () => {
+  test("suppresses inline task.blocked lines (summary-only)", () => {
     const lines: string[] = [];
     let cb:
       | ((e: {
@@ -977,12 +977,14 @@ describe("startStreamingLogger", () => {
     });
 
     const out = lines.join("");
-    expect(out).toMatch(/task\.blocked T2/);
-    expect(out).toMatch(/T1/);
+    // No inline task.blocked line — only the "...N more" collapse.
+    expect(out).not.toMatch(/task\.blocked T2/);
+    // The collapse line fires immediately since cap is 0.
+    expect(out).toMatch(/\.\.\.1 more blocked/);
     teardown();
   });
 
-  test("collapses blocked cascade past 5 inline lines", () => {
+  test("collapses all blocked events into summary only", () => {
     const lines: string[] = [];
     let cb:
       | ((e: {
@@ -1005,7 +1007,7 @@ describe("startStreamingLogger", () => {
       clock: () => 1700000000000,
     });
 
-    // Fire 6 blocked events: first 5 should render inline, 6th collapses.
+    // Fire 6 blocked events: all suppressed inline, one collapse line.
     for (let i = 0; i < 6; i++) {
       cb!({
         runId: "RUN1",
@@ -1017,10 +1019,10 @@ describe("startStreamingLogger", () => {
     }
 
     const out = lines.join("");
-    // Exactly 5 inline task.blocked lines.
+    // Zero inline task.blocked lines.
     const inlineMatches = out.match(/task\.blocked T\d/g) ?? [];
-    expect(inlineMatches.length).toBe(5);
-    // The 6th triggers the "...N more" collapse line.
+    expect(inlineMatches.length).toBe(0);
+    // The collapse line fires on the first overflow event (count=1 at that point).
     expect(out).toMatch(/\.\.\.1 more blocked/);
     teardown();
   });
@@ -1108,8 +1110,7 @@ describe("startStreamingLogger", () => {
     });
 
     const out = lines.join("");
-    expect(out).toMatch(/attempt 2\/3/);
-    expect(out).toMatch(/retry with fix prompt/);
+    expect(out).toMatch(/task\.retry T1 attempt 2\/3/);
     teardown();
   });
 
