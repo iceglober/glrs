@@ -59,6 +59,48 @@ This prevents the agent from wasting its 5-attempt retry budget on failures it d
 
 The agent gets 5 attempts (with escalating "try a different approach" nudges) for failures it introduces AFTER the baseline passes. Pre-existing failures never reach the agent.
 
+## Milestone and defaults verify run in the baseline too
+
+The baseline check doesn't only run task-specific verify commands — it runs **everything except** the task's own `verify:` list. That means:
+
+- `defaults.verify_after_each` commands
+- The task's milestone `verify` commands
+- `pilot.json` `baseline` and `after_each` commands
+
+These commands run on the clean tree **before every task in their scope**. If a milestone verify is `pnpm --filter @pkg test` and the first task in that milestone scaffolds the package with a test runner config but zero test files, the *second* task's baseline fails — vitest/jest exit 1 on "no test files found", and the entire downstream DAG cascades to failure.
+
+**The rule: every milestone and defaults verify command must pass at every point in the DAG where it applies — including immediately after scaffold tasks that create zero test files.**
+
+### The empty-test-suite trap
+
+Test runners treat "no test files found" as a failure by default:
+
+| Runner | Behavior on zero tests | Fix |
+|---|---|---|
+| vitest | exit 1 | `--passWithNoTests` |
+| jest | exit 1 | `--passWithNoTests` |
+| bun test | exit 0 (safe by default) | — |
+
+When a plan scaffolds a new package or module, the scaffold task creates the test runner config but typically no test files — the first real task creates those. Any milestone or defaults verify that runs the package's test suite will hit the empty-suite exit code.
+
+**Fix: always use `--passWithNoTests` (or equivalent) on milestone and defaults verify commands that run a test suite.** This is not a weakening of the verify — it's acknowledging that "zero tests, zero failures" is a valid baseline state for a package under construction.
+
+```yaml
+# WRONG — fails baseline after scaffold task
+milestones:
+  - name: M1-ENGINE
+    verify:
+      - pnpm --filter @pkg test
+
+# RIGHT — tolerates the empty state between scaffold and first real task
+milestones:
+  - name: M1-ENGINE
+    verify:
+      - pnpm --filter @pkg test -- --passWithNoTests
+```
+
+Task-specific verify does NOT need `--passWithNoTests` — it targets the exact test file the task creates, and the baseline excludes task-specific verify commands (they'd fail before the task runs by design — that's TDD).
+
 ## Two-tier verify
 
 Use BOTH a per-task verify and `defaults.verify_after_each`:
