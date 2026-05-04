@@ -38,7 +38,8 @@ function createStateDb(dbFile: string): Database {
       task_id TEXT,
       ts INTEGER NOT NULL,
       kind TEXT NOT NULL,
-      payload TEXT NOT NULL
+      payload TEXT NOT NULL,
+      phase TEXT
     )
   `);
   return db;

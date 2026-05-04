@@ -88,4 +88,79 @@ export type EventRow = {
   kind: string;
   /** JSON-encoded payload as stored in the DB. */
   payload: string;
+  /** Phase name associated with this event, or null for legacy/run-level events. */
+  phase: string | null;
+};
+
+// --- Workflow / phase / artifact types -------------------------------------
+
+/**
+ * Workflow-level status. Mirrors RunStatus — same lifecycle, same values.
+ * Direct mapping allows backfill from runs.status without transformation.
+ *
+ *   pending  →  running  →  completed | aborted | failed
+ */
+export const WORKFLOW_STATUSES = [
+  "pending",
+  "running",
+  "completed",
+  "aborted",
+  "failed",
+] as const satisfies readonly string[];
+export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
+
+/**
+ * Phase names — closed enum for the five-phase workflow.
+ * Extensibility comes from a future migration if needed.
+ */
+export const PHASE_NAMES = [
+  "scope",
+  "plan",
+  "build",
+  "qa",
+  "followup",
+] as const satisfies readonly string[];
+export type PhaseName = (typeof PHASE_NAMES)[number];
+
+/**
+ * Phase-level status. Same values as WorkflowStatus — allows direct
+ * backfill from runs.status → phases.status.
+ */
+export const PHASE_STATUSES = [
+  "pending",
+  "running",
+  "completed",
+  "aborted",
+  "failed",
+] as const satisfies readonly string[];
+export type PhaseStatus = (typeof PHASE_STATUSES)[number];
+
+// --- Row shapes for new tables ---------------------------------------------
+
+export type WorkflowRow = {
+  id: string;
+  goal: string;
+  started_at: number;
+  finished_at: number | null;
+  status: WorkflowStatus;
+  current_phase: string | null;
+};
+
+export type PhaseRow = {
+  workflow_id: string;
+  name: PhaseName;
+  status: PhaseStatus;
+  started_at: number | null;
+  finished_at: number | null;
+  artifact_path: string | null;
+};
+
+export type ArtifactRow = {
+  id: number;
+  workflow_id: string;
+  phase: string;
+  kind: string;
+  path: string;
+  created_at: number;
+  sha256: string | null;
 };

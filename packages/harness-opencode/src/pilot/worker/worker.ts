@@ -570,6 +570,10 @@ async function runOneTaskImpl(
           exitCode: f.exitCode,
           output: f.output.slice(0, 4096),
           reason,
+          // Step 1 of pilot redesign: gate descriptor on every
+          // verify-derived event. Future LLM/approval gates emit
+          // identically-shaped events with a different `gate.kind`.
+          gate: { kind: "shell", command: f.command },
         },
       });
       return;
@@ -578,7 +582,10 @@ async function runOneTaskImpl(
       runId: deps.runId,
       taskId: task.id,
       kind: "task.baseline.passed",
-      payload: { commands: allVerify.length },
+      payload: {
+        commands: allVerify.length,
+        gate: { kind: "all", subKind: "shell", count: baselineVerify.length },
+      },
     });
   }
 
@@ -756,6 +763,7 @@ async function runOneTaskImpl(
           timedOut: verifyResult.failure.timedOut,
           aborted: verifyResult.failure.aborted,
           output: verifyResult.failure.output.slice(-2048),
+          gate: { kind: "shell", command: lastFailure.command },
         },
       });
       if (verifyResult.failure.aborted) {
@@ -782,7 +790,10 @@ async function runOneTaskImpl(
       runId: deps.runId,
       taskId: task.id,
       kind: "task.verify.passed",
-      payload: { attempt },
+      payload: {
+        attempt,
+        gate: { kind: "all", subKind: "shell", count: allVerify.length },
+      },
     });
 
     // 6. Enforce touches (diff since sinceSha against task.touches).
