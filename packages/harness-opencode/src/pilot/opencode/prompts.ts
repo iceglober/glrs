@@ -99,6 +99,19 @@ export type LastFailure = {
    * back those out.
    */
   touchesViolators?: ReadonlyArray<string>;
+  /**
+   * Optional critic report from the Haiku-based critic. When present,
+   * the fix prompt renders structured guidance (smallestFix, narrowScope)
+   * instead of only raw failure output.
+   */
+  criticReport?: {
+    /** The minimal code change that would fix the failure. */
+    smallestFix: string;
+    /** Which files/functions to focus on. */
+    narrowScope: string;
+    /** Potential side-effects or risks to watch for. */
+    riskFlags: string[];
+  };
 };
 
 // --- Public API ------------------------------------------------------------
@@ -251,6 +264,27 @@ export function fixPrompt(_task: PlanTask, last: LastFailure): string {
     "```",
     last.output.trimEnd(),
     "```",
+  );
+
+  // Critic guidance (when available from the retry engine).
+  if (last.criticReport) {
+    sections.push(
+      ``,
+      `## Targeted fix guidance (from critic)`,
+      ``,
+      `**Smallest fix:** ${last.criticReport.smallestFix}`,
+      ``,
+      `**Focus area:** ${last.criticReport.narrowScope}`,
+    );
+    if (last.criticReport.riskFlags.length > 0) {
+      sections.push(``, `**Risk flags:**`);
+      for (const flag of last.criticReport.riskFlags) {
+        sections.push(`- ${flag}`);
+      }
+    }
+  }
+
+  sections.push(
     ``,
     `## What to do`,
     ``,

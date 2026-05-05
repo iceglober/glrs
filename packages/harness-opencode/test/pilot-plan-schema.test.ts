@@ -727,3 +727,108 @@ describe("parsePlan — schema doc comments", () => {
     expect(schemaSrc).toMatch(/setup[\s\S]{0,200}?(REMOVED|rollback|no longer)/i);
   });
 });
+
+// --- Retry engine fields (a7) -----------------------------------------------
+
+describe("parsePlan — new retry defaults", () => {
+  test("parses plan with new retry defaults", () => {
+    const result = parsePlan({
+      name: "retry plan",
+      defaults: {
+        critic_model: "anthropic/claude-haiku-4-5",
+        reflexion: true,
+        diversify: "standard",
+        retry_strategy: "reset",
+        max_total_cost_usd: 20.0,
+        max_run_wall_ms: 3_600_000,
+      },
+      tasks: [{ id: "T1", title: "t", prompt: "p" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.defaults.reflexion).toBe(true);
+    expect(result.plan.defaults.diversify).toBe("standard");
+    expect(result.plan.defaults.retry_strategy).toBe("reset");
+    expect(result.plan.defaults.max_total_cost_usd).toBe(20.0);
+    expect(result.plan.defaults.max_run_wall_ms).toBe(3_600_000);
+    expect(result.plan.defaults.critic_model).toBe("anthropic/claude-haiku-4-5");
+  });
+
+  test("existing plan without new fields still parses", () => {
+    const result = parsePlan({
+      name: "old plan",
+      tasks: [{ id: "T1", title: "t", prompt: "p" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // New fields have backward-compatible defaults.
+    expect(result.plan.defaults.reflexion).toBe(false);
+    expect(result.plan.defaults.diversify).toBe("none");
+    expect(result.plan.defaults.retry_strategy).toBe("reset");
+    expect(result.plan.defaults.max_total_cost_usd).toBeUndefined();
+    expect(result.plan.defaults.max_run_wall_ms).toBeUndefined();
+  });
+
+  test("rejects invalid diversify value", () => {
+    const result = parsePlan({
+      name: "bad diversify",
+      defaults: { diversify: "turbo" },
+      tasks: [{ id: "T1", title: "t", prompt: "p" }],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.errors.some((e) => e.path.includes("defaults.diversify") || e.path.includes("diversify")),
+    ).toBe(true);
+  });
+
+  test("rejects invalid retry_strategy value", () => {
+    const result = parsePlan({
+      name: "bad strategy",
+      defaults: { retry_strategy: "yolo" },
+      tasks: [{ id: "T1", title: "t", prompt: "p" }],
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("accepts all valid diversify values", () => {
+    for (const diversify of ["none", "standard", "aggressive"] as const) {
+      const result = parsePlan({
+        name: "diversify test",
+        defaults: { diversify },
+        tasks: [{ id: "T1", title: "t", prompt: "p" }],
+      });
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  test("accepts per-task max_wall_ms and alt_model", () => {
+    const result = parsePlan({
+      name: "per-task retry",
+      tasks: [
+        {
+          id: "T1",
+          title: "t",
+          prompt: "p",
+          max_wall_ms: 120_000,
+          alt_model: "anthropic/claude-opus-4-7",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.tasks[0]!.max_wall_ms).toBe(120_000);
+    expect(result.plan.tasks[0]!.alt_model).toBe("anthropic/claude-opus-4-7");
+  });
+
+  test("per-task max_wall_ms and alt_model are optional (undefined when omitted)", () => {
+    const result = parsePlan({
+      name: "no per-task retry",
+      tasks: [{ id: "T1", title: "t", prompt: "p" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.tasks[0]!.max_wall_ms).toBeUndefined();
+    expect(result.plan.tasks[0]!.alt_model).toBeUndefined();
+  });
+});

@@ -20,6 +20,7 @@ pilot/
 ├── state/            # SQLite: runs/tasks/events + migrations + accessors
 ├── opencode/         # opencode server lifecycle, SSE EventBus, builder prompts
 ├── verify/           # verify-runner (runs verify-command + enforces touches scope)
+├── build/            # retry engine: classify, critic, diversify, circuit, retry-strategy, engine
 ├── worker/           # worker.ts (main loop) + safety-gate.ts + stop-detect.ts
 ├── scheduler/        # ready-set.ts (which tasks are ready to claim)
 └── cli/              # `pilot <verb>` cmd-ts subcommands (see table below)
