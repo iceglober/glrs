@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+### Minor Changes
+
+- [#43](https://github.com/iceglober/glrs/pull/43) [`f59c543`](https://github.com/iceglober/glrs/commit/f59c543959e3c7e870976ebee5852e73d9fd72f6) Thanks [@iceglober](https://github.com/iceglober)! - Pilot redesign Steps 1–2: introduce polymorphic Gate abstraction (`shell`, `all`, `any` composite gates with `evalGate` dispatcher) and add v2 SQLite migration for multi-phase workflow state (`workflows`, `phases`, `artifacts` tables). Existing `runs`/`tasks`/`events` schema and accessors preserved with `@deprecated` markers; backfill creates synthetic single-build-phase workflows from legacy rows.
+
+- [#44](https://github.com/iceglober/glrs/pull/44) [`31534aa`](https://github.com/iceglober/glrs/commit/31534aa57af44be2afb5d45174e5181bd0d44303) Thanks [@iceglober](https://github.com/iceglober)! - Add `code-quality` bundled skill with per-phase rule files for gap-analysis, planning, building, and review. Four principles (think before coding, simplicity first, surgical changes, goal-driven execution) derived from empirical analysis of recurring review feedback on agent-authored PRs.
+
 ## 1.1.0
 
 ### Minor Changes
