@@ -73,6 +73,7 @@ import { StopDetector } from "./stop-detect.js";
 import { checkCwdSafety, headSha } from "./safety-gate.js";
 import { registerSession, unregisterSession } from "../mcp/session-registry.js";
 import { getRunDir } from "../paths.js";
+import { processAttempt, createCircuitBreaker } from "../build/engine.js";
 
 const execFileWorker = promisifyUtil(execFileCb);
 
@@ -592,6 +593,30 @@ async function runOneTaskImpl(
   let lastFailure: LastFailure | null = null;
   let stopReason: string | null = null;
 
+  // Create a circuit breaker for this task's attempt loop.
+  // Derives config from plan defaults (new retry engine fields).
+  const circuitBreaker = createCircuitBreaker({
+    db: deps.db,
+    runId: deps.runId,
+    taskId: task.id,
+    config: {
+      maxTotalCostUsd: deps.plan.defaults.max_total_cost_usd,
+      maxRunWallMs: deps.plan.defaults.max_run_wall_ms,
+    },
+    startedAtMs: Date.now(),
+  });
+
+  // Build engine config from plan defaults.
+  const engineConfig = {
+    reflexion: deps.plan.defaults.reflexion,
+    diversify: deps.plan.defaults.diversify,
+    retryStrategy: deps.plan.defaults.retry_strategy,
+    circuitBreaker: {
+      maxTotalCostUsd: deps.plan.defaults.max_total_cost_usd,
+      maxRunWallMs: deps.plan.defaults.max_run_wall_ms,
+    },
+  };
+
   for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
     if (deps.abortSignal?.aborted) {
       await abortSession(deps, sessionId);
@@ -746,7 +771,7 @@ async function runOneTaskImpl(
     });
 
     if (!verifyResult.ok) {
-      lastFailure = {
+      const rawFailure: LastFailure = {
         command: verifyResult.failure.command,
         exitCode: verifyResult.failure.exitCode,
         output: verifyResult.failure.output,
@@ -758,12 +783,12 @@ async function runOneTaskImpl(
         payload: {
           attempt,
           of: opts.maxAttempts,
-          command: lastFailure.command,
-          exitCode: lastFailure.exitCode,
+          command: rawFailure.command,
+          exitCode: rawFailure.exitCode,
           timedOut: verifyResult.failure.timedOut,
           aborted: verifyResult.failure.aborted,
           output: verifyResult.failure.output.slice(-2048),
-          gate: { kind: "shell", command: lastFailure.command },
+          gate: { kind: "shell", command: rawFailure.command },
         },
       });
       if (verifyResult.failure.aborted) {
@@ -772,8 +797,39 @@ async function runOneTaskImpl(
         markAbortedSafe(deps.db, deps.runId, task.id, "abort signal during verify");
         return;
       }
-      if (attempt < opts.maxAttempts) continue;
-      const reason = `verify failed after ${opts.maxAttempts} attempts: ${lastFailure.command} → exit ${lastFailure.exitCode}`;
+      if (attempt < opts.maxAttempts) {
+        // Route through the retry engine: classify → critic → diversify →
+        // retry-strategy → enriched fixPrompt.
+        const engineResult = await processAttempt({
+          db: deps.db,
+          runId: deps.runId,
+          taskId: task.id,
+          cwd,
+          failure: rawFailure,
+          attempt,
+          maxAttempts: opts.maxAttempts,
+          taskPrompt: task.prompt,
+          touches: task.touches,
+          config: engineConfig,
+          circuitBreaker,
+        });
+        if (engineResult.action === "halt") {
+          const reason = `retry engine halted: ${engineResult.reason}`;
+          disposeForensics();
+          await unregisterSessionSafe();
+          markFailedSafe(deps.db, deps.runId, task.id, reason);
+          appendEvent(deps.db, {
+            runId: deps.runId,
+            taskId: task.id,
+            kind: "task.failed",
+            payload: { phase: "engine.halt", reason, attempt },
+          });
+          return;
+        }
+        lastFailure = engineResult.enrichedFailure;
+        continue;
+      }
+      const reason = `verify failed after ${opts.maxAttempts} attempts: ${rawFailure.command} → exit ${rawFailure.exitCode}`;
       disposeForensics();
       await unregisterSessionSafe();
       markFailedSafe(deps.db, deps.runId, task.id, reason);
@@ -807,7 +863,7 @@ async function runOneTaskImpl(
       tolerate: task.tolerate,
     });
     if (!touches.ok) {
-      lastFailure = {
+      const touchesFailure: LastFailure = {
         command: "touches enforcement",
         exitCode: -1,
         output: `out-of-scope edits: ${touches.violators.join(", ")}`,
@@ -819,7 +875,36 @@ async function runOneTaskImpl(
         kind: "task.touches.violation",
         payload: { attempt, violators: touches.violators },
       });
-      if (attempt < opts.maxAttempts) continue;
+      if (attempt < opts.maxAttempts) {
+        const engineResult = await processAttempt({
+          db: deps.db,
+          runId: deps.runId,
+          taskId: task.id,
+          cwd,
+          failure: touchesFailure,
+          attempt,
+          maxAttempts: opts.maxAttempts,
+          taskPrompt: task.prompt,
+          touches: task.touches,
+          config: engineConfig,
+          circuitBreaker,
+        });
+        if (engineResult.action === "halt") {
+          const reason = `retry engine halted: ${engineResult.reason}`;
+          disposeForensics();
+          await unregisterSessionSafe();
+          markFailedSafe(deps.db, deps.runId, task.id, reason);
+          appendEvent(deps.db, {
+            runId: deps.runId,
+            taskId: task.id,
+            kind: "task.failed",
+            payload: { phase: "engine.halt", reason, attempt },
+          });
+          return;
+        }
+        lastFailure = engineResult.enrichedFailure;
+        continue;
+      }
       const reason = `touches violation after ${opts.maxAttempts} attempts: ${touches.violators.join(", ")}`;
       disposeForensics();
       await unregisterSessionSafe();
@@ -867,10 +952,10 @@ async function runOneTaskImpl(
       return;
     } catch (err) {
       // Commit failed — typically a pre-commit hook rejection (TODO
-      // scanner, lint-staged, PHI scan, etc.). Route back through the
-      // fix-prompt loop so the agent can fix the issue and retry.
+      // scanner, lint-staged, PHI scan, etc.). Classify as environmental
+      // and route through the retry engine so the agent can fix the issue.
       const errMsg = errorMessage(err);
-      lastFailure = {
+      const commitFailure: LastFailure = {
         command: "git commit (pre-commit hook)",
         exitCode: 1,
         output: errMsg.slice(0, 8192),
@@ -881,7 +966,36 @@ async function runOneTaskImpl(
         kind: "task.commit.failed",
         payload: { attempt, error: errMsg.slice(0, 4096) },
       });
-      if (attempt < opts.maxAttempts) continue;
+      if (attempt < opts.maxAttempts) {
+        const engineResult = await processAttempt({
+          db: deps.db,
+          runId: deps.runId,
+          taskId: task.id,
+          cwd,
+          failure: commitFailure,
+          attempt,
+          maxAttempts: opts.maxAttempts,
+          taskPrompt: task.prompt,
+          touches: task.touches,
+          config: engineConfig,
+          circuitBreaker,
+        });
+        if (engineResult.action === "halt") {
+          const reason = `retry engine halted: ${engineResult.reason}`;
+          disposeForensics();
+          await unregisterSessionSafe();
+          markFailedSafe(deps.db, deps.runId, task.id, reason);
+          appendEvent(deps.db, {
+            runId: deps.runId,
+            taskId: task.id,
+            kind: "task.failed",
+            payload: { phase: "engine.halt", reason, attempt },
+          });
+          return;
+        }
+        lastFailure = engineResult.enrichedFailure;
+        continue;
+      }
       // Out of attempts — terminal failure.
       const reason = `commit failed after ${opts.maxAttempts} attempts: ${errMsg.slice(0, 500)}`;
       disposeForensics();

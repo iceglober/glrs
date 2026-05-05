@@ -112,6 +112,49 @@ const DefaultsSchema = z
      * every task must pass.
      */
     verify_after_each: z.array(z.string().min(1)).default([]),
+
+    // --- Retry engine fields (all optional with backward-compatible defaults) ---
+
+    /**
+     * Model used by the Haiku-based critic for reflexion.
+     * Default: "anthropic/claude-haiku-4-5".
+     */
+    critic_model: ModelSchema.default("anthropic/claude-haiku-4-5"),
+
+    /**
+     * Whether to enable the critic (reflexion) for retry guidance.
+     * Default: false (backward-compatible — existing plans get current behavior).
+     */
+    reflexion: z.boolean().default(false),
+
+    /**
+     * Diversification mode for the retry ladder.
+     *   none       — no diversification (current behavior)
+     *   standard   — critic + narrow-scope escalation
+     *   aggressive — adds model-swap and fresh-subagent
+     * Default: "none" (backward-compatible).
+     */
+    diversify: z.enum(["none", "standard", "aggressive"]).default("none"),
+
+    /**
+     * Retry strategy between attempts.
+     *   reset — discard working tree changes (current behavior)
+     *   keep  — preserve partial work on a scratch branch (stub)
+     * Default: "reset" (backward-compatible).
+     */
+    retry_strategy: z.enum(["reset", "keep"]).default("reset"),
+
+    /**
+     * Maximum cumulative cost in USD across all attempts in a run.
+     * Undefined = no limit (backward-compatible).
+     */
+    max_total_cost_usd: z.number().positive().optional(),
+
+    /**
+     * Maximum wall-time in milliseconds for the entire run.
+     * Undefined = no limit (backward-compatible).
+     */
+    max_run_wall_ms: z.number().int().positive().optional(),
   })
   .default({
     model: DEFAULT_MODEL,
@@ -119,6 +162,10 @@ const DefaultsSchema = z
     max_turns: DEFAULT_MAX_TURNS,
     max_cost_usd: DEFAULT_MAX_COST_USD,
     verify_after_each: [],
+    critic_model: "anthropic/claude-haiku-4-5",
+    reflexion: false,
+    diversify: "none",
+    retry_strategy: "reset",
   });
 
 /**
@@ -197,6 +244,21 @@ const TaskSchema = z
     max_turns: z.number().int().positive().optional(),
     max_cost_usd: z.number().positive().optional(),
     milestone: z.string().min(1).optional(),
+
+    // --- Per-task retry engine fields (optional, backward-compatible) --------
+
+    /**
+     * Per-task wall-time limit in milliseconds. Overrides the run-level
+     * max_run_wall_ms for this specific task. Undefined = use run default.
+     */
+    max_wall_ms: z.number().int().positive().optional(),
+
+    /**
+     * Alternate model to use when the diversification ladder reaches
+     * "model-swap". Overrides defaults.model for that attempt only.
+     * Must be in the form '<providerID>/<modelID>'.
+     */
+    alt_model: ModelSchema.optional(),
   })
   // Strict mode catches typos like `dependencies` instead of `depends_on`.
   // Zod 4's `.strict()` takes no arguments — message is built-in
