@@ -49,10 +49,12 @@ describe("doctor", () => {
 
   test("prints the Pilot subsystem section", () => {
     const r = captured(() => doctor());
+    // The pilot subsystem section checks for git, bash, and pilot v2 agents.
+    expect(r.stdout).toMatch(/Pilot subsystem/);
     // Either we see the pilot agents registered, a warning that they're missing,
     // or skipped (couldn't run `opencode agent list`).
     expect(r.stdout).toMatch(
-      /pilot-builder|pilot-planner|skipping pilot agent registration check/,
+      /pilot-scoper|pilot-planner|pilot-builder|pilot-assessor|skipping pilot agent registration check/,
     );
   });
 });

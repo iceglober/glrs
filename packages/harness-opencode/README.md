@@ -74,21 +74,21 @@ Read-only adversarial review. Fetches the diff, runs typecheck/lint, delegates t
 ```
 Spawns parallel subagents, synthesizes findings with exact file:line references.
 
-### Unattended (pilot CLI)
+### Autonomous (pilot CLI)
 
-For larger work that decomposes into a multi-task DAG. Each task runs in an isolated git worktree with its own verify commands.
+For larger work that benefits from structured scoping and autonomous execution with self-assessment.
 
 ```bash
-# Plan interactively — spawns OpenCode TUI with the pilot-planner agent
-glrs-oc pilot plan "Refactor the billing module into separate services"
+# Scope interactively — spawns OpenCode TUI with the pilot-scoper agent
+glrs-oc pilot scope "Refactor the billing module into separate services"
 
-# Validate the plan (schema, DAG, glob conflicts)
-glrs-oc pilot validate
+# Execute autonomously — Plan → Execute → Assess → Resolve (SPEAR loop)
+glrs-oc pilot go
 
-# Execute — fully unattended, isolated worktrees, topological order
-glrs-oc pilot build
+# Configure models and verify commands for this repo
+glrs-oc pilot configure
 
-# Check progress
+# Check workflow status
 glrs-oc pilot status
 ```
 
@@ -162,7 +162,7 @@ Tiers: **deep** = opus-class, **mid** = sonnet-class, **fast** = haiku-class. Ov
 
 ## Pilot mode
 
-Runs a `pilot.yaml` task DAG fully unattended. Tasks have dependencies, touch-globs (file ownership), and verify commands. The worker executes them in topological order, each in an isolated git worktree.
+Autonomous code execution using the SPEAR loop (Scope → Plan → Execute → Assess → Resolve). The user scopes interactively, then `pilot go` runs the rest autonomously with self-assessment and deployment-risk reflection.
 
 **Prerequisites:** `git` >= 2.5, `opencode` on PATH. Plugin must be installed (auto-prompted if missing).
 
@@ -170,31 +170,73 @@ Runs a `pilot.yaml` task DAG fully unattended. Tasks have dependencies, touch-gl
 
 | Command | Description |
 |---------|-------------|
-| `glrs-oc pilot plan [input]` | Spawn OpenCode TUI with `pilot-planner`. Input: Linear ID, GitHub URL, or text. |
-| `glrs-oc pilot validate [path]` | Schema + DAG + glob validation. Defaults to newest plan. |
-| `glrs-oc pilot build` | Execute the plan. `--plan <path>`, `--dry-run`, `--filter <id>`. |
-| `glrs-oc pilot status` | Task statuses for the current run. `--run <id>`, `--json`. |
-| `glrs-oc pilot resume` | Continue a partial run. Skips succeeded tasks. |
-| `glrs-oc pilot retry <task>` | Reset one task to pending. `--run-now` to re-execute immediately. |
-| `glrs-oc pilot logs <task>` | Events and verify output for a task. |
-| `glrs-oc pilot worktrees list\|prune` | Manage pilot's git worktrees. |
-| `glrs-oc pilot cost` | Per-task and total LLM cost. `--json`. |
-| `glrs-oc pilot plan-dir` | Print the plans directory path. |
+| `glrs-oc pilot scope "<goal>"` | Interactive scoping session. Produces `scope.json` with framing + acceptance criteria. |
+| `glrs-oc pilot go` | Autonomous execution. Reads scope, runs Plan → Execute → Assess → Resolve. |
+| `glrs-oc pilot configure` | Interactive per-phase model selection, verify commands, assess cycles, Playwright toggle. |
+| `glrs-oc pilot status` | Workflow status from SQLite. `--workflow <id>`, `--json`. |
+
+### SPEAR loop
+
+1. **Scope** (interactive) — scoper agent interviews you, explores the codebase, produces acceptance criteria.
+2. **Plan** (autonomous) — planner agent decomposes ACs into an ordered task list.
+3. **Execute** (autonomous) — builder agent runs one task at a time, commits on verify pass.
+4. **Assess** (autonomous) — assessor evaluates ACs + asks deployment-risk questions (what could break? unexpected consequences? what could go wrong?). If fail → re-plan the gap → re-execute → re-assess (bounded by `max_assess_cycles`).
+5. **Resolve** (autonomous) — final summary with acknowledged risks.
 
 ### State storage
 
 ```
 ~/.glorious/opencode/<repo>/pilot/
-  plans/                  # YAML plans
-  runs/<runId>/
-    state.db              # SQLite (runs, tasks, events)
-    workers/00.jsonl      # structured logs
-  worktrees/<runId>/00/   # isolated git worktree
+  state.sqlite              # workflows + events
+  current-scope.json        # pointer to active scope
+  scopes/<workflowId>/
+    scope.json              # framing + acceptance criteria
+    plan.json               # task list
+    assessment-cycle-N.json # assessment reports
 ```
 
 Repo identity derived from `git rev-parse --git-common-dir` — worktrees of the same repo share state. Override with `$GLORIOUS_PILOT_DIR`.
 
-> **v0.1:** single worker only. `--workers >1` clamps to 1. Parallel scheduling deferred to v0.3+.
+### Configuration
+
+Config lives at `.glrs/pilot.json` in your repo (not per-plan YAML):
+
+```json
+{
+  "models": {
+    "scope": "anthropic/claude-sonnet-4-6",
+    "plan": "anthropic/claude-sonnet-4-6",
+    "execute": "anthropic/claude-sonnet-4-6",
+    "assess": "anthropic/claude-sonnet-4-6"
+  },
+  "verify": {
+    "baseline": ["bun test", "bun run typecheck"],
+    "after_each": ["bun run typecheck"]
+  },
+  "max_assess_cycles": 3,
+  "playwright": { "enabled": false, "base_url": "http://localhost:3000" }
+}
+```
+
+Run `glrs-oc pilot configure` for interactive setup with searchable model selection.
+
+### Migrating from pilot v1
+
+If you used `pilot build` / `pilot.yaml` previously:
+
+| v1 command | v2 equivalent |
+|---|---|
+| `pilot plan` | `pilot scope "<goal>"` |
+| `pilot build` | `pilot go` |
+| `pilot validate` | `pilot configure` (config validation) |
+| `pilot status` | `pilot status` (same name, different output) |
+| `pilot logs` | `pilot status --json` |
+| `pilot cost` | `pilot status --json` |
+| `pilot build-resume` | `pilot go` (re-reads scope, restarts from Plan) |
+
+Old `.glrs/pilot.json` (v1 format with `baseline`/`after_each` at top level) is detected and a migration banner is shown. Run `pilot configure` to set up the new format.
+
+Old state DBs under `~/.glorious/opencode/<repo>/pilot/` are orphaned — they won't be read or migrated. You can safely delete them.
 
 ---
 

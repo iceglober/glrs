@@ -37,7 +37,6 @@ describe("AGENT_TIERS", () => {
     expect(deep).toEqual([
       "architecture-advisor",
       "gap-analyzer",
-      "pilot-planner",
       "plan",
       "plan-reviewer",
       "prime",
@@ -51,6 +50,9 @@ describe("AGENT_TIERS", () => {
       "agents-md-writer",
       "docs-maintainer",
       "lib-reader",
+      "pilot-assessor",
+      "pilot-planner",
+      "pilot-scoper",
     ]);
     expect(midExecute).toEqual([
       "build",
@@ -313,7 +315,6 @@ describe("resolveHarnessModels — legacy-ID warning", () => {
     // preserved; warn is advisory).
     expect(agents["prime"]!.model).toBe("bedrock/claude-opus-4");
     expect(agents["plan"]!.model).toBe("bedrock/claude-opus-4");
-    expect(agents["pilot-planner"]!.model).toBe("bedrock/claude-opus-4");
   });
 
   it("warns separately for per-agent vs per-tier sources even for the same bad ID", () => {
@@ -323,7 +324,7 @@ describe("resolveHarnessModels — legacy-ID warning", () => {
     const { warnings } = capturingWarn(() =>
       resolveHarnessModels(agents as any, {} as any, {
         models: {
-          "pilot-planner": ["bedrock/claude-opus-4"],
+          "plan": ["bedrock/claude-opus-4"],
           deep: ["bedrock/claude-sonnet-4"],
         },
       } as any),
@@ -332,7 +333,7 @@ describe("resolveHarnessModels — legacy-ID warning", () => {
     // Two unique bad IDs → two warns.
     expect(warnings.length).toBe(2);
     const joined = warnings.join("\n");
-    expect(joined).toContain("models.pilot-planner");
+    expect(joined).toContain("models.plan");
     expect(joined).toContain("bedrock/claude-opus-4");
     expect(joined).toContain("models.deep");
     expect(joined).toContain("bedrock/claude-sonnet-4");

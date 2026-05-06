@@ -66,7 +66,7 @@ describe("skills bundle", () => {
     expect(fs.existsSync(DIST_SKILLS)).toBe(true);
   });
 
-  it("has exactly 12 skill directories", () => {
+  it("has exactly 11 skill directories", () => {
     const dirs = fs.readdirSync(DIST_SKILLS, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name);
@@ -74,7 +74,6 @@ describe("skills bundle", () => {
       "adr",
       "agent-estimation",
       "code-quality",
-      "pilot-planning",
       "research",
       "research-auto",
       "research-local",
@@ -94,96 +93,6 @@ describe("skills bundle", () => {
   it("vercel-react-best-practices has 61 files", () => {
     const dir = path.join(DIST_SKILLS, "vercel-react-best-practices");
     expect(countFiles(dir)).toBe(61);
-  });
-
-  it("pilot-planning has SKILL.md + 9 rules (10 files total)", () => {
-    const dir = path.join(DIST_SKILLS, "pilot-planning");
-    expect(countFiles(dir)).toBe(10);
-    // Verify the rules dir contains all 9 expected files (post cwd-mode rollback).
-    const ruleFiles = fs
-      .readdirSync(path.join(dir, "rules"))
-      .sort();
-    expect(ruleFiles).toEqual([
-      "dag-shape.md",
-      "decomposition.md",
-      "first-principles.md",
-      "milestones.md",
-      "qa-expectations.md",
-      "self-review.md",
-      "task-context.md",
-      "touches-scope.md",
-      "verify-design.md",
-    ]);
-  });
-
-  it("decomposition.md documents plan-level sizing and multi-issue bundling", () => {
-    const rule = fs.readFileSync(
-      path.join(DIST_SKILLS, "pilot-planning", "rules", "decomposition.md"),
-      "utf8",
-    );
-    expect(rule).toContain("Plan sizing");
-    expect(rule.toLowerCase()).toContain("multi-issue");
-    expect(rule).toContain("Disconnected");
-  });
-
-  it("SKILL.md refuse-section uses underspecified/ambiguous framing", () => {
-    const skill = fs.readFileSync(
-      path.join(DIST_SKILLS, "pilot-planning", "SKILL.md"),
-      "utf8",
-    );
-    const refuseIdx = skill.indexOf("## When to refuse");
-    expect(refuseIdx).toBeGreaterThan(-1);
-    // Slice from the refuse heading to the next `## ` heading (or EOF).
-    const afterRefuse = skill.slice(refuseIdx);
-    const nextHeadingRel = afterRefuse.slice("## When to refuse".length).search(/\n## /);
-    const refuseSection =
-      nextHeadingRel === -1
-        ? afterRefuse
-        : afterRefuse.slice(0, "## When to refuse".length + nextHeadingRel);
-    const lowered = refuseSection.toLowerCase();
-    const hasUnderspecified =
-      lowered.includes("underspecified") ||
-      lowered.includes("ambiguous") ||
-      lowered.includes("no concrete acceptance");
-    expect(hasUnderspecified).toBe(true);
-  });
-
-  it("SKILL.md has When to bundle section before When to refuse", () => {
-    const skill = fs.readFileSync(
-      path.join(DIST_SKILLS, "pilot-planning", "SKILL.md"),
-      "utf8",
-    );
-    const bundleIdx = skill.indexOf("## When to bundle");
-    const refuseIdx = skill.indexOf("## When to refuse");
-    expect(bundleIdx).toBeGreaterThan(-1);
-    expect(refuseIdx).toBeGreaterThan(-1);
-    expect(bundleIdx).toBeLessThan(refuseIdx);
-  });
-
-  it("self-review.md Q6 clarifies cascade-fail scope and drops plan-size framing", () => {
-    const rule = fs.readFileSync(
-      path.join(DIST_SKILLS, "pilot-planning", "rules", "self-review.md"),
-      "utf8",
-    );
-    const lowered = rule.toLowerCase();
-    // Cascade scope clarified to dependents-only.
-    expect(lowered).toContain("dependents");
-    // New framing about concentration of value.
-    const hasConcentrate =
-      lowered.includes("concentrate") || lowered.includes("concentrates");
-    expect(hasConcentrate).toBe(true);
-  });
-
-  it("SKILL.md rule-7 line mentions bundle check before refuse", () => {
-    const skill = fs.readFileSync(
-      path.join(DIST_SKILLS, "pilot-planning", "SKILL.md"),
-      "utf8",
-    );
-    // Find the rule-7 bullet (starts with "7. [`self-review.md`]...").
-    const rule7Match = skill.match(/^7\. \[`self-review\.md`\][^\n]*$/m);
-    expect(rule7Match).not.toBeNull();
-    const line = rule7Match![0].toLowerCase();
-    expect(line).toContain("bundle");
   });
 
   it("every SKILL.md has required frontmatter: name and description", () => {

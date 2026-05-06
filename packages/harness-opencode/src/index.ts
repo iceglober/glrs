@@ -35,7 +35,7 @@ import {
 import { loadDotenv } from "./plugins/dotenv.js";
 
 // Sub-plugins (autopilot idle-nudge loop + OS notifications + cost tracking
-// + pilot subsystem runtime guards + tool output middleware + telemetry)
+// + pilot v2 runtime guards + tool output middleware + telemetry)
 import autopilotPlugin from "./plugins/autopilot.js";
 import notifyPlugin from "./plugins/notify.js";
 import costTrackerPlugin from "./plugins/cost-tracker.js";
@@ -186,11 +186,6 @@ const plugin: Plugin = async (input, options) => {
   }
 
   // tool.execute.before — chain telemetry timing + pilot-plugin enforcement.
-  // Telemetry stamps a Map<callID, startTime> (non-mutating) first, then
-  // pilot enforces builder bash denies and planner edit-path scoping.
-  // If pilot throws, the tool call is denied and telemetry's after hook
-  // won't fire (no orphan cleanup needed — the Map entry just leaks a
-  // few bytes, acceptable for process-lifetime maps).
   const hasTelemetryBefore = telemetryHooks["tool.execute.before"] !== undefined;
   const hasPilotBefore = pilotHooks["tool.execute.before"] !== undefined;
   if (hasTelemetryBefore || hasPilotBefore) {
