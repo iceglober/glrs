@@ -140,14 +140,16 @@ export async function runScopePhase(opts: {
   try {
     const { spawn } = await import("node:child_process");
 
-    // Write the initial prompt to a temp file so we can pass it to opencode
-    const promptPath = scopePath.replace("scope.json", ".scope-prompt.md");
-    fs.writeFileSync(promptPath, scoperPrompt, "utf8");
+    // Build the initial prompt for the scoper
+    const scoperPrompt = buildScopePrompt({ goal, scopePath, workflowId });
 
-    // Spawn opencode TUI with the scoper agent and initial prompt
+    // Spawn opencode TUI with the scoper agent and initial prompt.
+    // The cwd of the child process sets the project directory.
+    // --agent selects the pilot-scoper agent.
+    // --prompt sends the initial message to kick off the conversation.
     const child = spawn(
       "opencode",
-      ["--agent", "pilot-scoper", "--prompt", promptPath, "--directory", cwd],
+      ["--agent", "pilot-scoper", "--prompt", scoperPrompt],
       {
         stdio: "inherit", // TUI takes over the terminal
         cwd,
@@ -160,9 +162,6 @@ export async function runScopePhase(opts: {
       child.on("close", (code) => resolve(code ?? 1));
       child.on("error", () => resolve(1));
     });
-
-    // Clean up prompt file
-    try { fs.unlinkSync(promptPath); } catch { /* ignore */ }
 
     if (exitCode !== 0) {
       return {

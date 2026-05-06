@@ -443,7 +443,7 @@ describe("CLI: plan-dir", () => {
   ): { stdout: string; stderr: string; status: number | null } {
     const result = spawnSync("bun", ["run", cliPath, ...args], {
       cwd,
-      env: { ...process.env, GLRS_CLI_DISPATCHED: "1", ...env },
+      env: { ...process.env, GLRS_CLI_DISPATCHED: "1", HARNESS_OPENCODE_UPDATE_CHECK: "0", ...env },
       encoding: "utf8",
       timeout: 10_000,
     });
