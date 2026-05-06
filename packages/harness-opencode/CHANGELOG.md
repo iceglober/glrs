@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1
+
+### Patch Changes
+
+- [#49](https://github.com/iceglober/glrs/pull/49) [`4d75141`](https://github.com/iceglober/glrs/commit/4d75141f7a2f4ca9fe0496cc3fb630b3a549a125) Thanks [@iceglober](https://github.com/iceglober)! - Fix `pilot scope` TUI spawn — remove invalid `--directory` flag and positional project path that caused opencode to print help text and exit with code 1. Goal argument is now optional (prompts interactively if not provided).
+
 ## 2.0.0
 
 ### Major Changes
