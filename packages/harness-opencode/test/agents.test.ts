@@ -8,11 +8,11 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 18 agents", () => {
-    // 18 agents total: prime (mode:primary), plan + build + research + research-web +
+  it("returns exactly 20 agents", () => {
+    // 20 agents total: prime (mode:primary), plan + build + research + research-web +
     // research-local + research-auto (all mode:all — primary AND task-tool-dispatchable),
-    // 9 pure subagents, 2 pilot subagents.
-    expect(Object.keys(agents).length).toBe(18);
+    // 9 pure subagents, 4 pilot v2 subagents (scoper, planner, builder, assessor).
+    expect(Object.keys(agents).length).toBe(20);
   });
 
   it("has 2 primary-capable agents besides plan (prime, build; mode=primary or mode=all)", () => {
@@ -49,8 +49,10 @@ describe("createAgents", () => {
       "docs-maintainer",
       "lib-reader",
       "agents-md-writer",
-      "pilot-builder",
+      "pilot-scoper",
       "pilot-planner",
+      "pilot-builder",
+      "pilot-assessor",
     ];
     for (const name of subagentCapable) {
       expect(agents[name]).toBeDefined();
@@ -78,17 +80,6 @@ describe("createAgents", () => {
     // silently kills the Phase 3 delegation path.
     expect(agents["build"]).toBeDefined();
     expect(agents["build"]!.mode).not.toBe("primary");
-  });
-
-  it("pilot-planner description does not collide with plan description", () => {
-    // The bug: two planner-shaped agents both led with "Interactive
-    // planner" in their descriptions. PRIME's task-tool picker matched
-    // pilot-planner instead of @plan. After the fix, the lead phrase
-    // "Interactive planner" must be unique to @plan.
-    const planDesc = (agents["plan"]!.description ?? "") as string;
-    const pilotDesc = (agents["pilot-planner"]!.description ?? "") as string;
-    expect(planDesc.toLowerCase().startsWith("interactive planner")).toBe(true);
-    expect(pilotDesc.toLowerCase().startsWith("interactive planner")).toBe(false);
   });
 
   it("prime prompt delegates Phase 3 to @build", () => {
@@ -178,150 +169,6 @@ describe("createAgents", () => {
     expect(merged["prime"]!.prompt).toBe("custom prompt");
     // Other agents unaffected
     expect(merged["plan"]).toEqual(agents["plan"]);
-  });
-});
-
-// --- Pilot agents (Phase F1 + F2) ----------------------------------------
-
-describe("pilot agents", () => {
-  const agents = createAgents();
-
-  test("pilot-builder is registered with mode=subagent", () => {
-    const a = agents["pilot-builder"];
-    expect(a).toBeDefined();
-    expect(a!.mode).toBe("subagent");
-    expect(a!.model).toBe("anthropic/claude-sonnet-4-6");
-    expect(a!.temperature).toBe(0.1);
-  });
-
-  test("pilot-planner is registered with mode=subagent", () => {
-    const a = agents["pilot-planner"];
-    expect(a).toBeDefined();
-    expect(a!.mode).toBe("subagent");
-    expect(a!.model).toBe("anthropic/claude-opus-4-7");
-    expect(a!.temperature).toBe(0.3);
-  });
-
-  test("pilot-builder denies destructive git operations (commit / push / branch)", () => {
-    const perm = agents["pilot-builder"]!.permission as Record<
-      string,
-      unknown
-    >;
-    const bash = perm.bash as Record<string, string>;
-    expect(bash["git commit*"]).toBe("deny");
-    expect(bash["git push*"]).toBe("deny");
-    expect(bash["git tag*"]).toBe("deny");
-    expect(bash["git checkout *"]).toBe("deny");
-    expect(bash["git switch *"]).toBe("deny");
-    expect(bash["git branch *"]).toBe("deny");
-    expect(bash["gh pr *"]).toBe("deny");
-    expect(bash["gh release *"]).toBe("deny");
-  });
-
-  test("pilot-builder denies the question tool (unattended invariant)", () => {
-    const perm = agents["pilot-builder"]!.permission as Record<
-      string,
-      unknown
-    >;
-    expect(perm.question).toBe("deny");
-  });
-
-  test("pilot-builder still allows general bash through CORE_BASH_ALLOW_LIST", () => {
-    const perm = agents["pilot-builder"]!.permission as Record<
-      string,
-      unknown
-    >;
-    const bash = perm.bash as Record<string, string>;
-    // A few representative entries from CORE_BASH_ALLOW_LIST.
-    expect(bash["bun test *"]).toBe("allow");
-    expect(bash["ls *"]).toBe("allow");
-    expect(bash["git status *"]).toBe("allow");
-    expect(bash["git diff *"]).toBe("allow");
-  });
-
-  test("pilot-planner denies bash by default but allows pilot validate / plan-dir", () => {
-    const perm = agents["pilot-planner"]!.permission as Record<
-      string,
-      unknown
-    >;
-    const bash = perm.bash as Record<string, string>;
-    expect(bash["*"]).toBe("deny");
-    expect(bash["bunx @glrs-dev/harness-plugin-opencode pilot validate"]).toBe(
-      "allow",
-    );
-    expect(bash["bunx @glrs-dev/harness-plugin-opencode pilot validate *"]).toBe(
-      "allow",
-    );
-    expect(bash["bunx @glrs-dev/harness-plugin-opencode pilot plan-dir"]).toBe(
-      "allow",
-    );
-  });
-
-  test("pilot-planner allows the question tool (interactive planning)", () => {
-    const perm = agents["pilot-planner"]!.permission as Record<
-      string,
-      unknown
-    >;
-    expect(perm.question).toBe("allow");
-  });
-
-  test("pilot agents have non-empty descriptions", () => {
-    expect(
-      (agents["pilot-builder"]!.description as string).length,
-    ).toBeGreaterThan(20);
-    expect(
-      (agents["pilot-planner"]!.description as string).length,
-    ).toBeGreaterThan(20);
-  });
-
-  test("pilot-builder prompt mentions STOP protocol", () => {
-    const prompt = agents["pilot-builder"]!.prompt as string;
-    expect(prompt).toMatch(/STOP:/);
-    expect(prompt.toLowerCase()).toMatch(/never commit/);
-  });
-
-  test("pilot-builder prompt carves out environment bootstrap from the no-new-deps rule", () => {
-    const prompt = agents["pilot-builder"]!.prompt as string;
-    // Should mention environment bootstrap concept.
-    expect(prompt.toLowerCase()).toContain("environment bootstrap");
-    // Should list canonical install commands.
-    expect(prompt).toContain("pnpm install");
-    expect(prompt).toContain("bun install");
-    expect(prompt).toContain("npm install");
-    expect(prompt).toContain("npm ci");
-    expect(prompt).toContain("cargo fetch");
-    // The setup: plan-block reference was removed in the cwd-mode rollback.
-  });
-
-  test("pilot-builder prompt still forbids task-level dep additions without prompt request", () => {
-    const prompt = agents["pilot-builder"]!.prompt as string;
-    // Should still require task approval for new deps.
-    expect(prompt.toLowerCase()).toMatch(/task.prompt.*ask|task approval|task-level/);
-    // Should mention that lockfiles are typically out of scope.
-    expect(prompt.toLowerCase()).toContain("package.json");
-    expect(prompt.toLowerCase()).toContain("lock");
-  });
-
-  test("pilot-planner prompt references the pilot-planning skill", () => {
-    const prompt = agents["pilot-planner"]!.prompt as string;
-    expect(prompt).toMatch(/pilot-planning/);
-  });
-
-  test("pilot-planner prompt documents cwd-mode contract (no setup block)", () => {
-    const prompt = agents["pilot-planner"]!.prompt as string;
-    // Must NOT reference the removed setup: key as part of planner output.
-    // The planner may mention it only in the context of noting it's removed.
-    expect(prompt.toLowerCase()).toMatch(/cwd|removed|rollback|dev stack/);
-  });
-
-  test("pilot-planner prompt documents QA-expectation establishment", () => {
-    const prompt = agents["pilot-planner"]!.prompt as string;
-    // Must mention Playwright for UI testing
-    expect(prompt).toContain("Playwright");
-    // Must mention curl or API testing
-    expect(prompt.toLowerCase()).toMatch(/curl|api/);
-    // Must mention postgres or migration
-    expect(prompt.toLowerCase()).toMatch(/postgres|migration/);
   });
 });
 
@@ -1053,23 +900,12 @@ describe("mid-tier prompt variant selection", () => {
     expect(qaPrompt).not.toContain("trust-recent-green");
   });
 
-  it("pilot-builder prompt changes to strict variant when mid-execute is configured", () => {
-    const config: any = {};
-    const pluginOptions = {
-      models: { "mid-execute": "deepseek/deepseek-coder-v3", mid: "anthropic/claude-sonnet-4-6" },
-    };
-    applyConfig(config, pluginOptions);
-    const pilotPrompt = config.agent["pilot-builder"].prompt as string;
-    expect(pilotPrompt).toContain("STRICT_EXECUTOR_VARIANT");
-  });
-
   it("mid-execute agents fall back to mid model when mid-execute not configured", () => {
     const config: any = {};
     const pluginOptions = { models: { mid: "anthropic/claude-sonnet-4-6" } };
     applyConfig(config, pluginOptions);
     expect(config.agent["build"].model).toBe("anthropic/claude-sonnet-4-6");
     expect(config.agent["qa-reviewer"].model).toBe("anthropic/claude-sonnet-4-6");
-    expect(config.agent["pilot-builder"].model).toBe("anthropic/claude-sonnet-4-6");
   });
 
   it("user-wins: user agent override is not clobbered by tier resolution", () => {

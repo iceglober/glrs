@@ -1,78 +1,56 @@
-# src/pilot — unattended task execution subsystem (cwd mode)
+# src/pilot — SPEAR-based autonomous execution subsystem (v2)
 
-The pilot decomposes a feature into a `pilot.yaml` DAG (planner agent), then executes tasks from the DAG unattended (builder agent) directly in the user's current worktree. The worker loop coordinates opencode sessions and a SQLite state store, committing each task's output on HEAD of the user's feature branch after verify passes.
-
-**No worktree pool. No setup phase. No per-task branch.** The user prepares their own environment (install, compose, migrate, seed) on a feature branch — optionally via a `.glrs/hooks/pilot_setup` script that pilot auto-runs before the task loop — then invokes `pilot build` and walks away.
-
-The root AGENTS.md covers the high-level registration model (rule 10). This file is the drill-down.
+Pilot v2 implements the SPEAR loop (Scope → Plan → Execute → Assess → Resolve) for autonomous code execution. The user scopes interactively, then `pilot go` runs the rest autonomously.
 
 ## Layout
 
 ```
 pilot/
-├── paths.ts          # ~/.glorious/opencode/<repo>/pilot/* resolution (mirrors plan-paths.ts)
-├── plan/             # pilot.yaml schema (zod), loader, DAG builder, globs, slug
-│   ├── schema.ts     # PlanSchema, TaskSchema, MilestoneSchema, DefaultsSchema
-│   ├── load.ts       # parsePlan()
-│   ├── dag.ts        # topological sort + ready-set
-│   ├── globs.ts      # picomatch-based touches-scope matching
-│   └── slug.ts       # deterministic task-id slugs
-├── state/            # SQLite: runs/tasks/events + migrations + accessors
-├── opencode/         # opencode server lifecycle, SSE EventBus, builder prompts
-├── verify/           # verify-runner (runs verify-command + enforces touches scope)
-├── worker/           # worker.ts (main loop) + safety-gate.ts + stop-detect.ts
-├── scheduler/        # ready-set.ts (which tasks are ready to claim)
-└── cli/              # `pilot <verb>` cmd-ts subcommands (see table below)
+├── config.ts       # PilotConfig schema, loader, writer (.glrs/pilot.json)
+├── paths.ts        # Path resolution (state DB, scope/plan artifacts, current-scope pointer)
+├── state.ts        # SQLite state (2 tables: workflows + events), logEvent()
+├── safety.ts       # Pre-flight gate (rejects main/master, dirty tree, non-git)
+├── server.ts       # OpenCode server lifecycle (start, createSession, sendAndWait)
+├── scope.ts        # Scope phase: spawns pilot-scoper TUI, validates scope.json
+├── plan.ts         # Plan phase: spawns pilot-planner, validates plan.json
+├── execute.ts      # Execute phase: one builder session per task, commits on verify pass
+├── assess.ts       # Assess phase: spawns pilot-assessor, evaluates ACs + deployment risks
+├── resolve.ts      # Resolve phase: final summary, marks workflow complete
+├── orchestrator.ts # SPEAR loop: Plan → Execute → Assess → (re-plan) → Resolve
+└── cli/
+    ├── index.ts    # Pilot subcommand tree (scope, go, configure, status)
+    ├── scope.ts    # `pilot scope "<goal>"` — interactive scoping
+    ├── go.ts       # `pilot go` — autonomous execution
+    ├── configure.ts # `pilot configure` — interactive config
+    └── status.ts   # `pilot status` — workflow status
 ```
 
-## Per-repo state layout (persistent, NOT under ~/.config/opencode)
+## State layout
 
 ```
 ~/.glorious/opencode/<repo>/pilot/
-├── state.sqlite      # runs, tasks, events
-└── runs/<run-id>/
-    ├── plan.yaml     # frozen copy of pilot.yaml for this run
-    └── tasks/<task-id>/
-        ├── session.jsonl    # opencode session events
-        ├── verify.log       # verify-runner output
-        └── status.json
+├── state.sqlite          — workflows + events
+├── current-scope.json    — pointer to active scope artifact
+└── scopes/
+    └── <workflow-id>/
+        ├── scope.json    — framing + acceptance criteria
+        ├── plan.json     — task list
+        └── assessment-cycle-N.json — assessment reports
 ```
-
-`<repo>` derives from `git rev-parse --git-common-dir` → per-repo key, same strategy as `src/plan-paths.ts`.
 
 ## Invariants
 
-1. **Builder never commits.** `src/plugins/pilot-plugin.ts` denies `git commit`/`push`/`tag`/`branch`/`checkout`/`switch`/`reset` for the builder session. The worker commits on its behalf after verify succeeds.
-2. **Planner only edits plans.** Same plugin denies edit/write/patch/multiedit outside the plans directory for the planner session.
-3. **Touches-scope enforced by verify-runner.** Every task declares globs it may modify; verify-runner rejects edits outside scope before advancing.
-4. **Pilot runs in the user's current worktree (cwd).** Pre-flight refuses to run on main/master/default-branch or with a dirty tree. Tasks that fail halt the run; the user recovers via `pilot build-resume`. There is no worktree pool, no setup phase, no per-task branch.
-5. **The tree is clean between every task.** After every task — success OR failure — the worker guarantees `git status --porcelain` is empty before picking the next task. Success paths commit via `commitAll`; failure paths `git reset --hard HEAD && git clean -fd` (gitignored files preserved). Forensic record of what the failed task did lives in `runs/<runId>/tasks/<taskId>/session.jsonl`, NOT in the working tree. If post-task cleanup itself fails, the run halts — subsequent tasks cannot safely run on a mixed tree.
-6. **The plugin is the second fence.** Agent permission maps are the first; don't collapse them into one.
+1. **Builder never commits.** `src/plugins/pilot-plugin.ts` denies `git commit`/`push`/`tag`/`branch`/`checkout`/`switch`/`reset` for execute-phase sessions. The orchestrator commits on behalf of the builder after verify passes.
+2. **Deployment-risk reflection is in Assess, not Resolve.** The assessor asks the three SPEAR questions (what could break, unexpected consequences, what could go wrong) before scoring ACs. Actionable high-severity risks feed back into the re-plan loop.
+3. **Context isolation via subagents.** Each SPEAR phase gets its own OpenCode session. Context flows between phases via JSON artifacts, not session history.
+4. **Safety gate is mandatory.** `checkSafety()` runs before any phase that modifies the working tree. Rejects main/master, dirty tree, non-git directories.
+5. **Config lives in `.glrs/pilot.json`.** Plans describe *what* to build; config describes *how* the system behaves (models per phase, verify commands, assess cycles, Playwright toggle).
 
 ## CLI surface
 
-`pilot` wires into the top-level cmd-ts tree in `src/cli.ts`.
-
-| Verb | Purpose |
+| Command | Description |
 |---|---|
-| `pilot plan` | Invoke pilot-planner → emit pilot.yaml |
-| `pilot build` | Run the worker loop against a pilot.yaml (in cwd) |
-| `pilot build-resume` | Continue a partially-completed run from where it left off |
-| `pilot validate` | Lint a pilot.yaml without running it |
-| `pilot status` | Inspect current run state |
-| `pilot logs` | Tail task event log |
-| `pilot cost` | Usage accounting |
-| `pilot plan-dir` | Print the per-repo plan dir (used by the PRIME's bootstrap probe) |
-
-## Adding a new verb
-
-1. Add `src/pilot/cli/<verb>.ts` exporting a cmd-ts `command(...)`.
-2. Register it in `src/pilot/cli/index.ts`'s `pilotSubcommand`.
-3. Add a test in `test/pilot-cli-*.test.ts`.
-4. State-touching verbs go through `src/pilot/state/` accessors, not inline SQL.
-
-## Spikes
-
-See `docs/pilot/spikes/` (S1-S6) for Phase-0 de-risking notes.
-
-`PILOT_TODO.md` at the repo root tracks the ship checklist.
+| `pilot scope "<goal>"` | Start a new workflow with interactive scoping |
+| `pilot go` | Run autonomous Plan → Execute → Assess → Resolve |
+| `pilot configure` | Interactively configure pilot for this repo |
+| `pilot status` | Show workflow status from SQLite |

@@ -65,3 +65,57 @@ The plugin is loaded by OpenCode's startup. Agents, commands, tools, MCPs, and s
 - Claude Code support is deferred to a Phase B release with a separate CLI subcommand that writes agent/command/skill files into `~/.claude/`. Until that ships, this plugin is OpenCode-only.
 
 See `.agent/plans/pivot-npm-plugin.md` in the repo for the full plan.
+
+---
+
+## Migrating from pilot v1 to pilot v2 (SPEAR)
+
+**Status:** pilot v2 ships as a major version bump. The changeset is `major` — semver-aware users on `^1.x` won't auto-upgrade.
+
+### What changed
+
+Pilot v1 (plan-based DAG executor with `pilot.yaml`) is replaced by pilot v2 (SPEAR-based autonomous execution with `scope.json` + `plan.json`).
+
+### Command mapping
+
+| v1 command | v2 equivalent | Notes |
+|---|---|---|
+| `pilot plan` | `pilot scope "<goal>"` | Interactive scoping replaces YAML authoring |
+| `pilot build` | `pilot go` | Autonomous execution with self-assessment |
+| `pilot validate` | `pilot configure` | Config validation via interactive setup |
+| `pilot status` | `pilot status` | Same name, simpler output (workflow-level) |
+| `pilot logs` | `pilot status --json` | Events in JSON format |
+| `pilot cost` | `pilot status --json` | Cost data in event log |
+| `pilot build-resume` | `pilot go` | Re-reads scope, restarts from Plan phase |
+
+### Config migration
+
+Old `.glrs/pilot.json` (v1 format):
+```json
+{ "baseline": ["bun test"], "after_each": ["bun run typecheck"] }
+```
+
+New `.glrs/pilot.json` (v2 format):
+```json
+{
+  "models": { "scope": "...", "plan": "...", "execute": "...", "assess": "..." },
+  "verify": { "baseline": ["bun test"], "after_each": ["bun run typecheck"] },
+  "max_assess_cycles": 3,
+  "playwright": { "enabled": false, "base_url": "http://localhost:3000" }
+}
+```
+
+Run `glrs-oc pilot configure` to interactively set up the new format. The old format is detected and a migration banner is shown.
+
+### State migration
+
+Old state DBs under `~/.glorious/opencode/<repo>/pilot/` are orphaned. They won't be read or migrated. You can safely delete them:
+
+```bash
+rm -rf ~/.glorious/opencode/*/pilot/runs/
+rm -f ~/.glorious/opencode/*/pilot/state.sqlite
+```
+
+### `pilot.yaml` plans
+
+The `pilot.yaml` format is no longer supported. The new system uses `scope.json` (produced by `pilot scope`) and `plan.json` (produced autonomously by the planner agent). There is no manual plan authoring step — the planner reads the scope and produces the plan automatically.

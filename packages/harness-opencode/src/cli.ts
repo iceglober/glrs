@@ -7,14 +7,14 @@
  * subcommand lives in its own file under `src/cli/...` (top-level) or
  * `src/pilot/cli/...` (pilot subsystem); this file is wiring only.
  *
- * Top-level commands (legacy hand-rolled CLI, now ported):
+ * Top-level commands:
  *   - install      Add the plugin to opencode.json
  *   - uninstall    Remove the plugin from opencode.json
  *   - doctor       Check installation health
  *   - plan-check   Parse plan-state fence (legacy markdown plans)
  *   - plan-dir     Print the repo-shared plan dir
  *
- * Pilot subsystem commands (Phase G1+):
+ * Pilot subsystem commands:
  *   - pilot ...    See `src/pilot/cli/index.ts`
  */
 

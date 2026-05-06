@@ -1,231 +1,135 @@
 /**
- * Pilot state directory layout.
+ * Pilot v2 path resolution.
  *
- * Mirrors the per-repo, worktree-agnostic key derivation from
- * `src/plan-paths.ts` but for the pilot subsystem's richer layout. All
- * pilot state lives under:
+ * All pilot state lives under:
+ *   ~/.glorious/opencode/<repo-folder>/pilot/
  *
- *     <base>/<repo-folder>/pilot/
- *       plans/                     YAML plans (input artifacts)
- *       runs/<runId>/              one dir per `pilot build` invocation
- *         state.db                 sqlite (Phase B1)
- *         workers/<n>.jsonl        per-worker structured logs (Phase E1)
+ * Layout:
+ *   pilot/
+ *   ├── state.sqlite          — workflow + event log
+ *   ├── current-scope.json    — symlink/pointer to the active scope artifact
+ *   └── scopes/
+ *       └── <workflow-id>/
+ *           ├── scope.json    — framing + acceptance criteria
+ *           └── plan.json     — task list produced by the planner
  *
- * Where:
- *   - `<base>` = `$GLORIOUS_PILOT_DIR` (with leading `~` expanded), else
- *     `$GLORIOUS_PLAN_DIR/..` if that env is set (so users overriding
- *     the harness root get pilot under it for free), else
- *     `~/.glorious/opencode`.
- *   - `<repo-folder>` is identical to the key from `src/plan-paths.ts`,
- *     so `pilot/plans/` and the harness's existing `plans/` (used by
- *     `/plan`) live as siblings under the same per-repo directory.
- *   - `<runId>` is a ULID (Phase B1 picks the format; this module is
- *     opaque to it).
- *
- * Why a separate module from `plan-paths.ts`:
- *   - `plan-paths.ts` is consumed by the existing `/plan` flow
- *     (free-form markdown plans), which has different invariants: a
- *     single flat dir of `.md` files, in-place migration from a legacy
- *     location, no nested run state. Reusing that file would conflate
- *     two contracts and force one to constrain the other.
- *   - This module ALSO doesn't migrate anything — pilot is brand new,
- *     there's no legacy state to absorb.
- *
- * Auto-creation policy:
- *   - `getPilotDir`, `getPlansDir`: created on first access (callers
- *     expect a usable directory).
- *   - `getRunDir`, `getWorktreeDir`, `getStateDbPath`,
- *     `getWorkerJsonlPath`: parent directory created on first access of
- *     `getRunDir`. Specific files are NOT pre-created — that's the
- *     SQLite or fs writer's job.
- *
- * Ship-checklist alignment: Phase A5 of `PILOT_TODO.md`.
+ * Uses the same repo-folder derivation as plan-paths.ts (git rev-parse
+ * --git-common-dir → parent dir basename).
  */
 
-import { promises as fs } from "node:fs";
+import { execFile } from "node:child_process";
+import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { getRepoFolder } from "../plan-paths.js";
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
 
-// --- Helpers ---------------------------------------------------------------
+function execFileP(
+  file: string,
+  args: readonly string[],
+  opts: { cwd?: string; timeoutMs?: number } = {},
+): Promise<string> {
+  const { cwd, timeoutMs = 5000 } = opts;
+  return new Promise((resolve, reject) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    execFile(
+      file,
+      args,
+      { signal: controller.signal, cwd, encoding: "utf8" },
+      (err, stdout) => {
+        clearTimeout(timer);
+        if (err) { reject(err); return; }
+        resolve(stdout ?? "");
+      },
+    );
+  });
+}
 
-/**
- * Tilde-expand a path. Identical behavior to `plan-paths.ts::expandTilde`
- * — duplicated rather than exported across modules to keep
- * `plan-paths.ts` free of new external consumers (it currently has none
- * outside its own module + CLI).
- */
 function expandTilde(p: string): string {
   if (p === "~") return os.homedir();
   if (p.startsWith("~/")) return path.join(os.homedir(), p.slice(2));
   return p;
 }
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 /**
- * Resolve the base dir for ALL glorious state — `~/.glorious/opencode`
- * by default, overridable via env. The cascade:
- *
- *   1. `GLORIOUS_PILOT_DIR` (highest priority — explicit pilot scope).
- *   2. `GLORIOUS_PLAN_DIR/..` (if user overrode plan-dir; pilot lives as
- *      a sibling in their custom location).
- *   3. `~/.glorious/opencode` (default).
- *
- * Returns the absolute base — NOT yet repo-scoped. Callers compose with
- * `<repoFolder>/pilot/...` themselves.
+ * Derive the worktree-agnostic repo key from a working directory.
+ * Returns the basename of the parent of the shared .git directory.
  */
-export function resolveBaseDir(): string {
-  const pilotEnv = process.env.GLORIOUS_PILOT_DIR;
-  if (pilotEnv) return expandTilde(pilotEnv);
-
-  const planEnv = process.env.GLORIOUS_PLAN_DIR;
-  if (planEnv) {
-    // User overrode plan dir to e.g. `~/scratch/plans`. The natural
-    // sibling for pilot state is `~/scratch/` (parent of plan dir).
-    // This way the user's mental model "all glorious state lives under
-    // /scratch/" survives.
-    return path.dirname(expandTilde(planEnv));
+export async function getRepoFolder(cwd: string): Promise<string> {
+  let stdout: string;
+  try {
+    stdout = await execFileP("git", ["rev-parse", "--git-common-dir"], { cwd });
+  } catch (err) {
+    throw new Error(
+      `pilot paths: could not determine repo folder from ${JSON.stringify(cwd)}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
   }
-
-  return path.join(os.homedir(), ".glorious", "opencode");
+  const gitCommonDir = stdout.trim();
+  // --git-common-dir returns a path relative to cwd (or absolute).
+  const abs = path.isAbsolute(gitCommonDir)
+    ? gitCommonDir
+    : path.resolve(cwd, gitCommonDir);
+  return path.basename(path.dirname(abs));
 }
 
-
-
-// --- Public API ------------------------------------------------------------
-
 /**
- * Resolve `<base>/<repo>/pilot/`. Creates the directory if missing.
+ * Resolve the pilot base directory for the repo containing `cwd`.
+ * Creates the directory if it doesn't exist.
  *
- * `cwd` is the worktree path the pilot is running from — we derive the
- * repo key from its `git common-dir` per `getRepoFolder`. Throws if
- * `cwd` isn't inside a git repo.
+ * Honors $GLORIOUS_PILOT_DIR override (for tests).
  */
 export async function getPilotDir(cwd: string): Promise<string> {
-  const base = resolveBaseDir();
+  const override = process.env["GLORIOUS_PILOT_DIR"];
+  if (override) {
+    const dir = expandTilde(override);
+    await fs.mkdir(dir, { recursive: true });
+    return dir;
+  }
+
   const repoFolder = await getRepoFolder(cwd);
-  const dir = path.join(base, repoFolder, "pilot");
+  const base = path.join(os.homedir(), ".glorious", "opencode", repoFolder, "pilot");
+  await fs.mkdir(base, { recursive: true });
+  return base;
+}
+
+/** Path to the SQLite state database. */
+export async function getStateDbPath(cwd: string): Promise<string> {
+  const base = await getPilotDir(cwd);
+  return path.join(base, "state.sqlite");
+}
+
+/** Path to the current-scope pointer file. */
+export async function getCurrentScopePath(cwd: string): Promise<string> {
+  const base = await getPilotDir(cwd);
+  return path.join(base, "current-scope.json");
+}
+
+/** Path to the scope artifact for a specific workflow. */
+export async function getScopeArtifactPath(cwd: string, workflowId: string): Promise<string> {
+  const base = await getPilotDir(cwd);
+  const dir = path.join(base, "scopes", workflowId);
   await fs.mkdir(dir, { recursive: true });
-  return dir;
+  return path.join(dir, "scope.json");
 }
 
-/**
- * Resolve `<pilot>/plans/`. Created if missing.
- *
- * Plan-as-input artifacts live here. The CLI's `pilot validate`,
- * `pilot plan`, and `pilot build` commands all read from this directory.
- */
-export async function getPlansDir(cwd: string): Promise<string> {
-  const pilot = await getPilotDir(cwd);
-  const dir = path.join(pilot, "plans");
+/** Path to the plan artifact for a specific workflow. */
+export async function getPlanArtifactPath(cwd: string, workflowId: string): Promise<string> {
+  const base = await getPilotDir(cwd);
+  const dir = path.join(base, "scopes", workflowId);
   await fs.mkdir(dir, { recursive: true });
-  return dir;
+  return path.join(dir, "plan.json");
 }
 
-/**
- * Resolve `<pilot>/runs/<runId>/`. Created if missing.
- *
- * One directory per `pilot build` invocation. Holds the SQLite state
- * file, worker JSONL logs, and any other per-run artifacts.
- */
-export async function getRunDir(cwd: string, runId: string): Promise<string> {
-  if (!isSafeRunId(runId)) {
-    throw new Error(
-      `getRunDir: runId ${JSON.stringify(runId)} is not a safe filesystem segment`,
-    );
-  }
-  const pilot = await getPilotDir(cwd);
-  const dir = path.join(pilot, "runs", runId);
-  await fs.mkdir(dir, { recursive: true });
-  return dir;
-}
-
-
-
-/**
- * Resolve `<runDir>/state.db`. Does NOT create or open the database —
- * that's the caller's job (Phase B1). Just returns the path.
- *
- * Parent directory IS created (via `getRunDir`) so SQLite can open
- * with `O_CREAT` and not error on a missing dir.
- */
-export async function getStateDbPath(
-  cwd: string,
-  runId: string,
-): Promise<string> {
-  const runDir = await getRunDir(cwd, runId);
-  return path.join(runDir, "state.db");
-}
-
-/**
- * Resolve `<runDir>/workers/<n>.jsonl`. Creates the parent
- * `workers/` directory if missing. Caller appends to the JSONL file.
- */
-export async function getWorkerJsonlPath(
-  cwd: string,
-  runId: string,
-  n: number,
-): Promise<string> {
-  const runDir = await getRunDir(cwd, runId);
-  const workersDir = path.join(runDir, "workers");
-  await fs.mkdir(workersDir, { recursive: true });
-  // Pad worker index to two digits (0 -> "00", 12 -> "12")
-  const padded = n.toString().padStart(2, "0");
-  return path.join(workersDir, `${padded}.jsonl`);
-}
-
-/**
- * Resolve `<runDir>/tasks/<taskId>/session.jsonl` — the per-task SSE
- * forensic log. Creates the parent `tasks/<taskId>/` directory if
- * missing. Caller appends one JSON object per line.
- *
- * This path is the one documented in `src/pilot/AGENTS.md` as the
- * operator's read-out for "what did the session actually do" when a
- * task failed silently. Unlike the per-worker JSONL (which is a
- * superset across tasks), this file is scoped to a single task so
- * post-mortems don't require filtering.
- */
-export async function getTaskJsonlPath(
-  cwd: string,
-  runId: string,
-  taskId: string,
-): Promise<string> {
-  if (!isSafeRunId(runId)) {
-    throw new Error(
-      `getTaskJsonlPath: runId ${JSON.stringify(runId)} is not a safe filesystem segment`,
-    );
-  }
-  if (!isSafeTaskId(taskId)) {
-    throw new Error(
-      `getTaskJsonlPath: taskId ${JSON.stringify(taskId)} is not a safe filesystem segment`,
-    );
-  }
-  const runDir = await getRunDir(cwd, runId);
-  const taskDir = path.join(runDir, "tasks", taskId);
-  await fs.mkdir(taskDir, { recursive: true });
-  return path.join(taskDir, "session.jsonl");
-}
-
-// --- Validation helpers ----------------------------------------------------
-
-/**
- * Reject runIds that contain path separators, leading dots, or other
- * filesystem-mischief characters. ULIDs (the expected shape) are
- * `[0-9A-Z]{26}`, well within this check.
- *
- * We don't enforce the ULID grammar exactly — a future refactor might
- * use UUIDs or `<date>-<n>`, and it'd be silly to gate this module on
- * one format. Just keep the segment to a safe character class.
- */
-function isSafeRunId(runId: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(runId);
-}
-
-/**
- * Same character class as `isSafeRunId`. Task IDs come from the
- * planner agent (e.g. `T1-AUDIT-DOC`); treat them as untrusted for
- * filesystem purposes even though the planner is constrained.
- */
-function isSafeTaskId(taskId: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(taskId);
+/** Path to the .glrs/pilot.json config file in the repo. */
+export function getPilotConfigPath(cwd: string): string {
+  return path.join(cwd, ".glrs", "pilot.json");
 }

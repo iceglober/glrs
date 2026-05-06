@@ -1,42 +1,37 @@
 /**
- * Pilot subcommand tree (`bunx @glrs-dev/harness-plugin-opencode pilot ...`).
+ * Pilot v2 subcommand tree.
  *
- * Wired into the top-level CLI via `src/cli.ts`.
- *
- * Subcommands (cwd mode — 8 verbs):
- *   - validate      Validate a pilot.yaml against schema, DAG, globs.
- *   - plan          Spawn the opencode TUI with the pilot-planner agent.
- *   - build         Run the pilot worker against a plan (in cwd).
- *   - build-resume  Continue a partially-completed run from where it left off.
- *   - status        Print the current run's task statuses.
- *   - logs          Print events / verify outputs for a task.
- *   - cost          Print per-task and total cost for a run.
- *   - plan-dir      Print the per-repo pilot plans directory.
+ * Commands:
+ *   - scope      Start a new workflow (interactive scoping session)
+ *   - go         Run the autonomous SPEAR loop (Plan → Execute → Assess → Resolve)
+ *   - configure  Interactively configure pilot for this repo
+ *   - status     Show workflow status
+ *   - build      [removed shim — points to pilot go]
+ *   - validate   [removed shim — points to pilot configure]
+ *   - logs       [removed shim — points to pilot status]
+ *   - cost       [removed shim — points to pilot status]
  */
 
 import { subcommands } from "cmd-ts";
-
-import { validateCmd } from "./validate.js";
-import { planCmd } from "./plan.js";
-import { buildCmd } from "./build.js";
-import { buildResumeCmd } from "./build-resume.js";
+import { configureCmd } from "./configure.js";
+import { scopeCmd } from "./scope.js";
+import { goCmd } from "./go.js";
 import { statusCmd } from "./status.js";
-import { logsCmd } from "./logs.js";
-import { costCmd } from "./cost.js";
-import { planDirCmd } from "./plan-dir.js";
+import { buildShim, validateShim, logsShim, costShim, buildResumeShim } from "./shims.js";
 
 export const pilotSubcommand = subcommands({
   name: "pilot",
-  description:
-    "Pilot subsystem — plan, validate, build, and manage unattended task runs.",
+  description: "Pilot v2 — SPEAR-based autonomous execution (scope → plan → execute → assess → resolve).",
   cmds: {
-    validate: validateCmd,
-    plan: planCmd,
-    build: buildCmd,
-    "build-resume": buildResumeCmd,
+    scope: scopeCmd,
+    go: goCmd,
+    configure: configureCmd,
     status: statusCmd,
-    logs: logsCmd,
-    cost: costCmd,
-    "plan-dir": planDirCmd,
+    // Shims for removed v1 commands (print migration message)
+    build: buildShim,
+    validate: validateShim,
+    logs: logsShim,
+    cost: costShim,
+    "build-resume": buildResumeShim,
   },
 });

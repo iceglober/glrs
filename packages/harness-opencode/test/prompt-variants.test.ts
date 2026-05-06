@@ -70,11 +70,6 @@ describe("getStrictPrompt", () => {
     expect(prompt).not.toContain("trust-recent-green");
   });
 
-  it("returns the strict-executor prompt for pilot-builder", () => {
-    const prompt = getStrictPrompt("pilot-builder");
-    expect(prompt).toContain("STRICT_EXECUTOR_VARIANT");
-  });
-
   it("throws for agents without a strict variant", () => {
     expect(() => getStrictPrompt("prime")).toThrow();
     expect(() => getStrictPrompt("docs-maintainer")).toThrow();
@@ -93,12 +88,6 @@ describe("getReasoningPrompt", () => {
     const prompt = getReasoningPrompt("qa-reviewer");
     expect(prompt).not.toContain("STRICT_EXECUTOR_VARIANT");
     expect(prompt).toContain("trust-recent-green");
-  });
-
-  it("returns the reasoning prompt for pilot-builder", () => {
-    const prompt = getReasoningPrompt("pilot-builder");
-    expect(prompt).not.toContain("STRICT_EXECUTOR_VARIANT");
-    expect(prompt).toContain("environment bootstrap");
   });
 
   it("throws for agents without a variant", () => {
@@ -120,10 +109,9 @@ describe("resolveHarnessModels — mid-execute tier", () => {
     };
     resolveHarnessModels(agents, config, pluginOptions);
 
-    // build, qa-reviewer, pilot-builder should have strict prompts
+    // build, qa-reviewer should have strict prompts
     expect((agents["build"]!.prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
     expect((agents["qa-reviewer"]!.prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
-    expect((agents["pilot-builder"]!.prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
   });
 
   it("applies the mid-execute model to executor agents", () => {
@@ -139,7 +127,6 @@ describe("resolveHarnessModels — mid-execute tier", () => {
 
     expect(agents["build"]!.model).toBe("moonshotai/kimi-k2-6");
     expect(agents["qa-reviewer"]!.model).toBe("moonshotai/kimi-k2-6");
-    expect(agents["pilot-builder"]!.model).toBe("moonshotai/kimi-k2-6");
   });
 
   it("mid-tier agents (docs-maintainer, lib-reader) get mid model, not mid-execute", () => {
@@ -171,7 +158,6 @@ describe("resolveHarnessModels — mid-execute tier", () => {
     expect((agents["build"]!.prompt as string)).not.toContain("STRICT_EXECUTOR_VARIANT");
     expect((agents["build"]!.prompt as string)).toContain("Fenced plans");
     expect((agents["qa-reviewer"]!.prompt as string)).toContain("trust-recent-green");
-    expect((agents["pilot-builder"]!.prompt as string)).toContain("environment bootstrap");
   });
 
   it("falls back mid-execute agents to mid model when mid-execute not configured", () => {
@@ -184,10 +170,9 @@ describe("resolveHarnessModels — mid-execute tier", () => {
     };
     resolveHarnessModels(agents, config, pluginOptions);
 
-    // build, qa-reviewer, pilot-builder should get the mid model
+    // build, qa-reviewer should get the mid model
     expect(agents["build"]!.model).toBe("anthropic/claude-sonnet-4-6");
     expect(agents["qa-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
-    expect(agents["pilot-builder"]!.model).toBe("anthropic/claude-sonnet-4-6");
   });
 
   it("per-agent override takes precedence over tier", () => {
@@ -243,7 +228,7 @@ describe("applyConfig — mid-execute integration", () => {
     expect((config.agent["build"].prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
     expect(config.agent["build"].model).toBe("moonshotai/kimi-k2-6");
     expect((config.agent["qa-reviewer"].prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
-    expect(config.agent["pilot-builder"].model).toBe("moonshotai/kimi-k2-6");
+    expect(config.agent["qa-reviewer"].model).toBe("moonshotai/kimi-k2-6");
   });
 
   it("end-to-end: no mid-execute → reasoning prompts, mid model", () => {
