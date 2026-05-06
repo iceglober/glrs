@@ -1,26 +1,48 @@
 /**
- * `pilot scope "<goal>"` — start a new pilot workflow with interactive scoping.
+ * `pilot scope` — start a new pilot workflow with interactive scoping.
+ *
+ * If a goal is provided as an argument, uses it directly.
+ * If no argument, prompts the user interactively for the goal.
  *
  * Spawns an OpenCode TUI session with the pilot-scoper agent.
  * The user converses with the scoper to define framing and acceptance criteria.
  * Produces scope.json and a current-scope pointer for `pilot go`.
  */
 
-import { command, positional, string } from "cmd-ts";
+import { command, restPositionals, string } from "cmd-ts";
+import { input } from "@inquirer/prompts";
 import { runScopePhase } from "../scope.js";
 
 export const scopeCmd = command({
   name: "scope",
   description: "Start a new pilot workflow with interactive scoping. Produces scope.json for `pilot go`.",
   args: {
-    goal: positional({
+    goalWords: restPositionals({
       type: string,
       displayName: "goal",
-      description: "What you want to build (e.g. \"Add dark mode toggle to settings page\")",
+      description: "What you want to build (optional — will prompt if not provided)",
     }),
   },
-  handler: async ({ goal }) => {
+  handler: async ({ goalWords }) => {
     const cwd = process.cwd();
+
+    // Join positional args into goal, or prompt if none provided
+    let goal = goalWords.join(" ").trim();
+
+    if (!goal) {
+      if (!process.stdin.isTTY) {
+        process.stderr.write("pilot scope: no goal provided and not running in a TTY.\n");
+        process.stderr.write("  Usage: pilot scope \"<what you want to build>\"\n");
+        process.exit(1);
+      }
+      goal = await input({
+        message: "What do you want to build?",
+      });
+      if (!goal.trim()) {
+        process.stderr.write("pilot scope: goal cannot be empty.\n");
+        process.exit(1);
+      }
+    }
 
     console.log(`\n\x1b[1mPilot v2 — Scope phase\x1b[0m`);
     console.log(`Goal: ${goal}\n`);
