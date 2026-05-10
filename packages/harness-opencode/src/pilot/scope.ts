@@ -93,6 +93,11 @@ export async function runScopePhase(opts: {
   if (!safety.ok) {
     return { ok: false, reason: safety.reason };
   }
+  if (safety.warnings?.length) {
+    for (const w of safety.warnings) {
+      process.stderr.write(`[pilot] ${w}\n`);
+    }
+  }
 
   // Load config
   const config = loadPilotConfig(cwd);
