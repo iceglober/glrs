@@ -4,6 +4,8 @@
  *
  * Parses the first positional arg as the subcommand, dispatches to the
  * underlying tool's binary via the resolver in ./index.ts.
+ *
+ * Auto-updates on every invocation (rate-limited to once per hour).
  */
 
 import { spawn } from "node:child_process";
@@ -16,6 +18,27 @@ import { del } from "./commands/delete.js";
 import { cleanup } from "./commands/cleanup.js";
 import { switchCmd } from "./commands/switch.js";
 import { go } from "./commands/go.js";
+import { autoUpdate } from "./lib/auto-update.js";
+
+// ── Auto-update ─────────────────────────────────────────────────────────────
+// Check for updates before doing anything else. If an update is installed,
+// re-exec the same command with the new binary.
+const updated = await autoUpdate();
+if (updated) {
+  // Re-exec: the new version is now installed globally.
+  // Spawn the same command again — it will pick up the new binary.
+  const child = spawn("glrs", process.argv.slice(2), {
+    stdio: "inherit",
+    env: { ...process.env, GLRS_UPDATING: "1" }, // prevent infinite loop
+  });
+  child.on("exit", (code, signal) => {
+    if (signal) { process.kill(process.pid, signal); return; }
+    process.exit(code ?? 0);
+  });
+  child.on("error", () => process.exit(1));
+  // Don't continue — wait for the re-exec'd child
+  await new Promise(() => {}); // hang until child exits
+}
 
 const args = process.argv.slice(2);
 
