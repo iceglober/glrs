@@ -1,0 +1,36 @@
+# Dockerfile.test — Containerized test runner for the daemon refresh test harness.
+#
+# Usage:
+#   docker build -f Dockerfile.test -t glrs-assume-test .
+#   docker run --rm glrs-assume-test
+#
+# No AWS credentials are needed. All tests use mock implementations.
+
+# ── Stage 1: dependency cache ─────────────────────────────────────────────────
+FROM rust:1.75-slim AS deps
+
+WORKDIR /build
+
+# Copy manifests first so Docker can cache the dependency layer.
+COPY Cargo.toml Cargo.lock ./
+
+# Create a stub lib.rs so `cargo fetch` / `cargo build --deps` can resolve
+# the dependency graph without the full source tree.
+RUN mkdir -p src && echo 'fn main() {}' > src/main.rs && echo '' > src/lib.rs
+
+# Fetch and compile dependencies only (no source changes invalidate this layer).
+RUN cargo test --test daemon_refresh --no-run 2>/dev/null || true
+
+# ── Stage 2: build and run tests ──────────────────────────────────────────────
+FROM rust:1.75-slim AS test
+
+WORKDIR /build
+
+# Copy the full source tree.
+COPY . .
+
+# Build the test binary (compile-only, no run).
+RUN cargo test --test daemon_refresh --no-run
+
+# Run the daemon_refresh test suite.
+CMD ["cargo", "test", "--test", "daemon_refresh"]

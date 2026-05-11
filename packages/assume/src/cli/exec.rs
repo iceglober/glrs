@@ -5,7 +5,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 use std::process::Command;
 
-pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::BackgroundEnsure;
 
 #[derive(Args, Debug)]
 pub struct ExecArgs {

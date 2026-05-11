@@ -139,8 +139,10 @@ async fn main() -> anyhow::Result<()> {
         Commands::ShellInit(_) => cli::shell_init::REQUIREMENT,
         Commands::Upgrade(_) => cli::upgrade::REQUIREMENT,
     };
-    if requirement == DaemonRequirement::Daemon {
-        assume::core::daemon::ensure_daemon_running();
+    match requirement {
+        DaemonRequirement::Daemon => assume::core::daemon::ensure_daemon_running(),
+        DaemonRequirement::BackgroundEnsure => assume::core::daemon::spawn_daemon_if_dead(),
+        DaemonRequirement::None => {}
     }
 
     match cli.command {
