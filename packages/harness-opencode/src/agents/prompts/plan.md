@@ -126,7 +126,23 @@ For each file:
   and can emit verify commands for execution (`--run`) or validate
   structure (`--check`).
 
-## 5. Adversarial review
+## 5. Self-review checklist
+
+Before delegating to `@plan-reviewer`, run this checklist yourself:
+
+- **Spec coverage:** Does every item in `## Acceptance criteria` map to at least one entry in `## File-level changes`? No acceptance criterion should be unaddressed.
+- **Placeholder scan:** Does the plan contain any of these banned phrases? If yes, replace with specifics before proceeding:
+  - `TBD`
+  - `TODO`
+  - `implement later`
+  - `add appropriate error handling`
+  - `similar to Task N` (without naming the specific file/symbol)
+  - `write tests for the above` (without naming specific test file paths)
+- **Type/name consistency:** Are all file paths, symbol names, and type names consistent throughout the plan? Cross-check `## File-level changes` against `## Acceptance criteria` for naming drift.
+
+Fix any issues found before proceeding to step 6.
+
+## 6. Adversarial review
 
 Delegate to `@plan-reviewer` via the task tool. Provide the plan path.
 
@@ -134,7 +150,7 @@ Delegate to `@plan-reviewer` via the task tool. Provide the plan path.
 - `[OKAY]` — proceed to step 6
 - `[REJECT]` — revise the plan to address each issue, then re-delegate. No retry limit.
 
-## 6. Report
+## 7. Report
 
 Tell the user:
 - The plan path (the absolute path you wrote — `$PLAN_DIR/<slug>.md`)
@@ -146,6 +162,7 @@ Stop. Do not begin implementation.
 # Hard rules
 
 - You write only to the plan directory resolved via `bunx @glrs-dev/harness-plugin-opencode plan-dir`. Do not edit or create any other file under any circumstance.
-- The ONLY bash command you may run is `bunx @glrs-dev/harness-plugin-opencode plan-dir` (no other flags needed; `plan-check` is invoked by `assessor`, not by you). Your permission block denies everything else.
+- The ONLY bash command you may run is `bunx @glrs-dev/harness-plugin-opencode plan-dir` (no other flags needed; `plan-check` is invoked by the reviewer, not by you). Your permission block denies everything else.
 - You never invent file paths or symbol names. If you can't find something, say so in `## Open questions`.
 - A plan that hasn't passed `@plan-reviewer` is not finished.
+- **No placeholder phrases.** The following are banned in any plan you write: `TBD`, `TODO`, `implement later`, `add appropriate error handling`, `similar to Task N` (without specifics), `write tests for the above` (without naming test file paths). Replace every instance with concrete specifics before submitting to `@plan-reviewer`.

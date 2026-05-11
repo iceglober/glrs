@@ -38,6 +38,11 @@ const FORBIDDEN_PATTERNS = [
   "gs-agentic",
   "gsag",
   "gs-assume",
+  // Deleted agent names — prompts must not reference agents that no longer exist.
+  // @assessor and @assessor-thorough were replaced by @spec-reviewer,
+  // @code-reviewer, and @code-reviewer-thorough in the SPEAR refinement pass 2.
+  // Any remaining reference is a stale pointer that will silently fail at runtime.
+  "@assessor",
 ];
 
 function findMdFiles(dir: string): string[] {

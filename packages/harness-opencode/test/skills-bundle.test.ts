@@ -66,12 +66,13 @@ describe("skills bundle", () => {
     expect(fs.existsSync(DIST_SKILLS)).toBe(true);
   });
 
-  it("has exactly 11 skill directories", () => {
+  it("has exactly 14 skill directories", () => {
     const dirs = fs.readdirSync(DIST_SKILLS, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name);
     expect(dirs.sort()).toEqual([
       "adr",
+      "adversarial-review-rubric",
       "agent-estimation",
       "code-quality",
       "research",
@@ -79,6 +80,8 @@ describe("skills bundle", () => {
       "research-local",
       "research-web",
       "review-plan",
+      "root-cause-diagnosis",
+      "spear-protocol",
       "vercel-composition-patterns",
       "vercel-react-best-practices",
       "web-design-guidelines",

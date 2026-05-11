@@ -8,11 +8,13 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 20 agents", () => {
-    // 20 agents total: prime (mode:primary), plan + build + research + research-web +
+  it("returns exactly 21 agents", () => {
+    // 21 agents total: prime (mode:primary), plan + build + research + research-web +
     // research-local + research-auto (all mode:all — primary AND task-tool-dispatchable),
-    // 9 pure subagents, 4 pilot v2 subagents (scoper, planner, builder, assessor).
-    expect(Object.keys(agents).length).toBe(20);
+    // 11 pure subagents (spec-reviewer, code-reviewer, code-reviewer-thorough, plan-reviewer,
+    // code-searcher, gap-analyzer, architecture-advisor, docs-maintainer, lib-reader,
+    // agents-md-writer, + 4 pilot v2 subagents).
+    expect(Object.keys(agents).length).toBe(21);
   });
 
   it("has 2 primary-capable agents besides plan (prime, build; mode=primary or mode=all)", () => {
@@ -28,11 +30,11 @@ describe("createAgents", () => {
     }
   });
 
-  it("has 17 subagent-capable agents (mode=subagent or mode=all)", () => {
+  it("has 18 subagent-capable agents (mode=subagent or mode=all)", () => {
     // "Subagent-capable" means the agent appears in other agents'
     // task-tool picker. mode: "subagent" and mode: "all" both qualify.
     // plan, build, research, research-web, research-local, research-auto all have
-    // mode:"all" — user-invocable AND task-dispatchable. The other 11 are mode:"subagent" only.
+    // mode:"all" — user-invocable AND task-dispatchable. The other 12 are mode:"subagent" only.
     const subagentCapable = [
       "plan",
       "build",
@@ -40,8 +42,9 @@ describe("createAgents", () => {
       "research-web",
       "research-local",
       "research-auto",
-      "assessor",
-      "assessor-thorough",
+      "spec-reviewer",
+      "code-reviewer",
+      "code-reviewer-thorough",
       "plan-reviewer",
       "code-searcher",
       "gap-analyzer",
@@ -93,13 +96,24 @@ describe("createAgents", () => {
   });
 
   it("build prompt does not re-run full test suite (PRIME's Assess stage owns it)", () => {
-    // PRIME's Assess stage delegates full-suite testing to @assessor /
-    // @assessor-thorough. @build running the full suite too duplicates that
-    // work. Per-file tests during execution (build.md section 3) are
-    // fine and expected. Final full-suite runs belong to Assess.
+    // PRIME's Assess stage delegates full-suite testing to @spec-reviewer /
+    // @code-reviewer / @code-reviewer-thorough. @build running the full suite
+    // too duplicates that work. Per-file tests during execution (build.md
+    // section 3) are fine and expected. Final full-suite runs belong to Assess.
     const build = agents["build"]!.prompt as string;
     expect(build).not.toContain("Run the full test suite. It must pass.");
     expect(build).not.toContain("Run lint. It must pass.");
+  });
+
+  it("build prompt contains DONE_WITH_CONCERNS status", () => {
+    const build = agents["build"]!.prompt as string;
+    expect(build).toContain("DONE_WITH_CONCERNS");
+  });
+
+  it("build prompt enforces TDD order", () => {
+    const build = agents["build"]!.prompt as string;
+    expect(build).toContain("TDD order");
+    expect(build).toContain("tests:");
   });
 
   it("every agent has a non-empty prompt", () => {
@@ -116,21 +130,28 @@ describe("createAgents", () => {
     }
   });
 
-  it("assessor agent exists with correct permissions", () => {
-    // Guard the rename: qa-reviewer → assessor
-    expect(agents["assessor"]).toBeDefined();
-    expect(agents["assessor"]!.model).toBe("anthropic/claude-sonnet-4-6");
-    const bash = (agents["assessor"] as any).permission.bash;
+  it("spec-reviewer agent exists with correct permissions", () => {
+    expect(agents["spec-reviewer"]).toBeDefined();
+    expect(agents["spec-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
+    const bash = (agents["spec-reviewer"] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash["*"]).toBe("allow");
     expect(bash["rm -rf /*"]).toBe("deny");
   });
 
-  it("assessor-thorough agent exists with correct model", () => {
-    // Guard the rename: qa-thorough → assessor-thorough
-    expect(agents["assessor-thorough"]).toBeDefined();
-    expect(agents["assessor-thorough"]!.model).toBe("anthropic/claude-opus-4-7");
-    expect(agents["assessor-thorough"]!.mode).toBe("subagent");
+  it("code-reviewer agent exists with correct permissions", () => {
+    expect(agents["code-reviewer"]).toBeDefined();
+    expect(agents["code-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
+    const bash = (agents["code-reviewer"] as any).permission.bash;
+    expect(typeof bash).toBe("object");
+    expect(bash["*"]).toBe("allow");
+    expect(bash["rm -rf /*"]).toBe("deny");
+  });
+
+  it("code-reviewer-thorough agent exists with correct model", () => {
+    expect(agents["code-reviewer-thorough"]).toBeDefined();
+    expect(agents["code-reviewer-thorough"]!.model).toBe("anthropic/claude-opus-4-7");
+    expect(agents["code-reviewer-thorough"]!.mode).toBe("subagent");
   });
 
   it("prime prompt contains Assess loop semantics", () => {
@@ -159,12 +180,8 @@ describe("createAgents", () => {
     expect(build.temperature).toBe(0.1);
   });
 
-  it("assessor model is sonnet-4-6", () => {
-    expect(agents["assessor"]!.model).toBe("anthropic/claude-sonnet-4-6");
-  });
-
-  it("assessor-thorough subagent is registered with opus model", () => {
-    const qt = agents["assessor-thorough"]!;
+  it("code-reviewer-thorough subagent is registered with opus model", () => {
+    const qt = agents["code-reviewer-thorough"]!;
     expect(qt).toBeDefined();
     expect(qt.model).toBe("anthropic/claude-opus-4-7");
     expect(qt.mode).toBe("subagent");
@@ -363,8 +380,9 @@ describe("subagent permissions", () => {
   const agents = createAgents();
 
   const subagentsWithPerms = [
-    "assessor",
-    "assessor-thorough",
+    "spec-reviewer",
+    "code-reviewer",
+    "code-reviewer-thorough",
     "plan-reviewer",
     "code-searcher",
     "gap-analyzer",
@@ -492,13 +510,12 @@ describe("subagent permissions", () => {
     return "ask";
   }
 
-  it("assessor bash is object-form with enumerated allow-list", () => {
-    const bash = (agents["assessor"] as any).permission.bash;
+  it("spec-reviewer bash is object-form with enumerated allow-list", () => {
+    const bash = (agents["spec-reviewer"] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash).not.toBeNull();
     expect(bash["*"]).toBe("allow");
-    // Spot-check a handful of enumerated entries — the exhaustive
-    // pain-point coverage is in the next test.
+    // Spot-check a handful of enumerated entries.
     expect(bash["tail *"]).toBe("allow");
     expect(bash["pnpm lint *"]).toBe("allow");
     expect(bash["git merge-base *"]).toBe("allow");
@@ -513,8 +530,8 @@ describe("subagent permissions", () => {
     expect(bash["git push --force-with-lease*"]).toBe("allow");
   });
 
-  it("assessor bash object form allows all reported pain-point commands", () => {
-    const bash = (agents["assessor"] as any).permission.bash;
+  it("spec-reviewer bash object form allows all reported pain-point commands", () => {
+    const bash = (agents["spec-reviewer"] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of PAIN_POINT_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -524,13 +541,13 @@ describe("subagent permissions", () => {
     }
     if (mismatches.length > 0) {
       throw new Error(
-        `assessor bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
+        `spec-reviewer bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
       );
     }
   });
 
-  it("assessor bash object form denies destructive commands", () => {
-    const bash = (agents["assessor"] as any).permission.bash;
+  it("spec-reviewer bash object form denies destructive commands", () => {
+    const bash = (agents["spec-reviewer"] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of DESTRUCTIVE_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -542,13 +559,13 @@ describe("subagent permissions", () => {
     }
     if (mismatches.length > 0) {
       throw new Error(
-        `assessor bash map fails destructive-command check:\n${mismatches.join("\n")}`,
+        `spec-reviewer bash map fails destructive-command check:\n${mismatches.join("\n")}`,
       );
     }
   });
 
-  it("assessor-thorough bash is object-form with enumerated allow-list", () => {
-    const bash = (agents["assessor-thorough"] as any).permission.bash;
+  it("code-reviewer bash is object-form with enumerated allow-list", () => {
+    const bash = (agents["code-reviewer"] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash).not.toBeNull();
     expect(bash["*"]).toBe("allow");
@@ -558,8 +575,8 @@ describe("subagent permissions", () => {
     expect(bash["rm -rf /*"]).toBe("deny");
   });
 
-  it("assessor-thorough bash object form allows all reported pain-point commands", () => {
-    const bash = (agents["assessor-thorough"] as any).permission.bash;
+  it("code-reviewer bash object form allows all reported pain-point commands", () => {
+    const bash = (agents["code-reviewer"] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of PAIN_POINT_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -569,24 +586,35 @@ describe("subagent permissions", () => {
     }
     if (mismatches.length > 0) {
       throw new Error(
-        `assessor-thorough bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
+        `code-reviewer bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
       );
     }
   });
 
-  it("assessor-thorough bash shape matches assessor", () => {
-    // They share a role (read-only adversarial review). Any divergence
+  it("code-reviewer-thorough bash is object-form with enumerated allow-list", () => {
+    const bash = (agents["code-reviewer-thorough"] as any).permission.bash;
+    expect(typeof bash).toBe("object");
+    expect(bash).not.toBeNull();
+    expect(bash["*"]).toBe("allow");
+    expect(bash["tail *"]).toBe("allow");
+    expect(bash["pnpm lint *"]).toBe("allow");
+    expect(bash["git merge-base *"]).toBe("allow");
+    expect(bash["rm -rf /*"]).toBe("deny");
+  });
+
+  it("code-reviewer-thorough bash shape matches code-reviewer", () => {
+    // They share a role (code quality review). Any divergence
     // would cause the fast/thorough dispatch to have different
     // allowlists — a foot-gun. Fail noisily if someone drifts one
     // without the other.
-    const qr = (agents["assessor"] as any).permission.bash;
-    const qt = (agents["assessor-thorough"] as any).permission.bash;
-    expect(qt).toEqual(qr);
+    const cr = (agents["code-reviewer"] as any).permission.bash;
+    const crt = (agents["code-reviewer-thorough"] as any).permission.bash;
+    expect(crt).toEqual(cr);
   });
 
-  it("assessor-thorough permission block matches assessor shape (non-bash keys)", () => {
-    const qr = (agents["assessor"] as any).permission;
-    const qt = (agents["assessor-thorough"] as any).permission;
+  it("code-reviewer-thorough permission block matches code-reviewer shape (non-bash keys)", () => {
+    const cr = (agents["code-reviewer"] as any).permission;
+    const crt = (agents["code-reviewer-thorough"] as any).permission;
     for (const key of [
       "edit",
       "webfetch",
@@ -602,7 +630,7 @@ describe("subagent permissions", () => {
       "playwright",
       "linear",
     ]) {
-      expect(qt[key]).toBe(qr[key]);
+      expect(crt[key]).toBe(cr[key]);
     }
   });
 
@@ -748,60 +776,90 @@ describe("subagent permissions", () => {
 
 describe("prompt content assertions", () => {
   const agents = createAgents();
-  const assessor = agents["assessor"]!.prompt as string;
-  const assessorThorough = agents["assessor-thorough"]!.prompt as string;
+  const specReviewer = agents["spec-reviewer"]!.prompt as string;
+  const codeReviewer = agents["code-reviewer"]!.prompt as string;
+  const codeReviewerThorough = agents["code-reviewer-thorough"]!.prompt as string;
   const prime = agents["prime"]!.prompt as string;
 
-  // ---- assessor (fast variant) ----
+  // ---- spec-reviewer ----
 
-  it("assessor prompt contains trust-recent-green clause", () => {
-    expect(assessor).toContain("tests passed at");
-    expect(assessor).toContain("lint passed at");
-    expect(assessor).toContain("typecheck passed at");
+  it("spec-reviewer agent exists with correct permissions", () => {
+    expect(agents["spec-reviewer"]).toBeDefined();
+    expect(agents["spec-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
   });
 
-  it("assessor prompt requires git log verification for untracked-in-plan files", () => {
-    expect(assessor).toContain("git log --oneline -- <file>");
+  it("spec-reviewer prompt returns PASS_SPEC or FAIL_SPEC tokens", () => {
+    expect(specReviewer).toContain("PASS_SPEC");
+    expect(specReviewer).toContain("FAIL_SPEC");
   });
 
-  it("assessor prompt contains plan-drift auto-fail rule", () => {
-    expect(assessor.toLowerCase()).toContain("plan drift");
-    expect(assessor.toLowerCase()).toContain("auto-fail");
-    expect(assessor).toContain("## File-level changes");
+  it("spec-reviewer prompt requires git log verification for untracked-in-plan files", () => {
+    expect(specReviewer).toContain("git log --oneline -- <file>");
   });
 
-  it("assessor prompt retains plan-state verify step", () => {
-    expect(assessor).toContain("plan-check --run");
+  it("spec-reviewer prompt contains plan-drift auto-fail rule", () => {
+    expect(specReviewer.toLowerCase()).toContain("plan drift");
+    expect(specReviewer.toLowerCase()).toContain("auto-fail");
+    expect(specReviewer).toContain("## File-level changes");
   });
 
-  it("assessor prompt guards full-suite re-run behind trust-recent-green", () => {
-    expect(assessor.toLowerCase()).toMatch(
+  it("spec-reviewer prompt retains plan-state verify step", () => {
+    expect(specReviewer).toContain("plan-check --run");
+  });
+
+  // ---- code-reviewer (fast variant) ----
+
+  it("code-reviewer agent exists with correct permissions", () => {
+    expect(agents["code-reviewer"]).toBeDefined();
+    expect(agents["code-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
+  });
+
+  it("code-reviewer prompt contains trust-recent-green clause", () => {
+    expect(codeReviewer).toContain("tests passed at");
+    expect(codeReviewer).toContain("lint passed at");
+    expect(codeReviewer).toContain("typecheck passed at");
+  });
+
+  it("code-reviewer prompt returns PASS, LOOP-TO-PLAN, or FIX-INLINE tokens", () => {
+    expect(codeReviewer).toContain("[PASS]");
+    expect(codeReviewer).toContain("LOOP-TO-PLAN");
+    expect(codeReviewer).toContain("FIX-INLINE");
+  });
+
+  it("code-reviewer prompt guards full-suite re-run behind trust-recent-green", () => {
+    expect(codeReviewer.toLowerCase()).toMatch(
       /skip re-running|skip running|skip these|skip this step/,
     );
   });
 
-  // ---- assessor-thorough (opus variant) ----
+  // ---- code-reviewer-thorough (opus variant) ----
 
-  it("assessor-thorough prompt contains strengthened scope and plan-drift rules", () => {
-    expect(assessorThorough).toContain("git log --oneline -- <file>");
-    expect(assessorThorough.toLowerCase()).toContain("plan drift");
-    expect(assessorThorough.toLowerCase()).toContain("auto-fail");
+  it("code-reviewer-thorough agent exists with correct model", () => {
+    expect(agents["code-reviewer-thorough"]).toBeDefined();
+    expect(agents["code-reviewer-thorough"]!.model).toBe("anthropic/claude-opus-4-7");
+    expect(agents["code-reviewer-thorough"]!.mode).toBe("subagent");
   });
 
-  it("assessor-thorough prompt unconditionally re-runs full suite", () => {
-    expect(assessorThorough.toLowerCase()).toContain("re-run");
+  it("code-reviewer-thorough prompt contains strengthened scope and plan-drift rules", () => {
+    expect(codeReviewerThorough).toContain("git log --oneline -- <file>");
+    expect(codeReviewerThorough.toLowerCase()).toContain("plan drift");
+    expect(codeReviewerThorough.toLowerCase()).toContain("auto-fail");
   });
 
-  it("assessor-thorough prompt does NOT contain trust-recent-green clause", () => {
-    expect(assessorThorough).not.toContain("tests passed at");
-    expect(assessorThorough).not.toContain("trust-recent-green");
+  it("code-reviewer-thorough prompt unconditionally re-runs full suite", () => {
+    expect(codeReviewerThorough.toLowerCase()).toContain("re-run");
+  });
+
+  it("code-reviewer-thorough prompt does NOT contain trust-recent-green clause", () => {
+    expect(codeReviewerThorough).not.toContain("tests passed at");
+    expect(codeReviewerThorough).not.toContain("trust-recent-green");
   });
 
   // ---- prime (picker + delegation + pre-existing-failure rule) ----
 
   it("prime prompt contains assessor-fast-vs-thorough heuristic", () => {
-    expect(prime).toContain("@assessor-thorough");
-    expect(prime).toContain("@assessor");
+    expect(prime).toContain("@code-reviewer-thorough");
+    expect(prime).toContain("@code-reviewer");
     expect(prime).toMatch(/>10 files|>500 lines/);
     expect(prime.toLowerCase()).toContain("risk: high");
     expect(prime.toLowerCase()).toMatch(
@@ -809,23 +867,43 @@ describe("prompt content assertions", () => {
     );
   });
 
-  it("prime prompt requires session-green summary for assessor delegation", () => {
+  it("prime prompt contains MECE rubric dimensions", () => {
+    expect(prime).toContain("Correctness");
+    expect(prime).toContain("Completeness");
+    expect(prime).toContain("Consistency");
+    expect(prime).toContain("Safety");
+    expect(prime).toContain("Scope");
+  });
+
+  it("prime prompt requires session-green summary for code-reviewer delegation", () => {
     expect(prime).toContain("tests passed at");
     expect(prime).toContain("lint passed at");
     expect(prime).toContain("typecheck passed at");
   });
 
-  it("prime prompt requires logging pre-existing failures to plan Open questions", () => {
-    expect(prime).toContain("## Open questions");
-    expect(prime.toLowerCase()).toContain("pre-existing failure");
-    expect(prime.toLowerCase()).toContain(
+  it("prime prompt does NOT contain pre-existing failure logging escape hatch", () => {
+    // The old escape hatch ("Log confirmed pre-existing failures to the plan")
+    // has been deleted. The new policy is: Red CI blocks merge — never defer.
+    expect(prime.toLowerCase()).not.toContain(
+      "log confirmed pre-existing failures",
+    );
+    expect(prime.toLowerCase()).not.toContain(
       "not introduced by this change",
     );
   });
 
-  it("prime subagent reference lists both assessor and assessor-thorough", () => {
-    expect(prime).toMatch(/- `@assessor`/);
-    expect(prime).toMatch(/- `@assessor-thorough`/);
+  it("prime prompt contains Red CI blocks merge hard rule", () => {
+    expect(prime).toContain("Red CI blocks merge");
+  });
+
+  it("prime subagent reference lists spec-reviewer, code-reviewer, code-reviewer-thorough", () => {
+    expect(prime).toMatch(/- `@spec-reviewer`/);
+    expect(prime).toMatch(/- `@code-reviewer`/);
+    expect(prime).toMatch(/- `@code-reviewer-thorough`/);
+  });
+
+  it("prime prompt references spear-protocol skill", () => {
+    expect(prime).toContain("spear-protocol");
   });
 
   // ---- context firewall + delegation strengthening ----
@@ -851,15 +929,7 @@ describe("prompt content assertions", () => {
     expect(prime).not.toContain("> 30 hits");
   });
 
-  // ---- Plan-storage migration regression guards (a7 in the
-  // plans-repo-shared-storage plan) ----
-  //
-  // These tests lock in that prompts reference the repo-shared plan
-  // directory via the resolver CLI rather than the legacy per-worktree
-  // `.agent/plans/<slug>.md` path. CI's dangling-paths guard catches the
-  // literal string; these tests go further and assert the POSITIVE
-  // presence of the new integration point so a future prompt edit that
-  // silently removes the CLI reference is caught too.
+  // ---- Plan-storage migration regression guards ----
 
   const planPrompt = agents["plan"]!.prompt as string;
   const autopilotCommand = createCommands()["autopilot"]!.template as string;
@@ -872,6 +942,18 @@ describe("prompt content assertions", () => {
       planPrompt.includes("bunx @glrs-dev/harness-plugin-opencode plan-dir") ||
       planPrompt.includes("GLORIOUS_PLAN_DIR");
     expect(hasResolver).toBe(true);
+  });
+
+  it("plan prompt contains no-placeholders rule", () => {
+    expect(planPrompt).toContain("TBD");
+    expect(planPrompt).toContain("implement later");
+    expect(planPrompt).toContain("add appropriate error handling");
+  });
+
+  it("plan prompt contains self-review checklist", () => {
+    expect(planPrompt).toContain("Self-review checklist");
+    expect(planPrompt).toContain("Spec coverage");
+    expect(planPrompt).toContain("Placeholder scan");
   });
 
   it("prime Bootstrap probe references new plan dir (or a shell snippet that resolves it)", () => {
@@ -893,6 +975,254 @@ describe("prompt content assertions", () => {
       autopilotCommand.includes("/ship <plan-path>") ||
       autopilotCommand.includes("/ship ~/.glorious/opencode/");
     expect(hasNewShape).toBe(true);
+  });
+});
+
+describe("pre-existing escape hatch ban", () => {
+  const agents = createAgents();
+  const build = agents["build"]!.prompt as string;
+  const specReviewer = agents["spec-reviewer"]!.prompt as string;
+  const codeReviewer = agents["code-reviewer"]!.prompt as string;
+  const codeReviewerThorough = agents["code-reviewer-thorough"]!.prompt as string;
+  const prime = agents["prime"]!.prompt as string;
+
+  const spearSkillPath = path.join(
+    __dirname,
+    "../src/skills/spear-protocol/SKILL.md",
+  );
+  const spearSkill = fs.readFileSync(spearSkillPath, "utf-8");
+
+  // ---- @build root-cause diagnosis protocol ----
+  // Content moved to root-cause-diagnosis skill; prompts now reference the skill.
+
+  it("build prompt contains root-cause diagnosis protocol", () => {
+    // build.md now loads the root-cause-diagnosis skill instead of carrying inline content.
+    expect(build).toContain("root-cause-diagnosis");
+  });
+
+  it("build prompt contains anti-pre-existing rationalization table", () => {
+    // The rationalization table lives in the root-cause-diagnosis skill.
+    // The prompt references the skill, which contains the table.
+    expect(build).toContain("root-cause-diagnosis");
+  });
+
+  // ---- @spec-reviewer red-CI-blocks-merge ----
+  // Content moved to adversarial-review-rubric skill; prompts now reference the skill.
+
+  it("spec-reviewer prompt contains red-CI-blocks-merge rule", () => {
+    // spec-reviewer.md now loads the adversarial-review-rubric skill.
+    expect(specReviewer).toContain("adversarial-review-rubric");
+  });
+
+  it("code-reviewer prompt contains red-CI-blocks-merge rule", () => {
+    // code-reviewer.md now loads the adversarial-review-rubric skill.
+    expect(codeReviewer).toContain("adversarial-review-rubric");
+  });
+
+  it("code-reviewer-thorough prompt contains red-CI-blocks-merge rule", () => {
+    // code-reviewer-thorough.md now loads the adversarial-review-rubric skill.
+    expect(codeReviewerThorough).toContain("adversarial-review-rubric");
+  });
+
+  // ---- unevidenced pre-existing claim rejection ----
+
+  it("spec-reviewer prompt rejects unevidenced pre-existing claims", () => {
+    // The evidence test lives in the adversarial-review-rubric skill.
+    expect(specReviewer).toContain("adversarial-review-rubric");
+  });
+
+  it("code-reviewer prompt rejects unevidenced pre-existing claims", () => {
+    expect(codeReviewer).toContain("adversarial-review-rubric");
+  });
+
+  it("code-reviewer-thorough prompt rejects unevidenced pre-existing claims", () => {
+    expect(codeReviewerThorough).toContain("adversarial-review-rubric");
+  });
+
+  // ---- spear-protocol skill ----
+
+  it("spear-protocol skill does NOT contain pre-existing-failure logging step", () => {
+    expect(spearSkill.toLowerCase()).not.toContain(
+      "verify pre-existing-failure logging",
+    );
+  });
+
+  it("spear-protocol skill contains root-cause diagnosis reference", () => {
+    expect(spearSkill.toLowerCase()).toMatch(/root.cause|diagnosis protocol/);
+  });
+
+  // ---- new skill content assertions ----
+
+  it("root-cause-diagnosis skill exists and has valid frontmatter", () => {
+    const skillPath = path.join(
+      __dirname,
+      "../src/skills/root-cause-diagnosis/SKILL.md",
+    );
+    expect(fs.existsSync(skillPath)).toBe(true);
+    const content = fs.readFileSync(skillPath, "utf-8");
+    expect(content).toContain("name: root-cause-diagnosis");
+    expect(content).toContain("description:");
+  });
+
+  it("root-cause-diagnosis skill contains rationalization table", () => {
+    const skillPath = path.join(
+      __dirname,
+      "../src/skills/root-cause-diagnosis/SKILL.md",
+    );
+    const content = fs.readFileSync(skillPath, "utf-8");
+    expect(content.toLowerCase()).toContain("rationalization table");
+    expect(content.toLowerCase()).toContain("not evidence");
+    expect(content.toLowerCase()).toContain("likely");
+  });
+
+  it("root-cause-diagnosis skill contains TDD-RED exception", () => {
+    const skillPath = path.join(
+      __dirname,
+      "../src/skills/root-cause-diagnosis/SKILL.md",
+    );
+    const content = fs.readFileSync(skillPath, "utf-8");
+    expect(content.toLowerCase()).toMatch(/tdd.red|red.*green/i);
+    expect(content.toLowerCase()).toContain("expected to fail");
+  });
+
+  it("adversarial-review-rubric skill exists and has valid frontmatter", () => {
+    const skillPath = path.join(
+      __dirname,
+      "../src/skills/adversarial-review-rubric/SKILL.md",
+    );
+    expect(fs.existsSync(skillPath)).toBe(true);
+    const content = fs.readFileSync(skillPath, "utf-8");
+    expect(content).toContain("name: adversarial-review-rubric");
+    expect(content).toContain("description:");
+  });
+
+  it("adversarial-review-rubric skill contains MECE rubric dimensions", () => {
+    const skillPath = path.join(
+      __dirname,
+      "../src/skills/adversarial-review-rubric/SKILL.md",
+    );
+    const content = fs.readFileSync(skillPath, "utf-8");
+    expect(content).toContain("Correctness");
+    expect(content).toContain("Completeness");
+    expect(content).toContain("Consistency");
+    expect(content).toContain("Safety");
+    expect(content).toContain("Scope");
+  });
+
+  it("adversarial-review-rubric skill contains progressive strictness levels", () => {
+    const skillPath = path.join(
+      __dirname,
+      "../src/skills/adversarial-review-rubric/SKILL.md",
+    );
+    const content = fs.readFileSync(skillPath, "utf-8");
+    expect(content).toContain("Level 1/3");
+    expect(content).toContain("Level 2/3");
+    expect(content).toContain("Level 3/3");
+  });
+
+  it("adversarial-review-rubric skill contains Red CI blocks merge rule", () => {
+    const skillPath = path.join(
+      __dirname,
+      "../src/skills/adversarial-review-rubric/SKILL.md",
+    );
+    const content = fs.readFileSync(skillPath, "utf-8");
+    expect(content).toContain("Red CI blocks merge");
+  });
+
+  it("adversarial-review-rubric skill contains unevidenced pre-existing claim rejection", () => {
+    const skillPath = path.join(
+      __dirname,
+      "../src/skills/adversarial-review-rubric/SKILL.md",
+    );
+    const content = fs.readFileSync(skillPath, "utf-8");
+    expect(content.toLowerCase()).toContain("commit sha");
+    expect(content.toLowerCase()).toContain("merge-base reproduction");
+  });
+
+  // ---- prompt-reference assertions ----
+
+  it("build prompt references root-cause-diagnosis skill", () => {
+    expect(build).toContain("root-cause-diagnosis");
+  });
+
+  it("build.open prompt references root-cause-diagnosis skill", () => {
+    const agents2 = createAgents();
+    // build.open is the strict variant; test via applyConfig with mid-execute tier
+    const config: any = {};
+    const pluginOptions = {
+      models: { "mid-execute": "moonshotai/kimi-k2-6", mid: "anthropic/claude-sonnet-4-6" },
+    };
+    applyConfig(config, pluginOptions);
+    const buildOpen = config.agent["build"].prompt as string;
+    expect(buildOpen).toContain("root-cause-diagnosis");
+  });
+
+  it("spec-reviewer prompts reference adversarial-review-rubric skill", () => {
+    expect(specReviewer).toContain("adversarial-review-rubric");
+    // Also check strict variant
+    const config: any = {};
+    applyConfig(config, {
+      models: { "mid-execute": "moonshotai/kimi-k2-6", mid: "anthropic/claude-sonnet-4-6" },
+    });
+    const srStrict = config.agent["spec-reviewer"].prompt as string;
+    expect(srStrict).toContain("adversarial-review-rubric");
+  });
+
+  it("code-reviewer prompts reference adversarial-review-rubric skill", () => {
+    expect(codeReviewer).toContain("adversarial-review-rubric");
+    expect(codeReviewerThorough).toContain("adversarial-review-rubric");
+    // Also check strict variant
+    const config: any = {};
+    applyConfig(config, {
+      models: { "mid-execute": "moonshotai/kimi-k2-6", mid: "anthropic/claude-sonnet-4-6" },
+    });
+    const crStrict = config.agent["code-reviewer"].prompt as string;
+    expect(crStrict).toContain("adversarial-review-rubric");
+  });
+});
+
+describe("guidance-deviation reporting contract", () => {
+  const agents = createAgents();
+  const build = agents["build"]!.prompt as string;
+  const prime = agents["prime"]!.prompt as string;
+
+  const buildOpenPath = path.join(
+    __dirname,
+    "../src/agents/prompts/build.open.md",
+  );
+  const buildOpen = fs.readFileSync(buildOpenPath, "utf-8");
+
+  // ---- @build return-payload contract has a guidance-deviation slot ----
+
+  it("build prompt section 5 item (e) covers guidance deviations", () => {
+    expect(build).toContain("(e) Guidance deviations");
+    expect(build).toContain("Silence is not acceptable");
+  });
+
+  it("build.open prompt section 5 item (e) covers guidance deviations", () => {
+    expect(buildOpen).toContain("(e) Guidance deviations");
+    expect(buildOpen).toContain("Silence is not acceptable");
+  });
+
+  // ---- PRIME has a pre-dispatch consistency check ----
+
+  it("prime prompt contains pre-dispatch consistency check", () => {
+    expect(prime).toContain("Pre-dispatch consistency check");
+    expect(prime).toContain("Contradictions caught pre-dispatch");
+  });
+
+  it("prime prompt handles guidance deviations without blame-misattribution", () => {
+    // PRIME's "On @build's return" section must acknowledge that deviations
+    // surfaced by @build reflect PRIME's prompt hygiene, not agent disobedience.
+    expect(prime).toContain("audit your own prompt hygiene");
+    expect(prime).toContain("not as `@build` disobedience");
+  });
+
+  it("prime delegation template asks for guidance deviations", () => {
+    // The Execute delegation prompt template must request item (e)
+    // (guidance deviations) in the @build return payload — matching
+    // build.md section 5's labels exactly.
+    expect(prime).toMatch(/\(e\) any guidance deviations/);
   });
 });
 
@@ -920,15 +1250,25 @@ describe("mid-tier prompt variant selection", () => {
     expect(buildPrompt).toContain("Fenced plans");
   });
 
-  it("assessor prompt changes to strict variant when mid-execute is configured", () => {
+  it("spec-reviewer prompt changes to strict variant when mid-execute is configured", () => {
     const config: any = {};
     const pluginOptions = {
       models: { "mid-execute": "qwen/qwen3-coder-480b", mid: "anthropic/claude-sonnet-4-6" },
     };
     applyConfig(config, pluginOptions);
-    const qaPrompt = config.agent["assessor"].prompt as string;
-    expect(qaPrompt).toContain("STRICT_EXECUTOR_VARIANT");
-    expect(qaPrompt).not.toContain("trust-recent-green");
+    const srPrompt = config.agent["spec-reviewer"].prompt as string;
+    expect(srPrompt).toContain("STRICT_EXECUTOR_VARIANT");
+  });
+
+  it("code-reviewer prompt changes to strict variant when mid-execute is configured", () => {
+    const config: any = {};
+    const pluginOptions = {
+      models: { "mid-execute": "qwen/qwen3-coder-480b", mid: "anthropic/claude-sonnet-4-6" },
+    };
+    applyConfig(config, pluginOptions);
+    const crPrompt = config.agent["code-reviewer"].prompt as string;
+    expect(crPrompt).toContain("STRICT_EXECUTOR_VARIANT");
+    expect(crPrompt).not.toContain("trust-recent-green");
   });
 
   it("mid-execute agents fall back to mid model when mid-execute not configured", () => {
@@ -936,7 +1276,8 @@ describe("mid-tier prompt variant selection", () => {
     const pluginOptions = { models: { mid: "anthropic/claude-sonnet-4-6" } };
     applyConfig(config, pluginOptions);
     expect(config.agent["build"].model).toBe("anthropic/claude-sonnet-4-6");
-    expect(config.agent["assessor"].model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent["spec-reviewer"].model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent["code-reviewer"].model).toBe("anthropic/claude-sonnet-4-6");
   });
 
   it("user-wins: user agent override is not clobbered by tier resolution", () => {
@@ -976,7 +1317,7 @@ describe("applyConfig — permission.bash behavior", () => {
   //   2. Read-only subagents declaring `bash: "deny"` entirely
   //      (plan-reviewer, code-searcher, gap-analyzer, …).
   //   3. Reviewer system prompts that forbid destructive operations
-  //      by role (assessor, assessor-thorough).
+  //      by role (spec-reviewer, code-reviewer, code-reviewer-thorough).
 
   it("applyConfig does NOT set a global permission.bash default", () => {
     const config: any = {};

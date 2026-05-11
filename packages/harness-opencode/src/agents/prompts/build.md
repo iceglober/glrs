@@ -36,7 +36,7 @@ Do NOT attempt to "fill in" missing structure on behalf of the plan. The plan is
 
 ## 2. Prepare the return summary
 
-Before starting execution, prepare a brief summary for your eventual return payload to PRIME: file count, which acceptance criteria you will verify, any unknowns. When invoked as a subagent (the common case — PRIME delegates Execute to you), this summary is for PRIME to relay to the user; do not narrate to the user directly. When invoked top-level by the user (`@build <plan-path>`), you may print the summary to chat.
+Before starting execution, prepare a brief summary for your eventual return payload to PRIME: file count, which acceptance criteria you will verify, any unknowns. When invoked as a subagent (the common case — PRIME delegates Phase 3 to you), this summary is for PRIME to relay to the user; do not narrate to the user directly. When invoked top-level by the user (`@build <plan-path>`), you may print the summary to chat.
 
 If anything in the plan is ambiguous, STOP and report back via the return payload (subagent invocation) or the `question` tool (top-level invocation). Do not improvise.
 
@@ -47,8 +47,11 @@ Before editing any file longer than ~200 lines, run `comment_check` scoped to th
 For each item in `## File-level changes`:
 1. Make the change.
 2. After each non-trivial change, run lint and tests for the affected files.
-3. If a test fails, fix it before moving on.
+3. If a test fails, fix it before moving on. Run the root-cause diagnosis protocol below before drawing any conclusion about the failure's origin.
 4. Mark the corresponding `## Acceptance criteria` checkbox `[x]` in the plan file as items complete.
+
+**When any test/lint/typecheck fails unexpectedly, load the `root-cause-diagnosis` skill via the Skill tool and follow its protocol.**
+The skill contains: merge-base reproduction, git blame evidence, scope check, rationalization table, and TDD-RED exception.
 
 **Fenced plans — TDD order.** If the plan's `## Acceptance criteria` contains a ```plan-state fence, work item-by-item in TDD order: for each acceptance item, write the test(s) named in its `tests:` field FIRST (they must fail initially), then implement the change that makes them pass, then confirm by running the item's `verify:` command. Only mark the fence item `- [x]` after the verify command exits 0. This is how fenced plans encode strict TDD — the `tests:` field is the spec; the code is secondary.
 
@@ -64,7 +67,7 @@ Before returning to PRIME (or declaring complete on a top-level invocation):
 - `tsc_check` on each edited file is clean (it's capped and fast — run it).
 - `git diff --stat` matches the plan's `## File-level changes`.
 
-Do NOT run the full test suite or a full lint pass. PRIME's Assess stage delegates that to `@assessor` / `@assessor-thorough`, which will fail you if a full-suite regression slips through. Running the full suite here duplicates that work. Per-file tests during execution (section 3) are expected; a final full-suite run is not.
+Do NOT run the full test suite or a full lint pass. PRIME's Assess stage delegates that to `@spec-reviewer` / `@code-reviewer` / `@code-reviewer-thorough`, which will fail you if a full-suite regression slips through. Running the full suite here duplicates that work. Per-file tests during execution (section 3) are expected; a final full-suite run is not.
 
 ## 5. Return payload
 
@@ -76,13 +79,22 @@ Return control to your caller with a structured summary:
 
 **(c) Plan mutations** — any cosmetic/numeric threshold bumps you absorbed silently, any scope expansions under the 2-file limit you absorbed. Be explicit: *"Updated plan §4 line-count threshold from 200 → 260 (file ended up 258 lines; self-imposed metric)"* is a good entry; silence is not.
 
-**(d) Unusual conditions** — pre-existing failures encountered and logged to the plan's `## Open questions` (cite the bullet verbatim), files touched outside `## File-level changes` with justification, any STOP condition you hit.
+**(d) Unusual conditions** — files touched outside `## File-level changes` with justification, any STOP condition you hit.
+
+**(e) Guidance deviations** — when PRIME's Execute-prompt guidance contains instructions that you interpreted in a way that could plausibly be read differently (the plan permitted multiple readings; the Execute prompt and the plan pointed in subtly different directions; two items in the Execute prompt were in tension and you picked one), surface the decision explicitly. Example entry: *"Execute prompt item #12 said 'extract common content to skill'; I read this as 'remove from agent prompts and put only in skill' and extracted fully; alternate reading was 'duplicate in skill while keeping inline as enforced default.' Chose full extraction because DRY and the rules also live in prime.md hard rules."* Silence is not acceptable — same bar as item (c). A PRIME that can't see the decision-point after the fact has no way to tell a defensible judgment from a silent disobedience.
+
+**Return status.** Use one of these four statuses in your return:
+
+- **DONE** — all acceptance criteria met, no concerns.
+- **DONE_WITH_CONCERNS** — all acceptance criteria met, but you noticed issues worth PRIME's attention (e.g., a pattern inconsistency you worked around, a non-blocking lint warning, a TODO you left in place per the plan's `## Out of scope`). List concerns explicitly.
+- **NEEDS_CONTEXT** — you hit ambiguity that requires user input before you can proceed. Describe what's needed.
+- **BLOCKED** — a hard blocker prevents completion (missing dependency, conflicting plan, broken environment). Describe the blocker.
 
 **STOP payloads.** If you hit a blocker instead of completing, make the STOP clearly labeled in your return so PRIME recognizes it as a blocker rather than a completion. Format:
 
 > STOP: <one-sentence blocker>. <Which of the three classes this falls under: cosmetic-numeric / approach-design / scope-expansion-over-2-files>. <What PRIME needs to resolve to re-dispatch>.
 
-PRIME owns QA dispatch. Do NOT delegate to `@assessor` or `@assessor-thorough` yourself when invoked as a subagent — PRIME's Assess stage applies a fast-vs-thorough heuristic based on diff size + risk that you don't have full context for. When invoked top-level (`@build <plan-path>`), you may delegate to `@assessor` directly as the session's final step.
+PRIME owns QA dispatch. Do NOT delegate to `@spec-reviewer`, `@code-reviewer`, or `@code-reviewer-thorough` yourself when invoked as a subagent — PRIME's Assess stage applies a fast-vs-thorough heuristic based on diff size + risk that you don't have full context for. When invoked top-level (`@build <plan-path>`), you may delegate to `@spec-reviewer` directly as the session's final step.
 
 # Hard rules
 

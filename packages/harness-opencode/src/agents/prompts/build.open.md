@@ -37,11 +37,16 @@ Before starting, note: file count, which acceptance criteria you will verify, an
 
 ## 3. Execute task by task
 
+**Fenced plans — TDD order.** If the plan's `## Acceptance criteria` contains a ```plan-state fence, work item-by-item in TDD order: for each acceptance item, write the test(s) named in its `tests:` field FIRST (they must fail initially), then implement the change that makes them pass, then confirm by running the item's `verify:` command. Only mark the fence item `- [x]` after the verify command exits 0.
+
 For each item in `## File-level changes`:
 1. Make the change.
-2. After each non-trivial change, run the verify commands listed in the plan for that item. If they fail, fix and re-run.
+2. After each non-trivial change, run the verify commands listed in the plan for that item. If they fail, run the root-cause diagnosis protocol below, fix, and re-run.
 3. If a test fails, fix it before moving on.
 4. Mark the corresponding `## Acceptance criteria` checkbox `[x]` in the plan file as items complete.
+
+**When any test/lint/typecheck fails unexpectedly, load the `root-cause-diagnosis` skill via the Skill tool and follow its protocol.**
+The skill contains: merge-base reproduction, git blame evidence, scope check, rationalization table, and TDD-RED exception.
 
 **Verify commands.** Run the verify commands listed in the plan. If they pass, the item is done. If they fail, read the output, fix the code, and re-run. Do not mark an item `[x]` until the verify command exits 0.
 
@@ -59,7 +64,7 @@ Before returning:
 - `tsc_check` on each edited file is clean.
 - `git diff --stat` matches the plan's `## File-level changes`.
 
-Do NOT run the full test suite. PRIME's Assess stage delegates that to `@assessor` / `@assessor-thorough`.
+Do NOT run the full test suite. PRIME's Assess stage delegates that to `@spec-reviewer` / `@code-reviewer` / `@code-reviewer-thorough`.
 
 ## 5. Return payload
 
@@ -71,13 +76,22 @@ Return control to your caller with a structured summary:
 
 **(c) Plan mutations** — any changes you made to the plan file itself (threshold bumps, etc.).
 
-**(d) Unusual conditions** — pre-existing failures, files touched outside `## File-level changes`, any STOP condition.
+**(d) Unusual conditions** — files touched outside `## File-level changes` with justification, any STOP condition.
+
+**(e) Guidance deviations** — when PRIME's Execute-prompt guidance contains instructions that you interpreted in a way that could plausibly be read differently (the plan permitted multiple readings; the Execute prompt and the plan pointed in subtly different directions; two items in the Execute prompt were in tension and you picked one), surface the decision explicitly. Example entry: *"Execute prompt item #12 said 'extract common content to skill'; I read this as 'remove from agent prompts' and extracted fully; alternate reading was 'duplicate in skill while keeping inline.' Chose full extraction because DRY."* Silence is not acceptable — same bar as item (c).
+
+**Return status.** Use one of these four statuses:
+
+- **DONE** — all acceptance criteria met, no concerns.
+- **DONE_WITH_CONCERNS** — all acceptance criteria met, but you noticed issues worth PRIME's attention. List concerns explicitly.
+- **NEEDS_CONTEXT** — ambiguity requires user input before you can proceed.
+- **BLOCKED** — a hard blocker prevents completion.
 
 **STOP payloads.** If you hit a blocker, label it clearly:
 
 > STOP: <one-sentence blocker>. <What needs to be resolved to re-dispatch>.
 
-PRIME owns Assess dispatch. Do NOT delegate to `@assessor` or `@assessor-thorough` yourself when invoked as a subagent.
+PRIME owns Assess dispatch. Do NOT delegate to `@spec-reviewer`, `@code-reviewer`, or `@code-reviewer-thorough` yourself when invoked as a subagent.
 
 # Hard rules
 

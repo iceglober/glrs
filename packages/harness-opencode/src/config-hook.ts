@@ -178,7 +178,7 @@ export function resolveHarnessModels(
   // agents IF the mid-execute tier is explicitly configured. When mid-execute
   // is not configured (agents fell back to mid), they keep the reasoning prompt.
   if (midExecuteConfigured) {
-    const EXECUTOR_AGENTS = ["build", "assessor", "pilot-builder"];
+    const EXECUTOR_AGENTS = ["build", "spec-reviewer", "code-reviewer", "pilot-builder"];
     for (const agentName of EXECUTOR_AGENTS) {
       const agentCfg = agents[agentName];
       if (!agentCfg) continue;
