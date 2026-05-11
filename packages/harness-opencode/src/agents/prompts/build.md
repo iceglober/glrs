@@ -36,7 +36,7 @@ Do NOT attempt to "fill in" missing structure on behalf of the plan. The plan is
 
 ## 2. Prepare the return summary
 
-Before starting execution, prepare a brief summary for your eventual return payload to PRIME: file count, which acceptance criteria you will verify, any unknowns. When invoked as a subagent (the common case — PRIME delegates Phase 3 to you), this summary is for PRIME to relay to the user; do not narrate to the user directly. When invoked top-level by the user (`@build <plan-path>`), you may print the summary to chat.
+Before starting execution, prepare a brief summary for your eventual return payload to PRIME: file count, which acceptance criteria you will verify, any unknowns. When invoked as a subagent (the common case — PRIME delegates Execute to you), this summary is for PRIME to relay to the user; do not narrate to the user directly. When invoked top-level by the user (`@build <plan-path>`), you may print the summary to chat.
 
 If anything in the plan is ambiguous, STOP and report back via the return payload (subagent invocation) or the `question` tool (top-level invocation). Do not improvise.
 
@@ -64,7 +64,7 @@ Before returning to PRIME (or declaring complete on a top-level invocation):
 - `tsc_check` on each edited file is clean (it's capped and fast — run it).
 - `git diff --stat` matches the plan's `## File-level changes`.
 
-Do NOT run the full test suite or a full lint pass. PRIME's Phase 4 delegates that to `@qa-reviewer` / `@qa-thorough`, which will fail you if a full-suite regression slips through. Running the full suite here duplicates that work. Per-file tests during execution (section 3) are expected; a final full-suite run is not.
+Do NOT run the full test suite or a full lint pass. PRIME's Assess stage delegates that to `@assessor` / `@assessor-thorough`, which will fail you if a full-suite regression slips through. Running the full suite here duplicates that work. Per-file tests during execution (section 3) are expected; a final full-suite run is not.
 
 ## 5. Return payload
 
@@ -82,7 +82,7 @@ Return control to your caller with a structured summary:
 
 > STOP: <one-sentence blocker>. <Which of the three classes this falls under: cosmetic-numeric / approach-design / scope-expansion-over-2-files>. <What PRIME needs to resolve to re-dispatch>.
 
-PRIME owns QA dispatch. Do NOT delegate to `@qa-reviewer` or `@qa-thorough` yourself when invoked as a subagent — PRIME's Phase 4 applies a fast-vs-thorough heuristic based on diff size + risk that you don't have full context for. When invoked top-level (`@build <plan-path>`), you may delegate to `@qa-reviewer` directly as the session's final step.
+PRIME owns QA dispatch. Do NOT delegate to `@assessor` or `@assessor-thorough` yourself when invoked as a subagent — PRIME's Assess stage applies a fast-vs-thorough heuristic based on diff size + risk that you don't have full context for. When invoked top-level (`@build <plan-path>`), you may delegate to `@assessor` directly as the session's final step.
 
 # Hard rules
 

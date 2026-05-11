@@ -16,13 +16,13 @@ agents/
 Each agent is three coupled pieces:
 
 1. **`prompts/<name>.md`** — YAML frontmatter (`name`, `description`, `mode`, `model`) + the prompt body. Read at runtime (see root rule 7 for why never to `import` a `.md` file).
-2. **`<NAME>_PERMISSIONS`** in `index.ts` — a permission map controlling which tools/bash commands the agent may call. See `PRIME_PERMISSIONS`, `QA_REVIEWER_PERMISSIONS`, etc. for the shape.
+2. **`<NAME>_PERMISSIONS`** in `index.ts` — a permission map controlling which tools/bash commands the agent may call. See `PRIME_PERMISSIONS`, `ASSESSOR_PERMISSIONS`, etc. for the shape.
 3. **An entry in `createAgents()`** wiring the prompt + permissions + tier.
 
 ## Tiers (`ModelTier`)
 
-- `deep` — Opus-class (PRIME, `@plan`, `@qa-thorough`, `@architecture-advisor`)
-- `mid` — Sonnet-class (`@qa-reviewer`, `@plan-reviewer`, `@build`)
+- `deep` — Opus-class (PRIME, `@plan`, `@assessor-thorough`, `@architecture-advisor`)
+- `mid` — Sonnet-class (`@assessor`, `@plan-reviewer`, `@build`)
 - `fast` — Haiku-class (`@code-searcher`, `@lib-reader`, `@agents-md-writer`)
 
 Tiers are placeholders — the user's `opencode.json` resolves them to concrete model IDs via the installer. Never hardcode a model ID in a prompt.

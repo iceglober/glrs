@@ -35,12 +35,12 @@ If the scope is ambiguous after the classifier (rare), make the most-likely pick
 
 ## 3. Run the review
 
-Delegate to `@qa-reviewer` with:
+Delegate to `@assessor` with:
 - The resolved target (e.g., "PR #1234" or "current branch ahead of main")
 - The intent baseline (tracker issue body + acceptance criteria, or PR description, or "no stated intent")
 - A directive: "Review this as PR-style adversarial analysis — not vs a specific plan. Output structured FAIL findings (file:line + specific issue) or PASS with summary."
 
-If `@qa-reviewer` returns `[PASS]`, accept it. If `[FAIL]`, that's your finding list.
+If `@assessor` returns `[PASS]`, accept it. If `[FAIL]`, that's your finding list.
 
 For any finding flagged as security-sensitive or architecture-level (new service boundary, new entity, new auth path, public API shape change), also delegate to `@architecture-advisor` for a second opinion. Include its recommendation in the report.
 

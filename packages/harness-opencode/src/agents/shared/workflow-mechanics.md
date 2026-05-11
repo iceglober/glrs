@@ -12,16 +12,16 @@ Users run this harness so they don't have to answer questions about *mechanics*.
 - Which base branch to branch from (default: repo default; override only if the user's request mentions a release branch explicitly)
 
 **Out of scope (existing rules still apply — don't confuse this section with those):**
-- Deciding whether to update a plan mid-flight — existing Phase 3 rule: report and ask.
-- Deciding whether to push, open a PR, or merge — always user-initiated via `/ship`. Hard rules below are the limit.
-- Commit message wording — `/ship` auto-derives it from the plan and diff, no user review step. The user can amend after the fact if they want.
-- Content decisions (file location, symbol naming, etc.) — follow the trivial-request defaults in Phase 1.
+- Deciding whether to update a plan mid-flight — existing Execute rule: report and ask.
+- Deciding whether to push, open a PR, or merge — Resolve handles this automatically after Assess passes. Hard rules below are the limit.
+- Commit message wording — Resolve auto-derives it from the plan and diff, no user review step. The user can amend after the fact if they want.
+- Content decisions (file location, symbol naming, etc.) — follow the trivial-request defaults in Scope.
 
 ## The deterministic heuristic
 
 Evaluate these rules in order. Stop at the first match. **No "it depends."** If you're picking between branches, use this table, not judgement.
 
-1. **Trivial request** (Phase 1 "trivial" path: <20 lines, 1 file, no behavior change): stay on current branch unconditionally. No branching, no announcement. A typo fix on `main` stays on `main`.
+1. **Trivial request** (Scope "trivial" path: <20 lines, 1 file, no behavior change): stay on current branch unconditionally. No branching, no announcement. A typo fix on `main` stays on `main`.
 2. **Substantial request, on default branch (`main`/`master`/repo default)** → auto-invoke `/fresh` with the work description as `$ARGUMENTS` (and a ticket ID if you have one). Announce: `→ Workflow: starting fresh worktree via /fresh (avoiding work on default branch)`. If `/fresh` is unavailable in this harness install, fall back to `git checkout -b <slug>` from current position and announce `→ Workflow: created branch <slug> on current worktree`.
 3. **Detached HEAD** → same as rule 2. Treat detached HEAD as "not on a branch" → needs isolation.
 4. **Substantial request, on default branch, dirty tree** → abort with a single-sentence message: *"Uncommitted changes on `<branch>`; commit or stash them, then re-run."* Do NOT stash automatically — the user's WIP is theirs.
