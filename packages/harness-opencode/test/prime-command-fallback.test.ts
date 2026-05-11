@@ -54,19 +54,29 @@ describe("prime slash-command fallback section", () => {
     expect(secIdx).toBeLessThan(bootstrapIdx);
   });
 
-  it("section lists all seven recognized commands", () => {
+  it("section lists all six recognized commands", () => {
     const body = extractSection();
     for (const cmd of [
       "/fresh",
       "/ship",
       "/review",
-      "/autopilot",
       "/research",
       "/init-deep",
       "/costs",
     ]) {
       expect(body).toContain(cmd);
     }
+  });
+
+  it("section does NOT list /autopilot (removed — CLI-only feature)", () => {
+    // /autopilot was removed as a TUI slash command when autopilot became
+    // CLI-only (`glrs oc autopilot <prompt>`). The section must not reinstate
+    // it in the allowlist.
+    const body = extractSection();
+    // Guard against resurrection in the allowlist sentence.
+    // (The word "autopilot" may still appear in surrounding narrative in
+    // prime.md's carve-outs; this test scope is the fallback section only.)
+    expect(body).not.toMatch(/`\/autopilot`/);
   });
 
   it("section documents the announcement template", () => {

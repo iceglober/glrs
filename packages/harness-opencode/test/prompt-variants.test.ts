@@ -7,7 +7,7 @@
  * those agents fall back to the `mid` tier model and use reasoning prompts.
  *
  * Covers:
- * 1. AGENT_TIERS — mid-execute assignments for build, qa-reviewer, pilot-builder.
+ * 1. AGENT_TIERS — mid-execute assignments for build, assessor.
  * 2. getStrictPrompt() / getReasoningPrompt() — prompt retrieval.
  * 3. resolveHarnessModels() — tier-based model + prompt resolution.
  * 4. Mid-execute fallback to mid when not configured.
@@ -32,10 +32,6 @@ describe("AGENT_TIERS", () => {
 
   it("assigns assessor to mid-execute tier", () => {
     expect(AGENT_TIERS["assessor"]).toBe("mid-execute");
-  });
-
-  it("assigns pilot-builder to mid-execute tier", () => {
-    expect(AGENT_TIERS["pilot-builder"]).toBe("mid-execute");
   });
 
   it("assigns docs-maintainer to mid tier (not mid-execute)", () => {

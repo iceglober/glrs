@@ -34,12 +34,9 @@ import {
 // config interpolation resolves {env:VAR} references.
 import { loadDotenv } from "./plugins/dotenv.js";
 
-// Sub-plugins (autopilot idle-nudge loop + OS notifications + cost tracking
-// + pilot v2 runtime guards + tool output middleware + telemetry)
-import autopilotPlugin from "./plugins/autopilot.js";
+// Sub-plugins (OS notifications + cost tracking + tool output middleware + telemetry)
 import notifyPlugin from "./plugins/notify.js";
 import costTrackerPlugin from "./plugins/cost-tracker.js";
-import pilotPlugin from "./plugins/pilot-plugin.js";
 import toolHooksPlugin from "./plugins/tool-hooks.js";
 import telemetryPlugin from "./plugins/telemetry.js";
 
@@ -131,10 +128,8 @@ const plugin: Plugin = async (input, options) => {
   checkForUpdate(input.client).catch(() => {});
 
   // Load sub-plugins
-  const autopilotHooks = await autopilotPlugin(input);
   const notifyHooks = await notifyPlugin(input);
   const costTrackerHooks = await costTrackerPlugin(input);
-  const pilotHooks = await pilotPlugin(input);
   const toolHooks = await toolHooksPlugin(input, pluginOptions);
   const telemetryHooks = await telemetryPlugin(input);
 
@@ -153,7 +148,6 @@ const plugin: Plugin = async (input, options) => {
     config: async (config) => {
       applyConfig(config, pluginOptions);
       // Let sub-plugins also mutate config if they need to
-      if (autopilotHooks.config) await autopilotHooks.config(config);
       if (notifyHooks.config) await notifyHooks.config(config);
       if (costTrackerHooks.config) await costTrackerHooks.config(config);
       if (toolHooks.config) await toolHooks.config(config);
@@ -164,34 +158,17 @@ const plugin: Plugin = async (input, options) => {
 
     // Event handlers from sub-plugins
     event: async (input) => {
-      if (autopilotHooks.event) await autopilotHooks.event(input);
       if (notifyHooks.event) await notifyHooks.event(input);
       if (costTrackerHooks.event) await costTrackerHooks.event(input);
       if (telemetryHooks.event) await telemetryHooks.event(input);
     },
   };
 
-  // Only attach optional sub-hooks when they actually exist. Leaving
-  // `hook["chat.params"] = undefined` would blow up OpenCode's loader
-  // (see comment above).
-  if (autopilotHooks["chat.params"] !== undefined) {
-    hooks["chat.params"] = autopilotHooks["chat.params"];
-  }
-  if (autopilotHooks["chat.message"] !== undefined) {
-    hooks["chat.message"] = autopilotHooks["chat.message"];
-  }
-  if (autopilotHooks["experimental.session.compacting"] !== undefined) {
-    hooks["experimental.session.compacting"] =
-      autopilotHooks["experimental.session.compacting"];
-  }
-
-  // tool.execute.before — chain telemetry timing + pilot-plugin enforcement.
+  // tool.execute.before — telemetry timing.
   const hasTelemetryBefore = telemetryHooks["tool.execute.before"] !== undefined;
-  const hasPilotBefore = pilotHooks["tool.execute.before"] !== undefined;
-  if (hasTelemetryBefore || hasPilotBefore) {
+  if (hasTelemetryBefore) {
     hooks["tool.execute.before"] = async (input, output) => {
       if (hasTelemetryBefore) await telemetryHooks["tool.execute.before"]!(input, output);
-      if (hasPilotBefore) await pilotHooks["tool.execute.before"]!(input, output);
     };
   }
 

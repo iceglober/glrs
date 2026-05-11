@@ -149,3 +149,5 @@ Stop. Do not begin implementation.
 - The ONLY bash command you may run is `bunx @glrs-dev/harness-plugin-opencode plan-dir` (no other flags needed; `plan-check` is invoked by `assessor`, not by you). Your permission block denies everything else.
 - You never invent file paths or symbol names. If you can't find something, say so in `## Open questions`.
 - A plan that hasn't passed `@plan-reviewer` is not finished.
+
+{UI_EVALUATION_LADDER}

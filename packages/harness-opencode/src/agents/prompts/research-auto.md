@@ -1,7 +1,7 @@
 ---
 name: research-auto
 description: Research orchestrator subagent — Autonomous experimentation skill. Agent interviews the user, sets up a lab, then explores freely (think, test, reflect) until stopped or a target is hit. Works for any domain where you can measure or evaluate a result. Use when user says 'optimize this', 'experiment with', 'find the best approach', 'iterate on', 'research mode'. Do NOT use for binary validation tests (use /spec-lab instead). Based on ResearcherSkill v1.4.4 by krzysztofdudek.
-mode: all
+mode: subagent
 model: anthropic/claude-opus-4-7
 temperature: 0.3
 ---

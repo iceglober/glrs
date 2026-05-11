@@ -47,3 +47,5 @@ Rules:
 - If the plan cites a ticket and adds scope not implied by the ticket, REJECT.
 - If a new plan's fence is missing or any item lacks `intent`/`tests`/`verify`, REJECT.
 - If a `tests:` entry references a path that doesn't exist AND isn't listed in `## File-level changes`, REJECT.
+
+{UI_EVALUATION_LADDER}

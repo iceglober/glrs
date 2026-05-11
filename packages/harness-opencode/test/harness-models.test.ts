@@ -50,14 +50,10 @@ describe("AGENT_TIERS", () => {
       "agents-md-writer",
       "docs-maintainer",
       "lib-reader",
-      "pilot-assessor",
-      "pilot-planner",
-      "pilot-scoper",
     ]);
     expect(midExecute).toEqual([
       "assessor",
       "build",
-      "pilot-builder",
     ]);
     expect(fast).toEqual(["code-searcher"]);
   });
@@ -102,7 +98,7 @@ describe("resolveHarnessModels", () => {
       expect(agents[name]!.model).toBe("deep-model-1");
     }
 
-    // Mid tier agents
+    // Mid tier agents (mid-execute falls back to mid when mid-execute not configured)
     for (const name of [
       "assessor",
       "build",

@@ -13,9 +13,6 @@
  *   - doctor       Check installation health
  *   - plan-check   Parse plan-state fence (legacy markdown plans)
  *   - plan-dir     Print the repo-shared plan dir
- *
- * Pilot subsystem commands:
- *   - pilot ...    See `src/pilot/cli/index.ts`
  */
 
 // Standalone-invocation redirect guard — runs before everything else.
@@ -67,8 +64,7 @@ import { uninstall } from "./cli/uninstall.js";
 import { doctor } from "./cli/doctor.js";
 import { planCheck } from "./bin/plan-check.js";
 import { getPlanDir, migratePlans } from "./plan-paths.js";
-import { pilotSubcommand } from "./pilot/cli/index.js";
-import { requirePlugin } from "./cli/plugin-check.js";
+import { autopilotCmd } from "./autopilot/cli.js";
 import { startUpdateCheck } from "./cli/cli-update.js";
 
 const VERSION = "0.1.0";
@@ -220,7 +216,7 @@ const cli = subcommands({
     doctor: doctorCmd,
     "plan-check": planCheckCmd,
     "plan-dir": planDirCmd,
-    pilot: pilotSubcommand,
+    autopilot: autopilotCmd,
   },
 });
 

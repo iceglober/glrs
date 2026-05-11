@@ -22,7 +22,6 @@ function readPrompt(name: string): string {
   throw new Error(`Could not find command prompt: ${name}`);
 }
 
-const autopilotPrompt = readPrompt("autopilot.md");
 const shipPrompt = readPrompt("ship.md");
 const reviewPrompt = readPrompt("review.md");
 const initDeepPrompt = readPrompt("init-deep.md");
@@ -38,11 +37,6 @@ type CommandConfig = {
 
 export function createCommands(): Record<string, CommandConfig> {
   return {
-    autopilot: {
-      template: autopilotPrompt,
-      description:
-        "Self-driving run. Pass a ticket ref (any tracker), a task description, or a question.",
-    },
     ship: {
       template: shipPrompt,
       description:

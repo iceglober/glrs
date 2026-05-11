@@ -1,12 +1,11 @@
 // telemetry sub-plugin — hooks tool.execute.before/after and session events
 // to emit anonymous usage telemetry via Aptabase.
 //
-// Follows the sub-plugin pattern established by cost-tracker.ts and
-// pilot-plugin.ts. Composed in src/index.ts alongside other sub-plugins.
+// Follows the sub-plugin pattern established by cost-tracker.ts.
+// Composed in src/index.ts alongside other sub-plugins.
 //
 // Duration tracking uses a Map<callID, startTime> instead of mutating
-// output.args — avoids conflicts with pilot-plugin's tool.execute.before
-// hook, which also operates on output.args.
+// output.args — avoids conflicts with other tool.execute.before hooks.
 //
 // Env var: HARNESS_OPENCODE_TELEMETRY=0 disables entirely (returns {}).
 
@@ -27,7 +26,7 @@ const plugin: Plugin = async () => {
   // Map<callID, startTime> for duration tracking. Entries are created in
   // tool.execute.before and consumed+deleted in tool.execute.after.
   // Stale entries (before without matching after — e.g. tool aborted by
-  // pilot-plugin's deny) leak a few bytes per orphan. Acceptable for
+  // tool denial) leak a few bytes per orphan. Acceptable for
   // process-lifetime maps with short-lived string keys.
   const callTimings = new Map<string, number>();
 

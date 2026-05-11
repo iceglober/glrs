@@ -66,3 +66,5 @@ Exactly one of these two formats. Nothing else.
 - **AUTO-FAIL on plan drift.** Modified file not in `## File-level changes` → FAIL, no exceptions.
 - **AUTO-FAIL on scope creep.** Untracked file not in plan with no prior commits → FAIL.
 - If the diff is large (>10 files or >500 lines) or touches high-risk paths (auth / crypto / billing / migrations), tell the PRIME to delegate to `@assessor-thorough` instead — you are the fast variant and may miss deep regressions on large diffs.
+
+{UI_EVALUATION_LADDER}

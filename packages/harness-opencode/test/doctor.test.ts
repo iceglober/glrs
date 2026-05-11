@@ -47,15 +47,11 @@ describe("doctor", () => {
     expect(r.stdout).toMatch(/Doctor.*@glrs-dev\/harness-plugin-opencode/);
   });
 
-  test("prints the Pilot subsystem section", () => {
+  test("does NOT print Pilot subsystem section (regression guard)", () => {
     const r = captured(() => doctor());
-    // The pilot subsystem section checks for git, bash, and pilot v2 agents.
-    expect(r.stdout).toMatch(/Pilot subsystem/);
-    // Either we see the pilot agents registered, a warning that they're missing,
-    // or skipped (couldn't run `opencode agent list`).
-    expect(r.stdout).toMatch(
-      /pilot-scoper|pilot-planner|pilot-builder|pilot-assessor|skipping pilot agent registration check/,
-    );
+    // The pilot subsystem was removed. Guard against accidental re-introduction.
+    expect(r.stdout).not.toMatch(/Pilot subsystem/);
+    expect(r.stdout).not.toMatch(/pilot-scoper|pilot-planner|pilot-builder|pilot-assessor/);
   });
 });
 

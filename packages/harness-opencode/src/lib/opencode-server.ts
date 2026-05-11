@@ -1,14 +1,13 @@
 /**
- * Pilot v2 OpenCode server lifecycle.
+ * OpenCode server lifecycle helpers.
  *
- * Simplified from v1: one server per pilot go invocation, one session
- * per phase. Context isolation is achieved by creating a new session
- * for each phase rather than reusing sessions.
+ * General-purpose utilities for starting an OpenCode server, creating
+ * sessions, sending messages, and waiting for idle. Used by the Ralph
+ * autopilot loop and any future feature that needs to drive OpenCode
+ * programmatically.
  *
- * Key simplifications vs v1:
- * - No MCP status server (structured logging goes to stderr + SQLite)
- * - No session registry (sessions are short-lived, one per phase)
- * - EventBus is simpler: just wait for session.idle or session.error
+ * Extracted from src/pilot/server.ts so these helpers are not coupled
+ * to the pilot subsystem.
  */
 
 import { execFile } from "node:child_process";
@@ -19,7 +18,7 @@ import {
 } from "@opencode-ai/sdk";
 import type { OpencodeClient } from "@opencode-ai/sdk";
 
-const execFileP = promisify(execFile);
+export const execFileP = promisify(execFile);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,7 +40,7 @@ export type SessionResult =
 // Server lifecycle
 // ---------------------------------------------------------------------------
 
-const DEFAULT_STARTUP_TIMEOUT_MS = 30_000;
+export const DEFAULT_STARTUP_TIMEOUT_MS = 30_000;
 
 /**
  * Ensure opencode is on PATH. Throws a user-friendly error if not found.
@@ -260,5 +259,45 @@ export async function getSessionCost(
     return (session as { cost?: number }).cost ?? 0;
   } catch {
     return 0;
+  }
+}
+
+/**
+ * Fetch the last assistant message text from a session.
+ *
+ * Calls `client.session.messages()`, filters to assistant-role messages,
+ * takes the last one, and concatenates all text parts.
+ *
+ * Returns an empty string if there are no assistant messages or if the
+ * API call fails.
+ */
+export async function getLastAssistantMessage(
+  client: OpencodeClient,
+  sessionId: string,
+): Promise<string> {
+  try {
+    type MessageEntry = {
+      info: { role: string };
+      parts: Array<{ type: string; text?: string }>;
+    };
+    const messages = await (
+      client.session.messages as unknown as (opts: {
+        path: { id: string };
+      }) => Promise<MessageEntry[]>
+    )({ path: { id: sessionId } });
+
+    // Find the last assistant message
+    const assistantMessages = messages.filter((m) => m.info.role === "assistant");
+    if (assistantMessages.length === 0) return "";
+
+    const last = assistantMessages[assistantMessages.length - 1];
+
+    // Concatenate all text parts
+    return last.parts
+      .filter((p) => p.type === "text" && typeof p.text === "string")
+      .map((p) => p.text as string)
+      .join("");
+  } catch {
+    return "";
   }
 }

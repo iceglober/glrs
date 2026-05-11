@@ -24,3 +24,4 @@ function readMd(name: string): string {
 }
 
 export const WORKFLOW_MECHANICS_RULE: string = readMd("workflow-mechanics.md");
+export const UI_EVALUATION_LADDER: string = readMd("ui-evaluation-ladder.md");

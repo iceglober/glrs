@@ -21,8 +21,7 @@
  *   a `.migrated` marker file.
  *
  * These helpers are intentionally free of OpenCode plugin types so they
- * can be called from the CLI (`src/cli.ts plan-dir`) and tests as well as
- * from the autopilot plugin.
+ * can be called from the CLI (`src/cli.ts plan-dir`) and tests.
  */
 
 import { execFile } from "node:child_process";
@@ -33,10 +32,9 @@ import * as path from "node:path";
 // --- Small helpers ---------------------------------------------------------
 
 /**
- * Promisified `execFile` with a timeout. Mirrors the pattern in
- * `src/plugins/autopilot.ts::runCheck` but slimmer — we only need stdout
- * on success and don't care about signal/code on error (the caller
- * decides what "a git failure" means for each helper).
+ * Promisified `execFile` with a timeout. We only need stdout on success
+ * and don't care about signal/code on error (the caller decides what
+ * "a git failure" means for each helper).
  */
 function execFileP(
   file: string,

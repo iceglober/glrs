@@ -6,13 +6,13 @@ OpenCode's plugin model allows multiple plugin objects. We ship one user-facing 
 
 | File | Hook(s) | Purpose |
 |---|---|---|
-| `autopilot.ts` | `event` (session.idle) | Nudges PRIME to keep going in `/autopilot` mode until `## Acceptance criteria` checkboxes are all `[x]`. |
-| `pilot-plugin.ts` | `tool.execute.before` | Enforces builder/planner invariants at runtime. Detects pilot sessions by title match (`pilot/<runId>/<taskID>`), then denies `git commit`/`push`/`tag`/`branch`/`checkout`/`switch`/`reset` for the builder, and denies edit/write/patch/multiedit outside the plans directory for the planner. Second fence behind the agents' permission maps. |
 | `notify.ts` | `event` (question, idle) | Fires OS notifications so the user sees prompts when their terminal is off-screen. |
-| `cost-tracker.ts` | `event` (session.*) | Tallies token usage per session + writes `costs.jsonl` / summary files for `pilot cost` / `/costs` consumption. |
+| `cost-tracker.ts` | `event` (session.*) | Tallies token usage per session + writes `costs.jsonl` / summary files for `/costs` consumption. |
 | `dotenv.ts` | _none_ (module-init) | Parses `.env` / `.env.local` into `process.env` at plugin load so OpenCode's `{env:VAR}` MCP-config interpolation resolves. Shell env always wins. |
 | `telemetry.ts` | `tool.execute.before`, `tool.execute.after`, `event` | Opt-in anonymous usage telemetry. No-op when `DISABLED` (set by `src/telemetry.ts` from env). |
 | `tool-hooks.ts` | `tool.execute.after` | Post-edit verification loop: after a TS/JS edit, runs `tsc --noEmit` and surfaces NEW errors only. Also caps output for `eslint_check`/`tsc_check`/`comment_check`/`todo_scan`. |
+
+> **Note:** The autopilot idle-nudge loop (`autopilot.ts`) was removed. Autopilot is now a CLI driver at `src/autopilot/` — see `src/autopilot/loop.ts` for the Ralph loop engine and `src/autopilot/cli.ts` for the `glrs oc autopilot` subcommand.
 
 ## Convention
 
@@ -31,7 +31,7 @@ const plugin: Plugin = async (ctx) => {
 export default plugin;
 ```
 
-The root `src/index.ts` re-exports these as an array (`plugin = [autopilot, notify, ...]`), which OpenCode composes internally.
+The root `src/index.ts` composes these sub-plugins into a single plugin object, which OpenCode receives as the default export.
 
 ## Adding a sub-plugin
 
@@ -43,7 +43,6 @@ The root `src/index.ts` re-exports these as an array (`plugin = [autopilot, noti
 
 ## Gotchas
 
-- **Throwing from `tool.execute.before` is the documented "deny this tool execution" signal.** See `autopilot.ts` and `pilot-plugin.ts` for patterns. Swallow unrelated errors; rethrow the denial.
+- **Throwing from `tool.execute.before` is the documented "deny this tool execution" signal.** Swallow unrelated errors; rethrow the denial.
 - **`telemetry.ts` must be a silent no-op when disabled.** Check `DISABLED` from `src/telemetry.ts` early and return `{}`.
 - **Per-session state lives in closure or in SQLite, not in module-scope variables.** Plugins get re-instantiated per session; module-scope state leaks across.
-- **Don't import from `src/pilot/*` here unless you're `pilot-plugin.ts`.** Other sub-plugins should stay subsystem-agnostic.

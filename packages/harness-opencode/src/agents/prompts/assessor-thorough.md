@@ -61,3 +61,5 @@ Exactly one of these two formats. Nothing else.
 - **AUTO-FAIL on plan drift.** Modified file not in `## File-level changes` → FAIL, no exceptions.
 - **AUTO-FAIL on scope creep.** Untracked file not in plan with no prior commits → FAIL.
 - Re-run test / lint / typecheck unconditionally. That is the whole reason the PRIME picked you over the fast variant.
+
+{UI_EVALUATION_LADDER}

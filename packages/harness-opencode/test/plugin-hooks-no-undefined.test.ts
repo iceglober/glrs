@@ -45,16 +45,14 @@ describe("plugin hooks shape", () => {
     expect(typeof h.event).toBe("function");
   });
 
-  it("chat.message is wired through when autopilot sub-plugin defines it", async () => {
-    // autopilot defines chat.message (to intercept completion promises)
-    // but does NOT define chat.params or experimental.session.compacting.
-    // The former must be present with a defined value; the latter two
-    // must be absent entirely (not present with an undefined value).
+  it("optional hooks (chat.message, chat.params, experimental.session.compacting) are absent or defined — never undefined", async () => {
+    // The autopilot sub-plugin was removed (replaced by the CLI-driven Ralph loop).
+    // These hooks are no longer wired. The invariant is: if a key is present in
+    // the returned hooks object, its value must NOT be undefined.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hooks = (await plugin(fakeInput as any)) as Record<string, unknown>;
-    expect(typeof hooks["chat.message"]).toBe("function");
     // The following must NOT exist as own-properties with undefined values.
-    for (const key of ["chat.params", "experimental.session.compacting"]) {
+    for (const key of ["chat.message", "chat.params", "experimental.session.compacting"]) {
       if (key in hooks) {
         expect(
           hooks[key],

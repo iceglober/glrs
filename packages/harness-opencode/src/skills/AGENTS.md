@@ -9,9 +9,6 @@ skills/
 ├── paths.ts                          # getSkillsRoot() — resolves to dist/skills/ at runtime
 ├── agent-estimation/                 # Each subdir is one skill
 │   └── SKILL.md
-├── pilot-planning/                   # Methodology for pilot-planner agent
-│   ├── SKILL.md
-│   └── rules/*.md                    # Supporting rule files
 ├── review-plan/
 │   └── SKILL.md
 ├── vercel-composition-patterns/      # Vercel-provided skill (see landmine below)

@@ -42,3 +42,5 @@ Output format:
 Be ruthless. False positives are fine. Missed gaps are not.
 
 You do not write plans. You do not write code. You return your analysis and stop.
+
+{UI_EVALUATION_LADDER}

@@ -1,5 +1,5 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
-import { WORKFLOW_MECHANICS_RULE } from "./shared/index.js";
+import { WORKFLOW_MECHANICS_RULE, UI_EVALUATION_LADDER } from "./shared/index.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -43,10 +43,6 @@ const architectureAdvisorPrompt = readPrompt("architecture-advisor.md");
 const docsMaintainerPrompt = readPrompt("docs-maintainer.md");
 const libReaderPrompt = readPrompt("lib-reader.md");
 const agentsMdWriterPrompt = readPrompt("agents-md-writer.md");
-const pilotScopePrompt = readPrompt("pilot-scoper.md");
-const pilotPlannerPrompt = readPrompt("pilot-planner.md");
-const pilotBuilderPrompt = readPrompt("pilot-builder.md");
-const pilotAssessorPrompt = readPrompt("pilot-assessor.md");
 const researchPrompt = readPrompt("research.md");
 const researchWebPrompt = readPrompt("research-web.md");
 const researchLocalPrompt = readPrompt("research-local.md");
@@ -60,7 +56,6 @@ const researchAutoPrompt = readPrompt("research-auto.md");
 const EXECUTOR_VARIANT_AGENTS: Record<string, { reasoning: string; strict: string }> = {
   build: { reasoning: buildPrompt, strict: buildOpenPrompt },
   assessor: { reasoning: assessorPrompt, strict: assessorOpenPrompt },
-  "pilot-builder": { reasoning: pilotBuilderPrompt, strict: pilotBuilderPrompt },
 };
 
 /**
@@ -140,6 +135,11 @@ function injectWorkflowMechanics(prompt: string): string {
   return prompt.replace("{WORKFLOW_MECHANICS_RULE}", WORKFLOW_MECHANICS_RULE);
 }
 
+/** Inject the UI_EVALUATION_LADDER into prompts that use the placeholder. */
+function injectUIEvaluationLadder(prompt: string): string {
+  return prompt.replace("{UI_EVALUATION_LADDER}", UI_EVALUATION_LADDER);
+}
+
 /** Build an AgentConfig from a prompt markdown file. */
 function agentFromPrompt(
   raw: string,
@@ -147,7 +147,7 @@ function agentFromPrompt(
 ): AgentConfig {
   const fm = parseFrontmatter(raw);
   const body = stripFrontmatter(raw);
-  const prompt = injectWorkflowMechanics(body);
+  const prompt = injectUIEvaluationLadder(injectWorkflowMechanics(body));
 
   const base: AgentConfig = {
     description: fm["description"] ?? "",
@@ -365,7 +365,7 @@ const PLAN_PERMISSIONS = {
   serena: "allow",
   memory: "allow",
   git: "allow",
-  playwright: "deny",
+  playwright: "allow",
   linear: "allow",
 };
 
@@ -489,7 +489,7 @@ const GAP_ANALYZER_PERMISSIONS = {
   serena: "allow",
   memory: "allow",
   git: "deny",
-  playwright: "deny",
+  playwright: "allow",
   linear: "allow",
 };
 
@@ -583,7 +583,7 @@ const RESEARCH_PERMISSIONS = {
   serena: "allow",
   memory: "allow",
   git: "allow",
-  playwright: "deny",
+  playwright: "allow",
   linear: "allow",
 };
 
@@ -618,11 +618,6 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   "research-web": "deep",
   "research-local": "deep",
   "research-auto": "deep",
-  // Pilot v2 agents
-  "pilot-scoper": "mid",
-  "pilot-planner": "mid",
-  "pilot-builder": "mid-execute",
-  "pilot-assessor": "mid",
   build: "mid-execute",
   assessor: "mid-execute",
   "docs-maintainer": "mid",
@@ -632,136 +627,6 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
 };
 
 // ---- Public API ----
-
-// ---- Pilot v2 agent permissions -------------------------------------------
-
-/** pilot-scoper: read-only, conversational. Produces scope.json. */
-const PILOT_SCOPER_PERMISSIONS = {
-  edit: "deny" as const,
-  bash: {
-    "*": "deny",
-    "ls *": "allow",
-    "cat *": "allow",
-    "head *": "allow",
-    "tail *": "allow",
-    "wc *": "allow",
-    "grep *": "allow",
-    "rg *": "allow",
-    "find *": "allow",
-    "git status *": "allow",
-    "git log *": "allow",
-    "git diff *": "allow",
-    "git show *": "allow",
-    "git branch *": "allow",
-    "git rev-parse *": "allow",
-  },
-  webfetch: "deny" as const,
-  ast_grep: "allow",
-  tsc_check: "deny",
-  eslint_check: "deny",
-  todo_scan: "allow",
-  comment_check: "allow",
-  question: "allow",
-  serena: "allow",
-  memory: "deny",
-  git: "allow",
-  playwright: "deny",
-  linear: "deny",
-};
-
-/** pilot-planner: read-only + writes plan.json. Autonomous. */
-const PILOT_PLANNER_PERMISSIONS = {
-  edit: "allow" as const,
-  bash: {
-    "*": "deny",
-    "ls *": "allow",
-    "cat *": "allow",
-    "head *": "allow",
-    "tail *": "allow",
-    "wc *": "allow",
-    "grep *": "allow",
-    "rg *": "allow",
-    "find *": "allow",
-    "git status *": "allow",
-    "git log *": "allow",
-    "git diff *": "allow",
-    "git show *": "allow",
-    "git branch *": "allow",
-    "git rev-parse *": "allow",
-  },
-  webfetch: "deny" as const,
-  ast_grep: "allow",
-  tsc_check: "deny",
-  eslint_check: "deny",
-  todo_scan: "allow",
-  comment_check: "allow",
-  question: "deny",
-  serena: "allow",
-  memory: "deny",
-  git: "allow",
-  playwright: "deny",
-  linear: "deny",
-};
-
-/** pilot-builder: full edit tools, no commit/push. Executes one task. */
-const PILOT_BUILDER_PERMISSIONS = {
-  edit: "allow" as const,
-  bash: {
-    "*": "allow",
-    ...CORE_BASH_ALLOW_LIST,
-    ...CORE_DESTRUCTIVE_BASH_DENIES,
-    "git commit*": "deny",
-    "git push*": "deny",
-    "git tag*": "deny",
-    "git checkout *": "deny",
-    "git switch *": "deny",
-    "git branch *": "deny",
-    "git restore --source*": "deny",
-    "git reset *": "deny",
-    "gh pr *": "deny",
-    "gh release *": "deny",
-  },
-  webfetch: "allow" as const,
-  ast_grep: "allow",
-  tsc_check: "allow",
-  eslint_check: "allow",
-  todo_scan: "allow",
-  comment_check: "allow",
-  question: "deny",
-  serena: "allow",
-  memory: "deny",
-  git: "allow",
-  playwright: "deny",
-  linear: "deny",
-};
-
-/** pilot-assessor: read-only + shell execution + writes assessment report. */
-const PILOT_ASSESSOR_PERMISSIONS = {
-  edit: "allow" as const,
-  bash: {
-    "*": "allow",
-    ...CORE_BASH_ALLOW_LIST,
-    ...CORE_DESTRUCTIVE_BASH_DENIES,
-    "git commit*": "deny",
-    "git push*": "deny",
-    "git checkout *": "deny",
-    "git switch *": "deny",
-    "git reset *": "deny",
-    "gh pr *": "deny",
-  },
-  webfetch: "deny" as const,
-  ast_grep: "allow",
-  tsc_check: "allow",
-  eslint_check: "allow",
-  todo_scan: "allow",
-  comment_check: "allow",
-  question: "deny",
-  serena: "allow",
-  memory: "deny",
-  git: "allow",
-  playwright: "allow",
-  linear: "deny",
-};
 
 export function createAgents(): Record<string, AgentConfig> {
   return {
@@ -826,57 +691,31 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
     }),
 
-    // Research subagents — thin shims that load the bundled skills
+    // Research subagents — thin shims that load the bundled skills.
+    // mode: "subagent" — these are internal implementation details of
+    // @research's orchestration; users should invoke @research (mode:all)
+    // as the primary entry point, not these directly.
     "research-web": agentFromPrompt(researchWebPrompt, {
       description: "Research orchestrator subagent — Multi-agent web research orchestrator. Decomposes a research question into parallel agent workstreams, launches them, monitors progress, and synthesizes results. Use when user says 'research this topic', 'I need to understand', 'deep dive into', 'investigate the market for', 'what do we know about'. Provide the research topic and context.",
-      mode: "all",
+      mode: "subagent",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
       permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
     }),
     "research-local": agentFromPrompt(researchLocalPrompt, {
       description: "Research orchestrator subagent — Deep codebase research using parallel Explore subagents. Decomposes a question about the local codebase into research tasks, launches parallel explorations, reviews for gaps, iterates, and synthesizes findings with specific file paths and line numbers. Use when user says 'how does X work in this codebase', 'where is Y implemented', 'trace the data flow for Z', 'what patterns does this repo use', 'explain the architecture of'. Provide the research topic as arguments.",
-      mode: "all",
+      mode: "subagent",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
       permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
     }),
     "research-auto": agentFromPrompt(researchAutoPrompt, {
       description: "Research orchestrator subagent — Autonomous experimentation skill. Agent interviews the user, sets up a lab, then explores freely (think, test, reflect) until stopped or a target is hit. Works for any domain where you can measure or evaluate a result. Use when user says 'optimize this', 'experiment with', 'find the best approach', 'iterate on', 'research mode'. Do NOT use for binary validation tests (use /spec-lab instead). Based on ResearcherSkill v1.4.4 by krzysztofdudek.",
-      mode: "all",
+      mode: "subagent",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
       permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
     }),
 
-    // Pilot v2 agents (SPEAR-based autonomous execution)
-    "pilot-scoper": agentFromPrompt(pilotScopePrompt, {
-      description: "Pilot v2 scoping agent. Interviews the user to understand their goal, explores the codebase, and produces a scope.json artifact with framing and acceptance criteria.",
-      mode: "subagent",
-      model: "anthropic/claude-sonnet-4-6",
-      temperature: 0.3,
-      permission: PILOT_SCOPER_PERMISSIONS as AgentConfig["permission"],
-    }),
-    "pilot-planner": agentFromPrompt(pilotPlannerPrompt, {
-      description: "Pilot v2 planning agent. Reads scope.json, surveys the codebase, and produces a plan.json with an ordered task list.",
-      mode: "subagent",
-      model: "anthropic/claude-sonnet-4-6",
-      temperature: 0.2,
-      permission: PILOT_PLANNER_PERMISSIONS as AgentConfig["permission"],
-    }),
-    "pilot-builder": agentFromPrompt(pilotBuilderPrompt, {
-      description: "Pilot v2 builder agent. Executes a single task from the plan. Makes code changes, runs verify commands, and signals completion.",
-      mode: "subagent",
-      model: "anthropic/claude-sonnet-4-6",
-      temperature: 0.1,
-      permission: PILOT_BUILDER_PERMISSIONS as AgentConfig["permission"],
-    }),
-    "pilot-assessor": agentFromPrompt(pilotAssessorPrompt, {
-      description: "Pilot v2 assessor agent. Evaluates completed work against acceptance criteria, runs deployment-risk reflection, and produces an assessment report.",
-      mode: "subagent",
-      model: "anthropic/claude-sonnet-4-6",
-      temperature: 0.2,
-      permission: PILOT_ASSESSOR_PERMISSIONS as AgentConfig["permission"],
-    }),
   };
 }

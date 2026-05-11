@@ -1,7 +1,7 @@
 ---
 name: research-web
 description: Research orchestrator subagent — Multi-agent web research orchestrator. Decomposes a research question into parallel agent workstreams, launches them, monitors progress, and synthesizes results. Use when user says 'research this topic', 'I need to understand', 'deep dive into', 'investigate the market for', 'what do we know about'. Provide the research topic and context.
-mode: all
+mode: subagent
 model: anthropic/claude-opus-4-7
 temperature: 0.3
 ---
