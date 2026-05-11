@@ -7,7 +7,7 @@
  * those agents fall back to the `mid` tier model and use reasoning prompts.
  *
  * Covers:
- * 1. AGENT_TIERS — mid-execute assignments for build, qa-reviewer, pilot-builder.
+ * 1. AGENT_TIERS — mid-execute assignments for build, spec-reviewer, code-reviewer, pilot-builder.
  * 2. getStrictPrompt() / getReasoningPrompt() — prompt retrieval.
  * 3. resolveHarnessModels() — tier-based model + prompt resolution.
  * 4. Mid-execute fallback to mid when not configured.
@@ -30,8 +30,12 @@ describe("AGENT_TIERS", () => {
     expect(AGENT_TIERS["build"]).toBe("mid-execute");
   });
 
-  it("assigns assessor to mid-execute tier", () => {
-    expect(AGENT_TIERS["assessor"]).toBe("mid-execute");
+  it("assigns spec-reviewer to mid-execute tier", () => {
+    expect(AGENT_TIERS["spec-reviewer"]).toBe("mid-execute");
+  });
+
+  it("assigns code-reviewer to mid-execute tier", () => {
+    expect(AGENT_TIERS["code-reviewer"]).toBe("mid-execute");
   });
 
   it("assigns pilot-builder to mid-execute tier", () => {
@@ -64,8 +68,13 @@ describe("getStrictPrompt", () => {
     expect(prompt).toContain("Zero out-of-plan files");
   });
 
-  it("returns the strict-executor prompt for assessor", () => {
-    const prompt = getStrictPrompt("assessor");
+  it("returns the strict-executor prompt for spec-reviewer", () => {
+    const prompt = getStrictPrompt("spec-reviewer");
+    expect(prompt).toContain("STRICT_EXECUTOR_VARIANT");
+  });
+
+  it("returns the strict-executor prompt for code-reviewer", () => {
+    const prompt = getStrictPrompt("code-reviewer");
     expect(prompt).toContain("STRICT_EXECUTOR_VARIANT");
     expect(prompt).not.toContain("trust-recent-green");
   });
@@ -84,8 +93,14 @@ describe("getReasoningPrompt", () => {
     expect(prompt).toContain("Fenced plans");
   });
 
-  it("returns the reasoning prompt for assessor", () => {
-    const prompt = getReasoningPrompt("assessor");
+  it("returns the reasoning prompt for spec-reviewer", () => {
+    const prompt = getReasoningPrompt("spec-reviewer");
+    expect(prompt).not.toContain("STRICT_EXECUTOR_VARIANT");
+    expect(prompt).toContain("PASS_SPEC");
+  });
+
+  it("returns the reasoning prompt for code-reviewer", () => {
+    const prompt = getReasoningPrompt("code-reviewer");
     expect(prompt).not.toContain("STRICT_EXECUTOR_VARIANT");
     expect(prompt).toContain("trust-recent-green");
   });
@@ -109,9 +124,10 @@ describe("resolveHarnessModels — mid-execute tier", () => {
     };
     resolveHarnessModels(agents, config, pluginOptions);
 
-    // build, assessor should have strict prompts
+    // build, spec-reviewer, code-reviewer should have strict prompts
     expect((agents["build"]!.prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
-    expect((agents["assessor"]!.prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
+    expect((agents["spec-reviewer"]!.prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
+    expect((agents["code-reviewer"]!.prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
   });
 
   it("applies the mid-execute model to executor agents", () => {
@@ -126,7 +142,8 @@ describe("resolveHarnessModels — mid-execute tier", () => {
     resolveHarnessModels(agents, config, pluginOptions);
 
     expect(agents["build"]!.model).toBe("moonshotai/kimi-k2-6");
-    expect(agents["assessor"]!.model).toBe("moonshotai/kimi-k2-6");
+    expect(agents["spec-reviewer"]!.model).toBe("moonshotai/kimi-k2-6");
+    expect(agents["code-reviewer"]!.model).toBe("moonshotai/kimi-k2-6");
   });
 
   it("mid-tier agents (docs-maintainer, lib-reader) get mid model, not mid-execute", () => {
@@ -157,7 +174,8 @@ describe("resolveHarnessModels — mid-execute tier", () => {
     // No mid-execute configured → reasoning prompts stay
     expect((agents["build"]!.prompt as string)).not.toContain("STRICT_EXECUTOR_VARIANT");
     expect((agents["build"]!.prompt as string)).toContain("Fenced plans");
-    expect((agents["assessor"]!.prompt as string)).toContain("trust-recent-green");
+    expect((agents["spec-reviewer"]!.prompt as string)).not.toContain("STRICT_EXECUTOR_VARIANT");
+    expect((agents["code-reviewer"]!.prompt as string)).toContain("trust-recent-green");
   });
 
   it("falls back mid-execute agents to mid model when mid-execute not configured", () => {
@@ -170,9 +188,10 @@ describe("resolveHarnessModels — mid-execute tier", () => {
     };
     resolveHarnessModels(agents, config, pluginOptions);
 
-    // build, assessor should get the mid model
+    // build, spec-reviewer, code-reviewer should get the mid model
     expect(agents["build"]!.model).toBe("anthropic/claude-sonnet-4-6");
-    expect(agents["assessor"]!.model).toBe("anthropic/claude-sonnet-4-6");
+    expect(agents["spec-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
+    expect(agents["code-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
   });
 
   it("per-agent override takes precedence over tier", () => {
@@ -188,8 +207,8 @@ describe("resolveHarnessModels — mid-execute tier", () => {
 
     // Per-agent override wins
     expect(agents["build"]!.model).toBe("anthropic/claude-opus-4-7");
-    // But assessor still gets mid-execute
-    expect(agents["assessor"]!.model).toBe("moonshotai/kimi-k2-6");
+    // But spec-reviewer still gets mid-execute
+    expect(agents["spec-reviewer"]!.model).toBe("moonshotai/kimi-k2-6");
   });
 
   it("strict prompts still apply even when per-agent overrides model (tier is mid-execute)", () => {
@@ -227,8 +246,10 @@ describe("applyConfig — mid-execute integration", () => {
 
     expect((config.agent["build"].prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
     expect(config.agent["build"].model).toBe("moonshotai/kimi-k2-6");
-    expect((config.agent["assessor"].prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
-    expect(config.agent["assessor"].model).toBe("moonshotai/kimi-k2-6");
+    expect((config.agent["spec-reviewer"].prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
+    expect(config.agent["spec-reviewer"].model).toBe("moonshotai/kimi-k2-6");
+    expect((config.agent["code-reviewer"].prompt as string)).toContain("STRICT_EXECUTOR_VARIANT");
+    expect(config.agent["code-reviewer"].model).toBe("moonshotai/kimi-k2-6");
   });
 
   it("end-to-end: no mid-execute → reasoning prompts, mid model", () => {
@@ -277,5 +298,13 @@ describe("applyConfig — mid-execute integration", () => {
     // Default: reasoning prompts, sonnet model
     expect((config.agent["build"].prompt as string)).not.toContain("STRICT_EXECUTOR_VARIANT");
     expect(config.agent["build"].model).toBe("anthropic/claude-sonnet-4-6");
+  });
+
+  it("assigns spec-reviewer to mid-execute tier", () => {
+    expect(AGENT_TIERS["spec-reviewer"]).toBe("mid-execute");
+  });
+
+  it("assigns code-reviewer to mid-execute tier", () => {
+    expect(AGENT_TIERS["code-reviewer"]).toBe("mid-execute");
   });
 });

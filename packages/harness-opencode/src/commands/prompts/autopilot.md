@@ -73,7 +73,7 @@ Run the normal SPEAR workflow from `prime.md`. Key adaptations for autopilot mod
 - **Scope.** Already classified; skip redundant classification. Announce the frame as `→ Frame:` and proceed — do NOT use the `question` tool to confirm. The user is walked away.
 - **Plan.** Delegate to `@plan`. For ref-originated requests, cite the issue ID in the plan's `## Goal`. The plan's `## Acceptance criteria` maps 1:1 to the ticket's Changes / Definition of Done list.
 - **Execute.** Delegate to `@build`. `@build` executes file-by-file and returns a summary; PRIME relays progress. Acceptance boxes get checked during `@build`'s execution.
-- **Assess.** Full suite pass + `@assessor` → iterate to `[PASS]`. No sentinel tokens.
+- **Assess.** Full suite pass + `@spec-reviewer` → `@code-reviewer` → iterate to `[PASS]`. No sentinel tokens.
 - **Resolve.** Complete the Resolve stage: push branch, open PR via `gh pr create`, print PR URL and stop.
 
 ## 4. Guardrails
