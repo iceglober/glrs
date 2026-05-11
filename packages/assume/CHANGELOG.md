@@ -1,5 +1,11 @@
 # @glrs-dev/assume
 
+## 0.6.6
+
+### Patch Changes
+
+- [#54](https://github.com/iceglober/glrs/pull/54) [`54cf566`](https://github.com/iceglober/glrs/commit/54cf5667b65d9701f9fccff283d5f0d0b0a03346) Thanks [@iceglober](https://github.com/iceglober)! - Add daemon auto-restart for exec/credential_process commands. When the daemon dies (e.g., macOS kills it during sleep), the next credential request now silently restarts it without blocking (~1ms overhead). Also adds a containerized test harness with 13 deterministic tests covering the full daemon refresh lifecycle.
+
 ## 0.6.5
 
 ### Patch Changes
