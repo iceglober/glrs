@@ -40,8 +40,8 @@ describe("createAgents", () => {
       "research-web",
       "research-local",
       "research-auto",
-      "qa-reviewer",
-      "qa-thorough",
+      "assessor",
+      "assessor-thorough",
       "plan-reviewer",
       "code-searcher",
       "gap-analyzer",
@@ -64,7 +64,7 @@ describe("createAgents", () => {
     // Guard against accidental reversion. @plan must be reachable by
     // other agents' task-tool picker — either mode:"subagent" or
     // mode:"all". Flipping back to mode:"primary" re-opens the bug
-    // where PRIME's Phase 2 delegation silently falls through to
+    // where PRIME's Plan stage delegation silently falls through to
     // pilot-planner (closest matching subagent) or general.
     // Confirmed via OpenCode docs: only mode:"subagent" and mode:"all"
     // surface an agent to the task tool.
@@ -73,17 +73,17 @@ describe("createAgents", () => {
   });
 
   it("build agent is task-tool-dispatchable (not mode:primary)", () => {
-    // Same guard as @plan. PRIME's Phase 3 delegates execution to
+    // Same guard as @plan. PRIME's Execute stage delegates execution to
     // @build via the task tool; @build must be reachable. mode:"all"
     // also preserves top-level @build invocation for users who want
     // to run against a plan directly. Reverting to mode:"primary"
-    // silently kills the Phase 3 delegation path.
+    // silently kills the Execute stage delegation path.
     expect(agents["build"]).toBeDefined();
     expect(agents["build"]!.mode).not.toBe("primary");
   });
 
-  it("prime prompt delegates Phase 3 to @build", () => {
-    // Guard the Phase 3 delegation rewrite. PRIME's prompt must
+  it("prime prompt delegates Execute to @build", () => {
+    // Guard the Execute stage delegation. PRIME's prompt must
     // explicitly instruct delegation to @build. Falling back to the
     // old inline file-edit loop re-concentrates Opus tokens on
     // mechanical work — defeats the whole purpose of the @build split.
@@ -92,11 +92,11 @@ describe("createAgents", () => {
     expect(prime).not.toContain("For each item in the plan's `## File-level changes`:");
   });
 
-  it("build prompt does not re-run full test suite (PRIME's Phase 4 owns it)", () => {
-    // PRIME's Phase 4 delegates full-suite testing to @qa-reviewer /
-    // @qa-thorough. @build running the full suite too duplicates that
+  it("build prompt does not re-run full test suite (PRIME's Assess stage owns it)", () => {
+    // PRIME's Assess stage delegates full-suite testing to @assessor /
+    // @assessor-thorough. @build running the full suite too duplicates that
     // work. Per-file tests during execution (build.md section 3) are
-    // fine and expected. Final full-suite runs belong to Phase 4.
+    // fine and expected. Final full-suite runs belong to Assess.
     const build = agents["build"]!.prompt as string;
     expect(build).not.toContain("Run the full test suite. It must pass.");
     expect(build).not.toContain("Run lint. It must pass.");
@@ -116,6 +116,37 @@ describe("createAgents", () => {
     }
   });
 
+  it("assessor agent exists with correct permissions", () => {
+    // Guard the rename: qa-reviewer → assessor
+    expect(agents["assessor"]).toBeDefined();
+    expect(agents["assessor"]!.model).toBe("anthropic/claude-sonnet-4-6");
+    const bash = (agents["assessor"] as any).permission.bash;
+    expect(typeof bash).toBe("object");
+    expect(bash["*"]).toBe("allow");
+    expect(bash["rm -rf /*"]).toBe("deny");
+  });
+
+  it("assessor-thorough agent exists with correct model", () => {
+    // Guard the rename: qa-thorough → assessor-thorough
+    expect(agents["assessor-thorough"]).toBeDefined();
+    expect(agents["assessor-thorough"]!.model).toBe("anthropic/claude-opus-4-7");
+    expect(agents["assessor-thorough"]!.mode).toBe("subagent");
+  });
+
+  it("prime prompt contains Assess loop semantics", () => {
+    // Guard the new Assess → Plan loop. PRIME's prompt must specify
+    // the LOOP-TO-PLAN token so the loop can be detected and acted on.
+    const prime = agents["prime"]!.prompt as string;
+    expect(prime).toContain("LOOP-TO-PLAN");
+  });
+
+  it("prime prompt contains Resolve auto-ship", () => {
+    // Guard the Resolve stage auto-ship behavior. PRIME's prompt must
+    // instruct opening a PR via gh pr create after Assess passes.
+    const prime = agents["prime"]!.prompt as string;
+    expect(prime).toContain("gh pr create");
+  });
+
   it("prime has correct model and temperature", () => {
     const orch = agents["prime"]!;
     expect(orch.model).toBe("anthropic/claude-opus-4-7");
@@ -128,12 +159,12 @@ describe("createAgents", () => {
     expect(build.temperature).toBe(0.1);
   });
 
-  it("qa-reviewer model is sonnet-4-6", () => {
-    expect(agents["qa-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
+  it("assessor model is sonnet-4-6", () => {
+    expect(agents["assessor"]!.model).toBe("anthropic/claude-sonnet-4-6");
   });
 
-  it("qa-thorough subagent is registered with opus model", () => {
-    const qt = agents["qa-thorough"]!;
+  it("assessor-thorough subagent is registered with opus model", () => {
+    const qt = agents["assessor-thorough"]!;
     expect(qt).toBeDefined();
     expect(qt.model).toBe("anthropic/claude-opus-4-7");
     expect(qt.mode).toBe("subagent");
@@ -332,8 +363,8 @@ describe("subagent permissions", () => {
   const agents = createAgents();
 
   const subagentsWithPerms = [
-    "qa-reviewer",
-    "qa-thorough",
+    "assessor",
+    "assessor-thorough",
     "plan-reviewer",
     "code-searcher",
     "gap-analyzer",
@@ -461,8 +492,8 @@ describe("subagent permissions", () => {
     return "ask";
   }
 
-  it("qa-reviewer bash is object-form with enumerated allow-list", () => {
-    const bash = (agents["qa-reviewer"] as any).permission.bash;
+  it("assessor bash is object-form with enumerated allow-list", () => {
+    const bash = (agents["assessor"] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash).not.toBeNull();
     expect(bash["*"]).toBe("allow");
@@ -482,8 +513,8 @@ describe("subagent permissions", () => {
     expect(bash["git push --force-with-lease*"]).toBe("allow");
   });
 
-  it("qa-reviewer bash object form allows all reported pain-point commands", () => {
-    const bash = (agents["qa-reviewer"] as any).permission.bash;
+  it("assessor bash object form allows all reported pain-point commands", () => {
+    const bash = (agents["assessor"] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of PAIN_POINT_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -493,13 +524,13 @@ describe("subagent permissions", () => {
     }
     if (mismatches.length > 0) {
       throw new Error(
-        `qa-reviewer bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
+        `assessor bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
       );
     }
   });
 
-  it("qa-reviewer bash object form denies destructive commands", () => {
-    const bash = (agents["qa-reviewer"] as any).permission.bash;
+  it("assessor bash object form denies destructive commands", () => {
+    const bash = (agents["assessor"] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of DESTRUCTIVE_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -511,13 +542,13 @@ describe("subagent permissions", () => {
     }
     if (mismatches.length > 0) {
       throw new Error(
-        `qa-reviewer bash map fails destructive-command check:\n${mismatches.join("\n")}`,
+        `assessor bash map fails destructive-command check:\n${mismatches.join("\n")}`,
       );
     }
   });
 
-  it("qa-thorough bash is object-form with enumerated allow-list", () => {
-    const bash = (agents["qa-thorough"] as any).permission.bash;
+  it("assessor-thorough bash is object-form with enumerated allow-list", () => {
+    const bash = (agents["assessor-thorough"] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash).not.toBeNull();
     expect(bash["*"]).toBe("allow");
@@ -527,8 +558,8 @@ describe("subagent permissions", () => {
     expect(bash["rm -rf /*"]).toBe("deny");
   });
 
-  it("qa-thorough bash object form allows all reported pain-point commands", () => {
-    const bash = (agents["qa-thorough"] as any).permission.bash;
+  it("assessor-thorough bash object form allows all reported pain-point commands", () => {
+    const bash = (agents["assessor-thorough"] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of PAIN_POINT_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -538,24 +569,24 @@ describe("subagent permissions", () => {
     }
     if (mismatches.length > 0) {
       throw new Error(
-        `qa-thorough bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
+        `assessor-thorough bash map fails to allow pain-point commands:\n${mismatches.join("\n")}`,
       );
     }
   });
 
-  it("qa-thorough bash shape matches qa-reviewer", () => {
+  it("assessor-thorough bash shape matches assessor", () => {
     // They share a role (read-only adversarial review). Any divergence
     // would cause the fast/thorough dispatch to have different
     // allowlists — a foot-gun. Fail noisily if someone drifts one
     // without the other.
-    const qr = (agents["qa-reviewer"] as any).permission.bash;
-    const qt = (agents["qa-thorough"] as any).permission.bash;
+    const qr = (agents["assessor"] as any).permission.bash;
+    const qt = (agents["assessor-thorough"] as any).permission.bash;
     expect(qt).toEqual(qr);
   });
 
-  it("qa-thorough permission block matches qa-reviewer shape (non-bash keys)", () => {
-    const qr = (agents["qa-reviewer"] as any).permission;
-    const qt = (agents["qa-thorough"] as any).permission;
+  it("assessor-thorough permission block matches assessor shape (non-bash keys)", () => {
+    const qr = (agents["assessor"] as any).permission;
+    const qt = (agents["assessor-thorough"] as any).permission;
     for (const key of [
       "edit",
       "webfetch",
@@ -717,60 +748,60 @@ describe("subagent permissions", () => {
 
 describe("prompt content assertions", () => {
   const agents = createAgents();
-  const qaReviewer = agents["qa-reviewer"]!.prompt as string;
-  const qaThorough = agents["qa-thorough"]!.prompt as string;
+  const assessor = agents["assessor"]!.prompt as string;
+  const assessorThorough = agents["assessor-thorough"]!.prompt as string;
   const prime = agents["prime"]!.prompt as string;
 
-  // ---- qa-reviewer (fast variant) ----
+  // ---- assessor (fast variant) ----
 
-  it("qa-reviewer prompt contains trust-recent-green clause", () => {
-    expect(qaReviewer).toContain("tests passed at");
-    expect(qaReviewer).toContain("lint passed at");
-    expect(qaReviewer).toContain("typecheck passed at");
+  it("assessor prompt contains trust-recent-green clause", () => {
+    expect(assessor).toContain("tests passed at");
+    expect(assessor).toContain("lint passed at");
+    expect(assessor).toContain("typecheck passed at");
   });
 
-  it("qa-reviewer prompt requires git log verification for untracked-in-plan files", () => {
-    expect(qaReviewer).toContain("git log --oneline -- <file>");
+  it("assessor prompt requires git log verification for untracked-in-plan files", () => {
+    expect(assessor).toContain("git log --oneline -- <file>");
   });
 
-  it("qa-reviewer prompt contains plan-drift auto-fail rule", () => {
-    expect(qaReviewer.toLowerCase()).toContain("plan drift");
-    expect(qaReviewer.toLowerCase()).toContain("auto-fail");
-    expect(qaReviewer).toContain("## File-level changes");
+  it("assessor prompt contains plan-drift auto-fail rule", () => {
+    expect(assessor.toLowerCase()).toContain("plan drift");
+    expect(assessor.toLowerCase()).toContain("auto-fail");
+    expect(assessor).toContain("## File-level changes");
   });
 
-  it("qa-reviewer prompt retains plan-state verify step", () => {
-    expect(qaReviewer).toContain("plan-check --run");
+  it("assessor prompt retains plan-state verify step", () => {
+    expect(assessor).toContain("plan-check --run");
   });
 
-  it("qa-reviewer prompt guards full-suite re-run behind trust-recent-green", () => {
-    expect(qaReviewer.toLowerCase()).toMatch(
+  it("assessor prompt guards full-suite re-run behind trust-recent-green", () => {
+    expect(assessor.toLowerCase()).toMatch(
       /skip re-running|skip running|skip these|skip this step/,
     );
   });
 
-  // ---- qa-thorough (opus variant) ----
+  // ---- assessor-thorough (opus variant) ----
 
-  it("qa-thorough prompt contains strengthened scope and plan-drift rules", () => {
-    expect(qaThorough).toContain("git log --oneline -- <file>");
-    expect(qaThorough.toLowerCase()).toContain("plan drift");
-    expect(qaThorough.toLowerCase()).toContain("auto-fail");
+  it("assessor-thorough prompt contains strengthened scope and plan-drift rules", () => {
+    expect(assessorThorough).toContain("git log --oneline -- <file>");
+    expect(assessorThorough.toLowerCase()).toContain("plan drift");
+    expect(assessorThorough.toLowerCase()).toContain("auto-fail");
   });
 
-  it("qa-thorough prompt unconditionally re-runs full suite", () => {
-    expect(qaThorough.toLowerCase()).toContain("re-run");
+  it("assessor-thorough prompt unconditionally re-runs full suite", () => {
+    expect(assessorThorough.toLowerCase()).toContain("re-run");
   });
 
-  it("qa-thorough prompt does NOT contain trust-recent-green clause", () => {
-    expect(qaThorough).not.toContain("tests passed at");
-    expect(qaThorough).not.toContain("trust-recent-green");
+  it("assessor-thorough prompt does NOT contain trust-recent-green clause", () => {
+    expect(assessorThorough).not.toContain("tests passed at");
+    expect(assessorThorough).not.toContain("trust-recent-green");
   });
 
   // ---- prime (picker + delegation + pre-existing-failure rule) ----
 
-  it("prime prompt contains qa-fast-vs-thorough heuristic", () => {
-    expect(prime).toContain("@qa-thorough");
-    expect(prime).toContain("@qa-reviewer");
+  it("prime prompt contains assessor-fast-vs-thorough heuristic", () => {
+    expect(prime).toContain("@assessor-thorough");
+    expect(prime).toContain("@assessor");
     expect(prime).toMatch(/>10 files|>500 lines/);
     expect(prime.toLowerCase()).toContain("risk: high");
     expect(prime.toLowerCase()).toMatch(
@@ -778,7 +809,7 @@ describe("prompt content assertions", () => {
     );
   });
 
-  it("prime prompt requires session-green summary for qa-reviewer delegation", () => {
+  it("prime prompt requires session-green summary for assessor delegation", () => {
     expect(prime).toContain("tests passed at");
     expect(prime).toContain("lint passed at");
     expect(prime).toContain("typecheck passed at");
@@ -792,9 +823,9 @@ describe("prompt content assertions", () => {
     );
   });
 
-  it("prime subagent reference lists both qa-reviewer and qa-thorough", () => {
-    expect(prime).toMatch(/- `@qa-reviewer`/);
-    expect(prime).toMatch(/- `@qa-thorough`/);
+  it("prime subagent reference lists both assessor and assessor-thorough", () => {
+    expect(prime).toMatch(/- `@assessor`/);
+    expect(prime).toMatch(/- `@assessor-thorough`/);
   });
 
   // ---- context firewall + delegation strengthening ----
@@ -843,8 +874,8 @@ describe("prompt content assertions", () => {
     expect(hasResolver).toBe(true);
   });
 
-  it("prime Phase 0 probe references new plan dir (or a shell snippet that resolves it)", () => {
-    // Phase 0 bootstrap should probe for plans using the resolver, not
+  it("prime Bootstrap probe references new plan dir (or a shell snippet that resolves it)", () => {
+    // Bootstrap probe should probe for plans using the resolver, not
     // the legacy `ls .agent/plans/`.
     expect(prime).toContain("bunx @glrs-dev/harness-plugin-opencode plan-dir");
     // Legacy probe must be gone.
@@ -889,13 +920,13 @@ describe("mid-tier prompt variant selection", () => {
     expect(buildPrompt).toContain("Fenced plans");
   });
 
-  it("qa-reviewer prompt changes to strict variant when mid-execute is configured", () => {
+  it("assessor prompt changes to strict variant when mid-execute is configured", () => {
     const config: any = {};
     const pluginOptions = {
       models: { "mid-execute": "qwen/qwen3-coder-480b", mid: "anthropic/claude-sonnet-4-6" },
     };
     applyConfig(config, pluginOptions);
-    const qaPrompt = config.agent["qa-reviewer"].prompt as string;
+    const qaPrompt = config.agent["assessor"].prompt as string;
     expect(qaPrompt).toContain("STRICT_EXECUTOR_VARIANT");
     expect(qaPrompt).not.toContain("trust-recent-green");
   });
@@ -905,7 +936,7 @@ describe("mid-tier prompt variant selection", () => {
     const pluginOptions = { models: { mid: "anthropic/claude-sonnet-4-6" } };
     applyConfig(config, pluginOptions);
     expect(config.agent["build"].model).toBe("anthropic/claude-sonnet-4-6");
-    expect(config.agent["qa-reviewer"].model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent["assessor"].model).toBe("anthropic/claude-sonnet-4-6");
   });
 
   it("user-wins: user agent override is not clobbered by tier resolution", () => {
@@ -945,7 +976,7 @@ describe("applyConfig — permission.bash behavior", () => {
   //   2. Read-only subagents declaring `bash: "deny"` entirely
   //      (plan-reviewer, code-searcher, gap-analyzer, …).
   //   3. Reviewer system prompts that forbid destructive operations
-  //      by role (qa-reviewer, qa-thorough).
+  //      by role (assessor, assessor-thorough).
 
   it("applyConfig does NOT set a global permission.bash default", () => {
     const config: any = {};

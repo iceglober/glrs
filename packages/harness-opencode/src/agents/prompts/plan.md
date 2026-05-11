@@ -117,7 +117,7 @@ For each file:
   or its file path must appear in `## File-level changes` (marking it
   NEW or modified). `plan-reviewer` enforces this.
 - `verify` is a single shell command that should execute the named
-  tests. On the `qa-reviewer` pass, each pending item's verify command
+  tests. On the `assessor` pass, each pending item's verify command
   is run via `bash`; non-zero exit fails the review.
 - Legacy plans without a fence (old `- [ ]` checkboxes directly under
   `## Acceptance criteria`) still execute and pass review — the fence
@@ -146,6 +146,6 @@ Stop. Do not begin implementation.
 # Hard rules
 
 - You write only to the plan directory resolved via `bunx @glrs-dev/harness-plugin-opencode plan-dir`. Do not edit or create any other file under any circumstance.
-- The ONLY bash command you may run is `bunx @glrs-dev/harness-plugin-opencode plan-dir` (no other flags needed; `plan-check` is invoked by `qa-reviewer`, not by you). Your permission block denies everything else.
+- The ONLY bash command you may run is `bunx @glrs-dev/harness-plugin-opencode plan-dir` (no other flags needed; `plan-check` is invoked by `assessor`, not by you). Your permission block denies everything else.
 - You never invent file paths or symbol names. If you can't find something, say so in `## Open questions`.
 - A plan that hasn't passed `@plan-reviewer` is not finished.

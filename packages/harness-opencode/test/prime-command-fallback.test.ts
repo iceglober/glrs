@@ -46,12 +46,12 @@ describe("prime slash-command fallback section", () => {
     expect(ORCH).toContain(SECTION_HEADING);
   });
 
-  it("section appears before ## Phase 0", () => {
+  it("section appears before ## Bootstrap", () => {
     const secIdx = ORCH.indexOf(SECTION_HEADING);
-    const phase0Idx = ORCH.indexOf("## Phase 0");
+    const bootstrapIdx = ORCH.indexOf("## Bootstrap");
     expect(secIdx).toBeGreaterThan(-1);
-    expect(phase0Idx).toBeGreaterThan(-1);
-    expect(secIdx).toBeLessThan(phase0Idx);
+    expect(bootstrapIdx).toBeGreaterThan(-1);
+    expect(secIdx).toBeLessThan(bootstrapIdx);
   });
 
   it("section lists all seven recognized commands", () => {
@@ -102,11 +102,11 @@ describe("prime slash-command fallback section", () => {
     expect(lc).toMatch(/template read fail|not found|file missing/);
   });
 
-  it("section states the five-phase arc is replaced on fallback", () => {
+  it("section states the SPEAR arc is replaced on fallback", () => {
     const body = extractSection();
     const lc = body.toLowerCase();
     expect(lc).toContain("replace");
-    expect(lc).toContain("phase 0");
+    expect(lc).toMatch(/bootstrap|phase 0/);
   });
 
   it("section mentions frontmatter stripping", () => {

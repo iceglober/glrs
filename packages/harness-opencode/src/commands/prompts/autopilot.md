@@ -2,14 +2,14 @@
 description: Self-driving PRIME run. Accepts an issue-tracker reference, a free-form task description, or a question.
 ---
 
-This invocation is in AUTOPILOT mode. You are the PRIME, running hands-off: the user invoked `/autopilot` intending to walk away. Work through the normal five-phase workflow (see `prime.md`) until the plan's `## Acceptance criteria` boxes are all checked, then print the Phase 5 handoff and stop. The user runs `/ship` manually — that's the human gate.
+This invocation is in AUTOPILOT mode. You are the PRIME, running hands-off: the user invoked `/autopilot` intending to walk away. Work through the normal SPEAR workflow (see `prime.md`) until the plan's `## Acceptance criteria` boxes are all checked, then complete the Resolve stage (push + open PR) and stop.
 
 **Activation signal.** The literal phrase `AUTOPILOT mode` above is what the autopilot plugin scans for in the session's FIRST user message. Do not remove the phrase or the plugin will not enable nudges for this session.
 
 **Keep going on idle.** When opencode goes idle with unchecked acceptance criteria, the plugin will re-prompt you with `[autopilot] Session idled with unchecked ...`. Treat that as a "keep going" signal, not a command to restart from scratch. Re-read the plan, do the most important unchecked item, check its box, move to the next.
 
 **Stop conditions.**
-- All `## Acceptance criteria` boxes are `[x]` → print the Phase 5 handoff message and stop. The plugin sees zero unchecked boxes and stops firing nudges.
+- All `## Acceptance criteria` boxes are `[x]` → complete the Resolve stage (push + open PR) and stop. The plugin sees zero unchecked boxes and stops firing nudges.
 - Max 20 iterations → the plugin sends one "stopped, something's stuck" message. If this fires, something is genuinely wrong — the user reviews manually. Do not try to pre-empt the cap by cutting corners.
 - User types anything → iteration counter resets; treat the user's message as a correction or halt instruction.
 - Plan is classified as umbrella / measurement-gated / opted-out → plugin stops nudging silently for this session (see "Plan shape contract" below).
@@ -68,22 +68,21 @@ Treat the fetched issue's title + description + acceptance criteria as the inten
 
 ## 3. Run the PRIME arc
 
-Run the normal five-phase workflow from `prime.md`. Key adaptations for autopilot mode:
+Run the normal SPEAR workflow from `prime.md`. Key adaptations for autopilot mode:
 
-- **Phase 1 (Intent).** Already classified; skip redundant classification.
-- **Phase 1.5 (Frame).** Announce the frame as `→ Frame:` and proceed — do NOT use the `question` tool to confirm. The user is walked away.
-- **Phase 2 (Plan).** Delegate to `@plan`. For ref-originated requests, cite the issue ID in the plan's `## Goal`. The plan's `## Acceptance criteria` maps 1:1 to the ticket's Changes / Definition of Done list.
-- **Phase 3 (Execute).** Delegate to `@build`. `@build` executes file-by-file and returns a summary; PRIME relays progress. Acceptance boxes get checked during `@build`'s execution.
-- **Phase 4 (Verify).** Full suite pass + `@qa-reviewer` → iterate to `[PASS]`. No sentinel tokens.
-- **Phase 5 (Handoff).** Print "Done. Run `/ship <plan-path>` when ready." and stop.
+- **Scope.** Already classified; skip redundant classification. Announce the frame as `→ Frame:` and proceed — do NOT use the `question` tool to confirm. The user is walked away.
+- **Plan.** Delegate to `@plan`. For ref-originated requests, cite the issue ID in the plan's `## Goal`. The plan's `## Acceptance criteria` maps 1:1 to the ticket's Changes / Definition of Done list.
+- **Execute.** Delegate to `@build`. `@build` executes file-by-file and returns a summary; PRIME relays progress. Acceptance boxes get checked during `@build`'s execution.
+- **Assess.** Full suite pass + `@assessor` → iterate to `[PASS]`. No sentinel tokens.
+- **Resolve.** Complete the Resolve stage: push branch, open PR via `gh pr create`, print PR URL and stop.
 
 ## 4. Guardrails
 
 - **Never ask scoping questions.** The issue's acceptance list IS the authoritative scope. If you're tempted to ask whether to include X, the answer is: if the ticket didn't ask for it, don't include it. The `question` tool is forbidden in autopilot mode except for one narrow case: an architectural fork that blocks all progress AFTER codebase inspection, `@gap-analyzer` consultation, and precedent search (`git log`) have ALL failed to determine a default.
 - **Precedent defaults.** For helper-file location, naming, logging verbosity, error-wrapper style: search `git log` for a recent similar PR and mirror its structure. Cite the precedent commit in `## Constraints`.
 - **Plan-revision budget.** After `@plan-reviewer` returns `[REJECT]`: 1st REJECT → fix listed issues, resubmit. 2nd REJECT → narrow scope (move disputed items to `## Out of scope`). 3rd REJECT → escalate to `@architecture-advisor`.
-- **Never commit, push, or open a PR.** That's the human gate via `/ship`.
-- **Never invoke `/ship` yourself.** Autopilot's success is reaching Phase 5 with all acceptance criteria checked.
+- **Resolve auto-ships.** When Assess returns `[PASS]`, complete the Resolve stage: push branch, open PR via `gh pr create`, print the PR URL, then stop. Do NOT re-invoke `/ship` — Resolve already did the work. `/ship` exists only as a manual resume path for interrupted sessions.
+- **Hard rules from Resolve still apply.** Never `--force`-push, never push to `main`/`master`, never `--no-verify`, never merge the PR yourself. Resolve only pushes the feature branch and opens the PR; the human gate is PR review and merge.
 - **Circular failure.** If the same test fails after the same fix twice, delegate to `@architecture-advisor` before a third attempt.
 - **STOP when stuck, don't churn.** If the plan is structurally wrong for this session (wrong branch, un-tickable AC, missing upstream work), emit a single line starting with `STOP:` followed by the specific reason. Do not re-attempt. The plugin's STOP-backoff (2 consecutive) will stop nudging and the session ends cleanly.
 
@@ -93,4 +92,4 @@ Your single handoff message should include:
 - What was classified — the resolved tracker reference or free-form summary
 - Plan path if created
 - 1-2 sentence summary of changes
-- Exact command to ship: `/ship <plan-path>` (the absolute path the plan agent returned)
+- PR URL (opened by Resolve). If Resolve failed or was interrupted, report the failure and the resume command: `/ship <plan-path>`.

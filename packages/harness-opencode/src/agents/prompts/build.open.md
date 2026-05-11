@@ -59,7 +59,7 @@ Before returning:
 - `tsc_check` on each edited file is clean.
 - `git diff --stat` matches the plan's `## File-level changes`.
 
-Do NOT run the full test suite. PRIME's Phase 4 delegates that to `@qa-reviewer` / `@qa-thorough`.
+Do NOT run the full test suite. PRIME's Assess stage delegates that to `@assessor` / `@assessor-thorough`.
 
 ## 5. Return payload
 
@@ -77,7 +77,7 @@ Return control to your caller with a structured summary:
 
 > STOP: <one-sentence blocker>. <What needs to be resolved to re-dispatch>.
 
-PRIME owns QA dispatch. Do NOT delegate to `@qa-reviewer` or `@qa-thorough` yourself when invoked as a subagent.
+PRIME owns Assess dispatch. Do NOT delegate to `@assessor` or `@assessor-thorough` yourself when invoked as a subagent.
 
 # Hard rules
 

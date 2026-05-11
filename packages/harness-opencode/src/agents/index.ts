@@ -33,9 +33,9 @@ const primePrompt = readPrompt("prime.md");
 const planPrompt = readPrompt("plan.md");
 const buildPrompt = readPrompt("build.md");
 const buildOpenPrompt = readPrompt("build.open.md");
-const qaReviewerPrompt = readPrompt("qa-reviewer.md");
-const qaReviewerOpenPrompt = readPrompt("qa-reviewer.open.md");
-const qaThoroughPrompt = readPrompt("qa-thorough.md");
+const assessorPrompt = readPrompt("assessor.md");
+const assessorOpenPrompt = readPrompt("assessor.open.md");
+const assessorThoroughPrompt = readPrompt("assessor-thorough.md");
 const planReviewerPrompt = readPrompt("plan-reviewer.md");
 const codeSearcherPrompt = readPrompt("code-searcher.md");
 const gapAnalyzerPrompt = readPrompt("gap-analyzer.md");
@@ -59,7 +59,7 @@ const researchAutoPrompt = readPrompt("research-auto.md");
  */
 const EXECUTOR_VARIANT_AGENTS: Record<string, { reasoning: string; strict: string }> = {
   build: { reasoning: buildPrompt, strict: buildOpenPrompt },
-  "qa-reviewer": { reasoning: qaReviewerPrompt, strict: qaReviewerOpenPrompt },
+  assessor: { reasoning: assessorPrompt, strict: assessorOpenPrompt },
   "pilot-builder": { reasoning: pilotBuilderPrompt, strict: pilotBuilderPrompt },
 };
 
@@ -275,7 +275,7 @@ const CORE_BASH_ALLOW_LIST = {
   "eslint *": "allow",
   "prettier *": "allow",
   "biome *": "allow",
-  // Our own CLI — the plan agent and qa-reviewer both call plan-check/plan-dir.
+  // Our own CLI — the plan agent and assessor both call plan-check/plan-dir.
   "bunx @glrs-dev/harness-plugin-opencode *": "allow",
   "glrs-oc *": "allow",
   // GitHub CLI — read-only gh calls are fine; destructive `gh pr merge`
@@ -401,7 +401,7 @@ const BUILD_PERMISSIONS = {
 // actually reach AgentConfig — the flat YAML parser silently dropped
 // the nested `permission:` maps, and `agentFromPrompt` never read them.
 
-const QA_REVIEWER_PERMISSIONS = {
+const ASSESSOR_PERMISSIONS = {
   edit: "deny" as const,
   // Object-form bash: the scalar `"allow"` shape loses to OpenCode's
   // upstream subagent-default `{bash, *, ask}` via last-match-wins (see
@@ -429,16 +429,16 @@ const QA_REVIEWER_PERMISSIONS = {
   linear: "deny",
 };
 
-// qa-thorough has an identical permission shape to qa-reviewer — both are
+// assessor-thorough has an identical permission shape to assessor — both are
 // read-only adversarial reviewers that need bash access for `git log`
-// scope-creep verification and running lint/test/typecheck (qa-thorough
-// always, qa-reviewer conditionally via trust-recent-green). They differ
+// scope-creep verification and running lint/test/typecheck (assessor-thorough
+// always, assessor conditionally via trust-recent-green). They differ
 // only in model, description, and prompt body.
-const QA_THOROUGH_PERMISSIONS = {
+const ASSESSOR_THOROUGH_PERMISSIONS = {
   edit: "deny" as const,
-  // Same object-form as QA_REVIEWER_PERMISSIONS — see the shape rationale
-  // there. qa-thorough re-runs the full suite unconditionally (per its
-  // prompt), so it touches the same command surface as qa-reviewer and
+  // Same object-form as ASSESSOR_PERMISSIONS — see the shape rationale
+  // there. assessor-thorough re-runs the full suite unconditionally (per its
+  // prompt), so it touches the same command surface as assessor and
   // needs the identical bash allow-list.
   bash: {
     "*": "allow",
@@ -610,7 +610,7 @@ export type ModelTier = "deep" | "mid" | "mid-execute" | "fast";
 export const AGENT_TIERS: Record<string, ModelTier> = {
   prime: "deep",
   plan: "deep",
-  "qa-thorough": "deep",
+  "assessor-thorough": "deep",
   "architecture-advisor": "deep",
   "plan-reviewer": "deep",
   "gap-analyzer": "deep",
@@ -624,7 +624,7 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   "pilot-builder": "mid-execute",
   "pilot-assessor": "mid",
   build: "mid-execute",
-  "qa-reviewer": "mid-execute",
+  assessor: "mid-execute",
   "docs-maintainer": "mid",
   "lib-reader": "mid",
   "agents-md-writer": "mid",
@@ -791,11 +791,11 @@ export function createAgents(): Record<string, AgentConfig> {
     // Subagents — model/mode/description from frontmatter, permissions
     // via overrides (see permission blocks above). docs-maintainer has no
     // frontmatter permission declaration and keeps that behavior.
-    "qa-reviewer": agentFromPrompt(qaReviewerPrompt, {
-      permission: QA_REVIEWER_PERMISSIONS as AgentConfig["permission"],
+    assessor: agentFromPrompt(assessorPrompt, {
+      permission: ASSESSOR_PERMISSIONS as AgentConfig["permission"],
     }),
-    "qa-thorough": agentFromPrompt(qaThoroughPrompt, {
-      permission: QA_THOROUGH_PERMISSIONS as AgentConfig["permission"],
+    "assessor-thorough": agentFromPrompt(assessorThoroughPrompt, {
+      permission: ASSESSOR_THOROUGH_PERMISSIONS as AgentConfig["permission"],
     }),
     "plan-reviewer": agentFromPrompt(planReviewerPrompt, {
       permission: PLAN_REVIEWER_PERMISSIONS as AgentConfig["permission"],

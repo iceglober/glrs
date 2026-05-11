@@ -43,7 +43,7 @@ Open OpenCode in any repo. The `prime` agent handles everything end-to-end.
 ```
 /fresh ENG-1234
 ```
-Wipes the worktree, creates a branch from the ticket ref, and begins the five-phase workflow: understand → plan → execute → verify → handoff.
+Wipes the worktree, creates a branch from the ticket ref, and begins the SPEAR workflow: scope → plan → execute → assess → resolve.
 
 **Start a task from a description:**
 ```
@@ -54,7 +54,7 @@ Wipes the worktree, creates a branch from the ticket ref, and begins the five-ph
 ```
 /autopilot ENG-1234
 ```
-Runs the full workflow unattended. Stops when all acceptance criteria are checked off. You review, then `/ship`.
+Runs the full SPEAR workflow unattended. Completes Resolve (push + PR) automatically when all acceptance criteria pass.
 
 **Ship when done:**
 ```
@@ -66,7 +66,7 @@ Squashes commits, pushes, opens a PR with the plan as the body.
 ```
 /review 87
 ```
-Read-only adversarial review. Fetches the diff, runs typecheck/lint, delegates to `@qa-reviewer`, outputs a structured verdict.
+Read-only adversarial review. Fetches the diff, runs typecheck/lint, delegates to `@assessor`, outputs a structured verdict.
 
 **Deep codebase research:**
 ```
@@ -104,11 +104,11 @@ See [Pilot mode](#pilot-mode) for the full command reference.
 
 | Agent | Tier | Role |
 |-------|------|------|
-| `prime` | deep | Five-phase end-to-end workflow (default agent) |
+| `prime` | deep | SPEAR end-to-end workflow (default agent) |
 | `plan` | deep | Interactive planner with gap analysis and adversarial review |
 | `build` | mid | Plan executor |
-| `qa-reviewer` | mid | Fast adversarial code review |
-| `qa-thorough` | deep | Full-suite adversarial review |
+| `assessor` | mid | Fast adversarial code review |
+| `assessor-thorough` | deep | Full-suite adversarial review |
 | `plan-reviewer` | deep | Adversarial plan review |
 | `gap-analyzer` | deep | Identifies gaps in plans |
 | `architecture-advisor` | deep | Architecture guidance |

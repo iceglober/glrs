@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 /**
  * Canonical Ralph loop, hardened. When the user invokes `/autopilot`, the
- * PRIME runs its normal five-phase workflow on a plan. This plugin
+ * PRIME runs its normal SPEAR workflow on a plan. This plugin
  * nudges the session to keep going whenever opencode goes idle before the
  * plan's `## Acceptance criteria` boxes are all checked.
  *
@@ -45,7 +45,7 @@ import { promisify } from "node:util";
  *
  * Important design rule: the plugin never asks the user anything.
  * Circuit breakers are mechanical — a session that can't make progress
- * stops silently. PRIME's Phase 5 handoff (or its STOP report)
+ * stops silently. PRIME's Resolve stage output (or its STOP report)
  * is the final output the user sees; the plugin respects that.
  */
 
@@ -119,8 +119,8 @@ const STOP_REPORT_RE = /^STOP[:.\s—]/m;
 const NUDGE_TEXT =
   "[autopilot] Session idled with unchecked acceptance criteria. " +
   "Re-read the plan, do the most important unchecked item, check its box when " +
-  "done, then move to the next. When all boxes are `[x]`, print the Phase 5 " +
-  "handoff and stop — the user runs `/ship` manually.";
+  "done, then move to the next. When all boxes are `[x]`, complete the Resolve " +
+  "stage (push + open PR) and stop.";
 
 const MAX_ITERATIONS_TEXT =
   `[autopilot] Stopped: hit max iterations (${MAX_ITERATIONS}). ` +

@@ -43,7 +43,7 @@ What `/fresh` DOES do, in order:
 5. **Capture state** — `OLD_BRANCH`, unpushed commits.
 6. **Dispatch to the reset strategy** — hook present+executable → hook; otherwise (or `--skip-hook`) → built-in flow.
 7. **Print a compact summary** — **Do NOT tell the user to `cd` — they're already there.**
-8. **Start the PRIME on the new task immediately** — in the SAME turn, begin the PRIME arc (Phase 0 → Phase 1 → …) on the user's original request. Do NOT stop after the summary and wait for the user to type "work on it." `/fresh` is "re-key and go," not "re-key and wait."
+8. **Start the PRIME on the new task immediately** — in the SAME turn, begin the PRIME arc (Bootstrap → Scope → Plan → …) on the user's original request. Do NOT stop after the summary and wait for the user to type "work on it." `/fresh` is "re-key and go," not "re-key and wait."
 
 ## Architectural principle: who owns what
 
@@ -296,8 +296,8 @@ Recover previous work: git checkout <OLD_BRANCH>
 This is the piece that makes `/fresh` feel like "re-key and go" instead of "re-key and wait." After printing the summary, DO NOT stop and wait for a follow-up message. Continue in the same turn:
 
 1. **Treat the user's original input (plus any tracker context you resolved in §2) as the new PRIME input** — same as if the user had just typed that request as a fresh prompt.
-2. **Enter the PRIME arc from the top** — Phase 0 bootstrap probe, then Phase 1 intent classification, then Phase 1.5 framing (substantial requests only), etc.
-3. **Do not re-prompt for confirmation of the task itself.** The user's request is already in hand. In `--confirm` mode you've already gated on discard; in default mode you haven't, but that's fine — the PRIME's own safety gates (e.g., the Phase 1.5 framing confirmation for low-confidence substantial requests) are the right place for task-level clarifiers, not a `/fresh` meta-prompt.
+2. **Enter the PRIME arc from the top** — Bootstrap probe, then Scope (intent classification + framing for substantial requests), etc.
+3. **Do not re-prompt for confirmation of the task itself.** The user's request is already in hand. In `--confirm` mode you've already gated on discard; in default mode you haven't, but that's fine — the PRIME's own safety gates (e.g., the Scope framing confirmation for low-confidence substantial requests) are the right place for task-level clarifiers, not a `/fresh` meta-prompt.
 
 **Why in the same turn:** the user ran `/fresh <task>` expecting work to start, not a checkpoint. One command, one turn, one uninterrupted transition from old task to new.
 
@@ -354,7 +354,7 @@ autopilot queue    →    autopilot pops ref    →    /fresh <ref> --yes    →
                                                                                  - fetches base, checks out new branch
                                                                                  - prints summary
                                                                                  - CONTINUES INLINE into PRIME (§7):
-                                                                                   runs Phase 0 → 1 → 1.5 → …
+                                                                                   runs Bootstrap → Scope → Plan → …
                                                                                    plan → build → verify → STOP
                                                                                autopilot sees acceptance criteria all [x],
                                                                                pops next ref, loops

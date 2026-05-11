@@ -2,6 +2,8 @@
 description: Finalize, commit, squash, push, and open a PR for QA-passed changes. Handles both single-commit and multi-commit (hybrid-autonomy) flows.
 ---
 
+**`/ship` is a resume/re-entry path.** PRIME's Resolve stage auto-ships after Assess passes — so in a normal SPEAR session you won't need to invoke `/ship` manually. Use `/ship` when: (a) the session was interrupted before Resolve ran, (b) Resolve errored mid-flight (push failed, PR creation failed), or (c) you want to manually trigger the ship pipeline. If a PR is already open for the current branch, this command reports the PR URL and stops (no-op).
+
 The plan at $ARGUMENTS has passed QA review. Ship it.
 
 **User invoking `/ship` IS the approval.** Execute the pipeline end-to-end without asking for per-step permission. Commits, pushes, and PR creation are not destructive — they're the whole point of this command. Only stop for genuinely unexpected states (see "Stop conditions" at the bottom).

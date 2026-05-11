@@ -111,7 +111,7 @@ export function writePermDebugSnapshot(config: Config): void {
  * with runtime fallback in a future version.
  *
  * After resolving models, rebuilds the prompt for mid-tier variant agents
- * (build, qa-reviewer, pilot-builder) using the variant-aware loader so
+ * (build, assessor, pilot-builder) using the variant-aware loader so
  * the prompt matches the resolved tier assignment.
  *
  * Mutates `agents` in place — returns the same reference for convenience.
@@ -178,7 +178,7 @@ export function resolveHarnessModels(
   // agents IF the mid-execute tier is explicitly configured. When mid-execute
   // is not configured (agents fell back to mid), they keep the reasoning prompt.
   if (midExecuteConfigured) {
-    const EXECUTOR_AGENTS = ["build", "qa-reviewer", "pilot-builder"];
+    const EXECUTOR_AGENTS = ["build", "assessor", "pilot-builder"];
     for (const agentName of EXECUTOR_AGENTS) {
       const agentCfg = agents[agentName];
       if (!agentCfg) continue;
@@ -237,7 +237,7 @@ export function applyConfig(config: Config, pluginOptions?: PluginOptions): void
   // We intentionally do NOT set a global `permission.bash` rule-map. An
   // upstream object-form map was observed to misfire under OpenCode's
   // permission resolution — when an agent declared `bash: "allow"` as a
-  // scalar (qa-reviewer, qa-thorough, autopilot-verifier), trivial
+  // scalar (assessor, assessor-thorough, autopilot-verifier), trivial
   // read-only commands like `git branch --show-current` would still
   // trigger ask-prompts, apparently because the runtime re-evaluates
   // the global pattern map rather than honoring the agent-level scalar

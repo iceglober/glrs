@@ -26,7 +26,7 @@ Each rule file applies all four principles through the lens of a specific pipeli
 
 3. [`rules/building.md`](rules/building.md) — For `@build`. Enforce surgical changes. Verify names before using them. Flag unplanned edits. Write failure-path tests before happy-path code.
 
-4. [`rules/review.md`](rules/review.md) — For `@qa-reviewer` and `@qa-thorough`. Verify failure-path coverage in the diff. Grep-confirm cross-boundary string literals. Reject diffs with unplanned scope.
+4. [`rules/review.md`](rules/review.md) — For `@assessor` and `@assessor-thorough`. Verify failure-path coverage in the diff. Grep-confirm cross-boundary string literals. Reject diffs with unplanned scope.
 
 ## When to load this skill
 

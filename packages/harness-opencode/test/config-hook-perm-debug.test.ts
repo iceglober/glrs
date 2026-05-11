@@ -84,7 +84,7 @@ describe("HARNESS_OPENCODE_PERM_DEBUG probe", () => {
     expect(parsed.globalPermission).not.toBeNull();
   });
 
-  it("perm-debug snapshot includes qa-reviewer agent with permission.bash object", () => {
+  it("perm-debug snapshot includes assessor agent with permission.bash object", () => {
     process.env["HARNESS_OPENCODE_PERM_DEBUG"] = "1";
     const config: any = {};
     applyConfig(config);
@@ -94,8 +94,8 @@ describe("HARNESS_OPENCODE_PERM_DEBUG probe", () => {
       "perm-debug.json",
     );
     const parsed = JSON.parse(fs.readFileSync(expected, "utf8"));
-    expect(parsed.agents).toContain("qa-reviewer");
-    const qrPerm = parsed.agentPermissions["qa-reviewer"];
+    expect(parsed.agents).toContain("assessor");
+    const qrPerm = parsed.agentPermissions["assessor"];
     expect(qrPerm).toBeDefined();
     expect(qrPerm).not.toBeNull();
     expect(typeof qrPerm.bash).toBe("object");
