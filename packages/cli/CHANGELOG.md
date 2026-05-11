@@ -1,5 +1,11 @@
 # @glrs-dev/cli
 
+## 2.1.0
+
+### Minor Changes
+
+- [#51](https://github.com/iceglober/glrs/pull/51) [`c3c6be8`](https://github.com/iceglober/glrs/commit/c3c6be8fb21052275f0ff4c60ba1ed3d93d5532f) Thanks [@iceglober](https://github.com/iceglober)! - Add auto-update to the `glrs` CLI. On every invocation (rate-limited to once per hour), checks the npm registry for a newer version. If found, installs it globally via `bun add -g` and re-execs the command so the user always runs the latest version. Disable with `GLRS_AUTO_UPDATE=0`.
+
 ## 2.0.1
 
 ## 2.0.0

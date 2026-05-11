@@ -1,6 +1,6 @@
 [package]
 name = "glrs-assume"
-version = "0.6.5"
+version = "0.6.6"
 edition = "2021"
 rust-version = "1.75"
 description = "Unified SSO credential manager for AWS, GCP, and more — CLI bins `gs-assume` and `gsa`."
@@ -70,6 +70,9 @@ exec = "0.3"
 tempfile = "3"
 assert_cmd = "2"
 predicates = "3"
+wiremock = "0.6"
+tokio-test = "0.4"
+serde_urlencoded = "0.7"
 
 [profile.release]
 strip = true

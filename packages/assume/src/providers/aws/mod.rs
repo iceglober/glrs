@@ -1,7 +1,9 @@
 pub mod auth;
+pub mod clock;
 pub mod contexts;
 pub mod credentials;
 pub mod endpoint;
+pub mod oidc_client;
 pub mod refresh;
 
 use crate::plugin::{
