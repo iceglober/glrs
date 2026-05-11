@@ -90,16 +90,29 @@ pub async fn login(config: &ProviderConfig) -> Result<AuthTokens, ProviderError>
     Ok(tokens)
 }
 
+/// Check whether a cached client registration JSON value is still valid.
+///
+/// Returns `true` if the registration has a valid `expires_at` timestamp that
+/// is in the future. Returns `false` if the field is missing, unparseable, or
+/// the registration has expired. This is the same check performed inside
+/// `get_or_register_client()` and is extracted here for testability.
+pub fn is_client_registration_valid(cached: &serde_json::Value) -> bool {
+    if let Some(expires) = cached.get("expires_at").and_then(|v| v.as_i64()) {
+        if let Some(expires_at) = chrono::DateTime::from_timestamp(expires, 0) {
+            return expires_at > Utc::now();
+        }
+    }
+    false
+}
+
 async fn get_or_register_client(client: &OidcClient) -> Result<(String, String), ProviderError> {
     // Check for cached client registration
     if let Ok(Some(cached)) = keychain::load_client_registration("aws") {
-        if let (Some(id), Some(secret), Some(expires)) = (
-            cached.get("client_id").and_then(|v| v.as_str()),
-            cached.get("client_secret").and_then(|v| v.as_str()),
-            cached.get("expires_at").and_then(|v| v.as_i64()),
-        ) {
-            let expires_at = chrono::DateTime::from_timestamp(expires, 0);
-            if expires_at.is_some_and(|e| e > Utc::now()) {
+        if is_client_registration_valid(&cached) {
+            if let (Some(id), Some(secret)) = (
+                cached.get("client_id").and_then(|v| v.as_str()),
+                cached.get("client_secret").and_then(|v| v.as_str()),
+            ) {
                 tracing::debug!("Using cached OIDC client registration");
                 return Ok((id.to_string(), secret.to_string()));
             }

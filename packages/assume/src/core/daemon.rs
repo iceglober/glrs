@@ -839,6 +839,53 @@ pub enum DaemonRequirement {
     /// Needs the credential daemon running (agent, mcp, use, etc.)
     /// Pre-dispatch will call ensure_daemon_running().
     Daemon,
+    /// Opportunistically restart the daemon if it's dead, without blocking.
+    /// Pre-dispatch will call spawn_daemon_if_dead() — fire-and-forget.
+    /// The command proceeds immediately using keychain tokens; the daemon
+    /// starts in the background for future refresh ticks.
+    BackgroundEnsure,
+}
+
+/// Spawn the daemon in the background if it is not currently running.
+/// This is a non-blocking fire-and-forget: it checks the PID file + signal 0,
+/// and if the daemon is dead, spawns the daemon process without waiting.
+/// No TCP health check, no stop_daemon() call, no sleep. Returns immediately.
+pub fn spawn_daemon_if_dead() {
+    if !is_daemon_running() {
+        tracing::debug!("Daemon not running — spawning in background");
+        spawn_daemon_no_wait();
+    }
+}
+
+/// Spawn the daemon process without blocking. Unlike `start_daemon_background()`,
+/// this does NOT sleep after spawning — it's truly fire-and-forget.
+fn spawn_daemon_no_wait() {
+    let bin = match std::env::current_exe()
+        .ok()
+        .and_then(|p| p.canonicalize().ok())
+    {
+        Some(p) => p,
+        None => {
+            tracing::debug!("Cannot resolve binary path for daemon auto-start");
+            return;
+        }
+    };
+
+    match std::process::Command::new(&bin)
+        .arg("serve")
+        .arg("--foreground")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(_child) => {
+            tracing::debug!("Daemon spawn initiated (no wait)");
+        }
+        Err(e) => {
+            tracing::debug!("Failed to spawn daemon: {e}");
+        }
+    }
 }
 
 /// Result of a credential endpoint check.

@@ -318,4 +318,29 @@ mod command_conformance {
             );
         }
     }
+
+    /// Verify that `exec` and `credential_process` declare `BackgroundEnsure`
+    /// (non-blocking daemon spawn) rather than `None` or `Daemon`.
+    ///
+    /// These commands load tokens from keychain directly and must not block on
+    /// daemon startup, but they should opportunistically restart the daemon so
+    /// future refresh ticks keep tokens alive.
+    #[test]
+    fn daemon_requirement_classification() {
+        use assume::core::daemon::DaemonRequirement;
+
+        assert_eq!(
+            assume::cli::exec::REQUIREMENT,
+            DaemonRequirement::BackgroundEnsure,
+            "exec must use BackgroundEnsure — it should opportunistically restart \
+             the daemon without blocking command execution"
+        );
+
+        assert_eq!(
+            assume::cli::credential_process::REQUIREMENT,
+            DaemonRequirement::BackgroundEnsure,
+            "credential_process must use BackgroundEnsure — it is called repeatedly \
+             by AWS CLI/SDK and must not block on daemon startup"
+        );
+    }
 }
