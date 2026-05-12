@@ -449,17 +449,32 @@ export async function waitForIdle(
 }
 
 /**
- * Get the cost of a session in USD.
+ * Get the cumulative cost of a session in USD.
+ *
+ * Cost is tracked per-message on the server (AssistantMessage.cost),
+ * not aggregated on the Session object. We sum across all assistant
+ * messages to get a session total.
  */
 export async function getSessionCost(
   client: OpencodeClient,
   sessionId: string,
 ): Promise<number> {
   try {
-    const result = await client.session.get({ path: { id: sessionId } });
+    const result = await client.session.messages({ path: { id: sessionId } });
     if (!result.data) return 0;
-    const session = result.data as { cost?: number };
-    return session.cost ?? 0;
+
+    type MessageEntry = {
+      info: { role: string; cost?: number };
+    };
+    const messages = result.data as unknown as MessageEntry[];
+
+    let total = 0;
+    for (const m of messages) {
+      if (m.info.role === "assistant" && typeof m.info.cost === "number") {
+        total += m.info.cost;
+      }
+    }
+    return total;
   } catch {
     return 0;
   }

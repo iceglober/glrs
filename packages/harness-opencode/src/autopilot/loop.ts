@@ -22,8 +22,10 @@ import {
   createSession,
   sendAndWait,
   getLastAssistantMessage,
+  getSessionCost,
 } from "../lib/opencode-server.js";
 import { createAutopilotLogger, childLogger } from "../lib/logger.js";
+import { createStatusHeartbeat } from "./status.js";
 import { detectSentinel } from "./sentinel.js";
 import { StruggleDetector, checkKillSwitch } from "./struggle.js";
 import {
@@ -31,6 +33,7 @@ import {
   STRUGGLE_THRESHOLD,
   TIMEOUT_MS,
   STALL_MS,
+  STATUS_INTERVAL_MS,
 } from "./config.js";
 
 const execFile = promisify(execFileCb);
@@ -161,6 +164,16 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   const log = childLogger(autopilotLog.root, "autopilot.loop");
   const toolLog = childLogger(autopilotLog.root, "autopilot.tool");
   const streamLog = childLogger(autopilotLog.root, "autopilot.stream");
+  const statusLog = childLogger(autopilotLog.root, "autopilot.status");
+
+  // Status heartbeat: fires at STATUS_INTERVAL_MS (default 5min) with
+  // elapsed/iterations/cost summary. Decouples "is it still working"
+  // from iteration boundaries so users see activity during long
+  // single-iteration sessions.
+  const heartbeat = createStatusHeartbeat({
+    logger: statusLog,
+    intervalMs: STATUS_INTERVAL_MS,
+  });
 
   if (autopilotLog.logFilePath) {
     log.info({ file: autopilotLog.logFilePath }, `Logging to ${autopilotLog.logFilePath}`);
@@ -187,6 +200,11 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
     });
     log.info({ sessionId }, "Session created with autopilot-prime");
 
+    // Start the status heartbeat once the session is live. It'll fire
+    // its first status line after STATUS_INTERVAL_MS elapses (no
+    // initial-tick noise at t=0).
+    heartbeat.start();
+
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
       // Check kill switch before each iteration
       if (checkKillSwitch(opts.cwd)) {
@@ -212,7 +230,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       const headBefore = await getHeadSha(opts.cwd);
 
       const iterStart = Date.now();
-      log.info({ iteration, maxIterations }, `Iteration ${iteration}/${maxIterations} — sending prompt`);
+      log.debug({ iteration, maxIterations }, `Iteration ${iteration}/${maxIterations} — sending prompt`);
 
       // Stream-liveness state for this iteration. The agent emits text
       // deltas (character-by-character streaming) while reasoning
@@ -311,6 +329,10 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
 
       if (result.kind === "error") {
         log.error({ iteration, err: result.message }, "Iteration errored");
+        heartbeat.update({
+          iterationsCompleted: iteration,
+          lastIterationErrored: true,
+        });
         return {
           exitReason: "error",
           iterations: iteration,
@@ -338,8 +360,21 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       const madeProgress = await checkProgress(opts.cwd, headBefore);
       struggle.record(madeProgress);
 
-      log.info(
-        { iteration, iterDurationMs, madeProgress },
+      // Sample cumulative session cost via session.get().data.cost.
+      // Fire-and-forget — cost lookup failures are non-fatal; we just
+      // keep the last known value. Updated before the heartbeat sees it
+      // on the next tick.
+      const cumulativeCostUsd = await getSessionCost(server.client, sessionId);
+
+      heartbeat.update({
+        iterationsCompleted: iteration,
+        cumulativeCostUsd,
+        lastIterationProgress: madeProgress,
+        lastIterationErrored: false,
+      });
+
+      log.debug(
+        { iteration, iterDurationMs, madeProgress, cumulativeCostUsd },
         `Iteration ${iteration} idle (${(iterDurationMs / 1000).toFixed(1)}s, ${madeProgress ? "progress" : "no progress"})`,
       );
 
@@ -361,6 +396,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
     };
   } finally {
     clearTimeout(timeoutHandle);
+    heartbeat.stop();
     log.info({}, "Shutting down server");
     await server.shutdown();
     await autopilotLog.flush();
