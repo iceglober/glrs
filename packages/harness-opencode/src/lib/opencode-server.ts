@@ -76,7 +76,7 @@ export async function startServer(opts: {
     timeout: timeoutMs,
   });
 
-  const client = (createOpencodeClient as unknown as (opts: { url: string }) => OpencodeClient)({ url: server.url });
+  const client = createOpencodeClient({ baseUrl: server.url });
 
   let shutdownCalled = false;
   const shutdown = async () => {
