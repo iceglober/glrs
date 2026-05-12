@@ -149,9 +149,10 @@ export async function createSession(
  * module used that name and silently failed at runtime.
  *
  * The optional `onToolCall` callback fires once per tool invocation the
- * agent performs, in real time. Used by the autopilot heartbeat to show
- * activity during long iterations. Only fires for tool calls that reach
- * the `completed` state — pending/running transitions are filtered out.
+ * agent performs, in real time. Used by the autopilot loop to emit
+ * debug-level log events for each tool call. Only fires for tool calls
+ * that reach the `completed` state — pending/running transitions are
+ * filtered out.
  *
  * Returns the result kind.
  */

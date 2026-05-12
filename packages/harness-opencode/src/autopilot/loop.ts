@@ -23,8 +23,7 @@ import {
   sendAndWait,
   getLastAssistantMessage,
 } from "../lib/opencode-server.js";
-import { createLogger } from "../lib/logger.js";
-import { createHeartbeat } from "./heartbeat.js";
+import { createAutopilotLogger, childLogger } from "../lib/logger.js";
 import { detectSentinel } from "./sentinel.js";
 import { StruggleDetector, checkKillSwitch } from "./struggle.js";
 import {
@@ -35,7 +34,6 @@ import {
 } from "./config.js";
 
 const execFile = promisify(execFileCb);
-const log = createLogger("autopilot.loop");
 
 export type LoopExitReason =
   | "sentinel"
@@ -157,6 +155,16 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   const struggle = new StruggleDetector(struggleThreshold);
   const startTime = Date.now();
 
+  // Create the per-run logger. Two sinks: stderr (user-visible) and
+  // a per-run log file (captures everything at trace level).
+  const autopilotLog = createAutopilotLogger({ cwd: opts.cwd });
+  const log = childLogger(autopilotLog.root, "autopilot.loop");
+  const toolLog = childLogger(autopilotLog.root, "autopilot.tool");
+
+  if (autopilotLog.logFilePath) {
+    log.info({ file: autopilotLog.logFilePath }, `Logging to ${autopilotLog.logFilePath}`);
+  }
+
   // Start the OpenCode server
   log.info({ cwd: opts.cwd, maxIterations, timeoutMs }, "Starting OpenCode server");
   const server = await _startServer({ cwd: opts.cwd });
@@ -203,20 +211,19 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       const iterStart = Date.now();
       log.info({ iteration, maxIterations }, `Iteration ${iteration}/${maxIterations} — sending prompt`);
 
-      // Set up heartbeat for this iteration's tool calls
-      const heartbeat = createHeartbeat({ label: `autopilot:iter-${iteration}` });
-
-      // Send the prompt and wait for idle
+      // Tool-call events go through pino at `debug` level. Default stderr
+      // level is `info`, so users don't see tool chatter by default — but
+      // the file sink captures everything. Set GLRS_LOG_LEVEL=debug (or
+      // pass the CLI flag wired to it) to see tool calls live.
       const result = await _sendAndWait(server.client, {
         sessionId,
         message: fullPrompt,
         stallMs,
         abortSignal: abort.signal,
-        onToolCall: (toolName) => heartbeat.recordToolCall(toolName),
+        onToolCall: (toolName) => {
+          toolLog.debug({ iteration, tool: toolName }, toolName);
+        },
       });
-
-      // Flush any pending heartbeat streak before emitting iteration-level logs
-      heartbeat.flush();
 
       const iterDurationMs = Date.now() - iterStart;
 
@@ -292,5 +299,6 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
     clearTimeout(timeoutHandle);
     log.info({}, "Shutting down server");
     await server.shutdown();
+    await autopilotLog.flush();
   }
 }
