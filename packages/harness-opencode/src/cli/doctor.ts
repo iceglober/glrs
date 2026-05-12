@@ -159,15 +159,7 @@ export function doctor(): void {
     warn("node/npx not found — memory MCP won't work");
   }
 
-  // 4. plan-check CLI
-  const planCheckResult = cmd(`bunx ${PLUGIN_NAME} plan-check --help 2>/dev/null`);
-  if (planCheckResult !== null) {
-    ok("plan-check CLI invokable");
-  } else {
-    warn("plan-check CLI not invokable — try: bun install");
-  }
-
-  // 5. bun / npm
+  // 4. bun / npm
   if (which("bun")) {
     ok(`bun ${cmd("bun --version") ?? ""}`);
   } else if (which("npm")) {

@@ -93,10 +93,6 @@ export default defineConfig({
         "src/bin/memory-mcp-launcher.sh",
         "dist/bin/memory-mcp-launcher.sh",
       );
-      copyFileSync(
-        "src/bin/plan-check.sh",
-        "dist/bin/plan-check.sh",
-      );
       console.log("✓ Copied bin scripts → dist/bin/");
     } catch (e) {
       console.warn("! Could not copy bin scripts:", e);

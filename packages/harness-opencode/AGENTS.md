@@ -20,7 +20,7 @@ glorious-opencode/
 │   ├── tools/                # Custom tool implementations
 │   ├── plugins/              # Sub-plugins (notify, cost-tracker, tool-hooks, telemetry, dotenv)
 │   ├── mcp/                  # MCP server configuration
-│   ├── bin/                  # Shell scripts (memory-mcp-launcher.sh, plan-check.sh)
+│   ├── bin/                  # Shell scripts (memory-mcp-launcher.sh)
 │   ├── cli/                  # Top-level CLI subcommands (install, uninstall, doctor, merge-config)
 │   ├── autopilot/            # Ralph loop engine + CLI driver
 │   └── lib/                  # Shared utilities (opencode-server.ts)

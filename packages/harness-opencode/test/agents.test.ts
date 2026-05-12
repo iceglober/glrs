@@ -499,7 +499,6 @@ describe("subagent permissions", () => {
     "rg foo src",
     "find src -name '*.ts'",
     "wc -l foo.ts",
-    "bunx @glrs-dev/harness-plugin-opencode plan-dir",
     "bun test test/agents.test.ts",
     "pnpm --filter @kn/core test",
     "pnpm test foo.test.ts",
@@ -777,21 +776,47 @@ describe("subagent permissions", () => {
     }
   });
 
-  it("plan agent bash rules: deny-all except the plan-dir CLI subcommand", () => {
-    // The plan agent needs to resolve the repo-shared plan dir before
-    // writing plans there. It does that via the harness's own CLI
-    // subcommand. Everything else remains denied, preserving the
-    // "plan writes only plan files" invariant.
+  it("plan agent bash rules: deny-all except the four inline-resolution commands", () => {
+    // The plan agent needs to resolve the repo-shared plan dir via an
+    // inline 4-command bash snippet (git rev-parse, dirname, basename,
+    // mkdir). Everything else remains denied, preserving the "plan
+    // writes only plan files" invariant.
     const bash = (agents["plan"] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash["*"]).toBe("deny");
-    expect(bash["bunx @glrs-dev/harness-plugin-opencode plan-dir"]).toBe("allow");
-    expect(bash["bunx @glrs-dev/harness-plugin-opencode plan-dir *"]).toBe("allow");
+    expect(bash["git rev-parse --git-common-dir"]).toBe("allow");
+    expect(bash["basename *"]).toBe("allow");
+    expect(bash["dirname *"]).toBe("allow");
+    expect(bash["mkdir -p *"]).toBe("allow");
+    // Deleted surface must NOT be present.
+    expect(bash["bunx @glrs-dev/harness-plugin-opencode plan-dir"]).toBeUndefined();
+    expect(bash["glrs-oc plan-dir"]).toBeUndefined();
+  });
+
+  it("plan agent has write: allow", () => {
+    expect((agents["plan"] as any).permission.write).toBe("allow");
+  });
+
+  it("orchestrator agents have tools.task enabled for subagent dispatch", () => {
+    // OpenCode strips the `task` tool from subagent contexts by default.
+    // Agents that dispatch subagents need explicit `tools: { task: true }`.
+    const orchestrators = ["plan", "research", "research-web", "research-local"];
+    for (const name of orchestrators) {
+      const agent = agents[name] as any;
+      expect(agent.tools?.task).toBe(true);
+    }
+    // Agents that do NOT dispatch subagents should NOT have task enabled
+    // (avoids unnecessary agent-spawning loops).
+    const nonOrchestrators = ["build", "spec-reviewer", "code-reviewer", "code-searcher"];
+    for (const name of nonOrchestrators) {
+      const agent = agents[name] as any;
+      expect(agent.tools?.task).toBeUndefined();
+    }
   });
 
   it("plan agent description references the repo-shared plan directory (not .agent/plans)", () => {
     const desc = (agents["plan"] as any).description as string;
-    expect(desc).toContain("plan-dir");
+    expect(desc.toLowerCase()).toMatch(/plan (dir|directory|folder)/);
     // Legacy path reference must not linger in the description.
     expect(desc).not.toContain(".agent/plans");
   });
@@ -853,10 +878,6 @@ describe("prompt content assertions", () => {
     expect(specReviewer.toLowerCase()).toContain("plan drift");
     expect(specReviewer.toLowerCase()).toContain("auto-fail");
     expect(specReviewer).toContain("## File-level changes");
-  });
-
-  it("spec-reviewer prompt retains plan-state verify step", () => {
-    expect(specReviewer).toContain("plan-check --run");
   });
 
   // ---- code-reviewer (fast variant) ----
@@ -985,14 +1006,9 @@ describe("prompt content assertions", () => {
 
   const planPrompt = agents["plan"]!.prompt as string;
 
-  it("plan agent prompt body mentions GLORIOUS_PLAN_DIR or bunx harness-opencode plan-dir helper", () => {
-    // The plan agent must know how to resolve the new plan dir. One of
-    // these references must appear so the agent actually invokes the
-    // resolver rather than writing to a hardcoded path.
-    const hasResolver =
-      planPrompt.includes("bunx @glrs-dev/harness-plugin-opencode plan-dir") ||
-      planPrompt.includes("GLORIOUS_PLAN_DIR");
-    expect(hasResolver).toBe(true);
+  it("plan agent prompt body mentions the inline plan-dir resolution snippet", () => {
+    expect(planPrompt).toContain("GLORIOUS_PLAN_DIR");
+    expect(planPrompt).toContain("git rev-parse --git-common-dir");
   });
 
   it("plan prompt contains no-placeholders rule", () => {
@@ -1010,7 +1026,8 @@ describe("prompt content assertions", () => {
   it("prime Bootstrap probe references new plan dir (or a shell snippet that resolves it)", () => {
     // Bootstrap probe should probe for plans using the resolver, not
     // the legacy `ls .agent/plans/`.
-    expect(prime).toContain("bunx @glrs-dev/harness-plugin-opencode plan-dir");
+    expect(prime).toContain("GLORIOUS_PLAN_DIR");
+    expect(prime).toContain("git rev-parse --git-common-dir");
     // Legacy probe must be gone.
     expect(prime).not.toContain("ls .agent/plans/");
   });

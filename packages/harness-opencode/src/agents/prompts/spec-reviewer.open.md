@@ -21,7 +21,6 @@ Do not ask the user questions. Return `[PASS_SPEC]` or `[FAIL_SPEC: <summary>]` 
 3. **Plan-drift check (AUTO-FAIL).** For each modified file in the diff, verify it appears in the plan's `## File-level changes`. A modified file NOT listed in `## File-level changes` is AUTO-FAIL. Report as `Plan drift: <path> modified but not in ## File-level changes`.
 4. **Scope-creep check.** For each UNTRACKED file (from `git status`) that is NOT in `## File-level changes`, run `git log --oneline -- <file>` to determine whether the file is pre-existing work or scope creep. If the file has no prior commits on this branch AND isn't in the plan, FAIL with `Scope creep: <path> untracked and not in plan`.
 5. **Acceptance-criteria coverage.** For each item in `## Acceptance criteria`, verify the corresponding change exists in the diff. Do NOT trust `[x]` checkboxes — read the code.
-6. **Plan-state verify commands.** Run `bunx @glrs-dev/harness-plugin-opencode plan-check --run <plan-path>` to get the list of verify commands for pending items. Execute each one via `bash`. Any non-zero exit → FAIL_SPEC with `Verify failed: <command> (exit N)`. If the plan has no fence (legacy), skip.
 
 # Output
 

@@ -21,17 +21,16 @@ You run ONLY after `@spec-reviewer` has returned `[PASS_SPEC]` — spec/scope co
 3. **Plan-drift check (AUTO-FAIL).** For each modified file in the diff, verify it appears in the plan's `## File-level changes`. A modified file NOT listed in `## File-level changes` is AUTO-FAIL regardless of how "implicit" the coverage seems — the plan should have listed it. Report as `Plan drift: <path> modified but not in ## File-level changes`.
 4. **Scope-creep check.** For each UNTRACKED file (from `git status`) that is NOT in `## File-level changes`, run `git log --oneline -- <file>` to determine whether the file is pre-existing work or scope creep. Do NOT accept the PRIME's verbal "pre-existing" claim without this check. If the file has no prior commits on this branch AND isn't in the plan, LOOP-TO-PLAN with `Scope creep: <path> untracked and not in plan`.
 5. **Semantic verification.** For each item in `## File-level changes`, verify the corresponding code change exists and matches the description. For each `## Acceptance criteria` item, verify it is actually met by reading the code — do NOT trust `[x]` checkboxes.
-6. **Plan-state verify commands (fenced plans only).** Run `bunx @glrs-dev/harness-plugin-opencode plan-check --run <plan-path>` and execute each returned verify command via `bash`. Any non-zero exit → LOOP-TO-PLAN with `Verify failed: <command> (exit N)`. If the plan has no fence (legacy), skip.
-7. **Re-run the project's test command.** Unconditionally. Discover the invocation from `package.json` scripts / `Makefile` / `CONTRIBUTING.md` / `AGENTS.md` — typical forms: `pnpm test`, `npm test`, `bun test`, `cargo test`, `pytest`, `go test ./...`. Any failure → FIX-INLINE (if trivial) or LOOP-TO-PLAN (if structural).
-8. **Re-run the project's lint command.** Unconditionally. E.g., `pnpm lint`, `npm run lint`, `ruff check`, `golangci-lint run`. Any failure → FIX-INLINE.
-9. **Re-run the project's typecheck / build command.** Unconditionally. E.g., `pnpm typecheck`, `tsc --noEmit`, `mypy`, `cargo check`. Any failure → FIX-INLINE.
-10. **Check for missed concerns:**
+6. **Re-run the project's test command.** Unconditionally. Discover the invocation from `package.json` scripts / `Makefile` / `CONTRIBUTING.md` / `AGENTS.md` — typical forms: `pnpm test`, `npm test`, `bun test`, `cargo test`, `pytest`, `go test ./...`. Any failure → FIX-INLINE (if trivial) or LOOP-TO-PLAN (if structural).
+7. **Re-run the project's lint command.** Unconditionally. E.g., `pnpm lint`, `npm run lint`, `ruff check`, `golangci-lint run`. Any failure → FIX-INLINE.
+8. **Re-run the project's typecheck / build command.** Unconditionally. E.g., `pnpm typecheck`, `tsc --noEmit`, `mypy`, `cargo check`. Any failure → FIX-INLINE.
+9. **Check for missed concerns:**
     - Regressions in adjacent code not mentioned in the plan
     - Missing test coverage for new behavior
     - Hardcoded values that should be config
     - Error paths not handled
-11. **AGENTS.md freshness (hierarchical docs).** For each directory touched by the change, check whether a local `AGENTS.md` exists. If yes, read it and verify its conventions/claims still match the code. If the change shifts a convention and the local `AGENTS.md` wasn't updated, return FIX-INLINE with: `Update <path>/AGENTS.md to reflect <specific change>`. Do not fail on unrelated staleness — only on drift caused by THIS change.
-12. **Scan for new tech debt.** Run `todo_scan` with `onlyChanged: true`. For every TODO / FIXME / HACK / XXX, check whether the plan's `## Out of scope` or `## Open questions` acknowledges it. Unacknowledged new debt → FIX-INLINE with `file:line`.
+10. **AGENTS.md freshness (hierarchical docs).** For each directory touched by the change, check whether a local `AGENTS.md` exists. If yes, read it and verify its conventions/claims still match the code. If the change shifts a convention and the local `AGENTS.md` wasn't updated, return FIX-INLINE with: `Update <path>/AGENTS.md to reflect <specific change>`. Do not fail on unrelated staleness — only on drift caused by THIS change.
+11. **Scan for new tech debt.** Run `todo_scan` with `onlyChanged: true`. For every TODO / FIXME / HACK / XXX, check whether the plan's `## Out of scope` or `## Open questions` acknowledges it. Unacknowledged new debt → FIX-INLINE with `file:line`.
 
 # Output
 
