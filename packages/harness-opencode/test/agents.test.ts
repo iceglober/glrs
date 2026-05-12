@@ -185,6 +185,36 @@ describe("createAgents", () => {
     expect(orch.temperature).toBe(0.2);
   });
 
+  it("prime has subagent-violation-halt rule", () => {
+    // Regression guard for the defensive prompt rule added after the
+    // JSONLogic session (ses_1e5ee8637ffezTsp91gRaynnHz) where PRIME
+    // dismissed a subagent's self-reported violation as "meta-confusion"
+    // and proceeded silently. The hard rule must instruct PRIME to halt
+    // and surface the report.
+    const prime = agents["prime"]!.prompt as string;
+    expect(prime).toContain("Subagent self-reported constraint violations halt the arc");
+    expect(prime).toContain("surface the full subagent report to the user");
+    // Negative assertion — the dismissal vocabulary must be explicitly
+    // forbidden so the rule's intent is unambiguous.
+    expect(prime).toContain("meta-confusion");
+    expect(prime).toMatch(/Do NOT characterize.*meta-confusion/);
+  });
+
+  it("plan agent has hallucination-defense clause", () => {
+    // Regression guard for the defensive posture added to @plan after
+    // the JSONLogic session, where the subagent hallucinated an OpenCode
+    // "plan mode" system-reminder and apologized for violating it despite
+    // having write permissions. The prompt must pre-empt this pattern.
+    const plan = agents["plan"]!.prompt as string;
+    expect(plan).toContain("Defensive posture");
+    expect(plan).toContain("write permission");
+    expect(plan).toMatch(/ignore it|Ignore it|ignore\s+it\b/);
+    // The "real denial looks like a tool error" clarification must be
+    // present — this is the load-bearing mental model that short-circuits
+    // the hallucination.
+    expect(plan).toMatch(/tool error|write not permitted/);
+  });
+
   it("build has correct model and temperature", () => {
     const build = agents["build"]!;
     expect(build.model).toBe("anthropic/claude-sonnet-4-6");
