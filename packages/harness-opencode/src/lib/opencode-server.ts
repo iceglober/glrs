@@ -148,6 +148,11 @@ export async function createSession(
  * `session.chat` does not exist on the SDK — an earlier version of this
  * module used that name and silently failed at runtime.
  *
+ * The optional `onToolCall` callback fires once per tool invocation the
+ * agent performs, in real time. Used by the autopilot heartbeat to show
+ * activity during long iterations. Only fires for tool calls that reach
+ * the `completed` state — pending/running transitions are filtered out.
+ *
  * Returns the result kind.
  */
 export async function sendAndWait(
@@ -158,6 +163,7 @@ export async function sendAndWait(
     agentName?: string;
     stallMs?: number;
     abortSignal?: AbortSignal;
+    onToolCall?: (toolName: string) => void;
   },
 ): Promise<SessionResult> {
   const stallMs = opts.stallMs ?? 60 * 60 * 1000; // 60 min default
@@ -169,6 +175,7 @@ export async function sendAndWait(
     sessionId: opts.sessionId,
     stallMs,
     abortSignal: opts.abortSignal,
+    onToolCall: opts.onToolCall,
   });
 
   // Send the message via the correct SDK method
@@ -188,6 +195,10 @@ export async function sendAndWait(
  *
  * `client.event.subscribe()` is async and returns `{ stream }` (a
  * `ServerSentEventsResult`). The stream is an AsyncGenerator of events.
+ *
+ * When `onToolCall` is provided, fires once per tool invocation that
+ * reaches the `completed` state. Filters out pending/running transitions
+ * to avoid double-counting.
  */
 export async function waitForIdle(
   client: OpencodeClient,
@@ -195,12 +206,18 @@ export async function waitForIdle(
     sessionId: string;
     stallMs?: number;
     abortSignal?: AbortSignal;
+    onToolCall?: (toolName: string) => void;
   },
 ): Promise<SessionResult> {
   const stallMs = opts.stallMs ?? 60 * 60 * 1000;
 
   // Establish the subscription eagerly (before we wait for events)
   const sse = await client.event.subscribe();
+
+  // Track tool calls we've already reported (by callID) so we don't
+  // fire the callback twice if the SDK emits multiple "completed" events
+  // for the same call (defensive).
+  const reportedToolCalls = new Set<string>();
 
   return new Promise<SessionResult>((resolve) => {
     let stallTimer: ReturnType<typeof setTimeout> | null = null;
@@ -238,14 +255,46 @@ export async function waitForIdle(
 
           const ev = event as { type?: string; properties?: Record<string, unknown> };
           const props = ev.properties ?? {};
+          const type = ev.type ?? "";
+
+          // Tool-call detection: message.part.updated with a tool part
+          // that transitioned to `completed`. Fires the callback exactly
+          // once per call (dedup'd by callID).
+          if (opts.onToolCall && type === "message.part.updated") {
+            const part = props["part"] as
+              | {
+                  type?: string;
+                  sessionID?: string;
+                  tool?: string;
+                  callID?: string;
+                  state?: { status?: string };
+                }
+              | undefined;
+            if (
+              part &&
+              part.type === "tool" &&
+              part.sessionID === opts.sessionId &&
+              part.state?.status === "completed" &&
+              part.callID &&
+              !reportedToolCalls.has(part.callID)
+            ) {
+              reportedToolCalls.add(part.callID);
+              resetStall();
+              try {
+                opts.onToolCall(part.tool ?? "unknown");
+              } catch {
+                // Callback errors don't affect the loop
+              }
+              continue;
+            }
+          }
+
           const eventSessionId = props["sessionID"] as string | undefined;
 
-          // Only care about our session
+          // Only care about our session for session-level events
           if (eventSessionId !== opts.sessionId) continue;
 
           resetStall();
-
-          const type = ev.type ?? "";
 
           if (type === "session.idle") {
             settle({ kind: "idle" });

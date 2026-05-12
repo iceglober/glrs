@@ -23,6 +23,8 @@ import {
   sendAndWait,
   getLastAssistantMessage,
 } from "../lib/opencode-server.js";
+import { createLogger } from "../lib/logger.js";
+import { createHeartbeat } from "./heartbeat.js";
 import { detectSentinel } from "./sentinel.js";
 import { StruggleDetector, checkKillSwitch } from "./struggle.js";
 import {
@@ -33,6 +35,7 @@ import {
 } from "./config.js";
 
 const execFile = promisify(execFileCb);
+const log = createLogger("autopilot.loop");
 
 export type LoopExitReason =
   | "sentinel"
@@ -155,7 +158,9 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   const startTime = Date.now();
 
   // Start the OpenCode server
+  log.info({ cwd: opts.cwd, maxIterations, timeoutMs }, "Starting OpenCode server");
   const server = await _startServer({ cwd: opts.cwd });
+  log.info({ url: server.url }, "Server ready");
   const abort = new AbortController();
 
   // Set up total timeout
@@ -169,10 +174,12 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       cwd: opts.cwd,
       agentName: "prime",
     });
+    log.info({ sessionId }, "Session created with PRIME");
 
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
       // Check kill switch before each iteration
       if (checkKillSwitch(opts.cwd)) {
+        log.warn({ iteration: iteration - 1 }, "Kill switch active — stopping");
         return {
           exitReason: "kill-switch",
           iterations: iteration - 1,
@@ -182,6 +189,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
 
       // Check total timeout
       if (Date.now() - startTime >= timeoutMs) {
+        log.warn({ iteration: iteration - 1, timeoutMs }, "Total timeout exceeded");
         return {
           exitReason: "timeout",
           iterations: iteration - 1,
@@ -192,15 +200,28 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       // Record git HEAD before this iteration for progress tracking
       const headBefore = await getHeadSha(opts.cwd);
 
+      const iterStart = Date.now();
+      log.info({ iteration, maxIterations }, `Iteration ${iteration}/${maxIterations} — sending prompt`);
+
+      // Set up heartbeat for this iteration's tool calls
+      const heartbeat = createHeartbeat({ label: `autopilot:iter-${iteration}` });
+
       // Send the prompt and wait for idle
       const result = await _sendAndWait(server.client, {
         sessionId,
         message: fullPrompt,
         stallMs,
         abortSignal: abort.signal,
+        onToolCall: (toolName) => heartbeat.recordToolCall(toolName),
       });
 
+      // Flush any pending heartbeat streak before emitting iteration-level logs
+      heartbeat.flush();
+
+      const iterDurationMs = Date.now() - iterStart;
+
       if (result.kind === "abort") {
+        log.warn({ iteration, iterDurationMs }, "Iteration aborted (total timeout)");
         return {
           exitReason: "timeout",
           iterations: iteration,
@@ -209,6 +230,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       }
 
       if (result.kind === "stall") {
+        log.warn({ iteration, stallMs: result.stallMs }, "Iteration stalled");
         return {
           exitReason: "stall",
           iterations: iteration,
@@ -217,6 +239,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       }
 
       if (result.kind === "error") {
+        log.error({ iteration, err: result.message }, "Iteration errored");
         return {
           exitReason: "error",
           iterations: iteration,
@@ -231,6 +254,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       // Sentinel check must happen before struggle accounting.
       const lastMessage = await _getLastAssistantMessage(server.client, sessionId);
       if (detectSentinel(lastMessage)) {
+        log.info({ iteration, iterDurationMs }, "Sentinel detected — autopilot done");
         return {
           exitReason: "sentinel",
           iterations: iteration,
@@ -243,7 +267,13 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       const madeProgress = await checkProgress(opts.cwd, headBefore);
       struggle.record(madeProgress);
 
+      log.info(
+        { iteration, iterDurationMs, madeProgress },
+        `Iteration ${iteration} idle (${(iterDurationMs / 1000).toFixed(1)}s, ${madeProgress ? "progress" : "no progress"})`,
+      );
+
       if (struggle.isStruggling()) {
+        log.warn({ iteration, struggleThreshold }, "Struggle detected — stopping");
         return {
           exitReason: "struggle",
           iterations: iteration,
@@ -252,6 +282,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       }
     }
 
+    log.warn({ maxIterations }, "Reached max iterations");
     return {
       exitReason: "max-iterations",
       iterations: maxIterations,
@@ -259,6 +290,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
     };
   } finally {
     clearTimeout(timeoutHandle);
+    log.info({}, "Shutting down server");
     await server.shutdown();
   }
 }
