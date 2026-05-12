@@ -1,16 +1,13 @@
 /**
- * `glrs oc loop` — Ralph loop CLI driver. (Also accepts `autopilot` as
- * an alias.)
+ * `glrs oc loop` — Ralph loop CLI driver.
  *
  * Starts an OpenCode server, creates a session with PRIME, sends the
  * user's prompt each iteration, and exits when the agent emits
  * `<autopilot-done>` or a budget is exhausted.
  *
- * In the `autopilot` → `loop` transition (PR 2 of 3), both command
- * names resolve to this same implementation. PR 3 will diverge them:
- * `loop` stays as the raw-prompt Ralph-loop runner; `autopilot` becomes
- * an interactive walkthrough that scopes, plans, and then invokes the
- * loop with a prompt derived from the generated plan artifacts.
+ * PR 3 diverged `loop` and `autopilot`: `loop` is the raw-prompt
+ * Ralph-loop runner; `autopilot` is the interactive three-phase
+ * orchestrator (scope → plan → loop). They are now separate subcommands.
  */
 
 import { command, option, positional, string as stringType, optional, number as numberType } from "cmd-ts";
@@ -19,9 +16,8 @@ import { MAX_ITERATIONS, TIMEOUT_MS } from "./config.js";
 
 export const loopCmd = command({
   name: "loop",
-  aliases: ["autopilot"],
   description:
-    'Run the Ralph loop: send a prompt to PRIME repeatedly until it emits <autopilot-done> or a budget is exhausted. `autopilot` is currently an alias; a future release will diverge it into an interactive scoping walkthrough.',
+    'Run the Ralph loop: send a prompt to PRIME repeatedly until it emits <autopilot-done> or a budget is exhausted.',
   args: {
     prompt: positional({
       type: stringType,
@@ -72,12 +68,4 @@ export const loopCmd = command({
   },
 });
 
-/**
- * Back-compat export. Existing imports reference `autopilotCmd`; keep
- * the symbol alive during PR 2's transition so we don't break anything
- * outside this module. Internal callers should migrate to `loopCmd`.
- *
- * @deprecated — use `loopCmd`. Will be removed when PR 3 diverges the
- * commands and `autopilot` becomes its own independent subcommand.
- */
-export const autopilotCmd = loopCmd;
+

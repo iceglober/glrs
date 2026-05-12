@@ -50,6 +50,81 @@ Delegate to `@gap-analyzer` via the task tool. Provide:
 
 Also run `comment_check` on the directories the plan will touch. Any `@TODO`/`@FIXME`/`@HACK` older than 30 days (`includeAge: true`) should be surfaced in the plan's `## Open questions` section as "Existing debt to consider: <annotation>". This forces the human reviewing the plan to either adopt or explicitly ignore the existing debt.
 
+## 3.5 Multi-file decision
+
+Before writing, evaluate complexity. If ANY of the following are true, produce a **multi-file plan**:
+- Estimated file count > 10
+- More than 2 distinct concerns from the scoping interview (e.g., new feature + refactor + infra change)
+- More than 2 distinct work phases (e.g., parser → agent registration → CLI wiring)
+
+Otherwise, produce a **single-file plan** (the default).
+
+**Single-file plan:** write `$PLAN_DIR/<slug>.md` as described in step 4.
+
+**Multi-file plan:** create `$PLAN_DIR/<slug>/` directory, then write:
+- `main.md` — top-level plan with `## Phases` checklist + cross-cutting acceptance criteria
+- `phase_1.md` through `phase_N.md` — each with full plan structure (Goal, Acceptance criteria, File-level changes, Out of scope, Open questions)
+
+Multi-file plan template:
+
+```markdown
+# main.md
+
+## Goal
+<One paragraph.>
+
+## Phases
+
+- [ ] phase_1.md — <Phase 1 title>
+- [ ] phase_2.md — <Phase 2 title>
+...
+
+## Cross-cutting acceptance criteria
+
+\`\`\`plan-state
+- [ ] id: x1
+  intent: <cross-cutting item>
+  tests:
+    - <path>::"<name>"
+  verify: <command>
+\`\`\`
+
+## Out of scope
+- <items>
+
+## Open questions
+- <items>
+```
+
+```markdown
+# phase_N.md
+
+## Goal
+<Phase-specific goal.>
+
+## Acceptance criteria
+
+\`\`\`plan-state
+- [ ] id: a1
+  intent: <item>
+  tests:
+    - <path>::"<name>"
+  verify: <command>
+\`\`\`
+
+## File-level changes
+### <path>
+- Change: <what>
+- Why: <why>
+- Risk: <none|low|medium|high>
+
+## Out of scope
+- <items>
+
+## Open questions
+- <items>
+```
+
 ## 4. Write the plan
 
 Determine a slug from the task (kebab-case, ≤ 5 words). Resolve the plan directory with `bash` by running:

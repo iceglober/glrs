@@ -31,6 +31,15 @@ export interface StatusState {
   lastIterationProgress: boolean;
   /** Whether the most recent iteration errored. */
   lastIterationErrored: boolean;
+  // --- Plan-progress fields (optional; absent for single-file plans or on parser error) ---
+  /** Total number of phases in the plan (multi-file plans only). */
+  phaseCount?: number;
+  /** Number of phases completed so far. */
+  phasesCompleted?: number;
+  /** Total checkbox items in main.md (multi-file plans only). */
+  mainCheckboxesTotal?: number;
+  /** Checked checkbox items in main.md. */
+  mainCheckboxesCompleted?: number;
 }
 
 export interface StatusHeartbeat {
@@ -90,10 +99,21 @@ export function composeStatusMessage(state: StatusState, now: number): string {
       ? "iteration 1 in flight"
       : `${state.iterationsCompleted} iteration${state.iterationsCompleted === 1 ? "" : "s"} complete`;
 
-  if (state.lastIterationErrored) {
-    return `working (${iterNote}, ${elapsed} elapsed, ${cost} used) — last iteration errored`;
+  // Plan-progress segment — only included when multi-file plan fields are present.
+  let planNote = "";
+  if (
+    state.phaseCount !== undefined &&
+    state.phasesCompleted !== undefined &&
+    state.mainCheckboxesTotal !== undefined &&
+    state.mainCheckboxesCompleted !== undefined
+  ) {
+    planNote = `, phase ${state.phasesCompleted}/${state.phaseCount}, ${state.mainCheckboxesCompleted}/${state.mainCheckboxesTotal} boxes`;
   }
-  return `working (${iterNote}, ${elapsed} elapsed, ${cost} used)`;
+
+  if (state.lastIterationErrored) {
+    return `working (${iterNote}, ${elapsed} elapsed, ${cost} used${planNote}) — last iteration errored`;
+  }
+  return `working (${iterNote}, ${elapsed} elapsed, ${cost} used${planNote})`;
 }
 
 export function createStatusHeartbeat(opts: StatusHeartbeatOptions): StatusHeartbeat {

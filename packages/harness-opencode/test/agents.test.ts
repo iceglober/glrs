@@ -8,29 +8,44 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 18 agents", () => {
-    // 18 agents total: prime (mode:primary), autopilot-prime (mode:subagent
-    // — PRIME variant with question tool denied for lights-out runs),
-    // plan + build + research (mode:all — primary AND task-tool-
-    // dispatchable), research-web + research-local + research-auto
-    // (mode:subagent — internal to @research's orchestration), plus 10
-    // other pure subagents (spec-reviewer, code-reviewer,
-    // code-reviewer-thorough, plan-reviewer, code-searcher, gap-analyzer,
-    // architecture-advisor, docs-maintainer, lib-reader, agents-md-writer).
-    expect(Object.keys(agents).length).toBe(18);
+  it("returns exactly 19 agents", () => {
+    // 19 agents total: prime (mode:primary), scoper (mode:primary),
+    // autopilot-prime (mode:subagent — PRIME variant with question tool
+    // denied for lights-out runs), plan + build + research (mode:all —
+    // primary AND task-tool-dispatchable), research-web + research-local
+    // + research-auto (mode:subagent — internal to @research's
+    // orchestration), plus 10 other pure subagents (spec-reviewer,
+    // code-reviewer, code-reviewer-thorough, plan-reviewer, code-searcher,
+    // gap-analyzer, architecture-advisor, docs-maintainer, lib-reader,
+    // agents-md-writer).
+    expect(Object.keys(agents).length).toBe(19);
   });
 
-  it("has 2 primary-capable agents besides plan (prime, build; mode=primary or mode=all)", () => {
-    // prime is mode:primary. build is mode:all (primary-invocable AND
-    // task-tool-dispatchable). plan is also mode:all but tested separately
+  it("has 3 primary-capable agents besides plan (prime, scoper, build; mode=primary or mode=all)", () => {
+    // prime and scoper are mode:primary. build is mode:all (primary-invocable
+    // AND task-tool-dispatchable). plan is also mode:all but tested separately
     // below — this test is the "always-primary-capable" cohort.
     for (const name of [
       "prime",
+      "scoper",
       "build",
     ]) {
       expect(agents[name]).toBeDefined();
       expect(["primary", "all"]).toContain(agents[name]!.mode);
     }
+  });
+
+  it("createAgents includes scoper agent", () => {
+    expect(agents["scoper"]).toBeDefined();
+  });
+
+  it("scoper agent has primary mode", () => {
+    expect(agents["scoper"]!.mode).toBe("primary");
+  });
+
+  it("scoper agent allows question tool", () => {
+    const perm = (agents["scoper"] as any).permission;
+    expect(perm.question).toBe("allow");
   });
 
   it("has 17 subagent-capable agents (mode=subagent or mode=all)", () => {
@@ -201,6 +216,29 @@ describe("createAgents", () => {
     // forbidden so the rule's intent is unambiguous.
     expect(prime).toContain("meta-confusion");
     expect(prime).toMatch(/Do NOT characterize.*meta-confusion/);
+  });
+
+  it("plan prompt contains multi-file decision step", () => {
+    const plan = agents["plan"]!.prompt as string;
+    expect(plan).toContain("Multi-file decision");
+    expect(plan).toContain("multi-file plan");
+  });
+
+  it("build prompt contains multi-file plan handling", () => {
+    const build = agents["build"]!.prompt as string;
+    expect(build).toContain("Multi-file plan handling");
+    expect(build).toContain("multi-file plan");
+  });
+
+  it("plan-reviewer prompt contains multi-file validation", () => {
+    const planReviewer = agents["plan-reviewer"]!.prompt as string;
+    expect(planReviewer).toContain("Multi-file consistency");
+    expect(planReviewer.toLowerCase()).toContain("multi-file");
+  });
+
+  it("agent count is correct", () => {
+    // Alias for the "returns exactly 19 agents" test — used by changeset a9.
+    expect(Object.keys(agents).length).toBe(19);
   });
 
   it("plan agent has hallucination-defense clause", () => {

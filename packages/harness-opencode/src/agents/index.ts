@@ -30,6 +30,7 @@ function readPrompt(name: string): string {
 }
 
 const primePrompt = readPrompt("prime.md");
+const scoperPrompt = readPrompt("scoper.md");
 const planPrompt = readPrompt("plan.md");
 const buildPrompt = readPrompt("build.md");
 const buildOpenPrompt = readPrompt("build.open.md");
@@ -342,6 +343,11 @@ const PRIME_PERMISSIONS = {
   linear: "allow",
 };
 
+const SCOPER_PERMISSIONS = {
+  ...PRIME_PERMISSIONS,
+  question: "allow" as const,
+};
+
 /**
  * Autopilot sessions run without a user, so any tool that blocks on
  * user input deadlocks the loop forever. The `question` tool is the
@@ -637,6 +643,7 @@ export type ModelTier = "deep" | "mid" | "mid-execute" | "fast";
  */
 export const AGENT_TIERS: Record<string, ModelTier> = {
   prime: "deep",
+  scoper: "deep",
   "autopilot-prime": "deep",
   plan: "deep",
   "architecture-advisor": "deep",
@@ -667,6 +674,13 @@ export function createAgents(): Record<string, AgentConfig> {
       model: "anthropic/claude-opus-4-7",
       temperature: 0.2,
       permission: PRIME_PERMISSIONS as AgentConfig["permission"],
+    }),
+    scoper: agentFromPrompt(scoperPrompt, {
+      description: "Interactive scoping agent. Establishes first-principles alignment on what the user wants to build before grounding in code. Produces a scope.md artifact in the plan directory. Use at the start of a new feature to align on intent, constraints, and acceptance criteria before planning.",
+      mode: "primary",
+      model: "anthropic/claude-opus-4-7",
+      temperature: 0.3,
+      permission: SCOPER_PERMISSIONS as AgentConfig["permission"],
     }),
     "autopilot-prime": agentFromPrompt(primePrompt, {
       description: "PRIME for unattended autopilot sessions. Identical to `prime` except the `question` tool is disabled — autopilot has no user to answer interactive prompts, and a blocking question deadlocks the session. Not user-selectable; invoked by the Ralph loop.",

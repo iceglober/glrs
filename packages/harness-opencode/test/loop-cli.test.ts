@@ -1,17 +1,13 @@
 /**
- * Tests for the `glrs oc loop` + `glrs oc autopilot` command alias
- * introduced in PR 2 of the loop/autopilot split.
+ * Tests for the `glrs oc loop` and `glrs oc autopilot` CLI commands
+ * after PR 3's divergence.
  *
- * Contract for this PR:
- *   - `loop` is the canonical command name
- *   - `autopilot` is an alias that resolves to the same implementation
- *   - Both produce help output (identical modulo the usage-line banner
- *     which normalizes to the canonical name)
- *   - The top-level `--help` lists `loop` with `[alias: autopilot]`
- *
- * PR 3 will diverge these: `autopilot` will become its own interactive
- * scoping walkthrough and will no longer be a `loop` alias. When that
- * happens, this test file gets rewritten, not extended.
+ * Contract for PR 3:
+ *   - `loop` is the canonical command for the raw-prompt Ralph runner
+ *   - `autopilot` is its own separate subcommand (interactive scoping walkthrough)
+ *   - `autopilot` is NO LONGER an alias of `loop`
+ *   - The top-level `--help` lists both `loop` and `autopilot` as separate entries
+ *   - `loop --help` does NOT list `autopilot` as an alias
  */
 
 import { describe, test, expect } from "bun:test";
@@ -31,7 +27,7 @@ const dispatchedEnv = {
   GLRS_AUTO_UPDATE: "0",
 };
 
-describe("loop / autopilot CLI alias (PR 2)", () => {
+describe("loop / autopilot CLI divergence (PR 3)", () => {
   test("`loop` subcommand is registered and shows help", () => {
     const result = spawnSync(process.execPath, [cliJs, "loop", "--help"], {
       env: dispatchedEnv,
@@ -45,50 +41,42 @@ describe("loop / autopilot CLI alias (PR 2)", () => {
     expect(result.stdout).toContain("--timeout");
   });
 
-  test("`autopilot` alias resolves to the same command (identical help body)", () => {
+  test("autopilot is no longer an alias of loop", () => {
+    // After PR 3, `loop --help` must NOT list `autopilot` as an alias.
     const loopHelp = spawnSync(process.execPath, [cliJs, "loop", "--help"], {
       env: dispatchedEnv,
       encoding: "utf8",
     });
-    const autopilotHelp = spawnSync(process.execPath, [cliJs, "autopilot", "--help"], {
-      env: dispatchedEnv,
-      encoding: "utf8",
-    });
     expect(loopHelp.status).toBe(0);
-    expect(autopilotHelp.status).toBe(0);
-
-    // cmd-ts normalizes aliased-subcommand help to the canonical name,
-    // so the banner line reads `glrs-oc loop` in both cases. The full
-    // help body is byte-identical.
-    expect(autopilotHelp.stdout).toBe(loopHelp.stdout);
+    // The loop help should not mention autopilot as an alias
+    expect(loopHelp.stdout).not.toMatch(/alias:\s*autopilot/);
   });
 
-  test("top-level --help lists `loop` with `[alias: autopilot]`", () => {
+  test("autopilot is registered as its own subcommand", () => {
+    // After PR 3, `autopilot` must appear as its own entry in top-level --help.
     const result = spawnSync(process.execPath, [cliJs, "--help"], {
       env: dispatchedEnv,
       encoding: "utf8",
     });
     expect(result.status).toBe(0);
-    // cmd-ts formats aliased subcommands as "name [alias: other]"
-    expect(result.stdout).toContain("loop");
-    expect(result.stdout).toMatch(/alias:\s*autopilot/);
+    // autopilot should appear as a separate subcommand
+    expect(result.stdout).toContain("autopilot");
+    // It should NOT appear as an alias annotation of loop
+    expect(result.stdout).not.toMatch(/alias:\s*autopilot/);
   });
 
-  test("top-level --help does NOT list `autopilot` as its own subcommand", () => {
-    // Once the alias is set up, cmd-ts should list only the canonical
-    // name with an alias annotation — not autopilot as a separate entry.
-    // This guards against someone re-adding `autopilot: loopCmd` to the
-    // subcommand map during PR 3, which would double-register and
-    // produce misleading help output.
-    const result = spawnSync(process.execPath, [cliJs, "--help"], {
+  test("`autopilot` subcommand shows its own help", () => {
+    const result = spawnSync(process.execPath, [cliJs, "autopilot", "--help"], {
       env: dispatchedEnv,
       encoding: "utf8",
     });
-    // Count lines that start with a dash and contain "autopilot" outside
-    // the alias annotation. Expected: zero.
-    const separateAutopilotLines = result.stdout
-      .split("\n")
-      .filter((line) => /^- autopilot\b/.test(line));
-    expect(separateAutopilotLines).toEqual([]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("autopilot");
+    // autopilot help should NOT be identical to loop help (they're diverged)
+    const loopHelp = spawnSync(process.execPath, [cliJs, "loop", "--help"], {
+      env: dispatchedEnv,
+      encoding: "utf8",
+    });
+    expect(result.stdout).not.toBe(loopHelp.stdout);
   });
 });

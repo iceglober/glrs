@@ -99,6 +99,39 @@ describe("composeStatusMessage", () => {
     const msg = composeStatusMessage(state, baseState.startedAt + 1000);
     expect(msg).toContain("last iteration errored");
   });
+
+  it("includes phase progress when plan is multi-file", () => {
+    const state: StatusState = {
+      ...baseState,
+      phaseCount: 4,
+      phasesCompleted: 2,
+      mainCheckboxesTotal: 12,
+      mainCheckboxesCompleted: 5,
+    };
+    const now = 1000 + 5 * 60_000;
+    const msg = composeStatusMessage(state, now);
+    expect(msg).toContain("phase 2/4");
+    expect(msg).toContain("5/12");
+  });
+
+  it("falls back to plan-blind format for single-file plans", () => {
+    // When plan-progress fields are absent, output matches PR 1's format exactly.
+    const state: StatusState = { ...baseState };
+    const now = 1000 + 5 * 60_000;
+    const msg = composeStatusMessage(state, now);
+    expect(msg).toBe("working (3 iterations complete, 5m 0s elapsed, $0.125 used)");
+    expect(msg).not.toContain("phase");
+  });
+
+  it("falls back to plan-blind format on parser error", () => {
+    // Simulate a parser-error state: planPath was set but plan-progress
+    // fields are absent (parser degraded to zero counts, loop left them unset).
+    const state: StatusState = { ...baseState };
+    const now = 1000 + 5 * 60_000;
+    const msg = composeStatusMessage(state, now);
+    expect(msg).not.toContain("phase");
+    expect(msg).toContain("working");
+  });
 });
 
 describe("status heartbeat timer behavior", () => {

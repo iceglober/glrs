@@ -26,6 +26,7 @@ import {
 } from "../lib/opencode-server.js";
 import { createAutopilotLogger, childLogger } from "../lib/logger.js";
 import { createStatusHeartbeat } from "./status.js";
+import { parsePlanState } from "./plan-parser.js";
 import { detectSentinel } from "./sentinel.js";
 import { StruggleDetector, checkKillSwitch } from "./struggle.js";
 import {
@@ -366,11 +367,35 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       // on the next tick.
       const cumulativeCostUsd = await getSessionCost(server.client, sessionId);
 
+      // Detect plan path from the prompt (looks for plans/<slug>/ directory
+      // reference). If found, parse plan progress for the heartbeat.
+      // Parser errors are caught and logged at debug level; plan-progress
+      // fields stay absent on error so the heartbeat degrades cleanly.
+      const planPathMatch = opts.prompt.match(/plans\/([^/\s]+(?:\/[^/\s]+)?)/);
+      let planProgressPatch: Record<string, unknown> = {};
+      if (planPathMatch) {
+        try {
+          const planPath = planPathMatch[0];
+          const planState = parsePlanState(planPath);
+          if (planState.type === "multi") {
+            planProgressPatch = {
+              phaseCount: planState.phaseCount,
+              phasesCompleted: planState.phasesCompleted,
+              mainCheckboxesTotal: planState.totalItems,
+              mainCheckboxesCompleted: planState.checkedItems,
+            };
+          }
+        } catch (err) {
+          log.debug({ err }, "plan-parser error — falling back to plan-blind heartbeat");
+        }
+      }
+
       heartbeat.update({
         iterationsCompleted: iteration,
         cumulativeCostUsd,
         lastIterationProgress: madeProgress,
         lastIterationErrored: false,
+        ...planProgressPatch,
       });
 
       log.debug(
