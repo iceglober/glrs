@@ -1,5 +1,75 @@
 # Changelog
 
+## 2.2.0
+
+### Minor Changes
+
+- [#58](https://github.com/iceglober/glrs/pull/58) [`2720440`](https://github.com/iceglober/glrs/commit/2720440e76ed76f95a59b77525cb140bd673d669) Thanks [@iceglober](https://github.com/iceglober)! - Autopilot rewrite, pilot rip-out, Tier 1 visual capabilities, opencode-snip toggle, research-variant hiding.
+
+  **Breaking changes:**
+
+  - **Pilot subsystem removed.** The `glrs oc pilot` CLI subcommand, the four pilot agents (`pilot-scoper` / `planner` / `builder` / `assessor`), the pilot-planning skill references, the `pilot-plugin.ts` runtime enforcer, and all pilot state/docs are gone. Users on pilot should migrate to the CLI autopilot or plain PRIME workflow.
+  - **TUI `/autopilot` slash command removed.** Autopilot is now CLI-only: `glrs oc autopilot "<prompt>"`. Users who want autonomous looping run the CLI in any terminal; the TUI stays for interactive work.
+  - **Research-variant agents (`research-web`, `research-local`, `research-auto`) hidden from the primary-agent picker.** They now run only as subagents dispatched by `@research`. Users who previously selected them directly should select `@research` instead.
+
+  **New features:**
+
+  - **CLI autopilot (`glrs oc autopilot "<prompt>"`)** — Ralph-loop engine: sends your prompt each iteration, watches the agent's response for `<autopilot-done>` sentinel, retries the same prompt when absent. Budgets: 50 iterations / 4h / 3 zero-progress iterations / kill-switch file. Supports single-issue (`"ship ENG-1234"`) and multi-issue (`"ship every open ENG-* issue in project ROADMAP"`) prompts.
+  - **opencode-snip installer toggle** — new "Plugin add-ons" section in `glrs oc install` (parallel to existing MCP toggles). Opt-in adds `opencode-snip` to the user's `plugin` array via config-merge, no vendored code. Useful for token reduction on bash-heavy sessions. Requires the Go `snip` binary separately.
+  - **Tier 1 visual capabilities** — `@plan`, `@research`, `@gap-analyzer` now have Playwright MCP access (joining `@prime`, `@build`, `@assessor`, `@assessor-thorough`, `@plan-reviewer`). Enable via the installer's Playwright toggle.
+  - **UI evaluation ladder (graceful degradation)** — all visual-capable agents now carry a four-tier capability ladder (Playwright → curl → webfetch → source inspection). When Playwright is unavailable, agents fall through to the next tier and report which method they used. No hard failure on Playwright absence.
+
+  **Internal:**
+
+  - Server lifecycle helpers (`startServer` / `createSession` / `sendAndWait` / `getLastAssistantMessage`) moved from `src/pilot/server.ts` to `src/lib/opencode-server.ts` (consumed by the CLI autopilot).
+  - Agent roster reduced from 20 → 16. Net −5,308 lines across 91 files. Test count 536 → 462 (pilot tests removed, visual-capability tests added).
+
+- [#55](https://github.com/iceglober/glrs/pull/55) [`8099c49`](https://github.com/iceglober/glrs/commit/8099c498fa6a9c05c8880bfd09cb2c4fd7d1721c) Thanks [@iceglober](https://github.com/iceglober)! - Rename PRIME arc phases to SPEAR model (Scope → Plan → Execute → Assess → Resolve). Rename @qa-reviewer → @assessor, @qa-thorough → @assessor-thorough. Resolve stage auto-ships (pushes branch, opens PR) — /ship becomes a resume path for interrupted sessions.
+
+- [#57](https://github.com/iceglober/glrs/pull/57) [`6212c48`](https://github.com/iceglober/glrs/commit/6212c483efa2cc8f0407bc6a0d8c23110498eb21) Thanks [@iceglober](https://github.com/iceglober)! - Restructure the SPEAR protocol (PRIME's five-stage arc) across four areas: Assess quality, failure discipline, skill modularity, and agent-contract hygiene.
+
+  **Breaking changes** (match the prior `@assessor` rename's hard-break pattern):
+
+  - `@assessor` is replaced by `@spec-reviewer` (first pass, returns `[PASS_SPEC]` or `[FAIL_SPEC]`) and `@code-reviewer` (second pass, runs only on PASS_SPEC, returns `[PASS]` / `[LOOP-TO-PLAN]` / `[FIX-INLINE]`). User configs referencing `@assessor` by name will fail to resolve — update to the appropriate replacement.
+  - `@assessor-thorough` is renamed to `@code-reviewer-thorough` (same role: opus-tier backstop for high-risk diffs that re-runs the full suite unconditionally).
+  - Registered agent count: 20 → 21.
+
+  **Assess rigor (two-stage review + MECE rubric):**
+
+  - Every Assess cycle now dispatches two subagents sequentially instead of one, roughly doubling the subagent calls per review cycle. The spec pass is cheaper; the code-quality pass runs only if spec passed.
+  - Assess delegations carry a five-dimension MECE rubric (Correctness, Completeness, Consistency, Safety, Scope) and a progressive-strictness signal (Level 1/2/3) that tightens across Assess iterations.
+  - PRs with red CI (typecheck, lint, or tests failing) now fail Assess regardless of whether the failure appears pre-existing. "Pre-existing" claims require three-part evidence: a specific commit SHA, `git log` output showing the failure pre-dates the branch, and merge-base reproduction. Claims without all three are auto-rejected.
+
+  **Failure discipline (no-defer policy):**
+
+  - The hard rule that allowed logging pre-existing failures to a plan's `## Open questions` section and deferring them is removed.
+  - `@build` now runs a mandatory root-cause diagnosis protocol on any unexpected test/lint/typecheck failure: merge-base reproduction, `git blame`, rationalization table countering common excuse patterns ("likely pre-existing", "unrelated to my change", etc.).
+  - If fixing a failure would require touching more than ~5 files outside the plan's `## File-level changes`, `@build` STOPs with a reorganization proposal for PRIME to present to the user — there is no autonomous deferral path.
+
+  **TDD enforcement:**
+
+  - For any plan with a `## Test plan` entry or a `tests:` field in the acceptance-criteria fence, `@build` now enforces TDD order: write the test first, verify it fails, then implement. Tests in a just-written RED state are explicitly carved out of the failure-diagnosis protocol — they're expected failures, not unexpected ones.
+
+  **New bundled skills:**
+
+  - `spear-protocol` — the full SPEAR stage logic (Bootstrap, Scope, Plan, Execute, Assess, Resolve). Loaded by PRIME at session start. Inline fallback retained in `prime.md` in case skill-loading is unavailable.
+  - `root-cause-diagnosis` — the failure-diagnosis protocol + rationalization table. Loaded by `@build` and its strict-executor variant on unexpected failures.
+  - `adversarial-review-rubric` — the MECE rubric, progressive strictness levels, Red-CI-blocks-merge rule, and three-part evidence test. Loaded by all Assess-layer agents before reviewing.
+
+  **Agent-contract changes:**
+
+  - `@build` gains a four-status return protocol: DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED.
+  - `@build` now reports guidance deviations (item (e) of its return payload) when PRIME's Execute-prompt guidance permits multiple readings and `@build` picked one. Same "silence is not acceptable" bar as plan-file mutations.
+  - PRIME runs a pre-dispatch consistency check before every `@build` dispatch: re-read the Execute prompt against the plan and against any already-drafted follow-up prompts. Contradictions caught pre-dispatch avoid the downstream blame-misattribution pattern where faithful agent execution gets narrated as deviation.
+  - `@plan` bans placeholder phrases (TBD, TODO, "implement later", etc.) and runs a self-review checklist (spec coverage, placeholder scan, type/name consistency) before handing to `@plan-reviewer`.
+  - `@build`'s prompt is trimmed of orchestration context per the Minimal Contract principle (subagents perform worse when carrying parent-level workflow philosophy).
+
+  **Other refinements:**
+
+  - PRIME's Scope grounding dispatches parallel `@code-searcher` calls in a single message when grounding touches 3+ independent subsystems.
+  - PRIME's Plan stage detects multi-subsystem requests (3+ independent subsystems with no shared interface) and asks whether to split into separate plans.
+  - Delegation prompts apply the Minimal Contract minimality test: remove any sentence that doesn't help the subagent produce a better result. Non-goals prefer positive-instruction form ("Only modify files listed above") over negative lists when the positive form is shorter.
+
 ## 2.1.0
 
 ## 2.0.1
