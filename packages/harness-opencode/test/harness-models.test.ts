@@ -36,7 +36,7 @@ describe("AGENT_TIERS", () => {
 
     expect(deep).toEqual([
       "architecture-advisor",
-      "assessor-thorough",
+      "code-reviewer-thorough",
       "gap-analyzer",
       "plan",
       "plan-reviewer",
@@ -52,8 +52,9 @@ describe("AGENT_TIERS", () => {
       "lib-reader",
     ]);
     expect(midExecute).toEqual([
-      "assessor",
       "build",
+      "code-reviewer",
+      "spec-reviewer",
     ]);
     expect(fast).toEqual(["code-searcher"]);
   });
@@ -86,7 +87,7 @@ describe("resolveHarnessModels", () => {
     for (const name of [
       "prime",
       "plan",
-      "assessor-thorough",
+      "code-reviewer-thorough",
       "architecture-advisor",
       "plan-reviewer",
       "gap-analyzer",
@@ -100,8 +101,9 @@ describe("resolveHarnessModels", () => {
 
     // Mid tier agents (mid-execute falls back to mid when mid-execute not configured)
     for (const name of [
-      "assessor",
       "build",
+      "spec-reviewer",
+      "code-reviewer",
       "docs-maintainer",
       "lib-reader",
       "agents-md-writer",

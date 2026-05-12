@@ -33,9 +33,11 @@ const primePrompt = readPrompt("prime.md");
 const planPrompt = readPrompt("plan.md");
 const buildPrompt = readPrompt("build.md");
 const buildOpenPrompt = readPrompt("build.open.md");
-const assessorPrompt = readPrompt("assessor.md");
-const assessorOpenPrompt = readPrompt("assessor.open.md");
-const assessorThoroughPrompt = readPrompt("assessor-thorough.md");
+const specReviewerPrompt = readPrompt("spec-reviewer.md");
+const specReviewerOpenPrompt = readPrompt("spec-reviewer.open.md");
+const codeReviewerPrompt = readPrompt("code-reviewer.md");
+const codeReviewerOpenPrompt = readPrompt("code-reviewer.open.md");
+const codeReviewerThoroughPrompt = readPrompt("code-reviewer-thorough.md");
 const planReviewerPrompt = readPrompt("plan-reviewer.md");
 const codeSearcherPrompt = readPrompt("code-searcher.md");
 const gapAnalyzerPrompt = readPrompt("gap-analyzer.md");
@@ -55,7 +57,8 @@ const researchAutoPrompt = readPrompt("research-auto.md");
  */
 const EXECUTOR_VARIANT_AGENTS: Record<string, { reasoning: string; strict: string }> = {
   build: { reasoning: buildPrompt, strict: buildOpenPrompt },
-  assessor: { reasoning: assessorPrompt, strict: assessorOpenPrompt },
+  "spec-reviewer": { reasoning: specReviewerPrompt, strict: specReviewerOpenPrompt },
+  "code-reviewer": { reasoning: codeReviewerPrompt, strict: codeReviewerOpenPrompt },
 };
 
 /**
@@ -401,15 +404,11 @@ const BUILD_PERMISSIONS = {
 // actually reach AgentConfig — the flat YAML parser silently dropped
 // the nested `permission:` maps, and `agentFromPrompt` never read them.
 
-const ASSESSOR_PERMISSIONS = {
+// spec-reviewer and code-reviewer have identical permission shapes to assessor —
+// both are read-only adversarial reviewers that need bash access for git log
+// scope-creep verification and running lint/test/typecheck.
+const SPEC_REVIEWER_PERMISSIONS = {
   edit: "deny" as const,
-  // Object-form bash: the scalar `"allow"` shape loses to OpenCode's
-  // upstream subagent-default `{bash, *, ask}` via last-match-wins (see
-  // the root-cause comment near PRIME_PERMISSIONS). Enumerated
-  // specific patterns in CORE_BASH_ALLOW_LIST sort AFTER the upstream
-  // wildcard ask and win for the commands they match. `"*": "allow"`
-  // is kept as a backstop but may still lose to the upstream rule for
-  // commands not in the enumerated list; those are the known blind spot.
   bash: {
     "*": "allow",
     ...CORE_BASH_ALLOW_LIST,
@@ -429,17 +428,29 @@ const ASSESSOR_PERMISSIONS = {
   linear: "deny",
 };
 
-// assessor-thorough has an identical permission shape to assessor — both are
-// read-only adversarial reviewers that need bash access for `git log`
-// scope-creep verification and running lint/test/typecheck (assessor-thorough
-// always, assessor conditionally via trust-recent-green). They differ
-// only in model, description, and prompt body.
-const ASSESSOR_THOROUGH_PERMISSIONS = {
+const CODE_REVIEWER_PERMISSIONS = {
   edit: "deny" as const,
-  // Same object-form as ASSESSOR_PERMISSIONS — see the shape rationale
-  // there. assessor-thorough re-runs the full suite unconditionally (per its
-  // prompt), so it touches the same command surface as assessor and
-  // needs the identical bash allow-list.
+  bash: {
+    "*": "allow",
+    ...CORE_BASH_ALLOW_LIST,
+    ...CORE_DESTRUCTIVE_BASH_DENIES,
+  },
+  webfetch: "deny" as const,
+  ast_grep: "allow",
+  tsc_check: "allow",
+  eslint_check: "allow",
+  todo_scan: "allow",
+  comment_check: "allow",
+  question: "allow",
+  serena: "allow",
+  memory: "deny",
+  git: "allow",
+  playwright: "allow",
+  linear: "deny",
+};
+
+const CODE_REVIEWER_THOROUGH_PERMISSIONS = {
+  edit: "deny" as const,
   bash: {
     "*": "allow",
     ...CORE_BASH_ALLOW_LIST,
@@ -610,7 +621,6 @@ export type ModelTier = "deep" | "mid" | "mid-execute" | "fast";
 export const AGENT_TIERS: Record<string, ModelTier> = {
   prime: "deep",
   plan: "deep",
-  "assessor-thorough": "deep",
   "architecture-advisor": "deep",
   "plan-reviewer": "deep",
   "gap-analyzer": "deep",
@@ -619,7 +629,9 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   "research-local": "deep",
   "research-auto": "deep",
   build: "mid-execute",
-  assessor: "mid-execute",
+  "spec-reviewer": "mid-execute",
+  "code-reviewer": "mid-execute",
+  "code-reviewer-thorough": "deep",
   "docs-maintainer": "mid",
   "lib-reader": "mid",
   "agents-md-writer": "mid",
@@ -656,11 +668,14 @@ export function createAgents(): Record<string, AgentConfig> {
     // Subagents — model/mode/description from frontmatter, permissions
     // via overrides (see permission blocks above). docs-maintainer has no
     // frontmatter permission declaration and keeps that behavior.
-    assessor: agentFromPrompt(assessorPrompt, {
-      permission: ASSESSOR_PERMISSIONS as AgentConfig["permission"],
+    "spec-reviewer": agentFromPrompt(specReviewerPrompt, {
+      permission: SPEC_REVIEWER_PERMISSIONS as AgentConfig["permission"],
     }),
-    "assessor-thorough": agentFromPrompt(assessorThoroughPrompt, {
-      permission: ASSESSOR_THOROUGH_PERMISSIONS as AgentConfig["permission"],
+    "code-reviewer": agentFromPrompt(codeReviewerPrompt, {
+      permission: CODE_REVIEWER_PERMISSIONS as AgentConfig["permission"],
+    }),
+    "code-reviewer-thorough": agentFromPrompt(codeReviewerThoroughPrompt, {
+      permission: CODE_REVIEWER_THOROUGH_PERMISSIONS as AgentConfig["permission"],
     }),
     "plan-reviewer": agentFromPrompt(planReviewerPrompt, {
       permission: PLAN_REVIEWER_PERMISSIONS as AgentConfig["permission"],

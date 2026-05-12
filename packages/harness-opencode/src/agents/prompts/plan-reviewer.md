@@ -47,5 +47,6 @@ Rules:
 - If the plan cites a ticket and adds scope not implied by the ticket, REJECT.
 - If a new plan's fence is missing or any item lacks `intent`/`tests`/`verify`, REJECT.
 - If a `tests:` entry references a path that doesn't exist AND isn't listed in `## File-level changes`, REJECT.
+- **Auto-REJECT on banned placeholder phrases.** If the plan body contains any of: `TBD`, `TODO`, `implement later`, `add appropriate error handling`, `similar to Task N` (without naming the specific file/symbol), `write tests for the above` (without naming specific test file paths) — REJECT immediately. These phrases indicate the plan is not ready to execute.
 
 {UI_EVALUATION_LADDER}

@@ -84,7 +84,7 @@ describe("HARNESS_OPENCODE_PERM_DEBUG probe", () => {
     expect(parsed.globalPermission).not.toBeNull();
   });
 
-  it("perm-debug snapshot includes assessor agent with permission.bash object", () => {
+  it("perm-debug snapshot includes spec-reviewer and code-reviewer agents with permission.bash object", () => {
     process.env["HARNESS_OPENCODE_PERM_DEBUG"] = "1";
     const config: any = {};
     applyConfig(config);
@@ -94,19 +94,23 @@ describe("HARNESS_OPENCODE_PERM_DEBUG probe", () => {
       "perm-debug.json",
     );
     const parsed = JSON.parse(fs.readFileSync(expected, "utf8"));
-    expect(parsed.agents).toContain("assessor");
-    const qrPerm = parsed.agentPermissions["assessor"];
-    expect(qrPerm).toBeDefined();
-    expect(qrPerm).not.toBeNull();
-    expect(typeof qrPerm.bash).toBe("object");
-    expect(qrPerm.bash["*"]).toBe("allow");
+    expect(parsed.agents).toContain("spec-reviewer");
+    expect(parsed.agents).toContain("code-reviewer");
+    const srPerm = parsed.agentPermissions["spec-reviewer"];
+    expect(srPerm).toBeDefined();
+    expect(srPerm).not.toBeNull();
+    expect(typeof srPerm.bash).toBe("object");
+    expect(srPerm.bash["*"]).toBe("allow");
     // Pain-point entries must be present so the user can eyeball them.
-    expect(qrPerm.bash["tail *"]).toBe("allow");
-    expect(qrPerm.bash["pnpm lint *"]).toBe("allow");
-    expect(qrPerm.bash["git merge-base *"]).toBe("allow");
+    expect(srPerm.bash["tail *"]).toBe("allow");
+    expect(srPerm.bash["pnpm lint *"]).toBe("allow");
+    expect(srPerm.bash["git merge-base *"]).toBe("allow");
     // Destructive denies still present.
-    expect(qrPerm.bash["rm -rf /*"]).toBe("deny");
-    expect(qrPerm.bash["sudo *"]).toBe("deny");
+    expect(srPerm.bash["rm -rf /*"]).toBe("deny");
+    expect(srPerm.bash["sudo *"]).toBe("deny");
+    // EXECUTOR_AGENTS includes spec-reviewer and code-reviewer
+    expect(parsed.agents).toContain("spec-reviewer");
+    expect(parsed.agents).toContain("code-reviewer");
   });
 
   it("perm-debug snapshot includes prime with bash object-form", () => {
