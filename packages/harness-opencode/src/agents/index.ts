@@ -345,8 +345,17 @@ const PRIME_PERMISSIONS = {
 
 const SCOPER_PERMISSIONS = {
   ...PRIME_PERMISSIONS,
-  question: "allow" as const,
 };
+
+/**
+ * The @scoper agent runs in an inquirer-driven wizard loop — the wizard
+ * handles user input via inquirer, not via the question tool. Disabling
+ * the question tool here prevents the agent from accidentally calling it
+ * (which would deadlock the wizard since no TUI is attached).
+ */
+const SCOPER_DISABLED_TOOLS = {
+  question: false,
+} as const;
 
 /**
  * Autopilot sessions run without a user, so any tool that blocks on
@@ -676,11 +685,12 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: PRIME_PERMISSIONS as AgentConfig["permission"],
     }),
     scoper: agentFromPrompt(scoperPrompt, {
-      description: "Interactive scoping agent. Establishes first-principles alignment on what the user wants to build before grounding in code. Produces a scope.md artifact in the plan directory. Use at the start of a new feature to align on intent, constraints, and acceptance criteria before planning.",
+      description: "Interactive scoping agent. Runs an inquirer-driven wizard loop — asks short questions via assistant text, collects answers via inquirer, then writes scope.md. Use at the start of a new feature to align on intent, constraints, and acceptance criteria before planning.",
       mode: "primary",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
       permission: SCOPER_PERMISSIONS as AgentConfig["permission"],
+      tools: SCOPER_DISABLED_TOOLS as AgentConfig["tools"],
     }),
     "autopilot-prime": agentFromPrompt(primePrompt, {
       description: "PRIME for unattended autopilot sessions. Identical to `prime` except the `question` tool is disabled — autopilot has no user to answer interactive prompts, and a blocking question deadlocks the session. Not user-selectable; invoked by the Ralph loop.",

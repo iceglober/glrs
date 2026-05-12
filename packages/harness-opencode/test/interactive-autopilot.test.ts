@@ -40,6 +40,7 @@ describe("orchestrateAutopilot", () => {
     const opts: AutopilotOrchestrationOptions = {
       slug: "my-feature",
       planDir: "/plans",
+      initialGoal: "Build a new feature",
     };
 
     const result = await orchestrateAutopilot(opts, deps);
@@ -66,9 +67,9 @@ describe("orchestrateAutopilot", () => {
       }),
     };
 
-    await orchestrateAutopilot({ slug: "feat", planDir: "/plans" }, deps);
+    await orchestrateAutopilot({ slug: "feat", planDir: "/plans", initialGoal: "Build a feature" }, deps);
 
-    expect(capturedScopeOpts).toMatchObject({ slug: "feat", planDir: "/plans" });
+    expect(capturedScopeOpts).toMatchObject({ slug: "feat", planDir: "/plans", initialGoal: "Build a feature" });
   });
 
   it("prints status banners between phases", async () => {
@@ -87,7 +88,7 @@ describe("orchestrateAutopilot", () => {
       },
     };
 
-    await orchestrateAutopilot({ slug: "feat", planDir: "/plans" }, deps);
+    await orchestrateAutopilot({ slug: "feat", planDir: "/plans", initialGoal: "Build a feature" }, deps);
 
     // Should have banners for scope completion and plan completion
     expect(banners.some((b) => b.includes("scope.md"))).toBe(true);
@@ -108,7 +109,7 @@ describe("orchestrateAutopilot", () => {
     };
 
     await expect(
-      orchestrateAutopilot({ slug: "feat", planDir: "/plans" }, deps),
+      orchestrateAutopilot({ slug: "feat", planDir: "/plans", initialGoal: "Build a feature" }, deps),
     ).rejects.toThrow("Scoper timed out");
   });
 
@@ -126,7 +127,7 @@ describe("orchestrateAutopilot", () => {
     };
 
     await expect(
-      orchestrateAutopilot({ slug: "feat", planDir: "/plans" }, deps),
+      orchestrateAutopilot({ slug: "feat", planDir: "/plans", initialGoal: "Build a feature" }, deps),
     ).rejects.toThrow("Plan agent failed");
   });
 });
@@ -267,6 +268,7 @@ describe("runInteractiveAutopilot", () => {
     expect(capturedScoperOpts).toMatchObject({
       planDir,
       slug: "build-a-dashboard",
+      initialGoal: "Build a dashboard",
     });
 
     fs.rmSync(tmpDir, { recursive: true, force: true });

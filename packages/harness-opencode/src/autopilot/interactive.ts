@@ -35,6 +35,8 @@ export interface AutopilotOrchestrationOptions {
   slug: string;
   planDir: string;
   cwd?: string;
+  /** The user's initial goal text, passed to the @scoper wizard. */
+  initialGoal: string;
 }
 
 export interface AutopilotOrchestrationResult {
@@ -72,6 +74,7 @@ export async function orchestrateAutopilot(
   const scoperResult = await deps.runScoper({
     planDir: opts.planDir,
     slug: opts.slug,
+    initialGoal: opts.initialGoal,
   });
   banner(`✓ Scope captured at ${scoperResult.scopePath}`);
 
@@ -206,7 +209,7 @@ export async function runInteractiveAutopilot(
   const { runLoopSession } = await import("./loop-session.js");
 
   return orchestrateAutopilot(
-    { slug, planDir, cwd },
+    { slug, planDir, cwd, initialGoal: goal },
     {
       runScoper: _deps?.runScoper ?? runScoperSession,
       runPlan: _deps?.runPlan ?? runPlanSession,

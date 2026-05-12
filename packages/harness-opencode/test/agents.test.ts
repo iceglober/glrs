@@ -43,9 +43,12 @@ describe("createAgents", () => {
     expect(agents["scoper"]!.mode).toBe("primary");
   });
 
-  it("scoper agent allows question tool", () => {
-    const perm = (agents["scoper"] as any).permission;
-    expect(perm.question).toBe("allow");
+  it("scoper agent disables question tool (wizard handles user input via inquirer)", () => {
+    // The @scoper wizard loop drives user interaction via inquirer — the
+    // question tool is not wired to any TUI in this context. Disabling it
+    // prevents the agent from accidentally calling it and deadlocking.
+    const tools = (agents["scoper"] as any).tools;
+    expect(tools?.question).toBe(false);
   });
 
   it("has 17 subagent-capable agents (mode=subagent or mode=all)", () => {
