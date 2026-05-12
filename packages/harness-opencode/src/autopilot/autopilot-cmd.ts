@@ -10,6 +10,7 @@
  */
 
 import { command, option, optional, string as stringType } from "cmd-ts";
+import { runInteractiveAutopilot } from "./interactive.js";
 
 export const autopilotInteractiveCmd = command({
   name: "autopilot",
@@ -24,16 +25,12 @@ export const autopilotInteractiveCmd = command({
     }),
   },
   handler: async ({ slug: _slug }) => {
-    process.stdout.write("\n\x1b[1mAutopilot — Interactive three-phase orchestrator\x1b[0m\n");
-    process.stdout.write("Phase 1: Scoping (interactive)\n");
-    process.stdout.write("Phase 2: Planning (headless)\n");
-    process.stdout.write("Phase 3: Execution (Ralph loop)\n\n");
+    const result = await runInteractiveAutopilot(process.cwd());
     process.stdout.write(
-      "Note: Full interactive orchestration requires a running OpenCode server.\n",
+      `\n\x1b[1m✓ Autopilot complete\x1b[0m\n` +
+        `  Scope:  ${result.scopePath}\n` +
+        `  Plan:   ${result.planPath}\n` +
+        `  Loop:   ${result.loopResult.exitReason} after ${result.loopResult.iterations} iteration(s)\n`,
     );
-    process.stdout.write(
-      "Use `glrs oc loop <prompt>` for direct loop execution against an existing plan.\n",
-    );
-    process.exit(0);
   },
 });
