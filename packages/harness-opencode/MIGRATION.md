@@ -70,6 +70,8 @@ See `.agent/plans/pivot-npm-plugin.md` in the repo for the full plan.
 
 ## Migrating from pilot v1 to pilot v2 (SPEAR)
 
+> **⚠️ Pilot subsystem removed.** The entire pilot subsystem (v1 and v2) was removed in the next release. The section below is historical — it documents the v1→v2 migration that existed briefly before full removal. If you have pilot state under `~/.glorious/opencode/<repo>/pilot/`, you can safely delete it: `rm -rf ~/.glorious/opencode/*/pilot/`.
+
 **Status:** pilot v2 ships as a major version bump. The changeset is `major` — semver-aware users on `^1.x` won't auto-upgrade.
 
 ### What changed

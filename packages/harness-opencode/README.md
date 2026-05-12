@@ -1,6 +1,6 @@
 # @glrs-dev/harness-plugin-opencode
 
-Opinionated agent harness for [OpenCode](https://opencode.ai). Agents, tools, slash commands, and an unattended pilot mode — one package.
+Opinionated agent harness for [OpenCode](https://opencode.ai). Agents, tools, slash commands, and an unattended autopilot loop — one package.
 
 ## Quick start
 
@@ -21,7 +21,7 @@ bunx @glrs-dev/harness-plugin-opencode install
 opencode
 ```
 
-No global install. All [plugin features](#what-the-plugin-provides) load automatically. You won't have the `glrs-oc` CLI, but pilot commands will offer to install the plugin if you add the CLI later.
+No global install. All [plugin features](#what-the-plugin-provides) load automatically. You won't have the `glrs-oc` CLI, but you can add it later.
 
 ### Verifying the published tarball
 
@@ -50,11 +50,11 @@ Wipes the worktree, creates a branch from the ticket ref, and begins the SPEAR w
 /fresh add rate limiting to the upload endpoint
 ```
 
-**Go hands-off after the plan looks good:**
+**Go hands-off with the Ralph loop (CLI, lights-out):**
 ```
-/autopilot ENG-1234
+glrs oc autopilot "ship ENG-1234"
 ```
-Runs the full SPEAR workflow unattended. Completes Resolve (push + PR) automatically when all acceptance criteria pass.
+Runs PRIME in a loop: sends your prompt each iteration, watches for `<autopilot-done>` in the response, exits when the sentinel appears or a budget is hit (50 iterations / 4h / 3 zero-progress iterations / kill-switch at `.agent/autopilot-disable`). Works with multi-issue prompts too: `glrs oc autopilot "ship every open issue in Linear project ENG-ROADMAP until the project is done"`. There is no TUI slash command — if you're in the TUI and don't want the loop, just type the task normally.
 
 **Ship when done:**
 ```
@@ -74,31 +74,11 @@ Read-only adversarial review. Fetches the diff, runs typecheck/lint, delegates t
 ```
 Spawns parallel subagents, synthesizes findings with exact file:line references.
 
-### Autonomous (pilot CLI)
-
-For larger work that benefits from structured scoping and autonomous execution with self-assessment.
-
-```bash
-# Scope interactively — spawns OpenCode TUI with the pilot-scoper agent
-glrs-oc pilot scope "Refactor the billing module into separate services"
-
-# Execute autonomously — Plan → Execute → Assess → Resolve (SPEAR loop)
-glrs-oc pilot go
-
-# Configure models and verify commands for this repo
-glrs-oc pilot configure
-
-# Check workflow status
-glrs-oc pilot status
-```
-
-See [Pilot mode](#pilot-mode) for the full command reference.
-
 ---
 
 ## What the plugin provides
 
-14 agents, 7 slash commands, 5 tools, 5 MCPs, 5 skill bundles, 4 sub-plugins. Details below.
+16 agents, 7 slash commands, 5 tools, 5 MCPs, 11 skill bundles, 3 sub-plugins. Details below.
 
 ### Agents
 
@@ -116,8 +96,8 @@ See [Pilot mode](#pilot-mode) for the full command reference.
 | `docs-maintainer` | mid | Documentation updates |
 | `lib-reader` | mid | Library/dependency reader |
 | `agents-md-writer` | mid | AGENTS.md generation |
-| `pilot-builder` | mid | Unattended task executor (pilot subsystem) |
-| `pilot-planner` | deep | Decomposes work into pilot.yaml DAGs |
+| `research` | deep | Multi-workstream research orchestrator |
+| `research-web` / `research-local` / `research-auto` | deep | Research subagents (dispatched by `@research`) |
 
 Tiers: **deep** = opus-class, **mid** = sonnet-class, **fast** = haiku-class. Override with [`harness.models`](#model-overrides).
 
@@ -126,12 +106,13 @@ Tiers: **deep** = opus-class, **mid** = sonnet-class, **fast** = haiku-class. Ov
 | Command | What it does |
 |---------|-------------|
 | `/fresh <ref>` | Wipe worktree, branch from ticket or description, start PRIME |
-| `/autopilot <ref>` | Hands-off PRIME run; stops when acceptance criteria pass |
 | `/ship <plan>` | Squash, push, open PR |
 | `/review <target>` | Read-only adversarial review (PR#, SHA, branch, or file) |
 | `/research <topic>` | Parallel codebase exploration with file:line citations |
 | `/init-deep` | Generate hierarchical AGENTS.md files |
 | `/costs` | Show running LLM spend totals |
+
+Autopilot is CLI-only: `glrs oc autopilot "<prompt>"` (see above).
 
 ### Tools
 
@@ -149,94 +130,48 @@ Tiers: **deep** = opus-class, **mid** = sonnet-class, **fast** = haiku-class. Ov
 
 ### Sub-plugins
 
-- **autopilot** — idle-nudge loop driver (only activates via `/autopilot`)
 - **notify** — OS notifications when the agent asks a question
 - **cost-tracker** — LLM spend by provider/model at `~/.glorious/opencode/costs.json`
-- **pilot-plugin** — runtime invariant enforcement for pilot agents
+- **tool-hooks** — post-edit verification loop (tsc, eslint) + output backpressure
 
 ### Skills
 
-`review-plan` · `web-design-guidelines` · `vercel-react-best-practices` · `vercel-composition-patterns` · `pilot-planning`
+`adr` · `agent-estimation` · `code-quality` · `research` · `research-auto` · `research-local` · `research-web` · `review-plan` · `vercel-composition-patterns` · `vercel-react-best-practices` · `web-design-guidelines`
 
 ---
 
-## Pilot mode
+## Enabling visual UI capabilities
 
-Autonomous code execution using the SPEAR loop (Scope → Plan → Execute → Assess → Resolve). The user scopes interactively, then `pilot go` runs the rest autonomously with self-assessment and deployment-risk reflection.
+The `@plan`, `@research`, `@gap-analyzer`, `@prime`, `@build`, `@assessor`, `@assessor-thorough`, and `@plan-reviewer` agents can verify web UIs, rendered output, and visual components when Playwright is available.
 
-**Prerequisites:** `git` >= 2.5, `opencode` on PATH. Plugin must be installed (auto-prompted if missing).
+### Enable Playwright MCP
 
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `glrs-oc pilot scope "<goal>"` | Interactive scoping session. Produces `scope.json` with framing + acceptance criteria. |
-| `glrs-oc pilot go` | Autonomous execution. Reads scope, runs Plan → Execute → Assess → Resolve. |
-| `glrs-oc pilot configure` | Interactive per-phase model selection, verify commands, assess cycles, Playwright toggle. |
-| `glrs-oc pilot status` | Workflow status from SQLite. `--workflow <id>`, `--json`. |
-
-### SPEAR loop
-
-1. **Scope** (interactive) — scoper agent interviews you, explores the codebase, produces acceptance criteria.
-2. **Plan** (autonomous) — planner agent decomposes ACs into an ordered task list.
-3. **Execute** (autonomous) — builder agent runs one task at a time, commits on verify pass.
-4. **Assess** (autonomous) — assessor evaluates ACs + asks deployment-risk questions (what could break? unexpected consequences? what could go wrong?). If fail → re-plan the gap → re-execute → re-assess (bounded by `max_assess_cycles`).
-5. **Resolve** (autonomous) — final summary with acknowledged risks.
-
-### State storage
-
-```
-~/.glorious/opencode/<repo>/pilot/
-  state.sqlite              # workflows + events
-  current-scope.json        # pointer to active scope
-  scopes/<workflowId>/
-    scope.json              # framing + acceptance criteria
-    plan.json               # task list
-    assessment-cycle-N.json # assessment reports
-```
-
-Repo identity derived from `git rev-parse --git-common-dir` — worktrees of the same repo share state. Override with `$GLORIOUS_PILOT_DIR`.
-
-### Configuration
-
-Config lives at `.glrs/pilot.json` in your repo (not per-plan YAML):
+During `glrs-oc install-plugin`, select **Playwright — browser automation + visual UI verification (requires Chromium)** in the MCP toggle list. Or enable it manually in `opencode.json`:
 
 ```json
 {
-  "models": {
-    "scope": "anthropic/claude-sonnet-4-6",
-    "plan": "anthropic/claude-sonnet-4-6",
-    "execute": "anthropic/claude-sonnet-4-6",
-    "assess": "anthropic/claude-sonnet-4-6"
-  },
-  "verify": {
-    "baseline": ["bun test", "bun run typecheck"],
-    "after_each": ["bun run typecheck"]
-  },
-  "max_assess_cycles": 3,
-  "playwright": { "enabled": false, "base_url": "http://localhost:3000" }
+  "mcp": {
+    "playwright": { "enabled": true }
+  }
 }
 ```
 
-Run `glrs-oc pilot configure` for interactive setup with searchable model selection.
+Then install Chromium:
 
-### Migrating from pilot v1
+```bash
+npx playwright install chromium
+```
 
-If you used `pilot build` / `pilot.yaml` previously:
+### Graceful degradation
 
-| v1 command | v2 equivalent |
-|---|---|
-| `pilot plan` | `pilot scope "<goal>"` |
-| `pilot build` | `pilot go` |
-| `pilot validate` | `pilot configure` (config validation) |
-| `pilot status` | `pilot status` (same name, different output) |
-| `pilot logs` | `pilot status --json` |
-| `pilot cost` | `pilot status --json` |
-| `pilot build-resume` | `pilot go` (re-reads scope, restarts from Plan) |
+Agents automatically fall back when Playwright is unavailable:
 
-Old `.glrs/pilot.json` (v1 format with `baseline`/`after_each` at top level) is detected and a migration banner is shown. Run `pilot configure` to set up the new format.
+1. **Tier A (Playwright)** — navigate, screenshot, evaluate DOM. Best signal.
+2. **Tier B (curl)** — parse returned HTML for structure and reachability.
+3. **Tier C (webfetch)** — built-in tool for public URLs.
+4. **Tier D (source inspection)** — read component files and reason about rendering. Agent flags "visual verification skipped" in its final message.
 
-Old state DBs under `~/.glorious/opencode/<repo>/pilot/` are orphaned — they won't be read or migrated. You can safely delete them.
+No configuration required — agents detect capability absence from MCP errors and fall through automatically.
 
 ---
 
@@ -293,7 +228,7 @@ Your opencode.json values win. Example:
 | `glrs-oc install-plugin [--pin] [--dry-run]` | Register plugin in opencode.json |
 | `glrs-oc uninstall [--dry-run]` | Remove plugin from opencode.json |
 | `glrs-oc doctor` | Check installation health |
-| `glrs-oc pilot <verb>` | [Pilot mode](#pilot-mode) |
+| `glrs-oc autopilot "<prompt>"` | Run PRIME in a loop (lights-out) |
 | `glrs-oc plan-dir` | Print repo-shared plan directory |
 | `glrs-oc plan-check <path>` | Validate legacy markdown plan files |
 
@@ -324,7 +259,7 @@ bun remove -g @glrs-dev/harness-plugin-opencode    # remove CLI
 - `bun`
 - `uvx` for serena + git MCPs (`brew install uv`)
 - `node`/`npx` for memory MCP
-- `git` >= 2.5 for pilot worktrees
+- `git` for version control operations
 
 ## Security & threat boundaries
 
@@ -334,8 +269,8 @@ Report vulnerabilities privately per [`SECURITY.md`](./SECURITY.md) — do NOT o
 
 This is a plugin with broad local-machine access. Install it deliberately:
 
-- **Reads and writes files** under your home directory (`~/.config/opencode/opencode.json`, `~/.cache/harness-opencode/*`, `~/.config/harness-opencode/install-id`, `~/.glorious/opencode/<repo>/pilot/*`).
-- **Runs local subprocesses** during normal operation: `git`, `gh`, `npm`/`bun`, `ast-grep`, `tsc`, `opencode`, and project-specific verify commands from any `pilot.yaml` you author.
+- **Reads and writes files** under your home directory (`~/.config/opencode/opencode.json`, `~/.cache/harness-opencode/*`, `~/.config/harness-opencode/install-id`, `~/.glorious/opencode/<repo>/*`).
+- **Runs local subprocesses** during normal operation: `git`, `gh`, `npm`/`bun`, `ast-grep`, `tsc`, `opencode`, and project-specific verify commands.
 - **Makes outbound HTTPS calls** (all opt-out-able):
   - `registry.npmjs.org` — daily version check. Opt out: `HARNESS_OPENCODE_UPDATE_CHECK=0`.
   - `catwalk.charm.land` — model catalog during interactive install only. Response is schema-validated before it reaches your `opencode.json`.

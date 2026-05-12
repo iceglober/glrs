@@ -102,8 +102,22 @@ interface McpToggle {
 }
 
 const MCP_TOGGLES: McpToggle[] = [
-  { name: "playwright", label: "Playwright — browser automation", defaultOn: false },
+  { name: "playwright", label: "Playwright — browser automation + visual UI verification (requires Chromium)", defaultOn: false },
   { name: "linear", label: "Linear — issue tracker integration", defaultOn: false },
+];
+
+interface PluginToggle {
+  name: string;
+  label: string;
+  defaultOn: boolean;
+}
+
+const PLUGIN_TOGGLES: PluginToggle[] = [
+  {
+    name: "opencode-snip",
+    label: "Token reduction — opencode-snip (requires Go snip binary)",
+    defaultOn: false,
+  },
 ];
 
 // --- Helpers ---------------------------------------------------------------
@@ -234,6 +248,20 @@ function detectEnabledMcps(existing: Record<string, any> | null): Set<string> {
   for (const toggle of MCP_TOGGLES) {
     if (mcp[toggle.name]?.enabled === true) {
       enabled.add(toggle.name);
+    }
+  }
+  return enabled;
+}
+
+function detectEnabledPluginToggles(existing: Record<string, any> | null): Set<string> {
+  const enabled = new Set<string>();
+  const plugins: unknown[] = Array.isArray(existing?.plugin) ? existing.plugin : [];
+  const toggleNames = new Set(PLUGIN_TOGGLES.map((t) => t.name));
+
+  for (const entry of plugins) {
+    const name = typeof entry === "string" ? entry : Array.isArray(entry) ? entry[0] : null;
+    if (typeof name === "string" && toggleNames.has(name)) {
+      enabled.add(name);
     }
   }
   return enabled;
@@ -481,6 +509,84 @@ export function writeMcpToggles(
   }
 }
 
+/**
+ * Adds or removes third-party plugin strings from the `plugin` array.
+ * Preserves our own plugin entry and any user-authored entries that are not
+ * in PLUGIN_TOGGLES. Union-by-name semantics: toggling ON never duplicates;
+ * toggling OFF removes only the matching entry.
+ */
+export function writePluginToggles(
+  configPath: string,
+  enabledSet: Set<string>,
+  opts: { dryRun: boolean },
+): { changed: boolean; bakPath?: string } {
+  try {
+    if (!fs.existsSync(configPath)) {
+      return { changed: false };
+    }
+
+    const raw = fs.readFileSync(configPath, "utf8");
+    const config = JSON.parse(raw);
+
+    const toggleNames = new Set(PLUGIN_TOGGLES.map((t) => t.name));
+    const existingPlugins: unknown[] = Array.isArray(config.plugin) ? config.plugin : [];
+
+    // Determine current state of each toggle
+    const currentlyPresent = new Set<string>();
+    for (const entry of existingPlugins) {
+      const name = typeof entry === "string" ? entry : Array.isArray(entry) ? entry[0] : null;
+      if (typeof name === "string" && toggleNames.has(name)) {
+        currentlyPresent.add(name);
+      }
+    }
+
+    // Compute desired additions and removals
+    const toAdd: string[] = [];
+    const toRemove = new Set<string>();
+
+    for (const toggleName of toggleNames) {
+      if (enabledSet.has(toggleName) && !currentlyPresent.has(toggleName)) {
+        toAdd.push(toggleName);
+      } else if (!enabledSet.has(toggleName) && currentlyPresent.has(toggleName)) {
+        toRemove.add(toggleName);
+      }
+    }
+
+    if (toAdd.length === 0 && toRemove.size === 0) {
+      return { changed: false };
+    }
+
+    if (opts.dryRun) {
+      info(`[dry-run] Would reconfigure plugin toggles`);
+      return { changed: true };
+    }
+
+    // Write backup
+    const bakPath = `${configPath}.bak.${Date.now()}-${process.pid}`;
+    fs.copyFileSync(configPath, bakPath);
+
+    // Build new plugin array: keep non-toggle entries, remove deselected toggles, append new ones
+    const newPlugins: unknown[] = existingPlugins.filter((entry) => {
+      const name = typeof entry === "string" ? entry : Array.isArray(entry) ? entry[0] : null;
+      return !(typeof name === "string" && toRemove.has(name));
+    });
+    for (const name of toAdd) {
+      newPlugins.push(name);
+    }
+
+    config.plugin = newPlugins;
+
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+
+    ok("Reconfigured plugin add-ons");
+    info(`Backup: ${bakPath}`);
+
+    return { changed: true, bakPath };
+  } catch {
+    return { changed: false };
+  }
+}
+
 export interface InstallOptions {
   dryRun?: boolean;
   pin?: boolean;
@@ -505,6 +611,7 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
     : false;
   const existingProvider = detectModelProvider(existing);
   const existingMcps = detectEnabledMcps(existing);
+  const existingPluginToggles = detectEnabledPluginToggles(existing);
   const existingOpts = extractPluginOptions(existing);
   let hasModels = !!(existingOpts?.models ?? existing?.harness?.models);
 
@@ -523,8 +630,10 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
   // Track reconfiguration choices for imperative overwrite path
   let reconfigureModels = false;
   let reconfigureMcps = false;
+  let reconfigurePluginToggles = false;
   let newModelsValue: { deep: string[]; mid: string[]; fast: string[] } | null = null;
   let newMcpEnabledSet: Set<string> = new Set();
+  let newPluginToggleEnabledSet: Set<string> = new Set(existingPluginToggles);
 
   if (hasPlugin && (existingProvider || hasModels)) {
     // Everything that can be prompted for is already set.
@@ -558,7 +667,17 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
         }
       }
 
-      if (!reconfigureModels && !reconfigureMcps && unconfiguredMcps.length === 0) {
+      // Offer to reconfigure plugin add-ons.
+      const reconfigurePluginToggleChoice = await promptChoice(
+        "  Reconfigure plugin add-ons?",
+        ["No, keep current config", "Yes, reconfigure plugin add-ons"],
+        0,
+      );
+      if (reconfigurePluginToggleChoice === 1) {
+        reconfigurePluginToggles = true;
+      }
+
+      if (!reconfigureModels && !reconfigureMcps && !reconfigurePluginToggles && unconfiguredMcps.length === 0) {
         console.log(`\n${c.bold}Ready.${c.reset} Run ${c.green}opencode${c.reset} to start.\n`);
         return;
       }
@@ -682,7 +801,7 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
       };
       ok(`Models configured`);
 
-      // Optional mid-execute tier: strict executor for build/pilot-builder.
+      // Optional mid-execute tier: strict executor for build/assessor.
       // If the user picks a model here, those agents get the strict-executor
       // prompt (narrower scope, escalation-first, no self-correction).
       // If skipped, they use the mid model with the reasoning prompt.
@@ -765,6 +884,26 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
     console.log();
   }
 
+  // Plugin add-ons reconfiguration prompt (when user opted in)
+  if (interactive && reconfigurePluginToggles) {
+    console.log(`${c.dim}Plugin add-ons${c.reset}`);
+    const currentEnabled = new Set(existingPluginToggles);
+    const selected = await promptMulti(
+      "  Enable plugin add-ons?",
+      PLUGIN_TOGGLES.map((t) => ({ label: t.label, defaultOn: currentEnabled.has(t.name) })),
+    );
+
+    newPluginToggleEnabledSet = new Set([...selected].map((i) => PLUGIN_TOGGLES[i]!.name));
+
+    const names = [...newPluginToggleEnabledSet].join(", ");
+    if (newPluginToggleEnabledSet.size > 0) {
+      ok(`Plugin add-ons enabled: ${names}`);
+    } else {
+      ok("Plugin add-ons: none");
+    }
+    console.log();
+  }
+
   // Build the plugin entry — tuple form if options exist, plain string otherwise.
   const pluginValue = Object.keys(pluginOpts).length > 0
     ? [pluginEntry, pluginOpts]
@@ -803,6 +942,32 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
       }
       console.log();
     }
+
+    // Plugin add-ons — fresh install prompt (always offered, default OFF)
+    const unconfiguredPluginToggles = PLUGIN_TOGGLES.filter(
+      (t) => !existingPluginToggles.has(t.name),
+    );
+
+    if (unconfiguredPluginToggles.length > 0) {
+      console.log(`${c.dim}Plugin add-ons${c.reset}`);
+      const selected = await promptMulti(
+        "  Enable plugin add-ons?",
+        unconfiguredPluginToggles.map((t) => ({ label: t.label, defaultOn: t.defaultOn })),
+      );
+
+      if (selected.size > 0) {
+        for (const idx of selected) {
+          const toggle = unconfiguredPluginToggles[idx]!;
+          (config.plugin as unknown[]).push(toggle.name);
+          newPluginToggleEnabledSet.add(toggle.name);
+        }
+        const names = [...selected].map((i) => unconfiguredPluginToggles[i]!.name).join(", ");
+        ok(`Plugin add-ons enabled: ${names}`);
+      } else {
+        ok("Plugin add-ons: none");
+      }
+      console.log();
+    }
   }
 
   // Write to opencode.json
@@ -814,6 +979,10 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
 
   if (reconfigureMcps) {
     writeMcpToggles(configPath, newMcpEnabledSet, { dryRun });
+  }
+
+  if (reconfigurePluginToggles) {
+    writePluginToggles(configPath, newPluginToggleEnabledSet, { dryRun });
   }
 
   if (!fs.existsSync(configPath)) {
@@ -861,6 +1030,11 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
   // never runs — a chicken-and-egg problem. Fix it here.
   if (!dryRun) {
     await refreshPluginCacheIfStale();
+  }
+
+  // Post-install notice for opencode-snip binary requirement.
+  if (newPluginToggleEnabledSet.has("opencode-snip")) {
+    warn("opencode-snip requires the Go snip binary. Install: brew install vhardouin/opencode-snip/snip");
   }
 
   console.log(`\n${c.bold}Ready.${c.reset} Run ${c.green}opencode${c.reset} to start.\n`);

@@ -131,3 +131,5 @@ When PRIME passes a brief via task tool:
 - About to launch agents sequentially — ONE MESSAGE, ALL INDEPENDENT AGENTS
 - About to present raw outputs — SYNTHESIZE FIRST
 - About to run a 4th round — MAX 3 ROUNDS, THEN PRESENT
+
+{UI_EVALUATION_LADDER}

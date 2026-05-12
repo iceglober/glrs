@@ -176,44 +176,5 @@ export function doctor(): void {
     fail("Neither bun nor npm found — cannot install plugins");
   }
 
-  // 6. Pilot subsystem prerequisites.
-  console.log();
-  console.log(`${c.bold}Pilot subsystem${c.reset}`);
-
-  // git is required for pilot execution.
-  if (which("git")) {
-    const gitVer = cmd("git --version") ?? "";
-    ok(`git ${gitVer}`);
-  } else {
-    fail("git not found — pilot subsystem requires git");
-  }
-
-  // bash is required for verify commands.
-  if (which("bash")) {
-    ok("bash (verify-runner shell)");
-  } else {
-    fail("bash not found — pilot's verify commands run via `bash -c`");
-  }
-
-  // Pilot v2 agents registered?
-  const agentList = cmd("opencode agent list 2>/dev/null");
-  if (agentList !== null) {
-    for (const agentName of ["pilot-scoper", "pilot-planner", "pilot-builder", "pilot-assessor"]) {
-      if (agentList.includes(agentName)) {
-        ok(`${agentName} agent registered`);
-      } else {
-        warn(
-          `${agentName} agent NOT in \`opencode agent list\` — plugin may not be loaded; run: bunx ` +
-            PLUGIN_NAME +
-            " install",
-        );
-      }
-    }
-  } else {
-    warn(
-      "could not run `opencode agent list` — skipping pilot agent registration check",
-    );
-  }
-
   console.log();
 }

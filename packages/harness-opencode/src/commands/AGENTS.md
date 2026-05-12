@@ -1,6 +1,6 @@
 # src/commands — slash command definitions + prompts
 
-Slash commands (`/ship`, `/fresh`, `/autopilot`, `/review`, `/research`, `/init-deep`, `/costs`) live here.
+Slash commands (`/ship`, `/fresh`, `/review`, `/research`, `/init-deep`, `/costs`) live here.
 
 ## Layout
 

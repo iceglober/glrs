@@ -102,7 +102,7 @@ To detect the tracked-vs-untracked split from `git status --porcelain`:
 - Lines starting with ` M`, `M `, `MM`, `A `, `D `, ` D`, `R `, `C `, `U ` (or any non-`??` prefix) = tracked changes present
 - Lines starting with `??` = untracked; run `git check-ignore --stdin` across them to split gitignored-debris from intentional-new-files
 
-**Why safety gates are owned by `/fresh`, not the hook:** the `question` tool is available only to the PRIME agent; a bash hook cannot prompt. To keep `--yes` abort semantics deterministic (which autopilot relies on) and interactive-mode confirmations coherent, all dirty-tree gating runs in `/fresh` BEFORE dispatching to either path. The dispatch target (hook or built-in) always runs against a tree that either is clean, is only gitignored debris cleared for `git clean -fdx`, or has been confirmed-for-discard by the user.
+**Why safety gates are owned by `/fresh`, not the hook:** the `question` tool is available only to the PRIME agent; a bash hook cannot prompt. To keep `--yes` abort semantics deterministic (which unattended loops like `glrs oc autopilot` rely on) and interactive-mode confirmations coherent, all dirty-tree gating runs in `/fresh` BEFORE dispatching to either path. The dispatch target (hook or built-in) always runs against a tree that either is clean, is only gitignored debris cleared for `git clean -fdx`, or has been confirmed-for-discard by the user.
 
 ## 2. Derive the new branch name
 
@@ -301,7 +301,7 @@ This is the piece that makes `/fresh` feel like "re-key and go" instead of "re-k
 
 **Why in the same turn:** the user ran `/fresh <task>` expecting work to start, not a checkpoint. One command, one turn, one uninterrupted transition from old task to new.
 
-**Interaction with `--yes` (autopilot sequence mode):** same behavior. `/fresh --yes <ref>` re-keys and continues inline into the PRIME arc on the new ref. `/autopilot`'s sequence loop drives the iteration — `/fresh` hands off to the PRIME in the same turn, the PRIME runs plan → build → verify → STOP, and the outer `/autopilot` loop pops the next ref.
+**Interaction with `--yes` (unattended-loop mode):** same behavior. `/fresh --yes <ref>` re-keys and continues inline into the PRIME arc on the new ref. When invoked from inside an unattended loop (e.g., `glrs oc autopilot` driving a multi-issue prompt), the agent calls `/fresh --yes` between issues from within its own session — `/fresh` hands off to the PRIME, the PRIME runs plan → build → verify → STOP, and control returns to the outer loop.
 
 **Exception — abort paths:** if `/fresh` aborts in §0 (not in a worktree), §1 (empty input), §3 (`--yes` + dirty tracked), or §3 (`--no-discard` + dirty), DO NOT enter §7. The whole point of an abort is that no work should start. Print the abort message and stop.
 
@@ -330,34 +330,37 @@ This is the piece that makes `/fresh` feel like "re-key and go" instead of "re-k
 | 7 (PRIME kickoff) | Reset produced a WARNING status | Continue to §7, but make sure the warning banner is visible to the user before work starts | Same | Same |
 | 7 (PRIME kickoff) | `/fresh` aborted earlier (no worktree, empty input, --yes + dirty tracked, --no-discard + dirty) | Do NOT enter §7 — print abort message and stop | Same | Same |
 
-## Integration with `/autopilot` (sequence-of-issues mode)
+## Integration with unattended-loop callers
 
-When the user runs `/autopilot` with a project / milestone / queue reference, the autopilot command sequences through multiple issues and invokes `/fresh <ref> --yes` between each one. The contract across that boundary:
+When the user runs an unattended loop like `glrs oc autopilot "<multi-issue prompt>"`, the loop re-sends the same prompt each iteration and the agent (PRIME) decides what to do. For multi-issue workflows, the agent typically calls `/fresh --yes <next-ref>` from inside its session to isolate each issue on its own branch. The contract across that boundary:
 
-**From autopilot's side** (before calling `/fresh`):
+**From the agent's side** (before calling `/fresh`):
 
-- Autopilot pops the next ref from its queue.
-- Autopilot pre-checks whether that ref already has an open or merged PR (via `gh pr list --search <ref>` or Linear MCP). If yes, skip silently, log, and pop the next ref. `/fresh` is not invoked for already-shipped work.
-- Autopilot calls `/fresh <ref> --yes` only when the ref is genuinely open.
+- The agent decides which issue to work on next based on the prompt.
+- Before invoking `/fresh --yes`, the agent should verify the target ref is genuinely open (e.g., `gh pr list --search <ref>` or `linear_get_issue`). Already-shipped refs should be skipped.
+- The agent calls `/fresh --yes <ref>` only when the ref is genuinely open.
 
 **From `/fresh`'s side** (this command):
 
-- `--yes` suppresses every `question`-tool prompt. Autopilot cannot respond to them.
-- If the working tree has tracked changes or untracked non-gitignored files, `/fresh --yes` aborts. Autopilot treats this as a **hard stop** for the sequence, not "try next issue" — dirty tracked work means something went wrong in the previous iteration that requires human attention. This safety gate is owned by `/fresh`, not the reset strategy, which is what makes `--yes` abort semantics deterministic across repos (a hook cannot override them).
-- On success, `/fresh --yes` continues inline into the PRIME arc on the new ref (§7). The PRIME runs plan → build → verify → STOP. Control returns to `/autopilot`'s outer sequence loop, which pops the next ref and calls `/fresh --yes` again.
+- `--yes` suppresses every `question`-tool prompt — the unattended caller can't respond to them.
+- If the working tree has tracked changes or untracked non-gitignored files, `/fresh --yes` aborts. An unattended caller treats this as a **hard stop** — dirty tracked work means something went wrong that requires human attention. This safety gate is owned by `/fresh`, not the reset strategy, which is what makes `--yes` abort semantics deterministic across repos (a hook cannot override them).
+- On success, `/fresh --yes` continues inline into the PRIME arc on the new ref (§7). The PRIME runs plan → build → verify → STOP for that issue. The agent can then loop internally to the next issue.
 
-**Sequence-loop shape:**
+**Shape:**
 
 ```
-autopilot queue    →    autopilot pops ref    →    /fresh <ref> --yes    →    /fresh re-keys:
-                                                                                 - discards tree (via hook or built-in)
-                                                                                 - fetches base, checks out new branch
-                                                                                 - prints summary
-                                                                                 - CONTINUES INLINE into PRIME (§7):
-                                                                                   runs Bootstrap → Scope → Plan → …
-                                                                                   plan → build → verify → STOP
-                                                                               autopilot sees acceptance criteria all [x],
-                                                                               pops next ref, loops
+outer loop (e.g., glrs oc autopilot)
+  → sends the same prompt to PRIME each iteration
+  → agent decides: "need to re-key for the next issue"
+  → agent calls /fresh --yes <ref>
+  → /fresh re-keys the worktree:
+      - discards tree (via hook or built-in)
+      - fetches base, checks out new branch
+      - prints summary
+      - CONTINUES INLINE into PRIME (§7):
+          runs Bootstrap → Scope → Plan → … → plan → build → verify → STOP
+  → agent completes the issue's SPEAR arc
+  → agent either loops to next issue or emits <autopilot-done>
 ```
 
 ## Hook contract, for repo authors

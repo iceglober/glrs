@@ -13,6 +13,7 @@ import * as os from "node:os";
 import {
   writePluginOption,
   writeMcpToggles,
+  writePluginToggles,
 } from "../src/cli/install.ts";
 
 const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
@@ -294,5 +295,115 @@ describe("dry-run reconfigure", () => {
     // File should be unchanged
     const currentBytes = fs.readFileSync(configPath);
     expect(currentBytes.equals(originalBytes)).toBe(true);
+  });
+});
+
+describe("plugin toggles", () => {
+  it("plugin toggle adds opencode-snip to plugin array when enabled", () => {
+    writeConfig({
+      $schema: "https://opencode.ai/config.json",
+      plugin: [PLUGIN_NAME],
+    });
+
+    const enabled = new Set(["opencode-snip"]);
+    const result = writePluginToggles(configPath, enabled, { dryRun: false });
+
+    expect(result.changed).toBe(true);
+    expect(result.bakPath).toBeDefined();
+    expect(fs.existsSync(result.bakPath!)).toBe(true);
+
+    const config = readConfig() as any;
+    expect(config.plugin).toContain("opencode-snip");
+    // Our own plugin entry must still be present
+    expect(
+      config.plugin.some(
+        (p: any) => p === PLUGIN_NAME || (Array.isArray(p) && p[0] === PLUGIN_NAME),
+      ),
+    ).toBe(true);
+  });
+
+  it("plugin toggle does not add opencode-snip when disabled", () => {
+    writeConfig({
+      $schema: "https://opencode.ai/config.json",
+      plugin: [PLUGIN_NAME],
+    });
+
+    const enabled = new Set<string>(); // empty — toggle OFF
+    const result = writePluginToggles(configPath, enabled, { dryRun: false });
+
+    // No change needed — opencode-snip was never there
+    expect(result.changed).toBe(false);
+
+    const config = readConfig() as any;
+    expect(config.plugin).not.toContain("opencode-snip");
+  });
+
+  it("plugin toggle removes opencode-snip on reconfigure OFF", () => {
+    writeConfig({
+      $schema: "https://opencode.ai/config.json",
+      plugin: [PLUGIN_NAME, "opencode-snip", "user-other-plugin"],
+    });
+
+    const enabled = new Set<string>(); // toggle OFF
+    const result = writePluginToggles(configPath, enabled, { dryRun: false });
+
+    expect(result.changed).toBe(true);
+
+    const config = readConfig() as any;
+    expect(config.plugin).not.toContain("opencode-snip");
+    // Other entries must be preserved
+    expect(
+      config.plugin.some(
+        (p: any) => p === PLUGIN_NAME || (Array.isArray(p) && p[0] === PLUGIN_NAME),
+      ),
+    ).toBe(true);
+    expect(config.plugin).toContain("user-other-plugin");
+  });
+
+  it("plugin toggle adds opencode-snip on reconfigure ON", () => {
+    writeConfig({
+      $schema: "https://opencode.ai/config.json",
+      plugin: [PLUGIN_NAME, "user-other-plugin"],
+    });
+
+    const enabled = new Set(["opencode-snip"]); // toggle ON
+    const result = writePluginToggles(configPath, enabled, { dryRun: false });
+
+    expect(result.changed).toBe(true);
+
+    const config = readConfig() as any;
+    expect(config.plugin).toContain("opencode-snip");
+    expect(config.plugin).toContain("user-other-plugin");
+    expect(
+      config.plugin.some(
+        (p: any) => p === PLUGIN_NAME || (Array.isArray(p) && p[0] === PLUGIN_NAME),
+      ),
+    ).toBe(true);
+  });
+
+  it("plugin toggle is idempotent", () => {
+    // Already present — toggling ON again should not duplicate
+    writeConfig({
+      $schema: "https://opencode.ai/config.json",
+      plugin: [PLUGIN_NAME, "opencode-snip"],
+    });
+
+    const enabledOn = new Set(["opencode-snip"]);
+    const resultOn = writePluginToggles(configPath, enabledOn, { dryRun: false });
+    expect(resultOn.changed).toBe(false);
+
+    const configAfterOn = readConfig() as any;
+    const snipCount = configAfterOn.plugin.filter((p: any) => p === "opencode-snip").length;
+    expect(snipCount).toBe(1); // no duplicate
+
+    // Already absent — toggling OFF again should report changed=false
+    writeConfig({
+      $schema: "https://opencode.ai/config.json",
+      plugin: [PLUGIN_NAME],
+    });
+
+    const enabledOff = new Set<string>();
+    const resultOff = writePluginToggles(configPath, enabledOff, { dryRun: false });
+    expect(resultOff.changed).toBe(false);
   });
 });

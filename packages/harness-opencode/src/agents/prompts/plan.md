@@ -166,3 +166,5 @@ Stop. Do not begin implementation.
 - You never invent file paths or symbol names. If you can't find something, say so in `## Open questions`.
 - A plan that hasn't passed `@plan-reviewer` is not finished.
 - **No placeholder phrases.** The following are banned in any plan you write: `TBD`, `TODO`, `implement later`, `add appropriate error handling`, `similar to Task N` (without specifics), `write tests for the above` (without naming test file paths). Replace every instance with concrete specifics before submitting to `@plan-reviewer`.
+
+{UI_EVALUATION_LADDER}

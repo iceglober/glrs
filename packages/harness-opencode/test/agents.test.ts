@@ -8,13 +8,14 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 21 agents", () => {
-    // 21 agents total: prime (mode:primary), plan + build + research + research-web +
-    // research-local + research-auto (all mode:all — primary AND task-tool-dispatchable),
-    // 11 pure subagents (spec-reviewer, code-reviewer, code-reviewer-thorough, plan-reviewer,
-    // code-searcher, gap-analyzer, architecture-advisor, docs-maintainer, lib-reader,
-    // agents-md-writer, + 4 pilot v2 subagents).
-    expect(Object.keys(agents).length).toBe(21);
+  it("returns exactly 17 agents", () => {
+    // 17 agents total: prime (mode:primary), plan + build + research (mode:all
+    // — primary AND task-tool-dispatchable), research-web + research-local +
+    // research-auto (mode:subagent — internal to @research's orchestration),
+    // plus 10 other pure subagents (spec-reviewer, code-reviewer,
+    // code-reviewer-thorough, plan-reviewer, code-searcher, gap-analyzer,
+    // architecture-advisor, docs-maintainer, lib-reader, agents-md-writer).
+    expect(Object.keys(agents).length).toBe(17);
   });
 
   it("has 2 primary-capable agents besides plan (prime, build; mode=primary or mode=all)", () => {
@@ -30,11 +31,13 @@ describe("createAgents", () => {
     }
   });
 
-  it("has 18 subagent-capable agents (mode=subagent or mode=all)", () => {
+  it("has 16 subagent-capable agents (mode=subagent or mode=all)", () => {
     // "Subagent-capable" means the agent appears in other agents'
     // task-tool picker. mode: "subagent" and mode: "all" both qualify.
-    // plan, build, research, research-web, research-local, research-auto all have
-    // mode:"all" — user-invocable AND task-dispatchable. The other 12 are mode:"subagent" only.
+    // plan, build, research have mode:"all" — user-invocable AND
+    // task-dispatchable. research-web, research-local, research-auto have
+    // mode:"subagent" — internal to @research's orchestration, NOT
+    // user-selectable as primary. The other 10 are also mode:"subagent" only.
     const subagentCapable = [
       "plan",
       "build",
@@ -52,14 +55,22 @@ describe("createAgents", () => {
       "docs-maintainer",
       "lib-reader",
       "agents-md-writer",
-      "pilot-scoper",
-      "pilot-planner",
-      "pilot-builder",
-      "pilot-assessor",
     ];
     for (const name of subagentCapable) {
       expect(agents[name]).toBeDefined();
       expect(["subagent", "all"]).toContain(agents[name]!.mode);
+    }
+  });
+
+  it("research-* variant agents are mode:subagent (not user-selectable as primary)", () => {
+    // research-web / research-local / research-auto are implementation
+    // details of the @research orchestrator. They must NOT be selectable
+    // as primary agents — only @research should be the user-facing entry
+    // point for research work. Flipping any of these to mode:"all" or
+    // mode:"primary" re-introduces the agent-picker clutter this test
+    // guards against.
+    for (const name of ["research-web", "research-local", "research-auto"]) {
+      expect(agents[name]!.mode).toBe("subagent");
     }
   });
 
@@ -220,6 +231,47 @@ describe("createAgents", () => {
   });
 });
 
+describe("playwright permissions", () => {
+  const agents = createAgents();
+
+  it("plan agent has playwright allow", () => {
+    const perm = (agents["plan"] as any).permission;
+    expect(perm.playwright).toBe("allow");
+  });
+
+  it("research agent has playwright allow", () => {
+    const perm = (agents["research"] as any).permission;
+    expect(perm.playwright).toBe("allow");
+  });
+
+  it("gap-analyzer agent has playwright allow", () => {
+    const perm = (agents["gap-analyzer"] as any).permission;
+    expect(perm.playwright).toBe("allow");
+  });
+});
+
+describe("UI evaluation ladder", () => {
+  const agents = createAgents();
+
+  it("visual-capable agents contain UI evaluation ladder", () => {
+    const visualCapable = [
+      "prime",
+      "plan",
+      "build",
+      "code-reviewer",
+      "code-reviewer-thorough",
+      "plan-reviewer",
+      "research",
+      "gap-analyzer",
+    ];
+    for (const name of visualCapable) {
+      const prompt = agents[name]!.prompt as string;
+      expect(prompt).toContain("Tier A (Playwright)");
+      expect(prompt).toContain("visual verification skipped");
+    }
+  });
+});
+
 describe("research agent", () => {
   const agents = createAgents();
 
@@ -286,26 +338,26 @@ describe("research agent", () => {
 describe("research-* orchestrator agents", () => {
   const agents = createAgents();
 
-  test("research-web agent registered with mode=all, opus model, temperature 0.3", () => {
+  test("research-web agent registered with mode=subagent, opus model, temperature 0.3", () => {
     const a = agents["research-web"];
     expect(a).toBeDefined();
-    expect(a!.mode).toBe("all");
+    expect(a!.mode).toBe("subagent");
     expect(a!.model).toBe("anthropic/claude-opus-4-7");
     expect(a!.temperature).toBe(0.3);
   });
 
-  test("research-local agent registered with mode=all, opus model, temperature 0.3", () => {
+  test("research-local agent registered with mode=subagent, opus model, temperature 0.3", () => {
     const a = agents["research-local"];
     expect(a).toBeDefined();
-    expect(a!.mode).toBe("all");
+    expect(a!.mode).toBe("subagent");
     expect(a!.model).toBe("anthropic/claude-opus-4-7");
     expect(a!.temperature).toBe(0.3);
   });
 
-  test("research-auto agent registered with mode=all, opus model, temperature 0.3", () => {
+  test("research-auto agent registered with mode=subagent, opus model, temperature 0.3", () => {
     const a = agents["research-auto"];
     expect(a).toBeDefined();
-    expect(a!.mode).toBe("all");
+    expect(a!.mode).toBe("subagent");
     expect(a!.model).toBe("anthropic/claude-opus-4-7");
     expect(a!.temperature).toBe(0.3);
   });
@@ -857,7 +909,7 @@ describe("prompt content assertions", () => {
 
   // ---- prime (picker + delegation + pre-existing-failure rule) ----
 
-  it("prime prompt contains assessor-fast-vs-thorough heuristic", () => {
+  it("prime prompt contains code-reviewer-fast-vs-thorough heuristic", () => {
     expect(prime).toContain("@code-reviewer-thorough");
     expect(prime).toContain("@code-reviewer");
     expect(prime).toMatch(/>10 files|>500 lines/);
@@ -932,7 +984,6 @@ describe("prompt content assertions", () => {
   // ---- Plan-storage migration regression guards ----
 
   const planPrompt = agents["plan"]!.prompt as string;
-  const autopilotCommand = createCommands()["autopilot"]!.template as string;
 
   it("plan agent prompt body mentions GLORIOUS_PLAN_DIR or bunx harness-opencode plan-dir helper", () => {
     // The plan agent must know how to resolve the new plan dir. One of
@@ -964,16 +1015,25 @@ describe("prompt content assertions", () => {
     expect(prime).not.toContain("ls .agent/plans/");
   });
 
-  it("autopilot command prompt handoff uses <plan-path> or absolute shape, not .agent/plans/<slug>", () => {
-    // The user-facing `/ship` handoff line in the autopilot command
-    // prompt must not print the legacy path shape. Either the abstract
-    // `<plan-path>` placeholder (when dynamic) or the annotated absolute
-    // template (when pedagogical) is acceptable.
-    expect(autopilotCommand).not.toMatch(/\/ship\s+\.agent\/plans\/<slug>\.md/);
+  it("autopilot prompt template handoff uses <plan-path> or absolute shape, not .agent/plans/<slug>", () => {
+    // The user-facing `/ship` handoff line in the autopilot prompt template
+    // (read by the CLI Ralph loop, not a slash command anymore) must not
+    // print the legacy path shape. Either the abstract `<plan-path>`
+    // placeholder (when dynamic) or the annotated absolute template (when
+    // pedagogical) is acceptable.
+    const templatePath = path.join(
+      import.meta.dir,
+      "..",
+      "src",
+      "autopilot",
+      "prompt-template.md",
+    );
+    const autopilotTemplate = fs.readFileSync(templatePath, "utf8");
+    expect(autopilotTemplate).not.toMatch(/\/ship\s+\.agent\/plans\/<slug>\.md/);
     // Must reference one of the new shapes in the ship example.
     const hasNewShape =
-      autopilotCommand.includes("/ship <plan-path>") ||
-      autopilotCommand.includes("/ship ~/.glorious/opencode/");
+      autopilotTemplate.includes("/ship <plan-path>") ||
+      autopilotTemplate.includes("/ship ~/.glorious/opencode/");
     expect(hasNewShape).toBe(true);
   });
 });

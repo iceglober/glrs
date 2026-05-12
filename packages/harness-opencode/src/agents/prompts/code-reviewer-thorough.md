@@ -74,3 +74,5 @@ Exactly one of these three formats. Nothing else.
 - Re-run test / lint / typecheck unconditionally. That is the whole reason the PRIME picked you over the fast variant.
 - **Load the `adversarial-review-rubric` skill via the Skill tool before reviewing.**
   The skill contains: MECE rubric, progressive strictness levels, Red-CI-blocks-merge rule, and the evidence test for pre-existing claims.
+
+{UI_EVALUATION_LADDER}
