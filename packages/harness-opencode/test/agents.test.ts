@@ -208,11 +208,16 @@ describe("createAgents", () => {
     const plan = agents["plan"]!.prompt as string;
     expect(plan).toContain("Defensive posture");
     expect(plan).toContain("write permission");
-    expect(plan).toMatch(/ignore it|Ignore it|ignore\s+it\b/);
+    expect(plan).toMatch(/ignore it|Ignore it|ignore\s+it\b|Ignore those|ignore those/);
     // The "real denial looks like a tool error" clarification must be
     // present — this is the load-bearing mental model that short-circuits
     // the hallucination.
     expect(plan).toMatch(/tool error|write not permitted/);
+    // Scope qualifier — the defensive section must not be readable as
+    // a general write-unlock. Write permission is bounded to the plan
+    // directory only.
+    expect(plan).toMatch(/scoped to the plan directory only|plan directory only/);
+    expect(plan).toMatch(/MUST NOT write to any other path|not write to any other/);
   });
 
   it("build has correct model and temperature", () => {
