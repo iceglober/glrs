@@ -8,14 +8,16 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 17 agents", () => {
-    // 17 agents total: prime (mode:primary), plan + build + research (mode:all
-    // — primary AND task-tool-dispatchable), research-web + research-local +
-    // research-auto (mode:subagent — internal to @research's orchestration),
-    // plus 10 other pure subagents (spec-reviewer, code-reviewer,
+  it("returns exactly 18 agents", () => {
+    // 18 agents total: prime (mode:primary), autopilot-prime (mode:subagent
+    // — PRIME variant with question tool denied for lights-out runs),
+    // plan + build + research (mode:all — primary AND task-tool-
+    // dispatchable), research-web + research-local + research-auto
+    // (mode:subagent — internal to @research's orchestration), plus 10
+    // other pure subagents (spec-reviewer, code-reviewer,
     // code-reviewer-thorough, plan-reviewer, code-searcher, gap-analyzer,
     // architecture-advisor, docs-maintainer, lib-reader, agents-md-writer).
-    expect(Object.keys(agents).length).toBe(17);
+    expect(Object.keys(agents).length).toBe(18);
   });
 
   it("has 2 primary-capable agents besides plan (prime, build; mode=primary or mode=all)", () => {
@@ -31,13 +33,13 @@ describe("createAgents", () => {
     }
   });
 
-  it("has 16 subagent-capable agents (mode=subagent or mode=all)", () => {
+  it("has 17 subagent-capable agents (mode=subagent or mode=all)", () => {
     // "Subagent-capable" means the agent appears in other agents'
     // task-tool picker. mode: "subagent" and mode: "all" both qualify.
     // plan, build, research have mode:"all" — user-invocable AND
-    // task-dispatchable. research-web, research-local, research-auto have
-    // mode:"subagent" — internal to @research's orchestration, NOT
-    // user-selectable as primary. The other 10 are also mode:"subagent" only.
+    // task-dispatchable. research-web, research-local, research-auto and
+    // autopilot-prime have mode:"subagent" — NOT user-selectable as
+    // primary. The other 10 are also mode:"subagent" only.
     const subagentCapable = [
       "plan",
       "build",
@@ -45,6 +47,7 @@ describe("createAgents", () => {
       "research-web",
       "research-local",
       "research-auto",
+      "autopilot-prime",
       "spec-reviewer",
       "code-reviewer",
       "code-reviewer-thorough",
@@ -460,6 +463,49 @@ describe("research-* orchestrator agents", () => {
   test("AGENT_TIERS contains research-auto as deep tier", async () => {
     const { AGENT_TIERS } = await import("../src/agents/index.js");
     expect(AGENT_TIERS["research-auto"]).toBe("deep");
+  });
+});
+
+describe("autopilot-prime agent (question tool denied)", () => {
+  const agents = createAgents();
+
+  it("autopilot-prime agent exists and is mode:subagent", () => {
+    const agent = agents["autopilot-prime"];
+    expect(agent).toBeDefined();
+    expect(agent!.mode).toBe("subagent");
+  });
+
+  it("autopilot-prime uses PRIME's prompt verbatim", () => {
+    // The autopilot variant reuses the same prompt as prime — the
+    // autopilot-specific advisory lives in src/autopilot/prompt-template.md
+    // which is prepended by the Ralph loop at session-creation time.
+    const primePrompt = agents["prime"]!.prompt as string;
+    const autopilotPrompt = agents["autopilot-prime"]!.prompt as string;
+    expect(autopilotPrompt).toBe(primePrompt);
+  });
+
+  it("autopilot-prime disables the question tool", () => {
+    // This is the load-bearing assertion: if this ever flips to `true`
+    // or is removed, autopilot sessions will deadlock on the first
+    // question-tool invocation by PRIME. Must use the `tools` map, NOT
+    // the `permission` map — OpenCode's runtime only honors permission
+    // keys edit/bash/webfetch/doom_loop/external_directory; `question`
+    // in the permission map is a silent no-op. Tool disabling happens
+    // via `tools: { [name]: false }`.
+    const tools = agents["autopilot-prime"]!.tools as Record<string, boolean>;
+    expect(tools["question"]).toBe(false);
+  });
+
+  it("autopilot-prime inherits PRIME's permissions", () => {
+    const primePerms = agents["prime"]!.permission as Record<string, unknown>;
+    const autopilotPerms = agents["autopilot-prime"]!.permission as Record<string, unknown>;
+
+    // Spot-check a few permissions that should carry over from PRIME.
+    // If these drift, the autopilot variant would lose capabilities
+    // the normal PRIME has — and that would break the autopilot loop.
+    for (const key of ["edit", "webfetch", "ast_grep", "tsc_check", "serena", "linear"]) {
+      expect(autopilotPerms[key]).toEqual(primePerms[key]);
+    }
   });
 });
 

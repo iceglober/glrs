@@ -36,6 +36,7 @@ describe("AGENT_TIERS", () => {
 
     expect(deep).toEqual([
       "architecture-advisor",
+      "autopilot-prime",
       "code-reviewer-thorough",
       "gap-analyzer",
       "plan",

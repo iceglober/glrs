@@ -342,6 +342,23 @@ const PRIME_PERMISSIONS = {
   linear: "allow",
 };
 
+/**
+ * Autopilot sessions run without a user, so any tool that blocks on
+ * user input deadlocks the loop forever. The `question` tool is the
+ * canonical example (observed: 5 question-tool calls in iteration 1
+ * followed by a 6th that prompted and hung the session).
+ *
+ * The fix is at the `tools` map (not the `permission` map — verified
+ * that OpenCode's runtime only honors a narrow set of permission keys:
+ * edit/bash/webfetch/doom_loop/external_directory. `question` in the
+ * permission map is a silent no-op). Setting `tools.question = false`
+ * disables the tool at agent-config time so it's never registered for
+ * the session in the first place. No runtime enforcement needed.
+ */
+const AUTOPILOT_PRIME_DISABLED_TOOLS = {
+  question: false,
+} as const;
+
 const PLAN_PERMISSIONS = {
   edit: "allow" as const,
   // Plan agent is read-only aside from writing under the plan dir — but
@@ -620,6 +637,7 @@ export type ModelTier = "deep" | "mid" | "mid-execute" | "fast";
  */
 export const AGENT_TIERS: Record<string, ModelTier> = {
   prime: "deep",
+  "autopilot-prime": "deep",
   plan: "deep",
   "architecture-advisor": "deep",
   "plan-reviewer": "deep",
@@ -649,6 +667,14 @@ export function createAgents(): Record<string, AgentConfig> {
       model: "anthropic/claude-opus-4-7",
       temperature: 0.2,
       permission: PRIME_PERMISSIONS as AgentConfig["permission"],
+    }),
+    "autopilot-prime": agentFromPrompt(primePrompt, {
+      description: "PRIME for unattended autopilot sessions. Identical to `prime` except the `question` tool is disabled — autopilot has no user to answer interactive prompts, and a blocking question deadlocks the session. Not user-selectable; invoked by the Ralph loop.",
+      mode: "subagent",
+      model: "anthropic/claude-opus-4-7",
+      temperature: 0.2,
+      permission: PRIME_PERMISSIONS as AgentConfig["permission"],
+      tools: AUTOPILOT_PRIME_DISABLED_TOOLS as AgentConfig["tools"],
     }),
     plan: agentFromPrompt(planPrompt, {
       description: "Interactive planner. Orchestrates gap analysis and adversarial review. Produces a written plan in the repo-shared plan directory (resolve via `bunx @glrs-dev/harness-plugin-opencode plan-dir`).",

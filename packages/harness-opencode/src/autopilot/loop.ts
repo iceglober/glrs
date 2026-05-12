@@ -160,6 +160,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   const autopilotLog = createAutopilotLogger({ cwd: opts.cwd });
   const log = childLogger(autopilotLog.root, "autopilot.loop");
   const toolLog = childLogger(autopilotLog.root, "autopilot.tool");
+  const streamLog = childLogger(autopilotLog.root, "autopilot.stream");
 
   if (autopilotLog.logFilePath) {
     log.info({ file: autopilotLog.logFilePath }, `Logging to ${autopilotLog.logFilePath}`);
@@ -177,12 +178,14 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   }, timeoutMs);
 
   try {
-    // Create a session with PRIME
+    // Create a session with autopilot-prime (PRIME with the question
+    // tool denied — autopilot is lights-out and an interactive question
+    // deadlocks the session forever).
     const sessionId = await _createSession(server.client, {
       cwd: opts.cwd,
-      agentName: "prime",
+      agentName: "autopilot-prime",
     });
-    log.info({ sessionId }, "Session created with PRIME");
+    log.info({ sessionId }, "Session created with autopilot-prime");
 
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
       // Check kill switch before each iteration
@@ -211,6 +214,18 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       const iterStart = Date.now();
       log.info({ iteration, maxIterations }, `Iteration ${iteration}/${maxIterations} — sending prompt`);
 
+      // Stream-liveness state for this iteration. The agent emits text
+      // deltas (character-by-character streaming) while reasoning
+      // between tool calls. Without visible output here, a 30s-to-
+      // several-minute reasoning stream looks indistinguishable from a
+      // hang. Throttled to avoid log spam at ~6 deltas/sec.
+      let streamDeltaCount = 0;
+      let streamCharCount = 0;
+      let lastStreamLogAt = 0;
+      let lastToolOrStreamLogAt = Date.now();
+      const DEBUG_STREAM_INTERVAL_MS = 15_000;
+      const INFO_STREAM_INTERVAL_MS = 60_000;
+
       // Tool-call events go through pino at `debug` level. Default stderr
       // level is `info`, so users don't see tool chatter by default — but
       // the file sink captures everything. Set GLRS_LOG_LEVEL=debug (or
@@ -220,8 +235,57 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
         message: fullPrompt,
         stallMs,
         abortSignal: abort.signal,
+        // Autopilot is lights-out: auto-reject every permission prompt
+        // (question tool, edit gates, bash confirmations) so the agent
+        // can't deadlock waiting on a human response. The agent sees
+        // the call fail and must adapt or STOP.
+        autoRejectPermissions: true,
+        onPermissionRejected: (perm) => {
+          log.warn(
+            { iteration, permissionId: perm.id, permissionType: perm.type, title: perm.title },
+            `Auto-rejected permission: ${perm.type} — "${perm.title}"`,
+          );
+        },
         onToolCall: (toolName) => {
           toolLog.debug({ iteration, tool: toolName }, toolName);
+          lastToolOrStreamLogAt = Date.now();
+          // Reset the stream indicator when a tool fires — a tool call
+          // means the reasoning stream reached a natural checkpoint.
+          streamDeltaCount = 0;
+          streamCharCount = 0;
+          lastStreamLogAt = Date.now();
+        },
+        onTextDelta: (charCount) => {
+          streamDeltaCount += 1;
+          streamCharCount += charCount;
+          const now = Date.now();
+
+          // Debug-level stream indicator every 15s during sustained
+          // streaming. Always captured to file; only on stderr if
+          // GLRS_LOG_LEVEL=debug.
+          if (now - lastStreamLogAt >= DEBUG_STREAM_INTERVAL_MS) {
+            streamLog.debug(
+              { iteration, deltas: streamDeltaCount, chars: streamCharCount },
+              `streaming (${streamDeltaCount} deltas, ${streamCharCount} chars)`,
+            );
+            lastStreamLogAt = now;
+          }
+
+          // Info-level "still streaming" after 60s with no tool call.
+          // Visible by default so the user knows the agent is alive.
+          const silenceSinceLastTool = now - lastToolOrStreamLogAt;
+          if (silenceSinceLastTool >= INFO_STREAM_INTERVAL_MS) {
+            streamLog.info(
+              {
+                iteration,
+                deltas: streamDeltaCount,
+                chars: streamCharCount,
+                silenceMs: silenceSinceLastTool,
+              },
+              `still streaming (${streamDeltaCount} deltas, ${streamCharCount} chars, ${Math.round(silenceSinceLastTool / 1000)}s since last tool)`,
+            );
+            lastToolOrStreamLogAt = now;
+          }
         },
       });
 

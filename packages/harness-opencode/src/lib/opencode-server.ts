@@ -148,11 +148,22 @@ export async function createSession(
  * `session.chat` does not exist on the SDK — an earlier version of this
  * module used that name and silently failed at runtime.
  *
- * The optional `onToolCall` callback fires once per tool invocation the
- * agent performs, in real time. Used by the autopilot loop to emit
- * debug-level log events for each tool call. Only fires for tool calls
- * that reach the `completed` state — pending/running transitions are
- * filtered out.
+ * The optional `onToolCall` callback fires once per tool invocation that
+ * reaches the `completed` state. Used by the autopilot loop to emit
+ * debug-level log events for each tool call.
+ *
+ * The optional `onTextDelta` callback fires for each assistant text
+ * chunk the agent streams. Used by the autopilot loop's stream-liveness
+ * indicator — between tool calls, the agent may stream text for minutes
+ * while reasoning, and without this signal the user can't distinguish
+ * "still working" from "hung."
+ *
+ * When `autoRejectPermissions: true`, any `permission.updated` event
+ * fired for this session is immediately answered with `response: "reject"`.
+ * Used by autopilot to prevent the `question` tool (or any tool-approval
+ * prompt) from deadlocking the session — no human is available to answer.
+ * The `onPermissionRejected` callback (if provided) fires each time a
+ * permission is auto-rejected so the caller can log it.
  *
  * Returns the result kind.
  */
@@ -165,6 +176,13 @@ export async function sendAndWait(
     stallMs?: number;
     abortSignal?: AbortSignal;
     onToolCall?: (toolName: string) => void;
+    onTextDelta?: (charCount: number) => void;
+    autoRejectPermissions?: boolean;
+    onPermissionRejected?: (permission: {
+      id: string;
+      type: string;
+      title: string;
+    }) => void;
   },
 ): Promise<SessionResult> {
   const stallMs = opts.stallMs ?? 60 * 60 * 1000; // 60 min default
@@ -177,6 +195,9 @@ export async function sendAndWait(
     stallMs,
     abortSignal: opts.abortSignal,
     onToolCall: opts.onToolCall,
+    onTextDelta: opts.onTextDelta,
+    autoRejectPermissions: opts.autoRejectPermissions,
+    onPermissionRejected: opts.onPermissionRejected,
   });
 
   // Send the message via the correct SDK method
@@ -200,6 +221,17 @@ export async function sendAndWait(
  * When `onToolCall` is provided, fires once per tool invocation that
  * reaches the `completed` state. Filters out pending/running transitions
  * to avoid double-counting.
+ *
+ * When `onTextDelta` is provided, fires for each non-empty delta string
+ * the server emits (charCount = delta.length). Used by autopilot to
+ * signal liveness during long reasoning streams between tool calls.
+ *
+ * When `autoRejectPermissions: true`, any `permission.updated` event
+ * for this session is answered with `response: "reject"` via
+ * `POST /session/{id}/permissions/{permissionID}`. This prevents the
+ * `question` tool (and any tool-approval prompts) from deadlocking the
+ * session when no human is present to answer. `onPermissionRejected`
+ * fires synchronously with the permission payload so callers can log.
  */
 export async function waitForIdle(
   client: OpencodeClient,
@@ -208,6 +240,13 @@ export async function waitForIdle(
     stallMs?: number;
     abortSignal?: AbortSignal;
     onToolCall?: (toolName: string) => void;
+    onTextDelta?: (charCount: number) => void;
+    autoRejectPermissions?: boolean;
+    onPermissionRejected?: (permission: {
+      id: string;
+      type: string;
+      title: string;
+    }) => void;
   },
 ): Promise<SessionResult> {
   const stallMs = opts.stallMs ?? 60 * 60 * 1000;
@@ -258,6 +297,25 @@ export async function waitForIdle(
           const props = ev.properties ?? {};
           const type = ev.type ?? "";
 
+          // Text-delta detection: both `message.part.delta` (bare delta
+          // events) and `message.part.updated` with a non-empty `delta`
+          // field carry streamed assistant text. Observed both shapes
+          // in the wild; handle both.
+          if (opts.onTextDelta && (type === "message.part.delta" || type === "message.part.updated")) {
+            const delta = props["delta"];
+            if (typeof delta === "string" && delta.length > 0) {
+              resetStall();
+              try {
+                opts.onTextDelta(delta.length);
+              } catch {
+                // Callback errors don't affect the loop
+              }
+              // Fall through to also consider tool-call detection below,
+              // since `message.part.updated` can carry BOTH a tool part
+              // transition AND a delta on the same event.
+            }
+          }
+
           // Tool-call detection: message.part.updated with a tool part
           // that transitioned to `completed`. Fires the callback exactly
           // once per call (dedup'd by callID).
@@ -291,6 +349,79 @@ export async function waitForIdle(
           }
 
           const eventSessionId = props["sessionID"] as string | undefined;
+
+          // Auto-reject blocking prompts (autopilot mode). Handled
+          // BEFORE the session-ID guard because `question.asked` events
+          // may not carry a sessionID in their properties (the event
+          // type isn't in the SDK's typed event union; its payload
+          // shape isn't documented). If the event is for another
+          // session, abort is still safe — our session won't be
+          // affected — but log it so we can see it happened.
+          if (
+            opts.autoRejectPermissions &&
+            (type === "permission.updated" || type === "question.asked")
+          ) {
+            const permissionId = props["id"] as string | undefined;
+            const permissionType = type === "question.asked" ? "question" : ((props["type"] as string) ?? "unknown");
+            const permissionTitle = (props["title"] as string) ?? "";
+
+            if (opts.onPermissionRejected) {
+              try {
+                opts.onPermissionRejected({
+                  id: permissionId ?? "unknown",
+                  type: permissionType,
+                  title: permissionTitle,
+                });
+              } catch {
+                // Callback errors don't affect the loop
+              }
+            }
+
+            if (type === "permission.updated" && permissionId) {
+              // Fire-and-forget reject via SDK
+              (async () => {
+                try {
+                  await (
+                    client as unknown as {
+                      postSessionIdPermissionsPermissionId: (opts: {
+                        path: { id: string; permissionID: string };
+                        body: { response: "once" | "always" | "reject" };
+                      }) => Promise<unknown>;
+                    }
+                  ).postSessionIdPermissionsPermissionId({
+                    path: { id: opts.sessionId, permissionID: permissionId },
+                    body: { response: "reject" },
+                  });
+                } catch {
+                  // Best effort
+                }
+              })();
+              continue;
+            }
+
+            if (type === "question.asked") {
+              // No reject-endpoint for the question tool (as of
+              // @opencode-ai/sdk 1.14). Abort the session to stop the
+              // agent, then settle with an error kind so the Ralph loop
+              // sees this iteration failed and can handle it.
+              (async () => {
+                try {
+                  await client.session.abort({ path: { id: opts.sessionId } });
+                } catch {
+                  // Best effort
+                }
+              })();
+              settle({
+                kind: "error",
+                message:
+                  `Agent invoked the question tool, which is forbidden in autopilot mode. ` +
+                  `The question tool blocks on user input and no user is present. ` +
+                  `Question title: "${permissionTitle}". ` +
+                  `The agent must solve this without asking; adapt the prompt or abort.`,
+              });
+              break;
+            }
+          }
 
           // Only care about our session for session-level events
           if (eventSessionId !== opts.sessionId) continue;

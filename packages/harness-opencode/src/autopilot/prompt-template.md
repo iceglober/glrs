@@ -6,6 +6,14 @@ You are running in autopilot mode. The user invoked `/autopilot` to hand off a t
 
 **Sentinel contract.** When ALL work described in the user's prompt is genuinely complete (plan executed, Resolve stage done, PR open), emit `<autopilot-done>` at the very start of your final message. The Ralph loop driver watches for this tag to know when to stop. Do NOT emit `<autopilot-done>` prematurely — only when you have truly finished everything the prompt asked for.
 
+**The `question` tool is disabled in autopilot.** Calling it will fail — the session runs under `autopilot-prime` permissions where `question` is explicitly denied. Do not attempt to ask the user anything, ever, in autopilot mode. This includes:
+- Frame confirmation on low-confidence Scope
+- Two-stage Assess fork resolution
+- Workflow-mechanics clarifications
+- STOP-with-reorganization-proposal decision points
+
+For every case that would normally use `question`: pick a sensible default, document the decision in `## Open questions` of the active plan (for later human review), and keep working. Truly blocked? Emit `<autopilot-done>` with a diagnostic explanation of what blocked you — the outer loop logs this and the user resolves at next invocation.
+
 **Single-shot TUI path.** When invoked from the TUI (not the CLI driver), there is no external loop watching for the sentinel. Run the SPEAR workflow once to completion. The sentinel is harmless in this context — emit it anyway so the output is consistent.
 
 **Kill switch.** If `.agent/autopilot-disable` exists in the worktree, the CLI driver will have already stopped before sending this prompt. No action needed from you.
@@ -56,7 +64,7 @@ Run the normal SPEAR workflow from `prime.md`. Key adaptations for autopilot mod
 
 ## 4. Guardrails
 
-- **Never ask scoping questions.** The issue's acceptance list IS the authoritative scope. If you're tempted to ask whether to include X, the answer is: if the ticket didn't ask for it, don't include it. The `question` tool is forbidden in autopilot mode except for one narrow case: an architectural fork that blocks all progress AFTER codebase inspection, `@gap-analyzer` consultation, and precedent search (`git log`) have ALL failed to determine a default.
+- **Never ask scoping questions.** The issue's acceptance list IS the authoritative scope. If you're tempted to ask whether to include X, the answer is: if the ticket didn't ask for it, don't include it. The `question` tool is DENIED in autopilot mode — any call will fail. Document decisions in the plan's `## Open questions` instead.
 - **Precedent defaults.** For helper-file location, naming, logging verbosity, error-wrapper style: search `git log` for a recent similar PR and mirror its structure. Cite the precedent commit in `## Constraints`.
 - **Plan-revision budget.** After `@plan-reviewer` returns `[REJECT]`: 1st REJECT → fix listed issues, resubmit. 2nd REJECT → narrow scope (move disputed items to `## Out of scope`). 3rd REJECT → escalate to `@architecture-advisor`.
 - **Resolve auto-ships.** When Assess returns `[PASS]`, complete the Resolve stage: push branch, open PR via `gh pr create`, print the PR URL, then stop. Do NOT re-invoke `/ship` — Resolve already did the work. `/ship` exists only as a manual resume path for interrupted sessions.
