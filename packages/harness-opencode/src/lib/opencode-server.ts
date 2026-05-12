@@ -71,9 +71,10 @@ export async function startServer(opts: {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
   const port = opts.port ?? 0;
 
-  const server = await (createOpencodeServer as unknown as (opts: { port: number; timeout: number }) => Promise<{ url: string; close: () => Promise<void> }>)({
+  const server = await createOpencodeServer({
     port,
     timeout: timeoutMs,
+    hostname: "127.0.0.1",
   });
 
   const client = createOpencodeClient({ baseUrl: server.url });
@@ -99,7 +100,7 @@ export async function startServer(opts: {
 export async function selfTest(client: OpencodeClient): Promise<void> {
   try {
     // Simple health check: list sessions (should return empty or existing)
-    await (client.session as unknown as { list: () => Promise<unknown> }).list();
+    await client.session.list();
   } catch (err) {
     throw new Error(
       `OpenCode server self-test failed — the server started but isn't responding to API calls.\n` +
@@ -114,24 +115,39 @@ export async function selfTest(client: OpencodeClient): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Create a new OpenCode session for the given directory and agent.
+ * Create a new OpenCode session for the given directory.
+ *
+ * Note: the SDK's `session.create` body takes only `parentID` and `title`
+ * — agent selection is a per-message concern in OpenCode's model and lives
+ * on `session.prompt`'s body, not on session creation. The working
+ * directory is passed via the `query.directory` param.
+ *
  * Returns the session ID.
  */
 export async function createSession(
   client: OpencodeClient,
   opts: { cwd: string; agentName?: string },
 ): Promise<string> {
-  const session = await (client.session.create as unknown as (opts: { body: Record<string, unknown> }) => Promise<{ id: string }>)({
-    body: {
-      directory: opts.cwd,
-      ...(opts.agentName ? { agentID: opts.agentName } : {}),
-    },
+  const result = await client.session.create({
+    query: { directory: opts.cwd },
+    body: {},
   });
-  return session.id;
+  if (!result.data) {
+    throw new Error("session.create returned no data");
+  }
+  // The `agentName` option is accepted for API compatibility but has no
+  // effect at session-creation time. Callers who need it should pass it
+  // through `sendAndWait`'s future `agent` option (not yet exposed).
+  return result.data.id;
 }
 
 /**
  * Send a message to a session and wait for the agent to go idle.
+ *
+ * Uses `session.prompt` (the correct SDK method for sending a message).
+ * `session.chat` does not exist on the SDK — an earlier version of this
+ * module used that name and silently failed at runtime.
+ *
  * Returns the result kind.
  */
 export async function sendAndWait(
@@ -139,28 +155,39 @@ export async function sendAndWait(
   opts: {
     sessionId: string;
     message: string;
+    agentName?: string;
     stallMs?: number;
     abortSignal?: AbortSignal;
   },
 ): Promise<SessionResult> {
   const stallMs = opts.stallMs ?? 60 * 60 * 1000; // 60 min default
 
-  // Send the message
-  await (client as unknown as { session: { chat: (opts: { sessionID: string; body: Record<string, unknown> }) => Promise<void> } }).session.chat({
-    sessionID: opts.sessionId,
-    body: { content: [{ type: "text", text: opts.message }] },
-  });
-
-  // Wait for idle
-  return waitForIdle(client, {
+  // Start waiting for idle BEFORE sending the message so we don't miss
+  // fast events. The subscription is established; the message send will
+  // produce events on it.
+  const idlePromise = waitForIdle(client, {
     sessionId: opts.sessionId,
     stallMs,
     abortSignal: opts.abortSignal,
   });
+
+  // Send the message via the correct SDK method
+  await client.session.prompt({
+    path: { id: opts.sessionId },
+    body: {
+      parts: [{ type: "text", text: opts.message }],
+      ...(opts.agentName ? { agent: opts.agentName } : {}),
+    },
+  });
+
+  return idlePromise;
 }
 
 /**
  * Wait for a session to go idle (agent done), stall, abort, or error.
+ *
+ * `client.event.subscribe()` is async and returns `{ stream }` (a
+ * `ServerSentEventsResult`). The stream is an AsyncGenerator of events.
  */
 export async function waitForIdle(
   client: OpencodeClient,
@@ -172,16 +199,17 @@ export async function waitForIdle(
 ): Promise<SessionResult> {
   const stallMs = opts.stallMs ?? 60 * 60 * 1000;
 
+  // Establish the subscription eagerly (before we wait for events)
+  const sse = await client.event.subscribe();
+
   return new Promise<SessionResult>((resolve) => {
     let stallTimer: ReturnType<typeof setTimeout> | null = null;
-    let unsubscribe: (() => void) | null = null;
     let settled = false;
 
     const settle = (result: SessionResult) => {
       if (settled) return;
       settled = true;
       if (stallTimer) clearTimeout(stallTimer);
-      if (unsubscribe) unsubscribe();
       resolve(result);
     };
 
@@ -202,16 +230,14 @@ export async function waitForIdle(
     // Start stall timer
     resetStall();
 
-    // Subscribe to events
-    const stream = (client.event.subscribe as unknown as () => AsyncIterable<{ type: string; properties: Record<string, unknown> }>)();
-    let streamDone = false;
-
+    // Iterate the event stream
     (async () => {
       try {
-        for await (const event of stream) {
+        for await (const event of sse.stream) {
           if (settled) break;
 
-          const props = (event as { properties?: Record<string, unknown> }).properties ?? {};
+          const ev = event as { type?: string; properties?: Record<string, unknown> };
+          const props = ev.properties ?? {};
           const eventSessionId = props["sessionID"] as string | undefined;
 
           // Only care about our session
@@ -219,7 +245,7 @@ export async function waitForIdle(
 
           resetStall();
 
-          const type = (event as { type?: string }).type ?? "";
+          const type = ev.type ?? "";
 
           if (type === "session.idle") {
             settle({ kind: "idle" });
@@ -236,14 +262,8 @@ export async function waitForIdle(
         if (!settled) {
           settle({ kind: "error", message: err instanceof Error ? err.message : String(err) });
         }
-      } finally {
-        streamDone = true;
       }
     })();
-
-    unsubscribe = () => {
-      // The stream will be garbage collected; we just stop caring about it
-    };
   });
 }
 
@@ -255,8 +275,10 @@ export async function getSessionCost(
   sessionId: string,
 ): Promise<number> {
   try {
-    const session = await (client.session.get as unknown as (opts: { sessionID: string }) => Promise<{ cost?: number }>)({ sessionID: sessionId });
-    return (session as { cost?: number }).cost ?? 0;
+    const result = await client.session.get({ path: { id: sessionId } });
+    if (!result.data) return 0;
+    const session = result.data as { cost?: number };
+    return session.cost ?? 0;
   } catch {
     return 0;
   }
@@ -276,21 +298,21 @@ export async function getLastAssistantMessage(
   sessionId: string,
 ): Promise<string> {
   try {
+    const result = await client.session.messages({ path: { id: sessionId } });
+    if (!result.data) return "";
+
     type MessageEntry = {
       info: { role: string };
       parts: Array<{ type: string; text?: string }>;
     };
-    const messages = await (
-      client.session.messages as unknown as (opts: {
-        path: { id: string };
-      }) => Promise<MessageEntry[]>
-    )({ path: { id: sessionId } });
+    const messages = result.data as unknown as MessageEntry[];
 
     // Find the last assistant message
     const assistantMessages = messages.filter((m) => m.info.role === "assistant");
     if (assistantMessages.length === 0) return "";
 
     const last = assistantMessages[assistantMessages.length - 1];
+    if (!last) return "";
 
     // Concatenate all text parts
     return last.parts
