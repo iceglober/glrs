@@ -64,7 +64,7 @@ import { uninstall } from "./cli/uninstall.js";
 import { doctor } from "./cli/doctor.js";
 import { planCheck } from "./bin/plan-check.js";
 import { getPlanDir, migratePlans } from "./plan-paths.js";
-import { autopilotCmd } from "./autopilot/cli.js";
+import { loopCmd } from "./autopilot/cli.js";
 import { startUpdateCheck } from "./cli/cli-update.js";
 
 const VERSION = "0.1.0";
@@ -216,7 +216,11 @@ const cli = subcommands({
     doctor: doctorCmd,
     "plan-check": planCheckCmd,
     "plan-dir": planDirCmd,
-    autopilot: autopilotCmd,
+    // `loop` is the canonical name for the Ralph loop CLI; `autopilot`
+    // resolves via cmd-ts's `aliases` field on loopCmd. PR 3 will
+    // diverge them: `loop` stays as the raw prompt runner, `autopilot`
+    // becomes an interactive scoping walkthrough.
+    loop: loopCmd,
   },
 });
 
