@@ -323,19 +323,72 @@ export async function runInteractiveAutopilot(
       const isDir = fs.statSync(selectedPlan).isDirectory();
       const planPath = isDir ? selectedPlan : selectedPlan;
 
-      const banner = _deps?.onBanner ?? ((msg: string) => process.stdout.write(`\n${msg}\n`));
-      banner(`→ Running loop against plan: ${planPath}`);
+      // Pre-flight: parse the plan and check if there's actually work to do
+      const { parsePlanState } = await import("./plan-parser.js");
+      const planState = parsePlanState(planPath);
 
-      // Import the loop runner
-      const { runLoopSession } = await import("./loop-session.js");
-      const _runLoop = _deps?.runLoop ?? runLoopSession;
-      const loopResult = await _runLoop({ planPath, cwd });
+      if (planState.totalItems > 0 && planState.checkedItems === planState.totalItems) {
+        // All items checked — warn the user
+        const { select: selectAction } = await import("@inquirer/prompts");
+        const action = await selectAction({
+          message: `All ${planState.totalItems} items in this plan are already checked. What do you want to do?`,
+          choices: [
+            { name: "Uncheck all items and run from scratch", value: "uncheck" },
+            { name: "Run anyway (agent will verify/audit the checked items)", value: "run" },
+            { name: "Cancel and pick a different plan", value: "cancel" },
+          ],
+        });
 
-      return {
-        scopePath: "", // no scoping for existing plans
-        planPath,
-        loopResult,
-      };
+        if (action === "cancel") {
+          process.stderr.write("\n  Cancelled. Starting new feature scoping.\n\n");
+          // Fall through to Path B below
+        } else {
+          if (action === "uncheck") {
+            // Uncheck all items in all .md files in the plan
+            const uncheckFiles = isDir
+              ? fs.readdirSync(planPath).filter((f) => f.endsWith(".md")).map((f) => path.join(planPath, f))
+              : [planPath];
+            for (const file of uncheckFiles) {
+              const content = fs.readFileSync(file, "utf-8");
+              const unchecked = content.replace(/- \[x\]/g, "- [ ]");
+              fs.writeFileSync(file, unchecked);
+            }
+            process.stderr.write(`\n  ✓ Unchecked all items in ${uncheckFiles.length} file(s).\n\n`);
+          }
+
+          const banner = _deps?.onBanner ?? ((msg: string) => process.stdout.write(`\n${msg}\n`));
+          banner(`→ Running loop against plan: ${planPath}`);
+
+          const { runLoopSession } = await import("./loop-session.js");
+          const _runLoop = _deps?.runLoop ?? runLoopSession;
+          const loopResult = await _runLoop({ planPath, cwd });
+
+          return {
+            scopePath: "",
+            planPath,
+            loopResult,
+          };
+        }
+      } else {
+        // Plan has unchecked items — proceed normally
+        const unchecked = planState.totalItems - planState.checkedItems;
+        process.stderr.write(
+          `\n  Plan: ${planState.totalItems} items, ${unchecked} remaining.\n\n`,
+        );
+
+        const banner = _deps?.onBanner ?? ((msg: string) => process.stdout.write(`\n${msg}\n`));
+        banner(`→ Running loop against plan: ${planPath}`);
+
+        const { runLoopSession } = await import("./loop-session.js");
+        const _runLoop = _deps?.runLoop ?? runLoopSession;
+        const loopResult = await _runLoop({ planPath, cwd });
+
+        return {
+          scopePath: "",
+          planPath,
+          loopResult,
+        };
+      }
     }
   }
 
