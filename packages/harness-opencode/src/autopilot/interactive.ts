@@ -284,11 +284,35 @@ export async function runInteractiveAutopilot(
 
   // Path A: existing plan — browse and run loop directly
   if (hasExistingPlan) {
+    // Check both repo-local ./plans/ and the harness-shared plan dir.
+    // Repo-local plans (written by humans) take priority in the listing.
+    const repoLocalPlansDir = path.join(cwd, "plans");
+    const hasRepoLocal = fs.existsSync(repoLocalPlansDir) && fs.statSync(repoLocalPlansDir).isDirectory();
+    const hasShared = fs.existsSync(planDir) && fs.statSync(planDir).isDirectory();
+
+    let browseRoot: string;
+    if (hasRepoLocal && hasShared) {
+      // Both exist — ask which to browse
+      const { select } = await import("@inquirer/prompts");
+      const which = await select({
+        message: "Where are your plans?",
+        choices: [
+          { name: `./plans/ (repo-local)`, value: repoLocalPlansDir },
+          { name: `${planDir} (harness-shared)`, value: planDir },
+        ],
+      });
+      browseRoot = which;
+    } else if (hasRepoLocal) {
+      browseRoot = repoLocalPlansDir;
+    } else {
+      browseRoot = planDir;
+    }
+
     let selectedPlan: string | null;
     if (_deps?.browsePlans) {
-      selectedPlan = await _deps.browsePlans(planDir);
+      selectedPlan = await _deps.browsePlans(browseRoot);
     } else {
-      selectedPlan = await browsePlansDir(planDir, _deps?.readdirSync);
+      selectedPlan = await browsePlansDir(browseRoot, _deps?.readdirSync);
     }
 
     if (!selectedPlan) {
