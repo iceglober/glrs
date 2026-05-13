@@ -256,9 +256,9 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
         abortSignal: abort.signal,
         // Autopilot is lights-out: auto-reject every permission prompt
         // (question tool, edit gates, bash confirmations) so the agent
-        // can't deadlock waiting on a human response. The agent sees
-        // the call fail and must adapt or STOP.
+        // can't deadlock waiting on a human response.
         autoRejectPermissions: true,
+        serverUrl: server.url,
         onPermissionRejected: (perm) => {
           log.warn(
             { iteration, permissionId: perm.id, permissionType: perm.type, title: perm.title },
@@ -341,7 +341,63 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
         };
       }
 
-      // result.kind === "idle" — check for sentinel FIRST.
+      if (result.kind === "question_rejected") {
+        // The agent tried to use the question tool. The question was
+        // rejected via the /question/{id}/reject endpoint. Instead of
+        // killing the whole run, re-send the prompt with an explicit
+        // "no questions" reminder. The agent sees the rejection and
+        // should adapt. Count this as a non-progress iteration toward
+        // struggle detection so persistent question-asking still
+        // terminates eventually.
+        log.warn(
+          { iteration, questionTitle: result.title },
+          `Question rejected — re-sending prompt with reminder (iteration ${iteration})`,
+        );
+
+        const reminderResult = await _sendAndWait(server.client, {
+          sessionId,
+          message:
+            fullPrompt +
+            "\n\nIMPORTANT: Your previous attempt to use the question tool was rejected. " +
+            "The question tool is not available in autopilot mode. " +
+            "You must solve this without asking the user. Pick a sensible default, " +
+            "document the decision in the plan's ## Open questions, and continue working.",
+          stallMs,
+          abortSignal: abort.signal,
+          autoRejectPermissions: true,
+          serverUrl: server.url,
+          onPermissionRejected: (perm) => {
+            log.warn(
+              { iteration, permissionId: perm.id, permissionType: perm.type },
+              `Auto-rejected permission on retry: ${perm.type}`,
+            );
+          },
+          onToolCall: (toolName) => {
+            toolLog.debug({ iteration, tool: toolName }, toolName);
+          },
+        });
+
+        // If the retry also hits question_rejected, treat as error
+        if (reminderResult.kind === "question_rejected") {
+          log.error(
+            { iteration },
+            "Agent invoked question tool twice in same iteration — giving up on this iteration",
+          );
+          // Fall through to progress check — counts as no-progress
+        } else if (reminderResult.kind !== "idle") {
+          // Non-idle, non-question result on retry — treat as the
+          // iteration result and let the normal handlers below process it
+          // (but we've already consumed the iteration, so just count
+          // it as no-progress and continue)
+          log.warn(
+            { iteration, kind: reminderResult.kind },
+            `Retry after question rejection returned ${reminderResult.kind}`,
+          );
+        }
+        // Fall through to sentinel check + progress tracking below
+      }
+
+      // result.kind === "idle" (or fell through from question_rejected recovery)
       // An agent that emits <autopilot-done> on a zero-progress iteration
       // (e.g., "I'm confirming completion; previous iterations wrote all the
       // files") must exit as "sentinel", NOT be counted toward struggle.

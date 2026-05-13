@@ -34,7 +34,8 @@ export type SessionResult =
   | { kind: "idle" }
   | { kind: "stall"; stallMs: number }
   | { kind: "abort" }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  | { kind: "question_rejected"; title: string };
 
 // ---------------------------------------------------------------------------
 // Server lifecycle
@@ -178,6 +179,8 @@ export async function sendAndWait(
     onToolCall?: (toolName: string) => void;
     onTextDelta?: (charCount: number) => void;
     autoRejectPermissions?: boolean;
+    /** Server URL for raw HTTP calls (question-reject endpoint). */
+    serverUrl?: string;
     onPermissionRejected?: (permission: {
       id: string;
       type: string;
@@ -197,6 +200,7 @@ export async function sendAndWait(
     onToolCall: opts.onToolCall,
     onTextDelta: opts.onTextDelta,
     autoRejectPermissions: opts.autoRejectPermissions,
+    serverUrl: opts.serverUrl,
     onPermissionRejected: opts.onPermissionRejected,
   });
 
@@ -242,6 +246,8 @@ export async function waitForIdle(
     onToolCall?: (toolName: string) => void;
     onTextDelta?: (charCount: number) => void;
     autoRejectPermissions?: boolean;
+    /** Server URL for raw HTTP calls (question-reject endpoint). */
+    serverUrl?: string;
     onPermissionRejected?: (permission: {
       id: string;
       type: string;
@@ -400,24 +406,26 @@ export async function waitForIdle(
             }
 
             if (type === "question.asked") {
-              // No reject-endpoint for the question tool (as of
-              // @opencode-ai/sdk 1.14). Abort the session to stop the
-              // agent, then settle with an error kind so the Ralph loop
-              // sees this iteration failed and can handle it.
-              (async () => {
-                try {
-                  await client.session.abort({ path: { id: opts.sessionId } });
-                } catch {
-                  // Best effort
-                }
-              })();
+              // Use the v2 question-reject endpoint: POST /question/{requestID}/reject
+              // The v1 SDK doesn't have a typed method for this, so we make
+              // a raw HTTP call using the server URL.
+              if (opts.serverUrl && permissionId) {
+                (async () => {
+                  try {
+                    await fetch(`${opts.serverUrl}/question/${permissionId}/reject`, {
+                      method: "POST",
+                    });
+                  } catch {
+                    // Best effort — if reject fails, the session will stall
+                    // and the stall timeout will catch it.
+                  }
+                })();
+              }
+              // Settle with question_rejected so the loop can retry
+              // with a "no questions" reminder instead of dying.
               settle({
-                kind: "error",
-                message:
-                  `Agent invoked the question tool, which is forbidden in autopilot mode. ` +
-                  `The question tool blocks on user input and no user is present. ` +
-                  `Question title: "${permissionTitle}". ` +
-                  `The agent must solve this without asking; adapt the prompt or abort.`,
+                kind: "question_rejected",
+                title: permissionTitle,
               });
               break;
             }
