@@ -175,6 +175,7 @@ describe("runInteractiveAutopilot", () => {
     const calls: string[] = [];
 
     const result = await runInteractiveAutopilot("/tmp/repo", {
+      promptExistingPlan: async () => false,
       promptGoal: async () => "Add user authentication",
       promptTicketRef: async () => "",
       getPlanDir: async (_cwd) => planDir,
@@ -213,6 +214,7 @@ describe("runInteractiveAutopilot", () => {
     fs.mkdirSync(planDir, { recursive: true });
 
     await runInteractiveAutopilot("/tmp/repo", {
+      promptExistingPlan: async () => false,
       promptGoal: async () => "Fix login bug",
       promptTicketRef: async () => "LIN-123",
       getPlanDir: async (_cwd) => planDir,
@@ -246,6 +248,7 @@ describe("runInteractiveAutopilot", () => {
     let capturedScoperOpts: unknown = null;
 
     await runInteractiveAutopilot("/tmp/repo", {
+      promptExistingPlan: async () => false,
       promptGoal: async () => "Build a dashboard",
       promptTicketRef: async () => "",
       getPlanDir: async (_cwd) => planDir,
@@ -281,7 +284,8 @@ describe("runInteractiveAutopilot", () => {
 
     await expect(
       runInteractiveAutopilot("/tmp/repo", {
-        promptGoal: async () => "Build something",
+        promptExistingPlan: async () => false,
+      promptGoal: async () => "Build something",
         promptTicketRef: async () => "",
         getPlanDir: async (_cwd) => planDir,
         mkdirSync: (p, o) => fs.mkdirSync(p, o),

@@ -1,10 +1,14 @@
 /**
  * Interactive autopilot entry point.
  *
- * Orchestrates three sequential sessions:
- *   1. @scoper session (interactive, produces scope.md)
- *   2. @plan session (headless, reads scope.md, produces the plan)
- *   3. loop session (headless, executes the plan)
+ * Two paths:
+ *   A. Existing plan: user browses the plans directory, selects a plan
+ *      file or directory, and the loop runs against it immediately
+ *      (skipping scoping and planning).
+ *   B. New feature: three sequential sessions:
+ *      1. @scoper session (interactive wizard, produces scope.md)
+ *      2. @plan session (headless, reads scope.md, produces the plan)
+ *      3. loop session (headless, executes the plan)
  *
  * Each phase prints a structured status banner to the terminal.
  * Dependency-injected for testability.
@@ -125,12 +129,18 @@ export interface InteractiveAutopilotDeps {
   promptGoal?: () => Promise<string>;
   /** Mock for @inquirer/prompts input() (ticket ref) */
   promptTicketRef?: () => Promise<string>;
+  /** Mock for the "existing plan?" gate */
+  promptExistingPlan?: () => Promise<boolean>;
+  /** Mock for the plan-browser */
+  browsePlans?: (planDir: string) => Promise<string | null>;
   /** Override getPlanDir */
   getPlanDir?: (cwd: string) => Promise<string>;
   /** Override fs.mkdirSync */
   mkdirSync?: (p: string, opts?: { recursive?: boolean }) => void;
   /** Override fs.writeFileSync */
   writeFileSync?: (p: string, content: string) => void;
+  /** Override fs.readdirSync */
+  readdirSync?: (p: string, opts: { withFileTypes: true }) => fs.Dirent[];
   /** Runner overrides */
   runScoper?: (opts: ScoperSessionOptions) => Promise<ScoperSessionResult>;
   runPlan?: (opts: PlanSessionOptions) => Promise<PlanSessionResult>;
@@ -138,18 +148,174 @@ export interface InteractiveAutopilotDeps {
   onBanner?: (message: string) => void;
 }
 
+// ---------------------------------------------------------------------------
+// Plan browser — deterministic inquirer-driven directory navigation
+// ---------------------------------------------------------------------------
+
+/**
+ * Browse the plans directory and let the user select a plan file or
+ * directory. Returns the selected path, or null if the user backs out
+ * to the top level and cancels.
+ *
+ * Selecting a directory = multi-file plan (loop runs against main.md).
+ * Selecting a .md file = single-file plan.
+ */
+async function browsePlansDir(
+  planDir: string,
+  _readdirSync?: (p: string, opts: { withFileTypes: true }) => fs.Dirent[],
+): Promise<string | null> {
+  const { select } = await import("@inquirer/prompts");
+  const readdir = _readdirSync ?? ((p: string, o: { withFileTypes: true }) => fs.readdirSync(p, o));
+
+  let currentDir = planDir;
+
+  while (true) {
+    const entries = readdir(currentDir, { withFileTypes: true });
+    const dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
+    const files = entries.filter((e) => e.isFile() && e.name.endsWith(".md")).map((e) => e.name).sort();
+
+    if (dirs.length === 0 && files.length === 0) {
+      process.stderr.write(`\n  No plans found in ${currentDir}\n\n`);
+      return null;
+    }
+
+    type Choice = { name: string; value: string };
+    const choices: Choice[] = [];
+
+    // Directories — selecting one either drills in or selects the whole dir
+    for (const d of dirs) {
+      const dirPath = path.join(currentDir, d);
+      const hasMain = fs.existsSync(path.join(dirPath, "main.md"));
+      const fileCount = readdir(dirPath, { withFileTypes: true }).filter((e) => e.isFile()).length;
+      choices.push({
+        name: hasMain
+          ? `${d}/              (multi-file plan — ${fileCount} files)`
+          : `${d}/              (${fileCount} files)`,
+        value: `dir:${dirPath}`,
+      });
+    }
+
+    // Files
+    for (const f of files) {
+      choices.push({
+        name: `${f}`,
+        value: `file:${path.join(currentDir, f)}`,
+      });
+    }
+
+    // Navigation
+    if (currentDir !== planDir) {
+      choices.push({ name: "↩ Back", value: "back" });
+    }
+    choices.push({ name: "✕ Cancel (scope a new feature instead)", value: "cancel" });
+
+    const answer = await select({
+      message: "Select a plan:",
+      choices,
+    });
+
+    if (answer === "cancel") return null;
+    if (answer === "back") {
+      currentDir = path.dirname(currentDir);
+      continue;
+    }
+
+    if (answer.startsWith("file:")) {
+      return answer.slice("file:".length);
+    }
+
+    if (answer.startsWith("dir:")) {
+      const dirPath = answer.slice("dir:".length);
+      const hasMain = fs.existsSync(path.join(dirPath, "main.md"));
+
+      if (hasMain) {
+        // Offer: select the whole directory (multi-file plan) or drill in
+        const dirAction = await select({
+          message: `${path.basename(dirPath)}/ has a main.md. What do you want?`,
+          choices: [
+            { name: "Select this as a multi-file plan", value: "select" },
+            { name: "Browse files inside", value: "browse" },
+            { name: "↩ Back", value: "back" },
+          ],
+        });
+
+        if (dirAction === "select") return dirPath;
+        if (dirAction === "browse") {
+          currentDir = dirPath;
+          continue;
+        }
+        // "back" — stay in current dir
+        continue;
+      }
+
+      // No main.md — just drill in
+      currentDir = dirPath;
+      continue;
+    }
+  }
+}
+
 /**
  * CLI entry point for `glrs oc autopilot`.
  *
- * Collects initial input from the user via inquirer, derives a slug,
- * resolves the plan directory, writes a scope-seed.md, then runs the
- * three-phase orchestrator with real session runners.
+ * Two paths:
+ *   A. Existing plan: browse plans dir, select, skip to loop.
+ *   B. New feature: scope → plan → loop.
  */
 export async function runInteractiveAutopilot(
   cwd: string,
   _deps?: InteractiveAutopilotDeps,
 ): Promise<AutopilotOrchestrationResult> {
-  // Collect initial input
+  // Resolve plan directory early — needed for both paths
+  const _getPlanDir = _deps?.getPlanDir ?? getPlanDir;
+  const planDir = await _getPlanDir(cwd);
+
+  // Gate: existing plan or new feature?
+  let hasExistingPlan: boolean;
+  if (_deps?.promptExistingPlan) {
+    hasExistingPlan = await _deps.promptExistingPlan();
+  } else {
+    const { confirm } = await import("@inquirer/prompts");
+    hasExistingPlan = await confirm({
+      message: "Do you have an existing plan?",
+      default: false,
+    });
+  }
+
+  // Path A: existing plan — browse and run loop directly
+  if (hasExistingPlan) {
+    let selectedPlan: string | null;
+    if (_deps?.browsePlans) {
+      selectedPlan = await _deps.browsePlans(planDir);
+    } else {
+      selectedPlan = await browsePlansDir(planDir, _deps?.readdirSync);
+    }
+
+    if (!selectedPlan) {
+      // User cancelled — fall through to Path B
+      process.stderr.write("\n  No plan selected. Starting new feature scoping.\n\n");
+    } else {
+      // Determine if it's a directory (multi-file) or file (single-file)
+      const isDir = fs.statSync(selectedPlan).isDirectory();
+      const planPath = isDir ? selectedPlan : selectedPlan;
+
+      const banner = _deps?.onBanner ?? ((msg: string) => process.stdout.write(`\n${msg}\n`));
+      banner(`→ Running loop against plan: ${planPath}`);
+
+      // Import the loop runner
+      const { runLoopSession } = await import("./loop-session.js");
+      const _runLoop = _deps?.runLoop ?? runLoopSession;
+      const loopResult = await _runLoop({ planPath, cwd });
+
+      return {
+        scopePath: "", // no scoping for existing plans
+        planPath,
+        loopResult,
+      };
+    }
+  }
+
+  // Path B: new feature — scope → plan → loop
   let goal: string;
   let ticketRef: string;
 
@@ -175,10 +341,6 @@ export async function runInteractiveAutopilot(
 
   // Derive slug from goal
   const slug = deriveSlug(goal);
-
-  // Resolve plan directory
-  const _getPlanDir = _deps?.getPlanDir ?? getPlanDir;
-  const planDir = await _getPlanDir(cwd);
 
   // Write scope-seed.md
   const seedDir = path.join(planDir, slug);
