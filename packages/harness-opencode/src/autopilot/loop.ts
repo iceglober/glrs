@@ -230,6 +230,10 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       // Record git HEAD before this iteration for progress tracking
       const headBefore = await getHeadSha(opts.cwd);
 
+      // Snapshot the cumulative cost at iteration start so real-time
+      // cost updates from message.updated events can be added on top.
+      const iterationBaseCost = heartbeat.getState().cumulativeCostUsd;
+
       const iterStart = Date.now();
       log.debug({ iteration, maxIterations }, `Iteration ${iteration}/${maxIterations} — sending prompt`);
 
@@ -273,6 +277,22 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           streamDeltaCount = 0;
           streamCharCount = 0;
           lastStreamLogAt = Date.now();
+        },
+        onCostUpdate: (cost, tokens) => {
+          // Real-time cost from message.updated events. The cost value
+          // is the TOTAL for the current message (not a delta), so we
+          // just set the heartbeat's cumulative cost to the running
+          // session total sampled at iteration boundaries PLUS this
+          // message's current cost. This slightly over-reports during
+          // an iteration (the iteration-boundary sample already
+          // included prior messages) but is directionally correct and
+          // never shows $0.00 during a long iteration.
+          //
+          // The iteration-boundary cost sample (getSessionCost) will
+          // correct the cumulative total after the iteration completes.
+          heartbeat.update({
+            cumulativeCostUsd: iterationBaseCost + cost,
+          });
         },
         onTextDelta: (charCount) => {
           streamDeltaCount += 1;

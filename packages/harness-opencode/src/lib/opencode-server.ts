@@ -178,6 +178,9 @@ export async function sendAndWait(
     abortSignal?: AbortSignal;
     onToolCall?: (toolName: string) => void;
     onTextDelta?: (charCount: number) => void;
+    /** Fires on `message.updated` events with cost/token data. Used for
+     *  real-time cost visibility during long iterations. */
+    onCostUpdate?: (cost: number, tokens: { input: number; output: number }) => void;
     autoRejectPermissions?: boolean;
     /** Server URL for raw HTTP calls (question-reject endpoint). */
     serverUrl?: string;
@@ -199,6 +202,7 @@ export async function sendAndWait(
     abortSignal: opts.abortSignal,
     onToolCall: opts.onToolCall,
     onTextDelta: opts.onTextDelta,
+    onCostUpdate: opts.onCostUpdate,
     autoRejectPermissions: opts.autoRejectPermissions,
     serverUrl: opts.serverUrl,
     onPermissionRejected: opts.onPermissionRejected,
@@ -245,6 +249,9 @@ export async function waitForIdle(
     abortSignal?: AbortSignal;
     onToolCall?: (toolName: string) => void;
     onTextDelta?: (charCount: number) => void;
+    /** Fires on `message.updated` events with cost/token data. Used for
+     *  real-time cost visibility during long iterations. */
+    onCostUpdate?: (cost: number, tokens: { input: number; output: number }) => void;
     autoRejectPermissions?: boolean;
     /** Server URL for raw HTTP calls (question-reject endpoint). */
     serverUrl?: string;
@@ -302,6 +309,31 @@ export async function waitForIdle(
           const ev = event as { type?: string; properties?: Record<string, unknown> };
           const props = ev.properties ?? {};
           const type = ev.type ?? "";
+
+          // Real-time cost update: `message.updated` carries the full
+          // AssistantMessage with cost + tokens. Fires when a message's
+          // metadata updates (including after LLM response completes).
+          // This gives us cost visibility DURING long iterations, not
+          // just between them.
+          if (opts.onCostUpdate && type === "message.updated") {
+            const info = props["info"] as
+              | { role?: string; cost?: number; tokens?: { input?: number; output?: number } }
+              | undefined;
+            if (info && info.role === "assistant" && typeof info.cost === "number") {
+              resetStall();
+              try {
+                opts.onCostUpdate(
+                  info.cost,
+                  {
+                    input: info.tokens?.input ?? 0,
+                    output: info.tokens?.output ?? 0,
+                  },
+                );
+              } catch {
+                // Callback errors don't affect the loop
+              }
+            }
+          }
 
           // Text-delta detection: both `message.part.delta` (bare delta
           // events) and `message.part.updated` with a non-empty `delta`
