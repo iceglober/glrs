@@ -27,6 +27,47 @@ import {
 } from "../lib/opencode-server.js";
 
 // ---------------------------------------------------------------------------
+// Terminal helpers
+// ---------------------------------------------------------------------------
+
+/** ANSI reset + clear line + carriage return. Cleans up any pino color
+ *  state that would confuse inquirer's readline cursor tracking. */
+const ANSI_RESET = "\x1b[0m\x1b[2K\r";
+
+/** Simple braille-dot spinner for "agent is thinking" feedback. */
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+interface Spinner {
+  start(label?: string): void;
+  stop(): void;
+}
+
+function createSpinner(): Spinner {
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let frame = 0;
+
+  return {
+    start(label = "Thinking") {
+      if (timer) return;
+      frame = 0;
+      const isTTY = process.stderr.isTTY ?? false;
+      if (!isTTY) return; // no spinner in non-TTY (piped) mode
+      timer = setInterval(() => {
+        const f = SPINNER_FRAMES[frame % SPINNER_FRAMES.length];
+        process.stderr.write(`\x1b[2K\r\x1b[36m${f}\x1b[0m ${label}...`);
+        frame++;
+      }, 80);
+    },
+    stop() {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = null;
+      process.stderr.write("\x1b[2K\r"); // clear the spinner line
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Parsers
 // ---------------------------------------------------------------------------
 
@@ -38,6 +79,17 @@ import {
 export function parseQuestion(response: string): string | null {
   const match = response.match(/^([^\n]{1,199}\?)\s*$/);
   return match ? (match[1] ?? null) : null;
+}
+
+/**
+ * Parse a scope summary from an agent response.
+ * A valid summary starts with 'SCOPE_SUMMARY:' on the first line,
+ * followed by the summary text on subsequent lines.
+ * Returns the summary text (without the prefix), or null.
+ */
+export function parseScopeSummary(response: string): string | null {
+  const match = response.match(/^SCOPE_SUMMARY:\s*\n?([\s\S]+)$/);
+  return match ? (match[1]?.trim() ?? null) : null;
 }
 
 /**
@@ -101,11 +153,12 @@ export interface ScoperSessionResult {
 const DEFAULT_SCOPER_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes per turn
 const MAX_QUESTIONS = 8;
 const FORCED_FINALIZE_MESSAGE =
-  "You have asked enough questions. Write scope.md now and emit SCOPE_COMPLETE.";
+  "You have asked enough questions. Present a SCOPE_SUMMARY for user approval, then write scope.md and emit SCOPE_COMPLETE.";
 const PARSE_RETRY_REMINDER =
   "Your last response did not follow the strict contract. " +
-  "Respond with EXACTLY a single question (≤200 chars, ending with '?') " +
-  "OR the sentinel 'SCOPE_COMPLETE: <absolute-path>'. Nothing else.";
+  "Respond with EXACTLY one of: (a) a single question (≤200 chars, ending with '?'), " +
+  "(b) a scope summary starting with 'SCOPE_SUMMARY:', or " +
+  "(c) the sentinel 'SCOPE_COMPLETE: <absolute-path>'. Nothing else.";
 
 // ---------------------------------------------------------------------------
 // Wizard loop
@@ -139,6 +192,7 @@ export async function runScoperSession(
     });
 
   const server = await _startServer({ cwd: opts.planDir });
+  const spinner = createSpinner();
 
   try {
     const sessionId = await _createSession(server.client, {
@@ -149,15 +203,20 @@ export async function runScoperSession(
     // Build the initial prompt embedding the user's goal
     const initialPrompt = [
       "You are running in an inquirer-driven wizard. Follow the strict response contract:",
-      "- Every response must be EXACTLY a single question (≤200 chars, ending with '?') OR the sentinel 'SCOPE_COMPLETE: <absolute-path>'.",
+      "- Every response must be EXACTLY one of:",
+      "  (a) A single question (≤200 chars, ending with '?')",
+      "  (b) A scope summary starting with 'SCOPE_SUMMARY:' for user approval",
+      "  (c) The sentinel 'SCOPE_COMPLETE: <absolute-path>'",
       "- Do NOT call the question tool. Emit questions as plain assistant text.",
+      "- Start with first-principles questions (WHAT and WHY), not implementation details.",
       "",
       `The user wants to build: ${opts.initialGoal}`,
       "",
-      "Begin by asking your first clarifying question.",
+      "Begin by asking your first clarifying question about the problem being solved.",
     ].join("\n");
 
     // Send the initial prompt
+    spinner.start("Scoper is thinking");
     const firstResult = await _sendAndWait(server.client, {
       sessionId,
       message: initialPrompt,
@@ -191,6 +250,7 @@ export async function runScoperSession(
       // Try sentinel first
       const scopePath = extractScopeCompletePath(lastMessage);
       if (scopePath) {
+        spinner.stop();
         // Validate the file exists
         if (!_existsSync(scopePath)) {
           throw new Error(
@@ -198,6 +258,54 @@ export async function runScoperSession(
           );
         }
         return { scopePath };
+      }
+
+      // Try scope summary (approval gate)
+      const summary = parseScopeSummary(lastMessage);
+      if (summary) {
+        spinner.stop();
+        parseRetryPending = false;
+
+        // Show the summary and ask for approval
+        process.stderr.write(ANSI_RESET);
+        process.stderr.write(`\n\x1b[1m📋 Scope summary:\x1b[0m\n\n${summary}\n\n`);
+        const approval = await _promptUser("Approve this scope? (yes / or describe what to change)");
+
+        if (approval.toLowerCase().startsWith("yes") || approval.toLowerCase() === "y" || approval.toLowerCase() === "approve") {
+          // User approved — tell the agent to write scope.md and emit sentinel
+          spinner.start("Writing scope.md");
+          const writeResult = await _sendAndWait(server.client, {
+            sessionId,
+            message: "The user approved the scope. Write scope.md now and emit SCOPE_COMPLETE.",
+            stallMs: timeoutMs,
+            autoRejectPermissions: true,
+          });
+
+          if (writeResult.kind !== "idle") {
+            throw new Error(
+              `Scoper session failed after scope approval: ${writeResult.kind}`,
+            );
+          }
+          // Loop back to check for the sentinel
+          continue;
+        } else {
+          // User wants changes — send their feedback as the next message
+          spinner.start("Scoper is revising");
+          const reviseResult = await _sendAndWait(server.client, {
+            sessionId,
+            message: approval,
+            stallMs: timeoutMs,
+            autoRejectPermissions: true,
+          });
+
+          if (reviseResult.kind !== "idle") {
+            throw new Error(
+              `Scoper session failed during revision: ${reviseResult.kind}`,
+            );
+          }
+          // Loop back to parse the revised response (could be another summary or a question)
+          continue;
+        }
       }
 
       // Try question
@@ -251,10 +359,13 @@ export async function runScoperSession(
         }
 
         // Prompt the user via inquirer
+        spinner.stop();
+        process.stderr.write(ANSI_RESET);
         questionsAsked++;
         const userAnswer = await _promptUser(question);
 
         // Send the answer back to the session
+        spinner.start("Scoper is thinking");
         const nextResult = await _sendAndWait(server.client, {
           sessionId,
           message: userAnswer,
@@ -280,8 +391,9 @@ export async function runScoperSession(
         continue;
       }
 
-      // Parse error — neither a question nor a sentinel
+      // Parse error — neither a question, summary, nor sentinel
       if (parseRetryPending) {
+        spinner.stop();
         // Second consecutive parse failure — throw
         throw new Error(
           `Scoper response did not follow the strict contract after retry. ` +
@@ -291,6 +403,7 @@ export async function runScoperSession(
 
       // First parse failure — send reminder and retry
       parseRetryPending = true;
+      spinner.start("Retrying");
       const retryResult = await _sendAndWait(server.client, {
         sessionId,
         message: PARSE_RETRY_REMINDER,
@@ -316,6 +429,7 @@ export async function runScoperSession(
       // Loop back to parse the retry response
     }
   } finally {
+    spinner.stop();
     await server.shutdown();
   }
 }
