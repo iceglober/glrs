@@ -44,7 +44,7 @@ If a vulnerability is confirmed and fixed, we will publish a GitHub security adv
 **In scope:**
 
 - The published npm tarball (`@glrs-dev/harness-plugin-opencode`).
-- CLI subcommands (`glrs-oc`, `harness-opencode`): `install`, `uninstall`, `doctor`, `plan-dir`, `plan-check`, `pilot`.
+- CLI subcommands (`glrs-oc`, `harness-opencode`): `install`, `uninstall`, `doctor`, `pilot`.
 - Plugin hooks registered via the OpenCode plugin API (`config`, `tool.execute.before/after`, `session.idle`, etc.).
 - The MCP config writer (`src/cli/install.ts`, `src/mcp/index.ts`) and the `opencode.json` merge logic (`src/cli/merge-config.ts`).
 - Outbound network calls the plugin makes on its own:

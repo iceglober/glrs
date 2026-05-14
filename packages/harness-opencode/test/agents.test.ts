@@ -96,15 +96,12 @@ describe("createAgents", () => {
   });
 
   it("plan agent is task-tool-dispatchable (not mode:primary)", () => {
-    // Guard against accidental reversion. @plan must be reachable by
-    // other agents' task-tool picker — either mode:"subagent" or
-    // mode:"all". Flipping back to mode:"primary" re-opens the bug
-    // where PRIME's Plan stage delegation silently falls through to
-    // pilot-planner (closest matching subagent) or general.
-    // Confirmed via OpenCode docs: only mode:"subagent" and mode:"all"
-    // surface an agent to the task tool.
     expect(agents["plan"]).toBeDefined();
     expect(agents["plan"]!.mode).not.toBe("primary");
+  });
+
+  it("plan agent has write: allow", () => {
+    expect((agents["plan"] as any).permission.write).toBe("allow");
   });
 
   it("build agent is task-tool-dispatchable (not mode:primary)", () => {
@@ -907,13 +904,13 @@ describe("subagent permissions", () => {
     const bash = (agents["plan"] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash["*"]).toBe("deny");
-    expect(bash["bunx @glrs-dev/harness-plugin-opencode plan-dir"]).toBe("allow");
-    expect(bash["bunx @glrs-dev/harness-plugin-opencode plan-dir *"]).toBe("allow");
+    expect(bash["git rev-parse --git-common-dir"]).toBe("allow");
+    expect(bash["basename *"]).toBe("allow");
   });
 
   it("plan agent description references the repo-shared plan directory (not .agent/plans)", () => {
     const desc = (agents["plan"] as any).description as string;
-    expect(desc).toContain("plan-dir");
+    expect(desc).toContain("plan directory");
     // Legacy path reference must not linger in the description.
     expect(desc).not.toContain(".agent/plans");
   });
@@ -977,8 +974,9 @@ describe("prompt content assertions", () => {
     expect(specReviewer).toContain("## File-level changes");
   });
 
-  it("spec-reviewer prompt retains plan-state verify step", () => {
-    expect(specReviewer).toContain("plan-check --run");
+  it("spec-reviewer prompt retains plan-drift check", () => {
+    expect(specReviewer).toContain("Plan-drift check");
+    expect(specReviewer).toContain("AUTO-FAIL");
   });
 
   // ---- code-reviewer (fast variant) ----
@@ -1130,9 +1128,9 @@ describe("prompt content assertions", () => {
   });
 
   it("prime Bootstrap probe references new plan dir (or a shell snippet that resolves it)", () => {
-    // Bootstrap probe should probe for plans using the resolver, not
-    // the legacy `ls .agent/plans/`.
-    expect(prime).toContain("bunx @glrs-dev/harness-plugin-opencode plan-dir");
+    // Bootstrap probe should probe for plans using the inline bash
+    // snippet (git rev-parse --git-common-dir), not the legacy CLI.
+    expect(prime).toContain("git rev-parse --git-common-dir");
     // Legacy probe must be gone.
     expect(prime).not.toContain("ls .agent/plans/");
   });

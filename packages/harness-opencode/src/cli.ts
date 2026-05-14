@@ -11,8 +11,7 @@
  *   - install      Add the plugin to opencode.json
  *   - uninstall    Remove the plugin from opencode.json
  *   - doctor       Check installation health
- *   - plan-check   Parse plan-state fence (legacy markdown plans)
- *   - plan-dir     Print the repo-shared plan dir
+
  */
 
 // Standalone-invocation redirect guard — runs before everything else.
@@ -50,10 +49,7 @@ import {
   binary,
   command,
   flag,
-  option,
-  optional,
   positional,
-  restPositionals,
   string,
   subcommands,
   run,
@@ -62,8 +58,6 @@ import {
 import { install } from "./cli/install.js";
 import { uninstall } from "./cli/uninstall.js";
 import { doctor } from "./cli/doctor.js";
-import { planCheck } from "./bin/plan-check.js";
-import { getPlanDir, migratePlans } from "./plan-paths.js";
 import { loopCmd } from "./autopilot/cli.js";
 import { autopilotInteractiveCmd } from "./autopilot/autopilot-cmd.js";
 import { startUpdateCheck } from "./cli/cli-update.js";
@@ -116,73 +110,6 @@ const doctorCmd = command({
   },
 });
 
-/**
- * `plan-check` keeps its legacy CLI surface — it accepts `--run <path>`,
- * `--check <path>`, or just `<path>`. The underlying `planCheck` helper
- * does its own argv parsing and process.exit, so we forward all
- * positional + restPositionals as a single string array.
- *
- * cmd-ts's strict-mode option-recognition would reject unknown flags
- * here; we sidestep that by treating the whole thing as a rest-args
- * passthrough. The `--run` / `--check` behavior is already covered by
- * tests of `planCheck` directly.
- */
-const planCheckCmd = command({
-  name: "plan-check",
-  description: "Parse a plan file's plan-state fence (legacy markdown plans).",
-  args: {
-    run: option({
-      long: "run",
-      type: optional(string),
-      description: "Print verify commands for pending items, one per line.",
-    }),
-    check: option({
-      long: "check",
-      type: optional(string),
-      description: "Structural validation; exits 1 if any item is invalid.",
-    }),
-    rest: restPositionals({
-      type: string,
-      displayName: "plan-path",
-      description:
-        "Path to a plan markdown file. Required unless --run / --check is given.",
-    }),
-  },
-  handler: ({ run, check, rest }) => {
-    // Reconstruct the legacy argv that `planCheck` expects.
-    const legacy: string[] = [];
-    if (run !== undefined) {
-      legacy.push("--run", run);
-    } else if (check !== undefined) {
-      legacy.push("--check", check);
-    } else {
-      legacy.push(...rest);
-    }
-    planCheck(legacy);
-    // planCheck calls process.exit internally on success.
-  },
-});
-
-const planDirCmd = command({
-  name: "plan-dir",
-  description:
-    "Print the repo-shared plan directory for the current worktree (resolves + creates + migrates legacy).",
-  args: {},
-  handler: async () => {
-    try {
-      const cwd = process.cwd();
-      const planDir = await getPlanDir(cwd);
-      await migratePlans(cwd, planDir);
-      process.stdout.write(planDir + "\n");
-      process.exit(0);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`plan-dir: ${msg}\n`);
-      process.exit(1);
-    }
-  },
-});
-
 // --- Top-level subcommand tree --------------------------------------------
 
 // `install-plugin` is the canonical name; `install` is kept as a backwards-
@@ -215,8 +142,6 @@ const cli = subcommands({
     install: installCmd,
     uninstall: uninstallCmd,
     doctor: doctorCmd,
-    "plan-check": planCheckCmd,
-    "plan-dir": planDirCmd,
     // `loop` is the raw-prompt Ralph loop runner.
     // `autopilot` is the interactive three-phase orchestrator (scope → plan → loop).
     // PR 3 diverged them: they are now separate subcommands.

@@ -107,7 +107,8 @@ Before Scope, run this probe inline (no subagent) — sessions typically start i
 1. `pwd` — confirm working directory.
 2. `git status --short` — see uncommitted work.
 3. `git log --oneline -5` — recent history.
-4. `PLAN_DIR="$(bunx @glrs-dev/harness-plugin-opencode plan-dir 2>/dev/null)" && ls "$PLAN_DIR" 2>/dev/null | tail -5` — plans for this repo (resolved from `~/.glorious/opencode/<repo>/plans/`; falls back silently if the CLI or repo isn't available).
+4. Resolve the plan dir and list recent plans:
+   `PLAN_BASE="${GLORIOUS_PLAN_DIR:-$HOME/.glorious/opencode}" && GIT_COMMON="$(git rev-parse --git-common-dir 2>/dev/null)" && [ -n "$GIT_COMMON" ] && [[ "$GIT_COMMON" != /* ]] && GIT_COMMON="$PWD/$GIT_COMMON"; REPO_FOLDER="$(basename "$(dirname "$GIT_COMMON")" 2>/dev/null)" && [ -n "$REPO_FOLDER" ] && [ "$REPO_FOLDER" != "." ] && ls "$PLAN_BASE/$REPO_FOLDER/plans" 2>/dev/null | tail -5` — plans for this repo (resolved from `~/.glorious/opencode/<repo>/plans/`; falls back silently if the repo isn't a git repo).
 
 For each plan found, read it and count unchecked acceptance items. Classify as **stale** (ignore) only if `git merge-base --is-ancestor HEAD origin/main` (fallback `origin/master`) exits 0 — meaning this worktree's work is already landed. If classification fails (no origin fetched, detached HEAD, etc.), treat as active — over-surface is safer than silently dropping.
 
@@ -458,7 +459,7 @@ The PRIME's context window is expensive (Opus). Protect it by delegating anythin
 
 # Subagent reference (recap)
 
-- `@plan` — writes the plan under the repo-shared plan directory (resolves via `bunx @glrs-dev/harness-plugin-opencode plan-dir`; absolute path returned) and runs its own gap-analysis + adversarial-review loop. PRIME delegates Plan stage authoring here.
+- `@plan` — writes the plan under the repo-shared plan directory `~/.glorious/opencode/<repo-folder>/plans/` (resolved inline via `git rev-parse --git-common-dir` — see plan.md step 4) and runs its own gap-analysis + adversarial-review loop. PRIME delegates Plan stage authoring here.
 - `@build` — executes a written plan file-by-file. Runs per-file lint/tests inline, checks acceptance boxes, commits locally. Returns a structured payload with commit SHAs, plan mutations, and any STOP conditions. PRIME delegates Execute stage execution here.
 - `@research` — multi-round research orchestrator for complex investigations that would otherwise pollute your context with 4-6 parallel explorations. Delegate when the user asks to investigate / deep-dive / understand a topic that needs codebase + external-web context, or multi-workstream planning. Returns a synthesized report; pass it to the user (or feed into `@plan` as grounding if it precedes a plan authoring step).
 - `@code-searcher` — fast codebase grep + structural search, returns paths and short snippets

@@ -1,15 +1,14 @@
 // plan-paths.test.ts — unit tests for src/plan-paths.ts.
 //
 // Covers every code path for the three exports (getRepoFolder, getPlanDir,
-// migratePlans) plus the CLI `plan-dir` subcommand contract. Uses real git
-// (no mocking) so behavior stays honest against the actual `git rev-parse`
-// output we depend on. Each test creates its own tmp dir, shells `git init`
-// where needed, and tears down after.
+// migratePlans). Uses real git (no mocking) so behavior stays honest against
+// the actual `git rev-parse` output we depend on. Each test creates its own
+// tmp dir, shells `git init` where needed, and tears down after.
 //
 // Run: `bun test test/plan-paths.test.ts`
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -422,102 +421,5 @@ describe("migratePlans", () => {
     // Non-markdown left alone.
     expect(fs.existsSync(path.join(oldDir, "notes.txt"))).toBe(true);
     expect(fs.existsSync(path.join(oldDir, "scratch"))).toBe(true);
-  });
-});
-
-// --- CLI: plan-dir subcommand ---------------------------------------------
-
-describe("CLI: plan-dir", () => {
-  let tmp: string;
-
-  beforeEach(() => { tmp = mkTmpDir(); });
-  afterEach(() => { rmTmpDir(tmp); });
-
-  // Resolve the CLI entry relative to this test file.
-  const cliPath = path.resolve(__dirname, "..", "src", "cli.ts");
-
-  function runCli(
-    args: string[],
-    cwd: string,
-    env: NodeJS.ProcessEnv = {},
-  ): { stdout: string; stderr: string; status: number | null } {
-    const result = spawnSync("bun", ["run", cliPath, ...args], {
-      cwd,
-      env: { ...process.env, GLRS_CLI_DISPATCHED: "1", HARNESS_OPENCODE_UPDATE_CHECK: "0", ...env },
-      encoding: "utf8",
-      timeout: 10_000,
-    });
-    return {
-      stdout: result.stdout ?? "",
-      stderr: result.stderr ?? "",
-      status: result.status,
-    };
-  }
-
-  test("prints the resolved plan dir to stdout on success", () => {
-    const repoDir = path.join(tmp, "cli-happy");
-    fs.mkdirSync(repoDir);
-    gitInit(repoDir);
-
-    const overrideBase = path.join(tmp, "cli-base");
-    const res = runCli(["plan-dir"], repoDir, {
-      GLORIOUS_PLAN_DIR: overrideBase,
-    });
-
-    expect(res.status).toBe(0);
-    const expected = path.join(overrideBase, "cli-happy", "plans");
-    expect(res.stdout.trim()).toBe(expected);
-    expect(res.stderr).toBe("");
-  });
-
-  test("creates the plan dir as a side effect", () => {
-    const repoDir = path.join(tmp, "cli-create");
-    fs.mkdirSync(repoDir);
-    gitInit(repoDir);
-
-    const overrideBase = path.join(tmp, "cli-create-base");
-    expect(fs.existsSync(overrideBase)).toBe(false);
-
-    const res = runCli(["plan-dir"], repoDir, {
-      GLORIOUS_PLAN_DIR: overrideBase,
-    });
-
-    expect(res.status).toBe(0);
-    expect(fs.existsSync(res.stdout.trim())).toBe(true);
-  });
-
-  test("runs migration as a side effect", () => {
-    const repoDir = path.join(tmp, "cli-migrate");
-    fs.mkdirSync(repoDir);
-    gitInit(repoDir);
-
-    // Seed old plans.
-    const oldDir = path.join(repoDir, ".agent", "plans");
-    fs.mkdirSync(oldDir, { recursive: true });
-    fs.writeFileSync(path.join(oldDir, "legacy.md"), "# Legacy\n");
-
-    const overrideBase = path.join(tmp, "cli-migrate-base");
-    const res = runCli(["plan-dir"], repoDir, {
-      GLORIOUS_PLAN_DIR: overrideBase,
-    });
-
-    expect(res.status).toBe(0);
-    const planDir = res.stdout.trim();
-    // Legacy plan was migrated.
-    expect(fs.existsSync(path.join(planDir, "legacy.md"))).toBe(true);
-    expect(fs.existsSync(path.join(oldDir, "legacy.md"))).toBe(false);
-    expect(fs.existsSync(path.join(oldDir, ".migrated"))).toBe(true);
-  });
-
-  test("fails with descriptive stderr when run outside a git repo", () => {
-    const nonGit = path.join(tmp, "no-git");
-    fs.mkdirSync(nonGit);
-
-    const res = runCli(["plan-dir"], nonGit);
-
-    expect(res.status).not.toBe(0);
-    expect(res.stderr.toLowerCase()).toMatch(/git/);
-    // Nothing printed to stdout.
-    expect(res.stdout.trim()).toBe("");
   });
 });
