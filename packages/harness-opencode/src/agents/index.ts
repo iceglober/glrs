@@ -50,6 +50,7 @@ const researchPrompt = readPrompt("research.md");
 const researchWebPrompt = readPrompt("research-web.md");
 const researchLocalPrompt = readPrompt("research-local.md");
 const researchAutoPrompt = readPrompt("research-auto.md");
+const debrieferPrompt = readPrompt("debriefer.md");
 
 /**
  * Agents that have a strict-executor prompt variant, used when the agent
@@ -633,6 +634,36 @@ const RESEARCH_PERMISSIONS = {
   linear: "allow",
 };
 
+const DEBRIEFER_PERMISSIONS = {
+  edit: "deny" as const,
+  bash: {
+    "*": "deny",
+    "git log *": "allow",
+    "git diff *": "allow",
+    "git show *": "allow",
+    "git status *": "allow",
+    "git rev-parse *": "allow",
+    "git branch *": "allow",
+    "cat *": "allow",
+    "head *": "allow",
+    "tail *": "allow",
+    "ls *": "allow",
+    "wc *": "allow",
+  },
+  webfetch: "deny" as const,
+  ast_grep: "deny",
+  tsc_check: "deny",
+  eslint_check: "deny",
+  todo_scan: "deny",
+  comment_check: "deny",
+  question: "deny",
+  serena: "deny",
+  memory: "deny",
+  git: "allow",
+  playwright: "deny",
+  linear: "deny",
+};
+
 
 // ---- Tier map ----
 
@@ -672,6 +703,7 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   "docs-maintainer": "mid",
   "lib-reader": "mid",
   "agents-md-writer": "mid",
+  debriefer: "mid",
   "code-searcher": "fast",
 };
 
@@ -793,6 +825,11 @@ export function createAgents(): Record<string, AgentConfig> {
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
       permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
+    }),
+
+    // Debriefer — post-run summary agent for the autopilot CLI
+    debriefer: agentFromPrompt(debrieferPrompt, {
+      permission: DEBRIEFER_PERMISSIONS as AgentConfig["permission"],
     }),
 
   };
