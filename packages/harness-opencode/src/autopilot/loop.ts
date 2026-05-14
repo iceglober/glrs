@@ -167,14 +167,9 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   const streamLog = childLogger(autopilotLog.root, "autopilot.stream");
   const statusLog = childLogger(autopilotLog.root, "autopilot.status");
 
-  // Status heartbeat: fires at STATUS_INTERVAL_MS (default 5min) with
-  // elapsed/iterations/cost summary. Decouples "is it still working"
-  // from iteration boundaries so users see activity during long
-  // single-iteration sessions.
-  const heartbeat = createStatusHeartbeat({
-    logger: statusLog,
-    intervalMs: STATUS_INTERVAL_MS,
-  });
+  // Status heartbeat placeholder — created after session so we can
+  // pass the cost poller with the session ID.
+  let heartbeat: ReturnType<typeof createStatusHeartbeat> | null = null;
 
   if (autopilotLog.logFilePath) {
     log.info({ file: autopilotLog.logFilePath }, `Logging to ${autopilotLog.logFilePath}`);
@@ -201,10 +196,16 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
     });
     log.info({ sessionId }, "Session created with autopilot-prime");
 
-    // Start the status heartbeat once the session is live. It'll fire
-    // its first status line after STATUS_INTERVAL_MS elapses (no
-    // initial-tick noise at t=0).
-    heartbeat.start();
+    // Create the status heartbeat now that we have a session — the cost
+    // poller needs the session ID to call getSessionCost().
+    heartbeat = createStatusHeartbeat({
+      logger: statusLog,
+      intervalMs: STATUS_INTERVAL_MS,
+      pollCost: async () => getSessionCost(server.client, sessionId),
+    });
+
+    // Start the status heartbeat. First tick fires after STATUS_INTERVAL_MS.
+    heartbeat!.start();
 
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
       // Check kill switch before each iteration
@@ -232,7 +233,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
 
       // Snapshot the cumulative cost at iteration start so real-time
       // cost updates from message.updated events can be added on top.
-      const iterationBaseCost = heartbeat.getState().cumulativeCostUsd;
+      const iterationBaseCost = heartbeat!.getState().cumulativeCostUsd;
 
       const iterStart = Date.now();
       log.debug({ iteration, maxIterations }, `Iteration ${iteration}/${maxIterations} — sending prompt`);
@@ -290,7 +291,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           //
           // The iteration-boundary cost sample (getSessionCost) will
           // correct the cumulative total after the iteration completes.
-          heartbeat.update({
+          heartbeat!.update({
             cumulativeCostUsd: iterationBaseCost + cost,
           });
         },
@@ -350,7 +351,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
 
       if (result.kind === "error") {
         log.error({ iteration, err: result.message }, "Iteration errored");
-        heartbeat.update({
+        heartbeat!.update({
           iterationsCompleted: iteration,
           lastIterationErrored: true,
         });
@@ -466,7 +467,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
         }
       }
 
-      heartbeat.update({
+      heartbeat!.update({
         iterationsCompleted: iteration,
         cumulativeCostUsd,
         lastIterationProgress: madeProgress,
@@ -497,7 +498,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
     };
   } finally {
     clearTimeout(timeoutHandle);
-    heartbeat.stop();
+    heartbeat?.stop();
     log.info({}, "Shutting down server");
     await server.shutdown();
     await autopilotLog.flush();

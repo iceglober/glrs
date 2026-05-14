@@ -56,6 +56,10 @@ export interface StatusHeartbeat {
 export interface StatusHeartbeatOptions {
   logger: Logger;
   intervalMs: number;
+  /** Optional async function to poll current session cost. Called on
+   *  each heartbeat tick. If provided, the returned cost replaces
+   *  the heartbeat's cumulativeCostUsd on each tick. */
+  pollCost?: () => Promise<number>;
   /** Test-only: inject clock and timer functions. */
   _deps?: {
     now?: () => number;
@@ -132,6 +136,14 @@ export function createStatusHeartbeat(opts: StatusHeartbeatOptions): StatusHeart
   let timerId: ReturnType<typeof setInterval> | null = null;
 
   const tick = () => {
+    // Poll cost if a poller is provided — fire-and-forget async
+    if (opts.pollCost) {
+      opts.pollCost().then((cost) => {
+        if (cost > 0) state.cumulativeCostUsd = cost;
+      }).catch(() => {
+        // Cost poll failure is non-fatal
+      });
+    }
     const message = composeStatusMessage(state, now());
     opts.logger.info(
       {
