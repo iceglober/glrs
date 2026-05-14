@@ -256,35 +256,44 @@ describe("runScoperSession", () => {
     expect(result.scopePath).toBe(scopePath);
   });
 
-  it("hard cap: agent ignores forced-finalize → throw", async () => {
+  it("hard cap: agent ignores forced-finalize → falls back to disk check", async () => {
     const fakeServer = makeFakeServer();
 
-    // 8 questions, then another question after forced-finalize (no sentinel)
-    const questions = Array.from(
-      { length: 8 },
-      (_, i) => `Question number ${i + 1}?`,
-    );
-    const agentResponses = [...questions, "One more question?"];
+    // 8 questions, then forced finalize, agent responds with non-sentinel
+    const agentResponses = [
+      "What problem are you solving?",
+      "What does success look like?",
+      "How will you know it's done?",
+      "What's out of scope?",
+      "Any existing patterns?",
+      "Any technical constraints?",
+      "Any timeline pressure?",
+      "Any dependencies?",
+      // After hard cap, forced finalize — agent responds with prose, no sentinel
+      "I've gathered enough information to write the scope.",
+    ];
     let responseIndex = 0;
 
-    await expect(
-      runScoperSession({
-        planDir: "/tmp/plans",
-        slug: "feat",
-        initialGoal: "Build something",
-        _deps: {
-          startServer: async (_opts) => fakeServer,
-          createSession: async (_client, _opts) => "session-abc",
-          sendAndWait: async (_client, _opts) => ({ kind: "idle" }),
-          getLastAssistantMessage: async (_client, _sessionId) => {
-            const response = agentResponses[responseIndex++] ?? "";
-            return response;
-          },
-          promptUser: async (_question: string) => "My answer",
-          existsSync: (_p: string) => true,
+    // existsSync returns true for the expected scope.md path (disk fallback)
+    const result = await runScoperSession({
+      planDir: "/tmp/plans",
+      slug: "feat",
+      initialGoal: "Build something",
+      _deps: {
+        startServer: async (_opts) => fakeServer,
+        createSession: async (_client, _opts) => "session-abc",
+        sendAndWait: async (_client, _opts) => ({ kind: "idle" }),
+        getLastAssistantMessage: async (_client, _sessionId) => {
+          const response = agentResponses[responseIndex++] ?? "";
+          return response;
         },
-      }),
-    ).rejects.toThrow("SCOPE_COMPLETE after forced finalize");
+        promptUser: async (_question: string) => "My answer",
+        existsSync: (_p: string) => true,
+      },
+    });
+
+    // Falls back to finding scope.md on disk at the expected path
+    expect(result.scopePath).toBe("/tmp/plans/feat/scope.md");
   });
 
   it("sentinel emitted but file doesn't exist → throw", async () => {

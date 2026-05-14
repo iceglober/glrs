@@ -19,6 +19,7 @@
  */
 
 import * as fs from "node:fs";
+import * as path from "node:path";
 import {
   startServer,
   createSession,
@@ -260,6 +261,100 @@ export async function runScoperSession(
         return { scopePath };
       }
 
+      // Hard cap check — if we've asked MAX_QUESTIONS and the response
+      // isn't a sentinel, force finalize regardless of response type.
+      // This must come BEFORE question/summary parsing so that a 9th
+      // question or a prose response after the cap both trigger finalize.
+      if (questionsAsked >= MAX_QUESTIONS) {
+        // Send forced-finalize message
+        spinner.start("Finalizing scope");
+        const finalResult = await _sendAndWait(server.client, {
+          sessionId,
+          message: FORCED_FINALIZE_MESSAGE,
+          stallMs: timeoutMs,
+          autoRejectPermissions: true,
+        });
+
+        if (finalResult.kind !== "idle") {
+          throw new Error(
+            `Scoper session failed during forced finalize: ${finalResult.kind}`,
+          );
+        }
+
+        // Check for sentinel after forced finalize
+        const finalMessage = await _getLastAssistantMessage(
+          server.client,
+          sessionId,
+        );
+        const finalScopePath = extractScopeCompletePath(finalMessage);
+        if (finalScopePath) {
+          spinner.stop();
+          if (!_existsSync(finalScopePath)) {
+            throw new Error(
+              `Scoper emitted SCOPE_COMPLETE after forced finalize but scope.md does not exist at: ${finalScopePath}`,
+            );
+          }
+          return { scopePath: finalScopePath };
+        }
+
+        // Sentinel not found — try disk fallback
+        const expectedScopePath = path.join(opts.planDir, opts.slug, "scope.md");
+        if (_existsSync(expectedScopePath)) {
+          spinner.stop();
+          process.stderr.write(
+            `\n  ⚠ Scoper didn't emit sentinel, but scope.md exists at ${expectedScopePath}. Using it.\n\n`,
+          );
+          return { scopePath: expectedScopePath };
+        }
+
+        // Neither sentinel nor file — self-construct
+        spinner.stop();
+        process.stderr.write(
+          `\n  ⚠ Scoper didn't write scope.md. Constructing from conversation.\n\n`,
+        );
+        const scopeDir = path.join(opts.planDir, opts.slug);
+        if (!_existsSync(scopeDir)) {
+          fs.mkdirSync(scopeDir, { recursive: true });
+        }
+        const constructedScope = [
+          `# ${opts.initialGoal}`,
+          "",
+          "## Goal",
+          "",
+          opts.initialGoal,
+          "",
+          "## Scoper conversation summary",
+          "",
+          "The scoper agent asked 8 questions and the user provided answers,",
+          "but the agent did not produce a formal scope.md. The last agent",
+          "response is included below for the plan agent to work from.",
+          "",
+          "### Last agent response",
+          "",
+          finalMessage || "(no response captured)",
+          "",
+          "## Acceptance criteria",
+          "",
+          "- To be determined by the plan agent based on the conversation above.",
+          "",
+          "## Constraints",
+          "",
+          "- To be determined by the plan agent.",
+          "",
+          "## Out of scope",
+          "",
+          "- To be determined by the plan agent.",
+          "",
+          "## Open questions for the plan agent",
+          "",
+          "- The scoper did not complete formally. Review the conversation summary above and fill in the missing sections.",
+        ].join("\n");
+
+        const constructedPath = path.join(scopeDir, "scope.md");
+        fs.writeFileSync(constructedPath, constructedScope);
+        return { scopePath: constructedPath };
+      }
+
       // Try scope summary (approval gate)
       const summary = parseScopeSummary(lastMessage);
       if (summary) {
@@ -312,51 +407,6 @@ export async function runScoperSession(
       const question = parseQuestion(lastMessage);
       if (question) {
         parseRetryPending = false;
-
-        if (questionsAsked >= MAX_QUESTIONS) {
-          // Hard cap reached — send forced-finalize
-          const finalResult = await _sendAndWait(server.client, {
-            sessionId,
-            message: FORCED_FINALIZE_MESSAGE,
-            stallMs: timeoutMs,
-            autoRejectPermissions: true,
-          });
-
-          if (finalResult.kind === "abort") {
-            throw new Error(
-              `Scoper session aborted during forced finalize (timeout after ${timeoutMs}ms).`,
-            );
-          }
-          if (finalResult.kind === "stall") {
-            throw new Error(
-              `Scoper session stalled during forced finalize for ${finalResult.stallMs}ms.`,
-            );
-          }
-          if (finalResult.kind === "error") {
-            throw new Error(
-              `Scoper session error during forced finalize: ${finalResult.message}`,
-            );
-          }
-
-          // Check for sentinel after forced finalize
-          const finalMessage = await _getLastAssistantMessage(
-            server.client,
-            sessionId,
-          );
-          const finalScopePath = extractScopeCompletePath(finalMessage);
-          if (!finalScopePath) {
-            throw new Error(
-              "Scoper did not emit SCOPE_COMPLETE after forced finalize. " +
-                "The @scoper agent failed to comply with the hard cap.",
-            );
-          }
-          if (!_existsSync(finalScopePath)) {
-            throw new Error(
-              `Scoper emitted SCOPE_COMPLETE after forced finalize but scope.md does not exist at: ${finalScopePath}`,
-            );
-          }
-          return { scopePath: finalScopePath };
-        }
 
         // Prompt the user via inquirer
         spinner.stop();
