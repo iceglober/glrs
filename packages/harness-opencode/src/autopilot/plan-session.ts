@@ -78,6 +78,7 @@ export async function runPlanSession(
       agentName: "plan",
       stallMs: timeoutMs,
       autoRejectPermissions: true,
+      serverUrl: server.url,
     });
 
     if (result.kind === "abort") {
@@ -94,6 +95,16 @@ export async function runPlanSession(
 
     if (result.kind === "error") {
       throw new Error(`Plan session error: ${result.message}`);
+    }
+
+    if (result.kind === "question_rejected") {
+      // @plan tried to ask a question — it was rejected. The agent
+      // may still have written the plan before asking. Check disk.
+      // If no plan exists, re-send with a reminder (same pattern as
+      // the Ralph loop's question-rejection recovery).
+      process.stderr.write(
+        `\n  ⚠ @plan tried to ask a question (rejected). Checking if plan was written anyway...\n`,
+      );
     }
 
     // Detect which plan output was produced
