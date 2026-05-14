@@ -50,6 +50,7 @@ describe("AGENT_TIERS", () => {
     ]);
     expect(mid).toEqual([
       "agents-md-writer",
+      "debriefer",
       "docs-maintainer",
       "lib-reader",
     ]);

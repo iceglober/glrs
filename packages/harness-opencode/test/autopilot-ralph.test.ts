@@ -528,3 +528,198 @@ describe("ralph loop exits on sentinel detection (integration)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// a7: Debrief module
+// ---------------------------------------------------------------------------
+
+describe("debrief runs after loop exits with sentinel", () => {
+  it("debrief runs after loop exits with sentinel", async () => {
+    const { runDebrief } = await import("../src/autopilot/debrief.js");
+
+    const mockClient = {} as any;
+    let debriefSessionCreated = false;
+    let debriefMessageSent = false;
+
+    await runDebrief({
+      server: {
+        client: mockClient,
+        url: "http://localhost:0",
+        shutdown: async () => {},
+      },
+      loopResult: {
+        exitReason: "sentinel",
+        iterations: 3,
+        message: "Agent emitted <autopilot-done> at iteration 3.",
+        sessionId: "loop-session-id",
+        cumulativeCostUsd: 0.05,
+      },
+      prompt: "do the work",
+      cwd: "/tmp",
+      _deps: {
+        createSession: async () => {
+          debriefSessionCreated = true;
+          return "debrief-session-id";
+        },
+        sendAndWait: async () => {
+          debriefMessageSent = true;
+          return { kind: "idle" as const };
+        },
+        getLastAssistantMessage: async () =>
+          "### 1. What was accomplished\nFiles changed.\n### 2. What wasn't finished\nAll done.\n### 3. Cost summary\n$0.05\n### 4. What to do next\nReview the diff.\n### 5. Session artifacts\nlog: /tmp/autopilot.log",
+        execGitDiffStat: async () => "1 file changed, 10 insertions(+)",
+      },
+    });
+
+    expect(debriefSessionCreated).toBe(true);
+    expect(debriefMessageSent).toBe(true);
+  });
+});
+
+describe("debrief gracefully handles session errors", () => {
+  it("debrief gracefully handles session errors", async () => {
+    const { runDebrief } = await import("../src/autopilot/debrief.js");
+
+    const mockClient = {} as any;
+
+    // Should not throw even when createSession throws
+    await expect(
+      runDebrief({
+        server: {
+          client: mockClient,
+          url: "http://localhost:0",
+          shutdown: async () => {},
+        },
+        loopResult: {
+          exitReason: "error",
+          iterations: 1,
+          message: "Error in iteration 1: something went wrong.",
+          sessionId: "loop-session-id",
+          cumulativeCostUsd: 0.01,
+        },
+        prompt: "do the work",
+        cwd: "/tmp",
+        _deps: {
+          createSession: async () => {
+            throw new Error("Server unavailable");
+          },
+          sendAndWait: async () => ({ kind: "idle" as const }),
+          getLastAssistantMessage: async () => "",
+          execGitDiffStat: async () => "",
+        },
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("debrief receives loop session cost data", () => {
+  it("debrief receives loop session cost data", async () => {
+    const { runDebrief } = await import("../src/autopilot/debrief.js");
+
+    const mockClient = {} as any;
+    let capturedMessage = "";
+
+    await runDebrief({
+      server: {
+        client: mockClient,
+        url: "http://localhost:0",
+        shutdown: async () => {},
+      },
+      loopResult: {
+        exitReason: "sentinel",
+        iterations: 5,
+        message: "Agent emitted <autopilot-done> at iteration 5.",
+        sessionId: "loop-session-id",
+        cumulativeCostUsd: 1.23,
+      },
+      prompt: "implement feature X",
+      cwd: "/tmp",
+      _deps: {
+        createSession: async () => "debrief-session-id",
+        sendAndWait: async (_client: any, opts: any) => {
+          capturedMessage = opts.message;
+          return { kind: "idle" as const };
+        },
+        getLastAssistantMessage: async () => "Debrief output here.",
+        execGitDiffStat: async () => "2 files changed",
+      },
+    });
+
+    // The context message sent to the debriefer must include cost and iteration data
+    expect(capturedMessage).toContain("1.23");
+    expect(capturedMessage).toContain("5");
+    expect(capturedMessage).toContain("sentinel");
+  });
+});
+
+describe("--no-debrief flag skips debrief", () => {
+  it("--no-debrief flag skips debrief", async () => {
+    const { shouldRunDebrief } = await import("../src/autopilot/debrief.js");
+
+    expect(shouldRunDebrief({ noDebrief: true, env: {} })).toBe(false);
+    expect(shouldRunDebrief({ noDebrief: false, env: {} })).toBe(true);
+  });
+});
+
+describe("GLRS_AUTOPILOT_DEBRIEF=off env var skips debrief", () => {
+  it("GLRS_AUTOPILOT_DEBRIEF=off env var skips debrief", async () => {
+    const { shouldRunDebrief } = await import("../src/autopilot/debrief.js");
+
+    expect(shouldRunDebrief({ noDebrief: false, env: { GLRS_AUTOPILOT_DEBRIEF: "off" } })).toBe(false);
+    expect(shouldRunDebrief({ noDebrief: false, env: { GLRS_AUTOPILOT_DEBRIEF: "on" } })).toBe(true);
+    expect(shouldRunDebrief({ noDebrief: false, env: { GLRS_AUTOPILOT_DEBRIEF: "OFF" } })).toBe(false);
+  });
+});
+
+describe("debrief output contains all required sections", () => {
+  it("debrief output contains all required sections", async () => {
+    const { runDebrief } = await import("../src/autopilot/debrief.js");
+
+    const mockClient = {} as any;
+    const outputLines: string[] = [];
+    const originalWrite = process.stdout.write.bind(process.stdout);
+    (process.stdout as any).write = (chunk: string | Uint8Array) => {
+      if (typeof chunk === "string") outputLines.push(chunk);
+      return true;
+    };
+
+    try {
+      await runDebrief({
+        server: {
+          client: mockClient,
+          url: "http://localhost:0",
+          shutdown: async () => {},
+        },
+        loopResult: {
+          exitReason: "sentinel",
+          iterations: 2,
+          message: "Agent emitted <autopilot-done> at iteration 2.",
+          sessionId: "session-xyz",
+          cumulativeCostUsd: 0.10,
+        },
+        prompt: "fix the bug",
+        cwd: "/tmp",
+        _deps: {
+          createSession: async () => "debrief-session-id",
+          sendAndWait: async () => ({ kind: "idle" as const }),
+          getLastAssistantMessage: async () =>
+            "### 1. What was accomplished\nFixed the bug.\n" +
+            "### 2. What wasn't finished\nAll items completed.\n" +
+            "### 3. Cost summary\n$0.10, 2 iterations, sentinel.\n" +
+            "### 4. What to do next\nReview the diff and open a PR.\n" +
+            "### 5. Session artifacts\nSession: session-xyz",
+          execGitDiffStat: async () => "1 file changed",
+        },
+      });
+    } finally {
+      (process.stdout as any).write = originalWrite;
+    }
+
+    const output = outputLines.join("");
+    expect(output).toContain("What was accomplished");
+    expect(output).toContain("What wasn't finished");
+    expect(output).toContain("Cost summary");
+    expect(output).toContain("What to do next");
+    expect(output).toContain("Session artifacts");
+  });
+});

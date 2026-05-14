@@ -52,6 +52,10 @@ export interface LoopResult {
   exitReason: LoopExitReason;
   iterations: number;
   message: string;
+  /** The OpenCode session ID for the loop session. Used by the debrief module. */
+  sessionId?: string;
+  /** Cumulative cost in USD for the loop session. Used by the debrief module. */
+  cumulativeCostUsd?: number;
 }
 
 export interface RalphLoopOptions {
@@ -186,11 +190,14 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
     abort.abort();
   }, timeoutMs);
 
+  // Track session ID at function scope so all return paths can include it.
+  let sessionId: string | undefined;
+
   try {
     // Create a session with autopilot-prime (PRIME with the question
     // tool denied — autopilot is lights-out and an interactive question
     // deadlocks the session forever).
-    const sessionId = await _createSession(server.client, {
+    sessionId = await _createSession(server.client, {
       cwd: opts.cwd,
       agentName: "autopilot-prime",
     });
@@ -201,7 +208,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
     heartbeat = createStatusHeartbeat({
       logger: statusLog,
       intervalMs: STATUS_INTERVAL_MS,
-      pollCost: async () => getSessionCost(server.client, sessionId),
+      pollCost: async () => getSessionCost(server.client, sessionId!),
     });
 
     // Start the status heartbeat. First tick fires after STATUS_INTERVAL_MS.
@@ -215,6 +222,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           exitReason: "kill-switch",
           iterations: iteration - 1,
           message: `Kill switch active (.agent/autopilot-disable exists). Stopping after ${iteration - 1} iteration(s).`,
+          sessionId,
         };
       }
 
@@ -225,6 +233,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           exitReason: "timeout",
           iterations: iteration - 1,
           message: `Total timeout (${timeoutMs}ms) exceeded after ${iteration - 1} iteration(s).`,
+          sessionId,
         };
       }
 
@@ -337,6 +346,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           exitReason: "timeout",
           iterations: iteration,
           message: `Aborted after ${iteration} iteration(s) (total timeout exceeded).`,
+          sessionId,
         };
       }
 
@@ -346,6 +356,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           exitReason: "stall",
           iterations: iteration,
           message: `Iteration ${iteration} stalled for ${result.stallMs}ms with no idle signal.`,
+          sessionId,
         };
       }
 
@@ -359,6 +370,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           exitReason: "error",
           iterations: iteration,
           message: `Error in iteration ${iteration}: ${result.message}`,
+          sessionId,
         };
       }
 
@@ -430,6 +442,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           exitReason: "sentinel",
           iterations: iteration,
           message: `Agent emitted <autopilot-done> at iteration ${iteration}.`,
+          sessionId,
         };
       }
 
@@ -442,7 +455,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       // Fire-and-forget — cost lookup failures are non-fatal; we just
       // keep the last known value. Updated before the heartbeat sees it
       // on the next tick.
-      const cumulativeCostUsd = await getSessionCost(server.client, sessionId);
+      const cumulativeCostUsd = await getSessionCost(server.client, sessionId!);
 
       // Detect plan path from the prompt (looks for plans/<slug>/ directory
       // reference). If found, parse plan progress for the heartbeat.
@@ -486,6 +499,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           exitReason: "struggle",
           iterations: iteration,
           message: `Agent made no filesystem progress for ${struggleThreshold} consecutive iteration(s). Stopping at iteration ${iteration}.`,
+          sessionId,
         };
       }
     }
@@ -495,6 +509,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       exitReason: "max-iterations",
       iterations: maxIterations,
       message: `Reached maximum iterations (${maxIterations}). Stopping.`,
+      sessionId,
     };
   } finally {
     clearTimeout(timeoutHandle);
