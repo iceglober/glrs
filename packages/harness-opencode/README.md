@@ -52,9 +52,12 @@ Wipes the worktree, creates a branch from the ticket ref, and begins the SPEAR w
 
 **Go hands-off with the Ralph loop (CLI, lights-out):**
 ```
-glrs oc autopilot "ship ENG-1234"
+glrs oc loop "ship ENG-1234"
 ```
-Runs PRIME in a loop: sends your prompt each iteration, watches for `<autopilot-done>` in the response, exits when the sentinel appears or a budget is hit (50 iterations / 4h / 3 zero-progress iterations / kill-switch at `.agent/autopilot-disable`). Works with multi-issue prompts too: `glrs oc autopilot "ship every open issue in Linear project ENG-ROADMAP until the project is done"`. There is no TUI slash command — if you're in the TUI and don't want the loop, just type the task normally.
+
+Runs PRIME in a loop: sends your prompt each iteration, watches for `<autopilot-done>` in the response, exits when the sentinel appears or a budget is hit (50 iterations / 4h / 3 zero-progress iterations / kill-switch at `.agent/autopilot-disable`). Works with multi-issue prompts too: `glrs oc loop "ship every open issue in Linear project ENG-ROADMAP until the project is done"`. There is no TUI slash command — if you're in the TUI and don't want the loop, just type the task normally.
+
+`glrs oc autopilot` is an alias for `glrs oc loop` during the current release cycle. A future release will make `autopilot` an interactive scoping walkthrough that produces a structured plan and then invokes `loop` against it; `loop` will stay as the raw-prompt runner.
 
 **Ship when done:**
 ```
@@ -112,7 +115,7 @@ Tiers: **deep** = opus-class, **mid** = sonnet-class, **fast** = haiku-class. Ov
 | `/init-deep` | Generate hierarchical AGENTS.md files |
 | `/costs` | Show running LLM spend totals |
 
-Autopilot is CLI-only: `glrs oc autopilot "<prompt>"` (see above).
+Autopilot is CLI-only: `glrs oc loop "<prompt>"` (or the `glrs oc autopilot` alias during the current release cycle — see above).
 
 ### Tools
 
@@ -228,7 +231,7 @@ Your opencode.json values win. Example:
 | `glrs-oc install-plugin [--pin] [--dry-run]` | Register plugin in opencode.json |
 | `glrs-oc uninstall [--dry-run]` | Remove plugin from opencode.json |
 | `glrs-oc doctor` | Check installation health |
-| `glrs-oc autopilot "<prompt>"` | Run PRIME in a loop (lights-out) |
+| `glrs-oc loop "<prompt>"` | Run PRIME in a Ralph loop (lights-out). `autopilot` is an alias during the current release cycle. |
 
 `install` is an alias for `install-plugin`.
 

@@ -31,3 +31,18 @@ export const KILL_SWITCH_PATH = ".agent/autopilot-disable";
  * the last assistant message for this exact string.
  */
 export const SENTINEL_TAG = "<autopilot-done>";
+
+/**
+ * Status-heartbeat interval. Every N milliseconds the loop emits an
+ * info-level "working" log line summarizing elapsed time, iteration
+ * count, and cumulative cost. Default: 5 minutes.
+ * Override via GLRS_AUTOPILOT_STATUS_INTERVAL_MS (parsed as integer,
+ * clamped to [1000, 1h]).
+ */
+export const STATUS_INTERVAL_MS: number = (() => {
+  const env = process.env["GLRS_AUTOPILOT_STATUS_INTERVAL_MS"];
+  if (!env) return 5 * 60 * 1000;
+  const n = Number.parseInt(env, 10);
+  if (Number.isNaN(n) || n < 1000 || n > 60 * 60 * 1000) return 5 * 60 * 1000;
+  return n;
+})();

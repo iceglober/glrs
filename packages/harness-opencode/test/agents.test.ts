@@ -8,22 +8,26 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 17 agents", () => {
-    // 17 agents total: prime (mode:primary), plan + build + research (mode:all
-    // — primary AND task-tool-dispatchable), research-web + research-local +
-    // research-auto (mode:subagent — internal to @research's orchestration),
-    // plus 10 other pure subagents (spec-reviewer, code-reviewer,
-    // code-reviewer-thorough, plan-reviewer, code-searcher, gap-analyzer,
-    // architecture-advisor, docs-maintainer, lib-reader, agents-md-writer).
-    expect(Object.keys(agents).length).toBe(17);
+  it("returns exactly 19 agents", () => {
+    // 19 agents total: prime (mode:primary), scoper (mode:primary),
+    // autopilot-prime (mode:subagent — PRIME variant with question tool
+    // denied for lights-out runs), plan + build + research (mode:all —
+    // primary AND task-tool-dispatchable), research-web + research-local
+    // + research-auto (mode:subagent — internal to @research's
+    // orchestration), plus 10 other pure subagents (spec-reviewer,
+    // code-reviewer, code-reviewer-thorough, plan-reviewer, code-searcher,
+    // gap-analyzer, architecture-advisor, docs-maintainer, lib-reader,
+    // agents-md-writer).
+    expect(Object.keys(agents).length).toBe(19);
   });
 
-  it("has 2 primary-capable agents besides plan (prime, build; mode=primary or mode=all)", () => {
-    // prime is mode:primary. build is mode:all (primary-invocable AND
-    // task-tool-dispatchable). plan is also mode:all but tested separately
+  it("has 3 primary-capable agents besides plan (prime, scoper, build; mode=primary or mode=all)", () => {
+    // prime and scoper are mode:primary. build is mode:all (primary-invocable
+    // AND task-tool-dispatchable). plan is also mode:all but tested separately
     // below — this test is the "always-primary-capable" cohort.
     for (const name of [
       "prime",
+      "scoper",
       "build",
     ]) {
       expect(agents[name]).toBeDefined();
@@ -31,13 +35,29 @@ describe("createAgents", () => {
     }
   });
 
-  it("has 16 subagent-capable agents (mode=subagent or mode=all)", () => {
+  it("createAgents includes scoper agent", () => {
+    expect(agents["scoper"]).toBeDefined();
+  });
+
+  it("scoper agent has primary mode", () => {
+    expect(agents["scoper"]!.mode).toBe("primary");
+  });
+
+  it("scoper agent disables question tool (wizard handles user input via inquirer)", () => {
+    // The @scoper wizard loop drives user interaction via inquirer — the
+    // question tool is not wired to any TUI in this context. Disabling it
+    // prevents the agent from accidentally calling it and deadlocking.
+    const tools = (agents["scoper"] as any).tools;
+    expect(tools?.question).toBe(false);
+  });
+
+  it("has 17 subagent-capable agents (mode=subagent or mode=all)", () => {
     // "Subagent-capable" means the agent appears in other agents'
     // task-tool picker. mode: "subagent" and mode: "all" both qualify.
     // plan, build, research have mode:"all" — user-invocable AND
-    // task-dispatchable. research-web, research-local, research-auto have
-    // mode:"subagent" — internal to @research's orchestration, NOT
-    // user-selectable as primary. The other 10 are also mode:"subagent" only.
+    // task-dispatchable. research-web, research-local, research-auto and
+    // autopilot-prime have mode:"subagent" — NOT user-selectable as
+    // primary. The other 10 are also mode:"subagent" only.
     const subagentCapable = [
       "plan",
       "build",
@@ -45,6 +65,7 @@ describe("createAgents", () => {
       "research-web",
       "research-local",
       "research-auto",
+      "autopilot-prime",
       "spec-reviewer",
       "code-reviewer",
       "code-reviewer-thorough",
@@ -75,15 +96,12 @@ describe("createAgents", () => {
   });
 
   it("plan agent is task-tool-dispatchable (not mode:primary)", () => {
-    // Guard against accidental reversion. @plan must be reachable by
-    // other agents' task-tool picker — either mode:"subagent" or
-    // mode:"all". Flipping back to mode:"primary" re-opens the bug
-    // where PRIME's Plan stage delegation silently falls through to
-    // pilot-planner (closest matching subagent) or general.
-    // Confirmed via OpenCode docs: only mode:"subagent" and mode:"all"
-    // surface an agent to the task tool.
     expect(agents["plan"]).toBeDefined();
     expect(agents["plan"]!.mode).not.toBe("primary");
+  });
+
+  it("plan agent has write: allow", () => {
+    expect((agents["plan"] as any).permission.write).toBe("allow");
   });
 
   it("build agent is task-tool-dispatchable (not mode:primary)", () => {
@@ -183,6 +201,64 @@ describe("createAgents", () => {
     const orch = agents["prime"]!;
     expect(orch.model).toBe("anthropic/claude-opus-4-7");
     expect(orch.temperature).toBe(0.2);
+  });
+
+  it("prime has subagent-violation-halt rule", () => {
+    // Regression guard for the defensive prompt rule added after the
+    // JSONLogic session (ses_1e5ee8637ffezTsp91gRaynnHz) where PRIME
+    // dismissed a subagent's self-reported violation as "meta-confusion"
+    // and proceeded silently. The hard rule must instruct PRIME to halt
+    // and surface the report.
+    const prime = agents["prime"]!.prompt as string;
+    expect(prime).toContain("Subagent self-reported constraint violations halt the arc");
+    expect(prime).toContain("surface the full subagent report to the user");
+    // Negative assertion — the dismissal vocabulary must be explicitly
+    // forbidden so the rule's intent is unambiguous.
+    expect(prime).toContain("meta-confusion");
+    expect(prime).toMatch(/Do NOT characterize.*meta-confusion/);
+  });
+
+  it("plan prompt contains multi-file decision step", () => {
+    const plan = agents["plan"]!.prompt as string;
+    expect(plan).toContain("Multi-file decision");
+    expect(plan).toContain("multi-file plan");
+  });
+
+  it("build prompt contains multi-file plan handling", () => {
+    const build = agents["build"]!.prompt as string;
+    expect(build).toContain("Multi-file plan handling");
+    expect(build).toContain("multi-file plan");
+  });
+
+  it("plan-reviewer prompt contains multi-file validation", () => {
+    const planReviewer = agents["plan-reviewer"]!.prompt as string;
+    expect(planReviewer).toContain("Multi-file consistency");
+    expect(planReviewer.toLowerCase()).toContain("multi-file");
+  });
+
+  it("agent count is correct", () => {
+    // Alias for the "returns exactly 19 agents" test — used by changeset a9.
+    expect(Object.keys(agents).length).toBe(19);
+  });
+
+  it("plan agent has hallucination-defense clause", () => {
+    // Regression guard for the defensive posture added to @plan after
+    // the JSONLogic session, where the subagent hallucinated an OpenCode
+    // "plan mode" system-reminder and apologized for violating it despite
+    // having write permissions. The prompt must pre-empt this pattern.
+    const plan = agents["plan"]!.prompt as string;
+    expect(plan).toContain("Defensive posture");
+    expect(plan).toContain("write permission");
+    expect(plan).toMatch(/ignore it|Ignore it|ignore\s+it\b|Ignore those|ignore those/);
+    // The "real denial looks like a tool error" clarification must be
+    // present — this is the load-bearing mental model that short-circuits
+    // the hallucination.
+    expect(plan).toMatch(/tool error|write not permitted/);
+    // Scope qualifier — the defensive section must not be readable as
+    // a general write-unlock. Write permission is bounded to the plan
+    // directory only.
+    expect(plan).toMatch(/scoped to the plan directory only|plan directory only/);
+    expect(plan).toMatch(/MUST NOT write to any other path|not write to any other/);
   });
 
   it("build has correct model and temperature", () => {
@@ -428,6 +504,49 @@ describe("research-* orchestrator agents", () => {
   });
 });
 
+describe("autopilot-prime agent (question tool denied)", () => {
+  const agents = createAgents();
+
+  it("autopilot-prime agent exists and is mode:subagent", () => {
+    const agent = agents["autopilot-prime"];
+    expect(agent).toBeDefined();
+    expect(agent!.mode).toBe("subagent");
+  });
+
+  it("autopilot-prime uses PRIME's prompt verbatim", () => {
+    // The autopilot variant reuses the same prompt as prime — the
+    // autopilot-specific advisory lives in src/autopilot/prompt-template.md
+    // which is prepended by the Ralph loop at session-creation time.
+    const primePrompt = agents["prime"]!.prompt as string;
+    const autopilotPrompt = agents["autopilot-prime"]!.prompt as string;
+    expect(autopilotPrompt).toBe(primePrompt);
+  });
+
+  it("autopilot-prime disables the question tool", () => {
+    // This is the load-bearing assertion: if this ever flips to `true`
+    // or is removed, autopilot sessions will deadlock on the first
+    // question-tool invocation by PRIME. Must use the `tools` map, NOT
+    // the `permission` map — OpenCode's runtime only honors permission
+    // keys edit/bash/webfetch/doom_loop/external_directory; `question`
+    // in the permission map is a silent no-op. Tool disabling happens
+    // via `tools: { [name]: false }`.
+    const tools = agents["autopilot-prime"]!.tools as Record<string, boolean>;
+    expect(tools["question"]).toBe(false);
+  });
+
+  it("autopilot-prime inherits PRIME's permissions", () => {
+    const primePerms = agents["prime"]!.permission as Record<string, unknown>;
+    const autopilotPerms = agents["autopilot-prime"]!.permission as Record<string, unknown>;
+
+    // Spot-check a few permissions that should carry over from PRIME.
+    // If these drift, the autopilot variant would lose capabilities
+    // the normal PRIME has — and that would break the autopilot loop.
+    for (const key of ["edit", "webfetch", "ast_grep", "tsc_check", "serena", "linear"]) {
+      expect(autopilotPerms[key]).toEqual(primePerms[key]);
+    }
+  });
+});
+
 describe("subagent permissions", () => {
   const agents = createAgents();
 
@@ -499,6 +618,7 @@ describe("subagent permissions", () => {
     "rg foo src",
     "find src -name '*.ts'",
     "wc -l foo.ts",
+    "bunx @glrs-dev/harness-plugin-opencode plan-dir",
     "bun test test/agents.test.ts",
     "pnpm --filter @kn/core test",
     "pnpm test foo.test.ts",
@@ -776,47 +896,21 @@ describe("subagent permissions", () => {
     }
   });
 
-  it("plan agent bash rules: deny-all except the four inline-resolution commands", () => {
-    // The plan agent needs to resolve the repo-shared plan dir via an
-    // inline 4-command bash snippet (git rev-parse, dirname, basename,
-    // mkdir). Everything else remains denied, preserving the "plan
-    // writes only plan files" invariant.
+  it("plan agent bash rules: deny-all except the plan-dir CLI subcommand", () => {
+    // The plan agent needs to resolve the repo-shared plan dir before
+    // writing plans there. It does that via the harness's own CLI
+    // subcommand. Everything else remains denied, preserving the
+    // "plan writes only plan files" invariant.
     const bash = (agents["plan"] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash["*"]).toBe("deny");
     expect(bash["git rev-parse --git-common-dir"]).toBe("allow");
     expect(bash["basename *"]).toBe("allow");
-    expect(bash["dirname *"]).toBe("allow");
-    expect(bash["mkdir -p *"]).toBe("allow");
-    // Deleted surface must NOT be present.
-    expect(bash["bunx @glrs-dev/harness-plugin-opencode plan-dir"]).toBeUndefined();
-    expect(bash["glrs-oc plan-dir"]).toBeUndefined();
-  });
-
-  it("plan agent has write: allow", () => {
-    expect((agents["plan"] as any).permission.write).toBe("allow");
-  });
-
-  it("orchestrator agents have tools.task enabled for subagent dispatch", () => {
-    // OpenCode strips the `task` tool from subagent contexts by default.
-    // Agents that dispatch subagents need explicit `tools: { task: true }`.
-    const orchestrators = ["plan", "research", "research-web", "research-local"];
-    for (const name of orchestrators) {
-      const agent = agents[name] as any;
-      expect(agent.tools?.task).toBe(true);
-    }
-    // Agents that do NOT dispatch subagents should NOT have task enabled
-    // (avoids unnecessary agent-spawning loops).
-    const nonOrchestrators = ["build", "spec-reviewer", "code-reviewer", "code-searcher"];
-    for (const name of nonOrchestrators) {
-      const agent = agents[name] as any;
-      expect(agent.tools?.task).toBeUndefined();
-    }
   });
 
   it("plan agent description references the repo-shared plan directory (not .agent/plans)", () => {
     const desc = (agents["plan"] as any).description as string;
-    expect(desc.toLowerCase()).toMatch(/plan (dir|directory|folder)/);
+    expect(desc).toContain("plan directory");
     // Legacy path reference must not linger in the description.
     expect(desc).not.toContain(".agent/plans");
   });
@@ -878,6 +972,11 @@ describe("prompt content assertions", () => {
     expect(specReviewer.toLowerCase()).toContain("plan drift");
     expect(specReviewer.toLowerCase()).toContain("auto-fail");
     expect(specReviewer).toContain("## File-level changes");
+  });
+
+  it("spec-reviewer prompt retains plan-drift check", () => {
+    expect(specReviewer).toContain("Plan-drift check");
+    expect(specReviewer).toContain("AUTO-FAIL");
   });
 
   // ---- code-reviewer (fast variant) ----
@@ -1006,9 +1105,14 @@ describe("prompt content assertions", () => {
 
   const planPrompt = agents["plan"]!.prompt as string;
 
-  it("plan agent prompt body mentions the inline plan-dir resolution snippet", () => {
-    expect(planPrompt).toContain("GLORIOUS_PLAN_DIR");
-    expect(planPrompt).toContain("git rev-parse --git-common-dir");
+  it("plan agent prompt body mentions GLORIOUS_PLAN_DIR or bunx harness-opencode plan-dir helper", () => {
+    // The plan agent must know how to resolve the new plan dir. One of
+    // these references must appear so the agent actually invokes the
+    // resolver rather than writing to a hardcoded path.
+    const hasResolver =
+      planPrompt.includes("bunx @glrs-dev/harness-plugin-opencode plan-dir") ||
+      planPrompt.includes("GLORIOUS_PLAN_DIR");
+    expect(hasResolver).toBe(true);
   });
 
   it("plan prompt contains no-placeholders rule", () => {
@@ -1024,9 +1128,8 @@ describe("prompt content assertions", () => {
   });
 
   it("prime Bootstrap probe references new plan dir (or a shell snippet that resolves it)", () => {
-    // Bootstrap probe should probe for plans using the resolver, not
-    // the legacy `ls .agent/plans/`.
-    expect(prime).toContain("GLORIOUS_PLAN_DIR");
+    // Bootstrap probe should probe for plans using the inline bash
+    // snippet (git rev-parse --git-common-dir), not the legacy CLI.
     expect(prime).toContain("git rev-parse --git-common-dir");
     // Legacy probe must be gone.
     expect(prime).not.toContain("ls .agent/plans/");

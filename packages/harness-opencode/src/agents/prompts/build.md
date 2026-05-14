@@ -34,6 +34,22 @@ If ANY of these are missing, STOP and report to the user:
 
 Do NOT attempt to "fill in" missing structure on behalf of the plan. The plan is the spec; if the spec is wrong, fix it explicitly — don't improvise.
 
+## 1.5 Multi-file plan handling
+
+If the plan path is a directory (contains `main.md`), it is a multi-file plan. Handle it as follows:
+
+1. Read `main.md`'s `## Phases` checklist.
+2. Find the first unchecked phase (`- [ ] phase_N.md — ...`).
+3. Open the corresponding `phase_N.md` as the working plan for this iteration.
+4. Execute its items per the normal workflow (sections 2–4 below).
+5. After completing all items in the phase file, re-read it and verify all ACs are `[x]`.
+6. Update `main.md`'s corresponding phase checkbox to `[x]`.
+7. Proceed to the next unchecked phase.
+
+Cross-cutting ACs in `main.md` (under `## Cross-cutting acceptance criteria`) are verified independently via their own `verify:` commands after all phases are complete.
+
+If the plan path is a single `.md` file, skip this section and proceed normally.
+
 ## 2. Prepare the return summary
 
 Before starting execution, prepare a brief summary for your eventual return payload to PRIME: file count, which acceptance criteria you will verify, any unknowns. When invoked as a subagent (the common case — PRIME delegates Phase 3 to you), this summary is for PRIME to relay to the user; do not narrate to the user directly. When invoked top-level by the user (`@build <plan-path>`), you may print the summary to chat.

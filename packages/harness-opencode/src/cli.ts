@@ -11,6 +11,7 @@
  *   - install      Add the plugin to opencode.json
  *   - uninstall    Remove the plugin from opencode.json
  *   - doctor       Check installation health
+
  */
 
 // Standalone-invocation redirect guard — runs before everything else.
@@ -57,7 +58,8 @@ import {
 import { install } from "./cli/install.js";
 import { uninstall } from "./cli/uninstall.js";
 import { doctor } from "./cli/doctor.js";
-import { autopilotCmd } from "./autopilot/cli.js";
+import { loopCmd } from "./autopilot/cli.js";
+import { autopilotInteractiveCmd } from "./autopilot/autopilot-cmd.js";
 import { startUpdateCheck } from "./cli/cli-update.js";
 
 const VERSION = "0.1.0";
@@ -140,7 +142,11 @@ const cli = subcommands({
     install: installCmd,
     uninstall: uninstallCmd,
     doctor: doctorCmd,
-    autopilot: autopilotCmd,
+    // `loop` is the raw-prompt Ralph loop runner.
+    // `autopilot` is the interactive three-phase orchestrator (scope → plan → loop).
+    // PR 3 diverged them: they are now separate subcommands.
+    loop: loopCmd,
+    autopilot: autopilotInteractiveCmd,
   },
 });
 

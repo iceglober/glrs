@@ -1,17 +1,21 @@
 /**
- * `glrs oc autopilot` — Ralph loop CLI driver.
+ * `glrs oc loop` — Ralph loop CLI driver.
  *
  * Starts an OpenCode server, creates a session with PRIME, sends the
  * user's prompt each iteration, and exits when the agent emits
  * `<autopilot-done>` or a budget is exhausted.
+ *
+ * PR 3 diverged `loop` and `autopilot`: `loop` is the raw-prompt
+ * Ralph-loop runner; `autopilot` is the interactive three-phase
+ * orchestrator (scope → plan → loop). They are now separate subcommands.
  */
 
 import { command, option, positional, string as stringType, optional, number as numberType } from "cmd-ts";
 import { runRalphLoop } from "./loop.js";
 import { MAX_ITERATIONS, TIMEOUT_MS } from "./config.js";
 
-export const autopilotCmd = command({
-  name: "autopilot",
+export const loopCmd = command({
+  name: "loop",
   description:
     'Run the Ralph loop: send a prompt to PRIME repeatedly until it emits <autopilot-done> or a budget is exhausted.',
   args: {
@@ -63,3 +67,5 @@ export const autopilotCmd = command({
     process.exit(0);
   },
 });
+
+

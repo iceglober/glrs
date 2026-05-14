@@ -36,6 +36,7 @@ describe("AGENT_TIERS", () => {
 
     expect(deep).toEqual([
       "architecture-advisor",
+      "autopilot-prime",
       "code-reviewer-thorough",
       "gap-analyzer",
       "plan",
@@ -45,6 +46,7 @@ describe("AGENT_TIERS", () => {
       "research-auto",
       "research-local",
       "research-web",
+      "scoper",
     ]);
     expect(mid).toEqual([
       "agents-md-writer",
@@ -86,6 +88,7 @@ describe("resolveHarnessModels", () => {
     // Deep tier agents
     for (const name of [
       "prime",
+      "scoper",
       "plan",
       "code-reviewer-thorough",
       "architecture-advisor",

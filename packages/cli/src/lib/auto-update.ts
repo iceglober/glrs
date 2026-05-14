@@ -13,8 +13,8 @@
  * a dependency (via the fixed changesets group), so both packages update together.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { join, sep } from "node:path";
 import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 
@@ -104,6 +104,21 @@ function isNewer(current: string, latest: string): boolean {
 }
 
 /**
+ * Detect whether the CLI is running from a dev checkout (source tree) vs
+ * an installed package. If from source, auto-update should be silent —
+ * re-exec'ing via PATH would hijack a developer's local build.
+ *
+ * Heuristic: installed packages always have `/node_modules/` in their
+ * resolved path. Source trees (git checkouts, symlinked via `bun link`
+ * that resolve through the source tree itself) do not.
+ */
+function isRunningFromDevCheckout(): boolean {
+  // Resolve symlinks so `bun link` / manual symlinks don't fool us.
+  const resolvedDir = realpathSync(import.meta.dir);
+  return !resolvedDir.includes(`${sep}node_modules${sep}`);
+}
+
+/**
  * Run the auto-update check. Call this at the top of cli.ts.
  *
  * Returns true if the CLI was updated and the process should re-exec.
@@ -118,6 +133,11 @@ export async function autoUpdate(): Promise<boolean> {
 
   // Don't recurse — if we're already in an update, skip
   if (process.env["GLRS_UPDATING"] === "1") return false;
+
+  // Don't auto-update dev checkouts — re-exec'ing via PATH would jump
+  // out of the user's local build into whatever global version is
+  // installed. That defeats the whole point of running from source.
+  if (isRunningFromDevCheckout()) return false;
 
   const currentVersion = getCurrentVersion();
   if (!currentVersion) return false;
