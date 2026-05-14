@@ -109,19 +109,71 @@ export async function runPlanSession(
 
     // Detect which plan output was produced
     if (_existsSync(multiFileMain)) {
-      // Multi-file plan: return the directory path
       return { planPath: multiFileDir };
     }
-
     if (_existsSync(singleFilePlan)) {
-      // Single-file plan
       return { planPath: singleFilePlan };
     }
 
-    throw new Error(
-      `@plan session completed but produced no plan file. ` +
-        `Expected either ${multiFileMain} or ${singleFilePlan}.`,
+    // No plan file found — retry with an explicit reminder
+    process.stderr.write(
+      `\n  ⚠ @plan didn't write a plan file. Re-sending with explicit instructions...\n`,
     );
+    const retryPrompt =
+      `You did not write a plan file. Write the plan NOW. ` +
+      `Read the scope at ${opts.scopePath}. ` +
+      `Write the plan to ${singleFilePlan} (single-file) or ${multiFileDir}/main.md (multi-file). ` +
+      `Do NOT ask questions. Just write the plan.`;
+
+    const retryResult = await _sendAndWait(server.client, {
+      sessionId,
+      message: retryPrompt,
+      agentName: "plan",
+      stallMs: timeoutMs,
+      autoRejectPermissions: true,
+      serverUrl: server.url,
+    });
+
+    if (retryResult.kind !== "idle" && retryResult.kind !== "question_rejected") {
+      throw new Error(`@plan retry failed: ${retryResult.kind}`);
+    }
+
+    // Check again after retry
+    if (_existsSync(multiFileMain)) {
+      return { planPath: multiFileDir };
+    }
+    if (_existsSync(singleFilePlan)) {
+      return { planPath: singleFilePlan };
+    }
+
+    // Still nothing — construct a minimal plan from the scope
+    process.stderr.write(
+      `\n  ⚠ @plan still didn't write a plan. Constructing minimal plan from scope.\n`,
+    );
+    const scopeContent = fs.existsSync(opts.scopePath)
+      ? fs.readFileSync(opts.scopePath, "utf-8")
+      : `# Plan\n\nScope file not found at ${opts.scopePath}.`;
+
+    const minimalPlan = [
+      `# Plan (auto-generated from scope)`,
+      "",
+      "This plan was auto-generated because @plan did not produce a plan file.",
+      "Review and refine before executing.",
+      "",
+      scopeContent,
+      "",
+      "## Acceptance criteria",
+      "",
+      "- [ ] Review and refine this auto-generated plan",
+      "",
+      "## File-level changes",
+      "",
+      "- To be determined after plan review.",
+    ].join("\n");
+
+    fs.mkdirSync(path.dirname(singleFilePlan), { recursive: true });
+    fs.writeFileSync(singleFilePlan, minimalPlan);
+    return { planPath: singleFilePlan };
   } finally {
     await server.shutdown();
   }

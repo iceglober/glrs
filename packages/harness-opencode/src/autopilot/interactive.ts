@@ -83,11 +83,16 @@ export async function orchestrateAutopilot(
   banner(`✓ Scope captured at ${scoperResult.scopePath}`);
 
   // Phase 2: Plan session
+  // Derive the slug from the scoper's output path — the scoper may have
+  // used a different slug than what we derived from the goal text (e.g.,
+  // if the agent chose a better name, or if the goal text was corrupted
+  // by a terminal paste artifact).
+  const actualSlug = path.basename(path.dirname(scoperResult.scopePath));
   banner("→ Phase 2/3: Planning (headless)...");
   const planResult = await deps.runPlan({
     scopePath: scoperResult.scopePath,
     planDir: opts.planDir,
-    slug: opts.slug,
+    slug: actualSlug || opts.slug,
   });
   banner(`✓ Plan written at ${planResult.planPath}`);
 

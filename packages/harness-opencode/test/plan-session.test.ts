@@ -10,6 +10,9 @@
  */
 
 import { describe, it, expect } from "bun:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { runPlanSession } from "../src/autopilot/plan-session.js";
 import type { StartedServer } from "../src/lib/opencode-server.js";
 
@@ -62,23 +65,32 @@ describe("runPlanSession", () => {
     expect(result.planPath).toBe("/tmp/plans/feat.md");
   });
 
-  it("throws when no plan file is produced", async () => {
+  it("falls back to auto-generated plan when no plan file is produced", async () => {
     const fakeServer = makeFakeServer();
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "plan-session-test-"));
 
-    await expect(
-      runPlanSession({
-        scopePath: "/tmp/plans/feat/scope.md",
-        planDir: "/tmp/plans",
+    try {
+      const result = await runPlanSession({
+        scopePath: path.join(tmpDir, "scope.md"),
+        planDir: tmpDir,
         slug: "feat",
         _deps: {
           startServer: async (_opts) => fakeServer,
           createSession: async (_client, _opts) => "session-plan",
           sendAndWait: async (_client, _opts) => ({ kind: "idle" }),
-          // neither file exists
-          existsSync: (_p) => false,
+          // neither file exists on first check; real fs for the fallback write
+          existsSync: (p) => fs.existsSync(p),
         },
-      }),
-    ).rejects.toThrow("produced no plan file");
+      });
+
+      // The fallback should have written a minimal plan
+      expect(result.planPath).toBe(path.join(tmpDir, "feat.md"));
+      expect(fs.existsSync(result.planPath)).toBe(true);
+      const content = fs.readFileSync(result.planPath, "utf-8");
+      expect(content).toContain("auto-generated from scope");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it("throws on session abort", async () => {
