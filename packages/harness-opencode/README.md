@@ -229,8 +229,6 @@ Your opencode.json values win. Example:
 | `glrs-oc uninstall [--dry-run]` | Remove plugin from opencode.json |
 | `glrs-oc doctor` | Check installation health |
 | `glrs-oc autopilot "<prompt>"` | Run PRIME in a loop (lights-out) |
-| `glrs-oc plan-dir` | Print repo-shared plan directory |
-| `glrs-oc plan-check <path>` | Validate legacy markdown plan files |
 
 `install` is an alias for `install-plugin`.
 

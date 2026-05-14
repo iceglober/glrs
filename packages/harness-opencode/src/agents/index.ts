@@ -278,7 +278,7 @@ const CORE_BASH_ALLOW_LIST = {
   "eslint *": "allow",
   "prettier *": "allow",
   "biome *": "allow",
-  // Our own CLI — the plan agent and assessor both call plan-check/plan-dir.
+  // Our own CLI (install, doctor, autopilot, etc.) — reviewer/build invocations.
   "bunx @glrs-dev/harness-plugin-opencode *": "allow",
   "glrs-oc *": "allow",
   // GitHub CLI — read-only gh calls are fine; destructive `gh pr merge`
@@ -344,19 +344,22 @@ const PRIME_PERMISSIONS = {
 
 const PLAN_PERMISSIONS = {
   edit: "allow" as const,
-  // Plan agent is read-only aside from writing under the plan dir — but
-  // it does need to RESOLVE the plan dir via the `plan-dir` CLI
-  // subcommand (returns an absolute path derived from the worktree's
-  // repo-folder key; see src/plan-paths.ts and src/cli.ts). The object-
-  // form denies bash broadly and re-allows only `bunx
-  // @glrs-dev/harness-plugin-opencode plan-dir[...]`. No other bash invocation
-  // is permitted, so the read-only-aside-from-plans invariant holds.
+  write: "allow" as const,
+  // Plan agent is read-only aside from writing under the plan dir. It
+  // resolves the plan dir inline (see src/agents/prompts/plan.md
+  // `## 4. Write the plan`): `$HOME/.glorious/opencode/<repo-folder>/plans/`,
+  // where `<repo-folder>` comes from
+  // `basename(dirname(git rev-parse --git-common-dir))`. The object-form
+  // denies bash broadly and re-allows only the four commands that snippet
+  // needs. Everything else remains denied, preserving the "plan writes only
+  // plan files" invariant (the write-scope constraint is prompt-enforced,
+  // not permission-enforced).
   bash: {
     "*": "deny",
-    "bunx @glrs-dev/harness-plugin-opencode plan-dir": "allow",
-    "bunx @glrs-dev/harness-plugin-opencode plan-dir *": "allow",
-    "glrs-oc plan-dir": "allow",
-    "glrs-oc plan-dir *": "allow",
+    "git rev-parse --git-common-dir": "allow",
+    "basename *": "allow",
+    "dirname *": "allow",
+    "mkdir -p *": "allow",
   },
   webfetch: "allow" as const,
   ast_grep: "deny",
@@ -651,10 +654,14 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: PRIME_PERMISSIONS as AgentConfig["permission"],
     }),
     plan: agentFromPrompt(planPrompt, {
-      description: "Interactive planner. Orchestrates gap analysis and adversarial review. Produces a written plan in the repo-shared plan directory (resolve via `bunx @glrs-dev/harness-plugin-opencode plan-dir`).",
+      description: "Interactive planner. Orchestrates gap analysis and adversarial review. Produces a written plan in the repo-shared plan directory (`~/.glorious/opencode/<repo-folder>/plans/`, resolved inline via `git rev-parse --git-common-dir`).",
       mode: "all",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
+      // @plan dispatches @gap-analyzer, @code-searcher, and @plan-reviewer
+      // as subagents. OpenCode strips the `task` tool from subagent contexts
+      // by default; explicit opt-in re-enables it.
+      tools: { task: true },
       permission: PLAN_PERMISSIONS as AgentConfig["permission"],
     }),
     build: agentFromPrompt(buildPrompt, {
@@ -703,6 +710,8 @@ export function createAgents(): Record<string, AgentConfig> {
       mode: "all",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
+      // @research dispatches @research-web, @research-local, @research-auto.
+      tools: { task: true },
       permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
     }),
 
@@ -715,6 +724,8 @@ export function createAgents(): Record<string, AgentConfig> {
       mode: "subagent",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
+      // @research-web dispatches its own parallel workstream agents.
+      tools: { task: true },
       permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
     }),
     "research-local": agentFromPrompt(researchLocalPrompt, {
@@ -722,6 +733,8 @@ export function createAgents(): Record<string, AgentConfig> {
       mode: "subagent",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
+      // @research-local dispatches parallel Explore subagents.
+      tools: { task: true },
       permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
     }),
     "research-auto": agentFromPrompt(researchAutoPrompt, {
