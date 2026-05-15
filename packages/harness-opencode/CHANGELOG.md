@@ -1,5 +1,68 @@
 # Changelog
 
+## 2.3.0
+
+### Minor Changes
+
+- [#71](https://github.com/iceglober/glrs/pull/71) [`94704ad`](https://github.com/iceglober/glrs/commit/94704adf36b5ea36fde4557cfd7b1d8494d0e68b) Thanks [@iceglober](https://github.com/iceglober)! - Add `@debriefer` agent and post-run debrief to the autopilot CLI
+
+  After the Ralph loop exits (any exit reason — sentinel, struggle, timeout, max-iterations, kill-switch, stall, or error), the CLI now optionally spawns a `@debriefer` agent session that produces a structured five-section summary:
+
+  1. **What was accomplished** — files changed, commits made, PRs opened
+  2. **What wasn't finished** — unchecked plan items
+  3. **Cost summary** — total USD, iterations completed, exit reason
+  4. **What to do next** — actionable suggestions based on exit reason
+  5. **Session artifacts** — log file path, plan file path, session ID
+
+  The debrief runs by default. Skip it with `--no-debrief` on the CLI or by setting `GLRS_AUTOPILOT_DEBRIEF=off` in the environment.
+
+  The `@debriefer` agent is mid-tier (Sonnet-class), read-only (no file edits, bash limited to git read commands), and never throws — if the debrief session fails, a warning is printed and the CLI exits normally based on the loop result.
+
+- [#68](https://github.com/iceglober/glrs/pull/68) [`a5bbbba`](https://github.com/iceglober/glrs/commit/a5bbbba3819b2ba8b08bd8baed8af69670895ca9) Thanks [@iceglober](https://github.com/iceglober)! - Autopilot rewrite, pilot rip-out, Tier 1 visual capabilities, opencode-snip toggle, research-variant hiding.
+
+  **Breaking changes:**
+
+  - **Pilot subsystem removed.** The `glrs oc pilot` CLI subcommand, the four pilot agents (`pilot-scoper` / `planner` / `builder` / `assessor`), the pilot-planning skill references, the `pilot-plugin.ts` runtime enforcer, and all pilot state/docs are gone. Users on pilot should migrate to the CLI autopilot or plain PRIME workflow.
+  - **TUI `/autopilot` slash command removed.** Autopilot is now CLI-only: `glrs oc autopilot "<prompt>"`. Users who want autonomous looping run the CLI in any terminal; the TUI stays for interactive work.
+  - **Research-variant agents (`research-web`, `research-local`, `research-auto`) hidden from the primary-agent picker.** They now run only as subagents dispatched by `@research`. Users who previously selected them directly should select `@research` instead.
+
+  **New features:**
+
+  - **CLI autopilot (`glrs oc autopilot "<prompt>"`)** — Ralph-loop engine: sends your prompt each iteration, watches the agent's response for `<autopilot-done>` sentinel, retries the same prompt when absent. Budgets: 50 iterations / 4h / 3 zero-progress iterations / kill-switch file. Supports single-issue (`"ship ENG-1234"`) and multi-issue (`"ship every open ENG-* issue in project ROADMAP"`) prompts.
+  - **opencode-snip installer toggle** — new "Plugin add-ons" section in `glrs oc install` (parallel to existing MCP toggles). Opt-in adds `opencode-snip` to the user's `plugin` array via config-merge, no vendored code. Useful for token reduction on bash-heavy sessions. Requires the Go `snip` binary separately.
+  - **Tier 1 visual capabilities** — `@plan`, `@research`, `@gap-analyzer` now have Playwright MCP access (joining `@prime`, `@build`, `@assessor`, `@assessor-thorough`, `@plan-reviewer`). Enable via the installer's Playwright toggle.
+  - **UI evaluation ladder (graceful degradation)** — all visual-capable agents now carry a four-tier capability ladder (Playwright → curl → webfetch → source inspection). When Playwright is unavailable, agents fall through to the next tier and report which method they used. No hard failure on Playwright absence.
+
+  **Internal:**
+
+  - Server lifecycle helpers (`startServer` / `createSession` / `sendAndWait` / `getLastAssistantMessage`) moved from `src/pilot/server.ts` to `src/lib/opencode-server.ts` (consumed by the CLI autopilot).
+  - Agent roster reduced from 20 → 16. Net −5,308 lines across 91 files. Test count 536 → 462 (pilot tests removed, visual-capability tests added).
+
+- [#68](https://github.com/iceglober/glrs/pull/68) [`a5bbbba`](https://github.com/iceglober/glrs/commit/a5bbbba3819b2ba8b08bd8baed8af69670895ca9) Thanks [@iceglober](https://github.com/iceglober)! - Add `glrs oc loop` as the canonical name for the Ralph-loop CLI runner (previously `glrs oc autopilot`). `autopilot` continues to work as an alias during this release cycle — no user scripts break.
+
+  A future release will diverge the two: `loop` stays as the raw-prompt Ralph-loop runner, and `autopilot` becomes an interactive scoping walkthrough that generates a structured multi-file plan and then invokes `loop` against it. This change (PR 2 of 3) lays the CLI plumbing for that split; PR 3 ships the interactive walkthrough and the structured plan format.
+
+  No behavior change in this release — both `glrs oc loop "<prompt>"` and `glrs oc autopilot "<prompt>"` do exactly what `autopilot` did before.
+
+- [#65](https://github.com/iceglober/glrs/pull/65) [`4e20574`](https://github.com/iceglober/glrs/commit/4e205745f9d8c46180d99b3237fc038a62cf94f1) Thanks [@iceglober](https://github.com/iceglober)! - Remove the broken `plan-dir` and `plan-check` CLI subcommands and fix `@plan`'s write permission
+
+  The `bunx @glrs-dev/harness-plugin-opencode plan-dir` and `plan-check` subcommands had been dead since the standalone-invocation redirect guard was introduced in April 2026 — they exit 1 with a deprecation banner and produce no stdout when an agent invokes them via `bunx`. Every caller silently fell through, so this surface was not load-bearing. This release rips both subcommands (and the bundled `plan-check.sh` script) out of the CLI. Agents that previously resolved the plan directory via `plan-dir` now use a four-line inline bash snippet that composes `git rev-parse --git-common-dir`, `dirname`, `basename`, and `mkdir -p` to compute `~/.glorious/opencode/<repo-folder>/plans/` directly (honoring `$GLORIOUS_PLAN_DIR` as an override base). The `plan-paths.ts` library module and its `getRepoFolder`, `getPlanDir`, `migratePlans` exports remain — they were never the broken piece.
+
+  Companion fix: `@plan`'s permission block was missing `write: "allow"`, which prevented the agent from ever creating a plan file even when `plan-dir` was conceptually working. The permission now grants `write: "allow"` plus a four-entry bash allow-list covering only the commands the inline snippet needs. The "plan writes only plan files" invariant is preserved at the prompt layer (hard-rules section).
+
+  If you were calling `bunx @glrs-dev/harness-plugin-opencode plan-dir` or `plan-check` directly in a script, switch to either (a) the inline bash snippet above or (b) importing `getPlanDir` / `migratePlans` from the library if you're writing TypeScript.
+
+- [#68](https://github.com/iceglober/glrs/pull/68) [`a5bbbba`](https://github.com/iceglober/glrs/commit/a5bbbba3819b2ba8b08bd8baed8af69670895ca9) Thanks [@iceglober](https://github.com/iceglober)! - Add multi-file structured plan schema, @scoper agent for interactive scoping, and plan-aware progress reporting in the autopilot plugin.
+
+  - New `@scoper` primary agent for first-principles alignment before planning
+  - Multi-file plan schema: `plans/<slug>/main.md` + `phase_N.md` files for complex features
+  - `plan-parser` module: parses both single-file and multi-file plans, returns structured progress data
+  - Plan-aware heartbeat: status messages include phase progress for multi-file plans
+  - `glrs oc autopilot` is now its own interactive subcommand (diverged from `loop`)
+  - `@plan` agent updated with multi-file decision heuristic
+  - `@build` agent updated with multi-file plan navigation instructions
+  - `@plan-reviewer` agent updated with multi-file consistency validation
+
 ## 2.2.0
 
 ### Minor Changes
