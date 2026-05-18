@@ -382,7 +382,7 @@ items:
       both are set. The webhook notifier gains an event-filter argument
       so events outside `notify_events` are silently dropped before any
       network call.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/loop.ts
         isNew: false
