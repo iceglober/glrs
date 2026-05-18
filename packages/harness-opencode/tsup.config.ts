@@ -75,17 +75,7 @@ export default defineConfig({
     } catch (e) {
       console.warn("! Could not copy command prompts:", e);
     }
-    // Copy autopilot prompt template (read at runtime by the Ralph loop)
-    try {
-      mkdirSync("dist/autopilot", { recursive: true });
-      copyFileSync(
-        "src/autopilot/prompt-template.md",
-        "dist/autopilot/prompt-template.md",
-      );
-      console.log("✓ Copied autopilot prompt template → dist/autopilot/");
-    } catch (e) {
-      console.warn("! Could not copy autopilot prompt template:", e);
-    }
+    // Note: autopilot prompt template has moved to @glrs-dev/autopilot package
     // Copy bin scripts
     try {
       mkdirSync("dist/bin", { recursive: true });

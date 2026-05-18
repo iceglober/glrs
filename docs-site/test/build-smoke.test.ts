@@ -247,10 +247,12 @@ describe("no MDX passthrough in built pages", () => {
       const body = extractBodyContent(html);
       const bodyLower = body.toLowerCase();
 
-      // Check for "import {" — but only in body text, not in script tags
-      // Strip script tags first to avoid false positives
-      const bodyNoScripts = body.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
-      if (bodyNoScripts.includes("import {")) {
+      // Check for "import {" — but only in prose, not in script/code tags
+      const bodyStripped = body
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+        .replace(/<pre[^>]*>[\s\S]*?<\/pre>/gi, "")
+        .replace(/<code[^>]*>[\s\S]*?<\/code>/gi, "");
+      if (bodyStripped.includes("import {")) {
         failures.push(`${filePath}: contains "import {" in body content`);
       }
 

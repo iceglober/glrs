@@ -10,8 +10,11 @@ export interface RegistryEntry {
   createdAt: string;
 }
 
-const REGISTRY_DIR = path.join(os.homedir(), ".glorious");
+// Primary (new writes)
+const REGISTRY_DIR = path.join(os.homedir(), ".glrs");
 const REGISTRY_FILE = path.join(REGISTRY_DIR, "worktrees.json");
+// Legacy fallback (reads only)
+const LEGACY_REGISTRY_FILE = path.join(os.homedir(), ".glorious", "worktrees.json");
 
 function ensureDir(): void {
   fs.mkdirSync(REGISTRY_DIR, { recursive: true });
@@ -34,11 +37,20 @@ function writeTextSync(filePath: string, content: string): void {
 }
 
 /** Load registry, pruning entries whose worktree paths no longer exist. */
+/** Load registry, pruning entries whose worktree paths no longer exist.
+ * Checks ~/.glrs/worktrees.json first; falls back to ~/.glorious/worktrees.json. */
 export function loadRegistry(): RegistryEntry[] {
-  if (!existsSync(REGISTRY_FILE)) return [];
+  // Try primary location first, then legacy fallback
+  const fileToRead = existsSync(REGISTRY_FILE)
+    ? REGISTRY_FILE
+    : existsSync(LEGACY_REGISTRY_FILE)
+      ? LEGACY_REGISTRY_FILE
+      : null;
+
+  if (!fileToRead) return [];
 
   try {
-    const raw = readTextSync(REGISTRY_FILE);
+    const raw = readTextSync(fileToRead);
     if (!raw) return [];
     const entries: RegistryEntry[] = JSON.parse(raw);
     const valid = entries.filter((e) => existsSync(e.wtPath));

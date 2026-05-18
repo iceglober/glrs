@@ -290,7 +290,7 @@ function migrateHarnessKeyToPluginOptions(configPath: string): void {
     const plugins: any[] = Array.isArray(config.plugin) ? config.plugin : [];
     const pluginIdx = plugins.findIndex((entry: any) => {
       const name = typeof entry === "string" ? entry : Array.isArray(entry) ? entry[0] : null;
-      return name === PLUGIN_NAME || String(name ?? "").startsWith(`${PLUGIN_NAME}@`);
+      return name === PLUGIN_NAME || String(name ?? "").startsWith(`${PLUGIN_NAME}@`) || String(name ?? "").includes("harness-opencode");
     });
     if (pluginIdx < 0) return;
 
@@ -372,7 +372,7 @@ export function writePluginOption(
     // Find plugin entry index
     const pluginIdx = config.plugin.findIndex((entry: any) => {
       const name = typeof entry === "string" ? entry : Array.isArray(entry) ? entry[0] : null;
-      return name === PLUGIN_NAME || String(name ?? "").startsWith(`${PLUGIN_NAME}@`);
+      return name === PLUGIN_NAME || String(name ?? "").startsWith(`${PLUGIN_NAME}@`) || String(name ?? "").includes("harness-opencode");
     });
 
     if (pluginIdx < 0) {
@@ -605,7 +605,7 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
     ? (Array.isArray(existing.plugin) ? existing.plugin : []).some(
         (p: any) => {
           const name = typeof p === "string" ? p : Array.isArray(p) ? p[0] : null;
-          return name === PLUGIN_NAME || String(name ?? "").startsWith(`${PLUGIN_NAME}@`);
+          return name === PLUGIN_NAME || String(name ?? "").startsWith(`${PLUGIN_NAME}@`) || String(name ?? "").includes("harness-opencode");
         },
       )
     : false;

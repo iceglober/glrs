@@ -156,12 +156,15 @@ export function resolveHarnessModels(
       continue;
     }
 
-    // 2. Tier override (with mid-execute → mid fallback)
+    // 2. Tier override (with fallback chains)
     const tier = AGENT_TIERS[agentName];
     if (tier) {
       let perTier = modelsConfig[tier];
-      // mid-execute fallback: if the agent is mid-execute but no
-      // mid-execute model is configured, fall back to the mid tier.
+      // autopilot-execute fallback: autopilot-execute → mid-execute → mid
+      if (tier === "autopilot-execute" && perTier === undefined) {
+        perTier = modelsConfig["mid-execute"] ?? modelsConfig["mid"];
+      }
+      // mid-execute fallback: mid-execute → mid
       if (tier === "mid-execute" && perTier === undefined) {
         perTier = modelsConfig["mid"];
       }

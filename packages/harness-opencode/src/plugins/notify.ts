@@ -21,8 +21,23 @@ const plugin: Plugin = async ({ $, client }) => {
   }
 
   return {
-    // Notify when a permission prompt fires (replaces the old permission.asked event)
+    // Notify when a permission prompt fires (replaces the old permission.asked event).
+    // In headless autopilot mode, auto-deny question permissions at the plugin level
+    // so they never reach the event stream — prevents wasted loop iterations.
     "permission.ask": async (input, output) => {
+      // Auto-deny question tool in headless autopilot mode.
+      // The Ralph loop sets GLRS_AUTOPILOT_HEADLESS=1; the permission.ask hook
+      // fires BEFORE the permission prompt reaches the event stream, so denying
+      // here prevents the question from ever being asked — no wasted iteration,
+      // no token burn on a retry.
+      if (
+        process.env["GLRS_AUTOPILOT_HEADLESS"] === "1" &&
+        ((input as any)?.type === "question" || (input as any)?.title === "")
+      ) {
+        output.status = "deny";
+        return;
+      }
+
       const tool = (input as any)?.tool ?? (input as any)?.title ?? "a tool";
       await notify("opencode permission required", `Approval needed for ${tool}.`);
     },

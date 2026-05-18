@@ -24,7 +24,7 @@ const REGISTRY_TIMEOUT_MS = 3000;
 
 /** Where we store the last-check timestamp + cached latest version. */
 function getStateDir(): string {
-  const dir = join(homedir(), ".glorious", "cli");
+  const dir = join(homedir(), ".glrs", "cli");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
 }
