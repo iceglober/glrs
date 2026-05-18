@@ -667,7 +667,7 @@ const DEBRIEFER_PERMISSIONS = {
 
 // ---- Tier map ----
 
-export type ModelTier = "deep" | "mid" | "mid-execute" | "fast";
+export type ModelTier = "deep" | "mid" | "mid-execute" | "autopilot-execute" | "fast";
 
 /**
  * Maps every agent name to its model tier. Used by the harness.models
@@ -688,6 +688,7 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   prime: "deep",
   scoper: "deep",
   "autopilot-prime": "deep",
+  "autopilot-fast": "autopilot-execute",
   plan: "deep",
   "architecture-advisor": "deep",
   "plan-reviewer": "deep",
@@ -732,7 +733,21 @@ export function createAgents(): Record<string, AgentConfig> {
       mode: "subagent",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.2,
-      permission: PRIME_PERMISSIONS as AgentConfig["permission"],
+      permission: {
+        ...PRIME_PERMISSIONS,
+        question: "deny",
+      } as AgentConfig["permission"],
+      tools: AUTOPILOT_PRIME_DISABLED_TOOLS as AgentConfig["tools"],
+    }),
+    "autopilot-fast": agentFromPrompt(primePrompt, {
+      description: "Fast executor for autopilot sessions. Same prompt as autopilot-prime but runs on the mid-execute tier (Kimi 2.5/2.6, GLM-5). Used when --fast is passed. Plans must be enriched with mirror refs and code pointers before using this agent.",
+      mode: "subagent",
+      model: "anthropic/claude-sonnet-4-6",
+      temperature: 0.1,
+      permission: {
+        ...PRIME_PERMISSIONS,
+        question: "deny",
+      } as AgentConfig["permission"],
       tools: AUTOPILOT_PRIME_DISABLED_TOOLS as AgentConfig["tools"],
     }),
     plan: agentFromPrompt(planPrompt, {

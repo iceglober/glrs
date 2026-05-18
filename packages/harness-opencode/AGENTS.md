@@ -22,8 +22,7 @@ glorious-opencode/
 │   ├── mcp/                  # MCP server configuration
 │   ├── bin/                  # Shell scripts (memory-mcp-launcher.sh)
 │   ├── cli/                  # Top-level CLI subcommands (install, uninstall, doctor, merge-config)
-│   ├── autopilot/            # Ralph loop engine + CLI driver
-│   └── lib/                  # Shared utilities (opencode-server.ts)
+│   └── lib/                  # Shared utilities
 ├── test/                     # bun:test test files
 ├── docs/                     # Architecture docs
 ├── dist/                     # Build output (gitignored)

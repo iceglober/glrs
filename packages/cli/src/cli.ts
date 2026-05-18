@@ -19,6 +19,7 @@ import { cleanup } from "./commands/cleanup.js";
 import { switchCmd } from "./commands/switch.js";
 import { go } from "./commands/go.js";
 import { autoUpdate } from "./lib/auto-update.js";
+import { runAutopilot } from "./commands/autopilot-tui.js";
 
 // ── Auto-update ─────────────────────────────────────────────────────────────
 // Check for updates before doing anything else. If an update is installed,
@@ -91,6 +92,18 @@ if (sub === "wt" || sub === "worktree") {
   // Run the worktree command — pass subcommand args directly to cmd-ts
   // (binary() adds an argv[0] stripping layer that breaks dispatch)
   await run(wt, wtArgs);
+  process.exit(0);
+}
+
+// Handle autopilot subcommand natively (TUI plan picker)
+if (sub === "autopilot") {
+  await runAutopilot();
+  process.exit(0);
+}
+
+// Handle dashboard subcommand (alias for now)
+if (sub === "dashboard") {
+  await runAutopilot();
   process.exit(0);
 }
 

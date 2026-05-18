@@ -20,16 +20,17 @@ export function repoName(): string {
 
 /** Root directory for all worktrees of a given repo. */
 export function worktreesRoot(repo: string): string {
-  const override = process.env.GLORIOUS_DIR;
+  const override = process.env.GLRS_DIR ?? process.env.GLORIOUS_DIR;
   if (override) return path.resolve(override, repo);
-  return path.join(os.homedir(), ".glorious", "worktrees", repo);
+  return path.join(os.homedir(), ".glrs", "worktrees", repo);
 }
 
 /**
  * Resolve where a worktree should live.
  *
- * Default: ~/.glorious/worktrees/<repo>/<name>
- * If GLORIOUS_DIR is set:  $GLORIOUS_DIR/<repo>/<name>
+ * Default: ~/.glrs/worktrees/<repo>/<name>
+ * If GLRS_DIR is set:  $GLRS_DIR/<repo>/<name>
+ * If GLORIOUS_DIR is set (legacy):  $GLORIOUS_DIR/<repo>/<name>
  */
 export function worktreePath(name: string, repo?: string): string {
   const repoKey = repo ?? repoName();

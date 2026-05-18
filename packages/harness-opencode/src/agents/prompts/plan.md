@@ -104,9 +104,16 @@ Multi-file plan template:
 
 ## Acceptance criteria
 
+Each item in the plan-state fence **must** include a `files:` field listing every file the item touches. For each file entry, provide the path (with `(NEW)` if the file does not yet exist) and a one-sentence `Change:` description. This gives the executor file-level specificity without requiring codebase exploration.
+
 \`\`\`plan-state
 - [ ] id: a1
   intent: <item>
+  files:
+    - <path/to/file> (NEW)
+      Change: <one sentence describing what to create or modify>
+    - <path/to/other-file>
+      Change: <one sentence>
   tests:
     - <path>::"<name>"
   verify: <command>

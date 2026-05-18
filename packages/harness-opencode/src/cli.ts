@@ -58,8 +58,8 @@ import {
 import { install } from "./cli/install.js";
 import { uninstall } from "./cli/uninstall.js";
 import { doctor } from "./cli/doctor.js";
-import { loopCmd } from "./autopilot/cli.js";
-import { autopilotInteractiveCmd } from "./autopilot/autopilot-cmd.js";
+import { configureCmd } from "./cli/configure.js";
+
 import { startUpdateCheck } from "./cli/cli-update.js";
 
 const VERSION = "0.1.0";
@@ -141,12 +141,9 @@ const cli = subcommands({
     "install-plugin": installPluginCmd,
     install: installCmd,
     uninstall: uninstallCmd,
+    configure: configureCmd,
     doctor: doctorCmd,
-    // `loop` is the raw-prompt Ralph loop runner.
-    // `autopilot` is the interactive three-phase orchestrator (scope → plan → loop).
-    // PR 3 diverged them: they are now separate subcommands.
-    loop: loopCmd,
-    autopilot: autopilotInteractiveCmd,
+    // Note: `loop` and `autopilot` commands have moved to @glrs-dev/cli.
   },
 });
 

@@ -164,13 +164,25 @@ const plugin: Plugin = async (input, options) => {
     },
   };
 
-  // tool.execute.before — telemetry timing.
+  // tool.execute.before — block question tool in headless mode + telemetry timing.
+  // Throwing from tool.execute.before is the documented "deny this tool execution"
+  // signal. The LLM gets an error response instead of a blocking prompt.
   const hasTelemetryBefore = telemetryHooks["tool.execute.before"] !== undefined;
-  if (hasTelemetryBefore) {
-    hooks["tool.execute.before"] = async (input, output) => {
-      if (hasTelemetryBefore) await telemetryHooks["tool.execute.before"]!(input, output);
-    };
-  }
+  hooks["tool.execute.before"] = async (input, output) => {
+    // Block the question tool in headless autopilot mode. The Ralph loop
+    // sets GLRS_AUTOPILOT_HEADLESS=1; throwing here prevents the tool from
+    // executing at all — the LLM sees an error and adapts, no session hang.
+    if (
+      process.env["GLRS_AUTOPILOT_HEADLESS"] === "1" &&
+      input.tool === "question"
+    ) {
+      throw new Error(
+        "The question tool is not available in autopilot mode. " +
+        "Pick a sensible default and continue without asking the user.",
+      );
+    }
+    if (hasTelemetryBefore) await telemetryHooks["tool.execute.before"]!(input, output);
+  };
 
   // tool.execute.after — chain tool-hooks middleware (backpressure, verify
   // loop, loop detection, read dedup) + telemetry event emission.

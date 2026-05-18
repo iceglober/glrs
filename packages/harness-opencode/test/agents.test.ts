@@ -8,7 +8,7 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 20 agents", () => {
+  it("returns exactly 21 agents", () => {
     // 20 agents total: prime (mode:primary), scoper (mode:primary),
     // autopilot-prime (mode:subagent — PRIME variant with question tool
     // denied for lights-out runs), plan + build + research (mode:all —
@@ -18,7 +18,7 @@ describe("createAgents", () => {
     // code-reviewer, code-reviewer-thorough, plan-reviewer, code-searcher,
     // gap-analyzer, architecture-advisor, docs-maintainer, lib-reader,
     // agents-md-writer), plus debriefer (mode:subagent — post-run summary agent).
-    expect(Object.keys(agents).length).toBe(20);
+    expect(Object.keys(agents).length).toBe(21);
   });
 
   it("has 3 primary-capable agents besides plan (prime, scoper, build; mode=primary or mode=all)", () => {
@@ -51,13 +51,13 @@ describe("createAgents", () => {
     expect(tools?.question).toBe(false);
   });
 
-  it("has 18 subagent-capable agents (mode=subagent or mode=all)", () => {
+  it("has 19 subagent-capable agents (mode=subagent or mode=all)", () => {
     // "Subagent-capable" means the agent appears in other agents'
     // task-tool picker. mode: "subagent" and mode: "all" both qualify.
     // plan, build, research have mode:"all" — user-invocable AND
     // task-dispatchable. research-web, research-local, research-auto,
-    // autopilot-prime, and debriefer have mode:"subagent" — NOT
-    // user-selectable as primary. The other 10 are also mode:"subagent" only.
+    // autopilot-prime, autopilot-fast, and debriefer have mode:"subagent"
+    // — NOT user-selectable as primary. The other 10 are also mode:"subagent" only.
     const subagentCapable = [
       "plan",
       "build",
@@ -66,6 +66,7 @@ describe("createAgents", () => {
       "research-local",
       "research-auto",
       "autopilot-prime",
+      "autopilot-fast",
       "debriefer",
       "spec-reviewer",
       "code-reviewer",
@@ -238,8 +239,8 @@ describe("createAgents", () => {
   });
 
   it("agent count is correct", () => {
-    // Alias for the "returns exactly 20 agents" test — used by changeset a9.
-    expect(Object.keys(agents).length).toBe(20);
+    // Alias for the "returns exactly 21 agents" test — used by changeset a9.
+    expect(Object.keys(agents).length).toBe(21);
   });
 
   it("plan agent has hallucination-defense clause", () => {
@@ -1145,8 +1146,9 @@ describe("prompt content assertions", () => {
     const templatePath = path.join(
       import.meta.dir,
       "..",
-      "src",
+      "..",
       "autopilot",
+      "src",
       "prompt-template.md",
     );
     const autopilotTemplate = fs.readFileSync(templatePath, "utf8");

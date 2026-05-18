@@ -7,7 +7,7 @@ import type { RepoIndex } from "./types.js";
 import * as path from "node:path";
 import * as os from "node:os";
 
-const INDEX_DIR = path.join(os.homedir(), ".glorious");
+const INDEX_DIR = path.join(os.homedir(), ".glrs");
 const INDEX_FILE = path.join(INDEX_DIR, "repos.json");
 
 function existsSync(filePath: string): boolean {
@@ -113,7 +113,7 @@ function resolveRepoPath(repo: string | undefined): string | undefined {
 
   throw new Error(
     `No repo named '${repo}' found.\n` +
-      `  Looked in worktree registry, ~/.glorious/repos.json, and scan roots.\n` +
+      `  Looked in worktree registry, ~/.glrs/repos.json, and scan roots.\n` +
       `  Fix: run 'glrs wt new' from inside the repo once.`,
   );
 }

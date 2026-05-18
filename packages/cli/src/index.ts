@@ -99,6 +99,7 @@ USAGE
 SUBCOMMANDS
   oc         OpenCode agent harness (install, pilot, etc.)
   wt         Worktree management (create, list, switch, delete, cleanup)
+  dashboard  Live TUI dashboard for all running autopilot sessions
 
 Run 'glrs <subcommand> --help' for per-command help.
 
@@ -107,6 +108,7 @@ EXAMPLES
   glrs wt new
   glrs wt list
   glrs wt switch
+  glrs dashboard
 
 REQUIREMENTS
   Bun >= 1.2.0 on PATH (install: https://bun.sh)
@@ -137,5 +139,5 @@ EXAMPLES
   glrs wt delete my-branch       # Delete specific worktree
   glrs wt cleanup                # Clean up merged worktrees
 
-Worktrees are stored in ~/.glorious/worktrees/<repo>/<name>/
+Worktrees are stored in ~/.glrs/worktrees/<repo>/<name>/
 `;

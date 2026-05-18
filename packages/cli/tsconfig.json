@@ -5,8 +5,10 @@
     "moduleResolution": "bundler",
     "types": ["bun"],
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
   "exclude": ["node_modules", "dist", "test"]
 }

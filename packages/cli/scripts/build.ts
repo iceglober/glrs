@@ -48,7 +48,7 @@ async function main(): Promise<void> {
     // tsup --clean wipes dist/, so remove manually first for predictability
     if (existsSync(CLI_DIST)) rmSync(CLI_DIST, { recursive: true });
     const result =
-      await $`bunx tsup src/index.ts src/cli.ts src/lib/*.ts src/commands/*.ts --format esm --dts --clean --external cmd-ts`
+      await $`bunx tsup src/index.ts src/cli.ts src/lib/*.ts src/commands/*.ts --format esm --dts --clean --external cmd-ts --external @glrs-dev/autopilot --external @glrs-dev/adapter-opencode`
         .cwd(CLI_ROOT)
         .nothrow();
     if (result.exitCode !== 0) {
