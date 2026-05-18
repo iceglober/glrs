@@ -132,7 +132,7 @@ items:
       the project-level config when found. Resolution order: plan-specific > project >
       DEFAULT_AUTOPILOT_CONFIG. Field-level merge — `phases.wave_0.agents.build.model`
       overrides just that one field, not the whole `phases` block.
-    checked: false
+    checked: true
     files:
       - path: packages/harness-opencode/src/autopilot/config-reader.ts
         isNew: false
