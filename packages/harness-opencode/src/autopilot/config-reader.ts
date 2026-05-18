@@ -216,6 +216,61 @@ function deepMerge(...objects: Record<string, unknown>[]): Record<string, unknow
 }
 
 /**
+ * Validates that custom agent prompt files exist for the given config.
+ *
+ * Checks `config.adapters?.opencode?.agents` and for each entry with a `prompt`
+ * field: (1) rejects absolute paths with a distinct error, (2) verifies the file
+ * exists relative to repoRoot, collecting all missing paths.
+ *
+ * @param config The resolved autopilot configuration
+ * @param repoRoot The root directory of the repository
+ * @throws Error if absolute paths are found or files are missing
+ */
+function validateAgentPromptFiles(config: Partial<AutopilotConfig>, repoRoot: string): void {
+  const agents = config.adapters?.opencode?.agents;
+  if (!agents || typeof agents !== "object") {
+    return;
+  }
+
+  const absolutePaths: string[] = [];
+  const missingFiles: string[] = [];
+
+  for (const [agentName, overrides] of Object.entries(agents)) {
+    if (!overrides || typeof overrides !== "object") continue;
+    const promptValue = (overrides as Record<string, unknown>).prompt;
+    if (typeof promptValue !== "string") continue;
+
+    // Check for absolute paths
+    if (path.isAbsolute(promptValue)) {
+      absolutePaths.push(promptValue);
+      continue;
+    }
+
+    // Check if file exists
+    const resolvedPath = path.join(repoRoot, promptValue);
+    if (!fs.existsSync(resolvedPath)) {
+      missingFiles.push(resolvedPath);
+    }
+  }
+
+  // Throw distinct errors for each problem type
+  if (absolutePaths.length > 0) {
+    const paths = absolutePaths.map((p) => `"${p}"`).join(", ");
+    throw new Error(
+      `Config error: absolute paths not allowed for agent prompts: ${paths}. ` +
+      `Paths must be relative to repo root.`,
+    );
+  }
+
+  if (missingFiles.length > 0) {
+    const paths = missingFiles.map((p) => `"${p}"`).join(", ");
+    throw new Error(
+      `Config error: agent prompt files not found: ${paths}`,
+    );
+  }
+}
+
+/**
  * Resolves autopilot configuration with plan-specific overrides.
  *
  * Performs a three-layer merge:
@@ -230,9 +285,12 @@ function deepMerge(...objects: Record<string, unknown>[]): Record<string, unknow
  * For example, setting only `models.execution` in the plan replaces just that field,
  * not the entire `models` block.
  *
+ * Also validates that custom agent prompt files exist (for OpenCode adapter).
+ *
  * @param repoRoot The root directory of the repository
  * @param planPath The plan path (directory or file), or `.` for no plan layer
  * @returns A fully-populated `AutopilotConfig` with all defaults applied
+ * @throws Error if agent prompt files are missing or have invalid paths
  */
 export function resolveConfig(repoRoot: string, planPath: string = "."): AutopilotConfig {
   // Read the project-level config
@@ -293,5 +351,10 @@ export function resolveConfig(repoRoot: string, planPath: string = "."): Autopil
     planConfig as Record<string, unknown>,
   );
 
-  return merged as AutopilotConfig;
+  const config = merged as AutopilotConfig;
+
+  // Validate agent prompt files exist
+  validateAgentPromptFiles(config, repoRoot);
+
+  return config;
 }

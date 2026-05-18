@@ -369,7 +369,7 @@ items:
       Absolute paths are rejected. For `claude-code-cli`, the equivalent is
       CLAUDE.md (read automatically by the CLI). A future item could add
       `config.adapters.claude_code_cli.claude_md_path` — out of scope here.
-    checked: false
+    checked: true
     files:
       - path: packages/harness-opencode/src/agents/index.ts
         isNew: false
