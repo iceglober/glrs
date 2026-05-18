@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.1
+
+### Patch Changes
+
+- [#75](https://github.com/iceglober/glrs/pull/75) [`9532a63`](https://github.com/iceglober/glrs/commit/9532a63157cc0edad7822452e710848052dde9fa) Thanks [@iceglober](https://github.com/iceglober)! - Fix `@glrs-dev/cli@2.4.0` install failure caused by `workspace:*` references to private packages leaking into the published tarball. The cli now vendors `@glrs-dev/autopilot` and `@glrs-dev/adapter-opencode` into its `dist/node_modules/` and strips workspace references from the published `package.json`.
+
 ## 2.4.0
 
 ### Minor Changes
