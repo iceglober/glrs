@@ -43,6 +43,8 @@ export interface GenerateChangesetResult {
 export interface GenerateChangesetOptions {
   /** Override the package name (default: "@glrs-dev/harness-plugin-opencode"). */
   packageName?: string;
+  /** Override the bump level (default: inferred from title keywords). */
+  bumpLevel?: BumpLevel;
   /**
    * Test-only: deterministic random suffix for filename collision avoidance.
    * @internal
@@ -168,7 +170,7 @@ export async function generateChangeset(
 
   const title = readPlanTitle(planPath) || "Autopilot run";
   const goal = readPlanGoal(planPath) || title;
-  const bumpLevel = inferBumpLevel(title);
+  const bumpLevel = opts.bumpLevel ?? inferBumpLevel(title);
   const slug = slugifyTitle(title);
 
   const content = `---

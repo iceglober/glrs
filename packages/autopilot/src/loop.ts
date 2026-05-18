@@ -38,6 +38,7 @@ import {
   STALL_MS,
   STALL_MS_BY_TIER,
   STATUS_INTERVAL_MS,
+  MAX_ITERATIONS_PER_ITEM,
 } from "./config.js";
 import { classifyError } from "./lib/error-classifier.js";
 import { detectProvider } from "./lib/credential-refresh.js";
@@ -192,6 +193,12 @@ export interface RalphLoopOptions {
    * This field enables config-driven model routing for workflow stages.
    */
   model?: string;
+  /**
+   * Optional config object for iteration budget tuning (item 3.2).
+   * - config.stall_timeout: per-iteration stall timeout in ms (overrides tier default)
+   * When provided, extracted values override tier-based defaults in the loop.
+   */
+  config?: unknown;
 }
 
 /**
@@ -282,11 +289,13 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   const maxIterations = opts.maxIterations ?? MAX_ITERATIONS;
   const timeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
   // Resolve tier early so the stall-timeout default and modelName lookup
-  // share the same tier. CLI override (opts.stallMs) always wins over
-  // the tier default.
+  // share the same tier. Resolution order: opts.stallMs (CLI/caller) >
+  // config.stall_timeout > tier default.
   const tier: keyof typeof STALL_MS_BY_TIER =
     opts.agentName === "autopilot-fast" ? "autopilot-execute" : "deep";
-  const stallMs = opts.stallMs ?? STALL_MS_BY_TIER[tier];
+  const cfgObj = opts.config as Record<string, unknown> | undefined;
+  const cfgStallMs = cfgObj?.stall_timeout as number | undefined;
+  const stallMs = opts.stallMs ?? cfgStallMs ?? STALL_MS_BY_TIER[tier];
   const struggleThreshold = opts.struggleThreshold ?? STRUGGLE_THRESHOLD;
 
   if (!opts.adapter) {

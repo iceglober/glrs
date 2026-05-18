@@ -9,7 +9,7 @@ items:
       `verify-runner.ts`. `config.verify_retry` controls whether a failed
       verify triggers a phase retry (today: always retries up to
       `MAX_PHASE_RETRIES`).
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/loop-session.ts
         isNew: false
@@ -72,7 +72,7 @@ items:
       `config.stall_timeout` replaces the tier-keyed `STALL_MS_BY_TIER`
       lookup in `runRalphLoop`. The tier-based constants in `config.ts`
       stay as fallbacks (used when the config value is undefined).
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/loop-session.ts
         isNew: false
@@ -155,7 +155,7 @@ items:
       `post_phase` failure logs a warning but does NOT mark the phase
       incomplete. `post_run` failure logs a warning. `on_error` is
       fire-and-forget — errors swallowed.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/hook-runner.ts
         isNew: true
@@ -248,7 +248,7 @@ items:
       (`"patch" | "minor" | "major"`) overrides the title-keyword
       inference in `inferBumpLevel`. `config.changeset_package` overrides
       the hardcoded `@glrs-dev/harness-plugin-opencode` package name.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/loop-session.ts
         isNew: false

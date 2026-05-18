@@ -13,7 +13,7 @@
     - `packages/harness-opencode/src/autopilot/verify-runner.ts` — accept timeout from config
   - verify: `bun run build && bun test`
 
-- [ ] 3.2 **Iteration budgets from config.** Replace `MAX_ITERATIONS_PER_PHASE_BY_TIER` and `MAX_ITERATIONS_PER_ITEM` with `config.max_iterations_per_phase` and `config.max_iterations_per_item`. The tier-based defaults become the fallback when config doesn't specify. `config.stall_timeout` replaces `STALL_MS_BY_TIER`.
+- [x] 3.2 **Iteration budgets from config.** Replace `MAX_ITERATIONS_PER_PHASE_BY_TIER` and `MAX_ITERATIONS_PER_ITEM` with `config.max_iterations_per_phase` and `config.max_iterations_per_item`. The tier-based defaults become the fallback when config doesn't specify. `config.stall_timeout` replaces `STALL_MS_BY_TIER`.
 
   - files (MODIFIED):
     - `packages/harness-opencode/src/autopilot/loop-session.ts` — read from config

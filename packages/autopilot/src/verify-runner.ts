@@ -47,6 +47,14 @@ export interface RunVerifyCommandsOptions {
   };
 }
 
+/**
+ * Verify strategy configuration (read from config.verify).
+ * - `after_phase`: run verify after the entire phase completes (default).
+ * - `after_item`: run verify after each item in fast mode (deep mode falls back to after_phase).
+ * - `skip`: bypass verify entirely, mark phase complete regardless.
+ */
+export type VerifyStrategy = "after_phase" | "after_item" | "skip";
+
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
