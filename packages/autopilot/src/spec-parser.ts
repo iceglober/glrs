@@ -50,6 +50,8 @@ function specItemToPlanItem(item: SpecItem): PlanItem & {
   mirror?: string;
   context?: string;
   conventions?: string;
+  proof?: string;
+  proof_type?: string;
 } {
   const files: PlanFileEntry[] = (item.files ?? []).map((f) => ({
     path: f.path,
@@ -67,6 +69,8 @@ function specItemToPlanItem(item: SpecItem): PlanItem & {
     ...(item.mirror !== undefined ? { mirror: item.mirror } : {}),
     ...(item.context !== undefined ? { context: item.context } : {}),
     ...(item.conventions !== undefined ? { conventions: item.conventions } : {}),
+    ...(item.proof !== undefined ? { proof: item.proof } : {}),
+    ...(item.proof_type !== undefined ? { proof_type: item.proof_type } : {}),
   };
 }
 
@@ -78,6 +82,8 @@ export function parseSpecItems(phasePath: string): Array<PlanItem & {
   mirror?: string;
   context?: string;
   conventions?: string;
+  proof?: string;
+  proof_type?: string;
 }> {
   try {
     const content = fs.readFileSync(phasePath, "utf-8");

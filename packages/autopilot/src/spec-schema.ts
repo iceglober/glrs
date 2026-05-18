@@ -30,6 +30,8 @@ export interface SpecItem {
   mirror?: string;
   context?: string;
   conventions?: string;
+  proof?: string;
+  proof_type?: string;
 }
 
 export interface SpecPhaseRef {

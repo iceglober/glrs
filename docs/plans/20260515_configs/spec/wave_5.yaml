@@ -6,7 +6,7 @@ items:
       `proof_type: string` fields on `SpecItem`. Update
       `specItemToPlanItem` to pass them through. Backward
       compatible — existing specs without these fields still work.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/spec-schema.ts
         isNew: false
