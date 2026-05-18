@@ -45,6 +45,7 @@ import { runHook } from "./hook-runner.js";
 import { validatePlan } from "./plan-validator.js";
 import { resolveModel, type AdapterName } from "./model-resolver.js";
 import { MAX_ITERATIONS_PER_PHASE_BY_TIER, MAX_ITERATIONS_PER_ITEM, STALL_MS_BY_TIER } from "./config.js";
+import { resolvePhaseConfig } from "./phase-config.js";
 
 export type { LoopSessionOptions, LoopResult };
 
@@ -351,6 +352,9 @@ export async function runLoopSession(
       : undefined;
     // Extract stall_timeout from config for this single-file run
     const singleFileStallMs = (singleFileCfgObj?.stall_timeout as number | undefined) ?? STALL_MS_BY_TIER[(opts.fast ? "autopilot-execute" : "deep")];
+    const singleFileAgentOverrides = (
+      (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined
+    )?.opencode?.agents as Record<string, Record<string, unknown>> | undefined;
     return _runRalphLoop({
       prompt,
       cwd: opts.cwd,
@@ -358,6 +362,7 @@ export async function runLoopSession(
       model: executionModel,
       stallMs: singleFileStallMs,
       config: opts.config,
+      agentOverrides: singleFileAgentOverrides,
       logger: opts.logger,
       emitter,
       adapter: opts.adapter,
@@ -587,6 +592,7 @@ export async function runLoopSession(
     emitter?: SessionEventEmitter;
     adapter?: import("./adapter.js").AgentAdapter;
     config?: unknown;
+    agentOverrides?: Record<string, Record<string, unknown>>;
     verifyConfig?: ReturnType<typeof extractVerifyConfig>;
   }): Promise<LoopResult> => {
     const { phaseFile, phasePath, laneId, runCwd, useParallel } = args;
@@ -620,6 +626,7 @@ export async function runLoopSession(
         maxIterations: maxIterationsPerPhase,
         ...(args.stallMs ? { stallMs: args.stallMs } : {}),
         config: args.config,
+        agentOverrides: args.agentOverrides,
         laneId: useParallel ? laneId : undefined,
         logger: args.logger,
         emitter: args.emitter,
@@ -691,6 +698,7 @@ export async function runLoopSession(
         maxIterations: perItemCap,
         ...(args.stallMs ? { stallMs: args.stallMs } : {}),
         config: args.config,
+        agentOverrides: args.agentOverrides,
         laneId: useParallel ? laneId : undefined,
         logger: args.logger,
         emitter: args.emitter,
@@ -812,6 +820,22 @@ export async function runLoopSession(
       total: uncheckedPhases.length,
     });
 
+    // Resolve phase-specific config (item 4.1) by deep-merging phase
+    // overrides from config.phases.<phaseName> over the base config.
+    // phaseName is the phase filename without extension.
+    const phaseName = phaseFile.replace(/\.(md|ya?ml)$/, "");
+    const phaseConfig = resolvePhaseConfig(
+      opts.config as Record<string, unknown>,
+      phaseName,
+    );
+
+    // Extract agent overrides from phase-specific config (item 4.2).
+    // Prefer phase-specific agents, fall back to base config.
+    const phaseAgentOverrides = (
+      (phaseConfig.adapters as Record<string, unknown> | undefined)?.opencode?.agents ??
+      ((opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined)?.opencode?.agents
+    ) as Record<string, Record<string, unknown>> | undefined;
+
     // Per-item execution path (item 4.8). When --fast is set the
     // resolved tier is `autopilot-execute` (mid-tier executor model).
     // Strict executors do better with one item at a time: send a
@@ -820,7 +844,7 @@ export async function runLoopSession(
     // path — they handle multi-item phases fine and the per-item
     // overhead would be wasted spawn cost.
     let result: LoopResult;
-    const phaseVerifyConfig = extractVerifyConfig(opts.config);
+    const phaseVerifyConfig = extractVerifyConfig(phaseConfig);
     if (opts.fast) {
       result = await runItemsForPhase({
         phaseFile,
@@ -835,6 +859,7 @@ export async function runLoopSession(
         emitter,
         adapter: opts.adapter,
         config: opts.config,
+        agentOverrides: phaseAgentOverrides,
         verifyConfig: phaseVerifyConfig,
       });
     } else {
@@ -864,6 +889,7 @@ export async function runLoopSession(
         maxIterations: maxIterationsPerPhase,
         stallMs,
         config: opts.config,
+        agentOverrides: phaseAgentOverrides,
         laneId: useParallel ? laneId : undefined,
         logger: opts.logger,
         emitter,
@@ -1390,6 +1416,9 @@ export async function runLoopSession(
       const executionModel = executionSpecifier
         ? resolveModel(executionSpecifier, adapterName ?? "opencode")
         : undefined;
+      const crossCuttingAgentOverrides = (
+        (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined
+      )?.opencode?.agents as Record<string, Record<string, unknown>> | undefined;
       const crossResult = await _runRalphLoop({
         prompt: crossCuttingPrompt,
         cwd: opts.cwd,
@@ -1397,6 +1426,7 @@ export async function runLoopSession(
         model: executionModel,
         stallMs,
         config: opts.config,
+        agentOverrides: crossCuttingAgentOverrides,
         logger: opts.logger,
         emitter,
         adapter: opts.adapter,

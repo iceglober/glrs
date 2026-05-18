@@ -41,8 +41,8 @@ class OpenCodeHandle implements AgentHandle {
 export class OpenCodeAdapter implements AgentAdapter {
   readonly name = "opencode";
 
-  async start(opts: { cwd: string }): Promise<AgentHandle> {
-    const server = await startServer({ cwd: opts.cwd });
+  async start(opts: { cwd: string; agents?: Record<string, unknown> }): Promise<AgentHandle> {
+    const server = await startServer({ cwd: opts.cwd, agentOverrides: opts.agents });
     return new OpenCodeHandle(server, opts.cwd);
   }
 

@@ -62,8 +62,9 @@ export class ClaudeCodeCliAdapter implements AgentAdapter {
     this.opts = opts ?? {};
   }
 
-  async start(opts: { cwd: string }): Promise<AgentHandle> {
+  async start(opts: { cwd: string; agents?: Record<string, unknown> }): Promise<AgentHandle> {
     await ensureClaudeOnPath();
+    // agents parameter is ignored for claude-code-cli adapter (item 4.2)
     return new ClaudeCodeHandle(opts.cwd);
   }
 

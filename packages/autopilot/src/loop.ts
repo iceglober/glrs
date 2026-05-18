@@ -201,6 +201,12 @@ export interface RalphLoopOptions {
    */
   model?: string;
   /**
+   * Per-call agent overrides (item 4.2). When provided, passed to the
+   * adapter's start() method to apply per-phase agent configuration.
+   * Each phase can have its own agent-to-model mapping.
+   */
+  agentOverrides?: Record<string, unknown>;
+  /**
    * Optional config object for iteration budget tuning (item 3.2),
    * commit settings (item 3.5), and other autopilot features.
    * - config.stall_timeout: per-iteration stall timeout in ms (overrides tier default)
@@ -429,7 +435,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
 
   // Start the agent
   log.info({ cwd: opts.cwd, maxIterations, timeoutMs }, `Starting agent (${adapter.name})`);
-  const handle = await adapter.start({ cwd: opts.cwd });
+  const handle = await adapter.start({ cwd: opts.cwd, agents: opts.agentOverrides });
   log.info({ agentId: handle.id }, "Agent ready");
   const abort = new AbortController();
 

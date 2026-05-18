@@ -87,7 +87,7 @@ items:
       mapping. The override-injection plumbing from wave 2 item 2.4
       already accepts a per-call `agents` argument — this item wires
       the phase-resolved config into that call site.
-    checked: false
+    checked: true
     files:
       - path: packages/harness-opencode/src/autopilot/loop-session.ts
         isNew: false
