@@ -1018,9 +1018,12 @@ export async function runLoopSession(
         iterations: result.iterations,
         costUsd: costThisPhase,
       });
-      // Run on_error hook (item 3.3) — fire-and-forget (errors swallowed)
-      if (hooksConfig.on_error) {
-        runHook(hooksConfig.on_error, runCwd, verifyConfig.timeoutMs).catch(() => {});
+      // Run on_error hook (item 3.3, 4.3) — phase-level hook overrides plan-level.
+      // Fire-and-forget (errors swallowed).
+      const phaseHooksConfig = extractHooksConfig(phaseConfig);
+      const effectiveOnErrorHook = phaseHooksConfig.on_error ?? hooksConfig.on_error;
+      if (effectiveOnErrorHook) {
+        runHook(effectiveOnErrorHook, runCwd, verifyConfig.timeoutMs).catch(() => {});
       }
       return {
         phaseFile,
@@ -1079,8 +1082,15 @@ export async function runLoopSession(
    * Mark a phase as completed: bump counters, push to the accumulator,
    * update main.md's checkbox, and persist a checkpoint. Used by both
    * paths after a phase reports `phaseComplete === true`.
+   *
+   * Accepts optional phaseHooksConfig for per-phase hook overrides (item 4.3).
+   * When provided, phase-level hooks override plan-level hooks.
    */
-  const recordPhaseCompletion = async (phaseFile: string, result: LoopResult) => {
+  const recordPhaseCompletion = async (
+    phaseFile: string,
+    result: LoopResult,
+    phaseHooksConfig?: ReturnType<typeof extractHooksConfig>,
+  ) => {
     phasesCompleted++;
     completedPhasesAcc.push(phaseFile);
     if (useYamlSpec) {
@@ -1111,9 +1121,11 @@ export async function runLoopSession(
       },
       "phase complete",
     );
-    // Run post_phase hook (item 3.3) — on failure, log warn but don't mark phase incomplete
-    if (hooksConfig.post_phase) {
-      const hookResult = await runHook(hooksConfig.post_phase, opts.cwd, verifyConfig.timeoutMs);
+    // Run post_phase hook (item 3.3, 4.3) — phase-level hook overrides plan-level.
+    // On failure, log warn but don't mark phase incomplete.
+    const effectivePostPhaseHook = phaseHooksConfig?.post_phase ?? hooksConfig.post_phase;
+    if (effectivePostPhaseHook) {
+      const hookResult = await runHook(effectivePostPhaseHook, opts.cwd, verifyConfig.timeoutMs);
       if (!hookResult.ok) {
         log.warn({ phase: phaseFile, output: hookResult.output }, "post_phase hook failed");
       }
@@ -1147,6 +1159,15 @@ export async function runLoopSession(
           message: `Aborted after ${phasesCompleted}/${uncheckedPhases.length} phases completed`,
         };
       }
+
+      // Resolve phase config once, before retry loop (item 4.1, 4.3).
+      // Phase-level hooks are extracted from this config and used at all hook call sites.
+      const phaseName = phaseFile.replace(/\.(md|ya?ml)$/, "");
+      const phaseConfig = resolvePhaseConfig(
+        opts.config as Record<string, unknown>,
+        phaseName,
+      );
+      const phaseHooksConfig = extractHooksConfig(phaseConfig);
 
       // Retry loop: re-run the phase when verify fails (up to N attempts, configurable).
       // Default 3 retries in production; 1 (no retry) when test deps are injected.
@@ -1186,9 +1207,10 @@ export async function runLoopSession(
           (opts as any).fast = false;
         }
 
-        // Run pre_phase hook (item 3.3)
-        if (hooksConfig.pre_phase) {
-          const hookResult = await runHook(hooksConfig.pre_phase, opts.cwd, verifyConfig.timeoutMs);
+        // Run pre_phase hook (item 3.3, 4.3) — phase-level hooks override plan-level hooks.
+        const effectivePrePhaseHook = phaseHooksConfig.pre_phase ?? hooksConfig.pre_phase;
+        if (effectivePrePhaseHook) {
+          const hookResult = await runHook(effectivePrePhaseHook, opts.cwd, verifyConfig.timeoutMs);
           if (!hookResult.ok) {
             log.warn({ phase: phaseFile, output: hookResult.output }, "pre_phase hook failed — skipping phase");
             if (isEscalation) {
@@ -1210,7 +1232,7 @@ export async function runLoopSession(
         lastVerifyFailures = r.verifyFailures;
 
         if (r.phaseComplete) {
-          await recordPhaseCompletion(phaseFile, r.phaseLoopResult);
+          await recordPhaseCompletion(phaseFile, r.phaseLoopResult, phaseHooksConfig);
           phaseSuccess = true;
           break;
         }
@@ -1298,9 +1320,17 @@ export async function runLoopSession(
           }
 
           const runCwd = handle?.path ?? opts.cwd;
-          // Run pre_phase hook (item 3.3)
-          if (hooksConfig.pre_phase) {
-            const hookResult = await runHook(hooksConfig.pre_phase, runCwd, verifyConfig.timeoutMs);
+          // Run pre_phase hook (item 3.3, 4.3) — resolve phase config and use
+          // phase-level hooks which override plan-level hooks.
+          const phaseName = phaseFile.replace(/\.(md|ya?ml)$/, "");
+          const phaseConfig = resolvePhaseConfig(
+            opts.config as Record<string, unknown>,
+            phaseName,
+          );
+          const phaseHooksConfig = extractHooksConfig(phaseConfig);
+          const effectivePrePhaseHook = phaseHooksConfig.pre_phase ?? hooksConfig.pre_phase;
+          if (effectivePrePhaseHook) {
+            const hookResult = await runHook(effectivePrePhaseHook, runCwd, verifyConfig.timeoutMs);
             if (!hookResult.ok) {
               log.warn({ phase: phaseFile, output: hookResult.output }, "pre_phase hook failed — skipping phase");
               // Return a skipped-phase result so runLanes can move on
@@ -1353,12 +1383,19 @@ export async function runLoopSession(
           // recordPhaseCompletion needs the LoopResult — but the
           // PhaseResult only carries cost/iterations summaries. Synthesize
           // a minimal LoopResult so the log line shape is consistent.
+          // Resolve phase-specific hooks for per-phase post_phase hook override (item 4.3).
+          const phaseName = r.phaseFile.replace(/\.(md|ya?ml)$/, "");
+          const phaseConfig = resolvePhaseConfig(
+            opts.config as Record<string, unknown>,
+            phaseName,
+          );
+          const phaseHooksConfig = extractHooksConfig(phaseConfig);
           await recordPhaseCompletion(r.phaseFile, {
             exitReason: "sentinel",
             iterations: r.iterations,
             message: "completed via parallel lane",
             cumulativeCostUsd: r.costUsd,
-          });
+          }, phaseHooksConfig);
         }
       }
 

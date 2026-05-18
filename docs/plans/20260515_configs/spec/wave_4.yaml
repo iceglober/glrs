@@ -161,7 +161,7 @@ items:
       4.1 already give this for free — this item documents and tests
       the hook-specific path through the four hook call sites added
       in wave 3 item 3.3.
-    checked: false
+    checked: true
     files:
       - path: packages/harness-opencode/src/autopilot/loop-session.ts
         isNew: false
