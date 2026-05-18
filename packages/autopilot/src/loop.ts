@@ -491,11 +491,12 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
 
     // Create the status heartbeat now that we have a session — the cost
     // poller needs the session ID to call getSessionCost().
+    const statusFileEnabled = (opts.config as Record<string, unknown> | undefined)?.status_file !== false;
     heartbeat = createStatusHeartbeat({
       logger: statusLog,
       intervalMs: STATUS_INTERVAL_MS,
       pollCost: async () => adapter.getSessionCost(handle, sessionId!),
-      statusFilePath: join(opts.cwd, ".agent", "autopilot-status.json"),
+      statusFilePath: statusFileEnabled ? join(opts.cwd, ".agent", "autopilot-status.json") : undefined,
     });
 
     // Start the status heartbeat. First tick fires after STATUS_INTERVAL_MS.

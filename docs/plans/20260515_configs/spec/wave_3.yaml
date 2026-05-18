@@ -457,7 +457,7 @@ items:
       "warn"|"error"|"fatal"|"silent"`, default `"info"`) sets the
       pino root log level, taking precedence over the
       `GLRS_AUTOPILOT_LOG_LEVEL` env var.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/loop-session.ts
         isNew: false

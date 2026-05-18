@@ -290,7 +290,8 @@ export class SessionRunner {
       logger = _createLogger({ cwd });
     } else {
       const { createAutopilotLogger } = await import("./lib/logger.js");
-      logger = createAutopilotLogger({ cwd });
+      const logLevel = (this.opts.config as Record<string, unknown> | undefined)?.log_level as string | undefined;
+      logger = createAutopilotLogger({ cwd, level: logLevel });
     }
 
     // Resolve model names from opencode config for display

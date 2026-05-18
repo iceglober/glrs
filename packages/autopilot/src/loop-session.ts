@@ -971,13 +971,16 @@ export async function runLoopSession(
 
     if (!phaseComplete && !SUCCESS_REASONS.has(result.exitReason)) {
       log.warn({ phase: phaseFile, exitReason: result.exitReason }, "phase failed");
-      if (opts.fast && preHeadSha && preHeadSha !== "HEAD") {
+      const rollbackConfig = (cfgObj?.rollback_on_failure as string | undefined) ?? "soft";
+      if (rollbackConfig !== "off" && opts.fast && preHeadSha && preHeadSha !== "HEAD") {
         const ok = await resetSoft(runCwd, preHeadSha, {
           onWarn: (m) => log.warn(m),
         });
         if (ok) {
           log.info({ ref: preHeadSha.slice(0, 8) }, "soft-reset to pre-phase state");
         }
+      } else if (rollbackConfig === "off" && opts.fast && preHeadSha && preHeadSha !== "HEAD") {
+        log.info({ ref: preHeadSha.slice(0, 8) }, "rollback disabled by config — keeping phase changes");
       }
       // Emit typed phase:done event (failed)
       emitter?.emitEvent({
@@ -1010,13 +1013,16 @@ export async function runLoopSession(
         { phase: phaseFile, max: maxIterationsPerPhase },
         "phase budget exhausted — moving on",
       );
-      writeCheckpoint(opts.cwd, {
-        planPath: opts.planPath,
-        completedPhases: [...completedPhasesAcc],
-        totalCostUsd,
-        totalIterations,
-        timestamp: new Date().toISOString(),
-      });
+      const checkpointEnabled = cfgObj?.checkpoint !== false;
+      if (checkpointEnabled) {
+        writeCheckpoint(opts.cwd, {
+          planPath: opts.planPath,
+          completedPhases: [...completedPhasesAcc],
+          totalCostUsd,
+          totalIterations,
+          timestamp: new Date().toISOString(),
+        });
+      }
     }
 
     // Emit typed phase:done event (success or soft-failure)
@@ -1059,13 +1065,16 @@ export async function runLoopSession(
       const updatedMain = markPhaseChecked(_readFileSync(mainMdPath), phaseFile);
       _writeFileSync(mainMdPath, updatedMain);
     }
-    writeCheckpoint(opts.cwd, {
-      planPath: opts.planPath,
-      completedPhases: [...completedPhasesAcc],
-      totalCostUsd,
-      totalIterations,
-      timestamp: new Date().toISOString(),
-    });
+    const checkpointEnabled = cfgObj?.checkpoint !== false;
+    if (checkpointEnabled) {
+      writeCheckpoint(opts.cwd, {
+        planPath: opts.planPath,
+        completedPhases: [...completedPhasesAcc],
+        totalCostUsd,
+        totalIterations,
+        timestamp: new Date().toISOString(),
+      });
+    }
     log.info(
       {
         phase: phaseFile,
@@ -1095,13 +1104,16 @@ export async function runLoopSession(
       // Check abort signal at phase boundaries (graceful shutdown via TUI Ctrl+C)
       if (opts.signal?.aborted) {
         log.info({ completed: phasesCompleted, remaining: uncheckedPhases.length }, "abort signal received — writing checkpoint and stopping");
-        writeCheckpoint(opts.cwd, {
-          planPath: opts.planPath,
-          completedPhases: [...completedPhasesAcc],
-          totalCostUsd,
-          totalIterations,
-          timestamp: new Date().toISOString(),
-        });
+        const checkpointEnabled = cfgObj?.checkpoint !== false;
+        if (checkpointEnabled) {
+          writeCheckpoint(opts.cwd, {
+            planPath: opts.planPath,
+            completedPhases: [...completedPhasesAcc],
+            totalCostUsd,
+            totalIterations,
+            timestamp: new Date().toISOString(),
+          });
+        }
         return {
           exitReason: "aborted",
           iterations: totalIterations,
