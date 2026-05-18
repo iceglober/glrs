@@ -28,7 +28,7 @@ import {
 import { recordHead, resetSoft } from "./git-safety.js";
 import { parseItems } from "./plan-parser.js";
 import { hasSpec, readSpecGoal, readSpecConstraints, detectSpecPhases, filterUncheckedSpecPhases, parseSpecItems } from "./spec-parser.js";
-import { markPhaseCompleted as specMarkPhaseCompleted } from "./spec-writer.js";
+import { markPhaseCompleted as specMarkPhaseCompleted, markItemUnchecked } from "./spec-writer.js";
 import { buildConflictGraph, hasParallelism } from "./conflict-graph.js";
 import { runLanes, type PhaseResult } from "./lane-orchestrator.js";
 import {
@@ -102,6 +102,22 @@ function extractHooksConfig(config: unknown): {
     post_run: cfgObj?.hooks?.post_run as string | undefined,
     on_error: cfgObj?.hooks?.on_error as string | undefined,
   };
+}
+
+/**
+ * Uncheck items by ID in markdown phase content.
+ * Replaces `- [x] id: <id>` with `- [ ] id: <id>` for matching items.
+ */
+function uncheckItemsInMarkdown(content: string, itemIds: string[]): string {
+  if (itemIds.length === 0) return content;
+  let result = content;
+  for (const itemId of itemIds) {
+    const escaped = itemId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Match `- [x] id: <itemId>` (case-insensitive for x/X) and replace with `- [ ]`
+    const re = new RegExp(`^(- )\\[[xX]\\](\\s+id:\\s+${escaped}\\b)`, "m");
+    result = result.replace(re, "$1[ ]$2");
+  }
+  return result;
 }
 
 /**
@@ -586,6 +602,8 @@ export async function runLoopSession(
     runCwd: string;
     runRalphLoop: typeof runRalphLoop;
     readFileSync: (p: string) => string;
+    writeFileSync?: (p: string, content: string) => void;
+    planPath?: string;
     useParallel: boolean;
     stallMs?: number;
     logger?: import("./lib/logger.js").AutopilotLogger;
@@ -804,6 +822,24 @@ export async function runLoopSession(
             },
             "per-item verify failed",
           );
+          // Uncheck item that failed verify (verify-before-check enforcement).
+          if (useYamlSpec && args.planPath) {
+            markItemUnchecked(args.planPath, phaseFile, item.id);
+            args.logger?.root.child({ component: "autopilot.per-item-verify" }).warn(
+              { phase: phaseFile, itemId: item.id },
+              "unchecked item that failed verify — will retry next iteration",
+            );
+          } else if (args.writeFileSync) {
+            const currentPhaseContent = args.readFileSync(phasePath);
+            const uncheckContent = uncheckItemsInMarkdown(currentPhaseContent, [item.id]);
+            if (uncheckContent !== currentPhaseContent) {
+              args.writeFileSync(phasePath, uncheckContent);
+              args.logger?.root.child({ component: "autopilot.per-item-verify" }).warn(
+                { phase: phaseFile, itemId: item.id },
+                "unchecked item that failed verify — will retry next iteration",
+              );
+            }
+          }
           if (args.verifyConfig.retryOnFailure) {
             return {
               exitReason: "sentinel",
@@ -899,6 +935,8 @@ export async function runLoopSession(
         runCwd,
         runRalphLoop: _runRalphLoop,
         readFileSync: _readFileSync,
+        writeFileSync: _writeFileSync,
+        planPath: opts.planPath,
         useParallel,
         stallMs,
         logger: opts.logger,
@@ -1008,6 +1046,7 @@ export async function runLoopSession(
           });
         }
         if (failed.length > 0) {
+          const failedItemIds = failed.map((f) => f.itemId);
           for (const f of failed) {
             log.warn(
               {
@@ -1018,6 +1057,23 @@ export async function runLoopSession(
               },
               "verify command failed",
             );
+          }
+          // Uncheck items that failed verify (verify-before-check enforcement).
+          // The agent marked them checked, but if verify fails, reset them so
+          // the next iteration retries.
+          for (const itemId of failedItemIds) {
+            if (useYamlSpec) {
+              markItemUnchecked(opts.planPath, phaseFile, itemId);
+            } else {
+              const uncheckContent = uncheckItemsInMarkdown(updatedPhaseContent, [itemId]);
+              if (uncheckContent !== updatedPhaseContent) {
+                _writeFileSync(phasePath, uncheckContent);
+                log.warn(
+                  { phase: phaseFile, itemId },
+                  "unchecked item that failed verify — will retry next iteration",
+                );
+              }
+            }
           }
           phaseComplete = false;
           // Build a summary of failures for retry context

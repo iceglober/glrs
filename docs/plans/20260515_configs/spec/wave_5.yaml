@@ -267,7 +267,7 @@ items:
       failed, UNCHECK it (set `checked: false`) so the next
       iteration retries. Log a warning when this happens — the
       model lied about completion.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/loop-session.ts
         isNew: false
