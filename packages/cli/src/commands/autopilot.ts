@@ -236,41 +236,64 @@ export const autopilotInteractiveCmd = command({
       process.stderr.write("  Adding mirror refs, code pointers, and conventions...\n");
     }
 
-    // Create SessionRunner — thin wrapper around enrichment + execution
-    const adapter = await createAdapter((config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER, config);
-    const runner = new SessionRunner({
-      planPath: path.resolve(process.cwd(), planPath),
-      cwd: process.cwd(),
-      fast,
-      resume,
-      maxIterationsPerPhase,
-      parallel,
-      ship,
-      adapter,
-      enrichmentConfig: config.enrichment,
-      config,
-    });
-
-    // Attach CLI renderer — subscribes to events and writes formatted text to stderr
-    const renderer = createCliRenderer(runner.events);
-
-    const result = await runner.run();
-    renderer.unsubscribe();
-
-    // Print enrichment completion line (after enrichment events have been rendered)
-    if (fast && planPath) {
-      process.stderr.write("  ✓ Plan enriched — executing with fast model (mid-execute tier)\n\n");
+    // Set GLRS_AGENT_OVERRIDES env var if the adapter is opencode and has agent overrides.
+    // The plugin's config-hook reads this at server startup. Save the prior value so we
+    // can restore it after the run (though the adapter's shutdown() also handles restoration
+    // to keep the parent process clean).
+    const priorAgentOverridesEnv = process.env["GLRS_AGENT_OVERRIDES"];
+    const resolvedAdapterName = (config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER;
+    if (resolvedAdapterName === "opencode") {
+      const agentOverrides = config.adapters?.opencode?.agents;
+      if (agentOverrides && Object.keys(agentOverrides).length > 0) {
+        process.env["GLRS_AGENT_OVERRIDES"] = JSON.stringify(agentOverrides);
+      }
     }
 
-    // Show completion summary
-    const costStr = result.loopResult.cumulativeCostUsd
-      ? ` · $${result.loopResult.cumulativeCostUsd.toFixed(2)}`
-      : "";
-    process.stdout.write(
-      `\n\x1b[1m✓ Autopilot complete\x1b[0m\n` +
-        `  Plan:   ${result.planPath}\n` +
-        `  Result: ${result.loopResult.exitReason} after ${result.loopResult.iterations} iteration(s)${costStr}\n` +
-        `\n`,
-    );
+    try {
+      // Create SessionRunner — thin wrapper around enrichment + execution
+      const adapter = await createAdapter(resolvedAdapterName, config);
+      const runner = new SessionRunner({
+        planPath: path.resolve(process.cwd(), planPath),
+        cwd: process.cwd(),
+        fast,
+        resume,
+        maxIterationsPerPhase,
+        parallel,
+        ship,
+        adapter,
+        enrichmentConfig: config.enrichment,
+        config,
+      });
+
+      // Attach CLI renderer — subscribes to events and writes formatted text to stderr
+      const renderer = createCliRenderer(runner.events);
+
+      const result = await runner.run();
+      renderer.unsubscribe();
+
+      // Print enrichment completion line (after enrichment events have been rendered)
+      if (fast && planPath) {
+        process.stderr.write("  ✓ Plan enriched — executing with fast model (mid-execute tier)\n\n");
+      }
+
+      // Show completion summary
+      const costStr = result.loopResult.cumulativeCostUsd
+        ? ` · $${result.loopResult.cumulativeCostUsd.toFixed(2)}`
+        : "";
+      process.stdout.write(
+        `\n\x1b[1m✓ Autopilot complete\x1b[0m\n` +
+          `  Plan:   ${result.planPath}\n` +
+          `  Result: ${result.loopResult.exitReason} after ${result.loopResult.iterations} iteration(s)${costStr}\n` +
+          `\n`,
+      );
+    } finally {
+      // Restore the prior GLRS_AGENT_OVERRIDES env var value to keep the parent process clean.
+      // The adapter's shutdown() also handles restoration, but we restore here for safety.
+      if (priorAgentOverridesEnv === undefined) {
+        delete process.env["GLRS_AGENT_OVERRIDES"];
+      } else {
+        process.env["GLRS_AGENT_OVERRIDES"] = priorAgentOverridesEnv;
+      }
+    }
   },
 });

@@ -66,37 +66,65 @@ async function ensureOpencodeOnPath(): Promise<void> {
  * Uses createOpencode() which spawns the server process and creates
  * a connected client. The server inherits process.cwd() as its project
  * directory.
+ *
+ * When `agentOverrides` is provided, sets GLRS_AGENT_OVERRIDES in the
+ * server environment before startup, and restores the prior value on
+ * shutdown to keep the parent process clean.
  */
 export async function startServer(opts: {
   cwd: string;
   port?: number;
   timeoutMs?: number;
+  agentOverrides?: Record<string, { model?: string; prompt?: string }>;
 }): Promise<StartedServer> {
   await ensureOpencodeOnPath();
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
   const port = opts.port ?? 0;
 
-  // createOpencode() starts the server and returns a connected client.
-  // The server uses process.cwd() as the project directory.
-  const { client, server } = await createOpencode({
-    port,
-    timeout: timeoutMs,
-    hostname: "127.0.0.1",
-  });
-
-  let shutdownCalled = false;
-  const shutdown = async () => {
-    if (shutdownCalled) return;
-    shutdownCalled = true;
-    try {
-      server.close();
-    } catch {
-      // Ignore shutdown errors
+  // Save the prior value of GLRS_AGENT_OVERRIDES so we can restore it
+  const priorEnvValue = process.env["GLRS_AGENT_OVERRIDES"];
+  try {
+    // Set the env var if overrides are provided
+    if (opts.agentOverrides) {
+      process.env["GLRS_AGENT_OVERRIDES"] = JSON.stringify(opts.agentOverrides);
     }
-  };
 
-  return { url: server.url, client, shutdown };
+    // createOpencode() starts the server and returns a connected client.
+    // The server uses process.cwd() as the project directory.
+    const { client, server } = await createOpencode({
+      port,
+      timeout: timeoutMs,
+      hostname: "127.0.0.1",
+    });
+
+    let shutdownCalled = false;
+    const shutdown = async () => {
+      if (shutdownCalled) return;
+      shutdownCalled = true;
+      try {
+        server.close();
+      } catch {
+        // Ignore shutdown errors
+      }
+      // Restore the prior env var value to keep the parent process clean
+      if (priorEnvValue === undefined) {
+        delete process.env["GLRS_AGENT_OVERRIDES"];
+      } else {
+        process.env["GLRS_AGENT_OVERRIDES"] = priorEnvValue;
+      }
+    };
+
+    return { url: server.url, client, shutdown };
+  } catch (err) {
+    // Restore on error during startup
+    if (priorEnvValue === undefined) {
+      delete process.env["GLRS_AGENT_OVERRIDES"];
+    } else {
+      process.env["GLRS_AGENT_OVERRIDES"] = priorEnvValue;
+    }
+    throw err;
+  }
 }
 
 /**

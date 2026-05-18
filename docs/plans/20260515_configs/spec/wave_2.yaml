@@ -284,7 +284,7 @@ items:
       `GLRS_AUTOPILOT_HEADLESS` / `HARNESS_OPENCODE_PERM_DEBUG` env vars
       already read in `index.ts:176` and `config-hook.ts:61`. Not applicable
       to claude-code-cli — no persistent server, no plugin system.
-    checked: false
+    checked: true
     files:
       - path: packages/cli/src/commands/autopilot.ts
         isNew: false
