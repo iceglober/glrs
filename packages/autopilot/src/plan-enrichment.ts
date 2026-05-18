@@ -30,6 +30,7 @@ import type { AutopilotLogger } from "./lib/logger.js";
 import { childLogger } from "./lib/logger.js";
 import type { AgentAdapter } from "./adapter.js";
 import type { SessionEventEmitter } from "./session-runner.js";
+import { loadStrategy } from "./enrich-strategy.js";
 
 /**
  * The fraction of items that must declare all three enrichment fields
@@ -116,6 +117,7 @@ export function computeSpecEnrichmentRatio(planDir: string): number {
 
 /** Build the spec generation prompt for a plan file. */
 function buildSpecGenerationPrompt(
+  cwd: string,
   planDir: string,
   phaseFile: string,
   content: string,
@@ -178,37 +180,19 @@ ${content}
 
 Write the file \`${planDir}/${specPath}\` using the write/edit tool, then respond with "SPEC_COMPLETE" when done.`;
 
-  const phaseInstructions = `You are generating a YAML spec file from a markdown plan phase, enriched with codebase context.
+  if (isMain) {
+    return mainInstructions;
+  }
 
-Read the markdown plan content below and write \`${specPath}\` (relative to the plan directory: ${planDir}) using the write/edit tool.
+  const phaseTemplate = loadStrategy(cwd, "default");
+  const phaseInstructions = phaseTemplate
+    .replaceAll("{{specPath}}", specPath)
+    .replaceAll("{{planDir}}", planDir)
+    .replaceAll("{{specFileName}}", specFileName)
+    .replaceAll("{{phaseFile}}", phaseFile)
+    .replaceAll("{{content}}", content);
 
-The output file should follow this schema:
-
-${schemaExample}
-
-For each acceptance-criteria item in the plan:
-1. Extract \`id\`, \`intent\`, \`files\`, \`tests\`, \`verify\` from the markdown.
-2. Set \`checked: false\` for all items.
-3. Add enrichment fields by reading the actual codebase:
-   - **mirror**: Find the most similar existing file in the codebase and set \`mirror: <path>\`. This is the pattern-match target the executor will follow.
-   - **context**: For each file being MODIFIED (not NEW), read the relevant function/section and add 10-20 lines of the current code. For NEW files, add the key function signatures the file should export.
-   - **conventions**: List project-specific patterns: import style (named vs default), export pattern, test framework (vitest/jest/bun:test), naming conventions, error handling pattern.
-
-Rules:
-- Read actual files from the codebase to get accurate code pointers. Do not hallucinate file contents.
-- Be concise — 10-20 lines of context per file, not the whole file.
-- Only add enrichment fields you can verify from the codebase.
-
-Here is the plan file to convert:
-
-### ${phaseFile}
-\`\`\`markdown
-${content}
-\`\`\`
-
-Write the file \`${planDir}/${specPath}\` using the write/edit tool, then respond with "SPEC_COMPLETE" when done.`;
-
-  return isMain ? mainInstructions : phaseInstructions;
+  return phaseInstructions;
 }
 
 /**
@@ -441,7 +425,7 @@ export async function enrichPlanForFastModel(
         continue;
       }
 
-      const prompt = buildSpecGenerationPrompt(resolvedPath, phaseFile, content);
+      const prompt = buildSpecGenerationPrompt(cwd, resolvedPath, phaseFile, content);
 
       let toolCalls = 0;
       let fileCost = 0;

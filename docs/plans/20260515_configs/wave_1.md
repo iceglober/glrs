@@ -15,7 +15,7 @@
     - `packages/harness-opencode/src/autopilot/strategies/default.md` — extracted from current `buildPerFilePrompt`
   - verify: `bun test test/enrich-strategy.test.ts`
 
-- [ ] 1.2 **Ship default strategy as a bundled file.** Extract the current `buildPerFilePrompt` body into `src/autopilot/strategies/default.md`. Update `tsup.config.ts` or the build's `onSuccess` to copy `src/autopilot/strategies/` to `dist/autopilot/strategies/`. Update `buildPerFilePrompt` to read from the bundled file instead of hardcoding the prompt string.
+- [x] 1.2 **Ship default strategy as a bundled file.** Extract the current `buildPerFilePrompt` body into `src/autopilot/strategies/default.md`. Update `tsup.config.ts` or the build's `onSuccess` to copy `src/autopilot/strategies/` to `dist/autopilot/strategies/`. Update `buildPerFilePrompt` to read from the bundled file instead of hardcoding the prompt string.
 
   - files (MODIFIED):
     - `packages/harness-opencode/src/autopilot/plan-enrichment.ts` — replace hardcoded prompt with `loadStrategy` call

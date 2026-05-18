@@ -75,6 +75,13 @@ export default defineConfig({
     } catch (e) {
       console.warn("! Could not copy command prompts:", e);
     }
+    // Copy enrichment strategies
+    try {
+      copyDir("src/autopilot/strategies", "dist/autopilot/strategies");
+      console.log("✓ Copied src/autopilot/strategies → dist/autopilot/strategies");
+    } catch (e) {
+      console.warn("! Could not copy strategies:", e);
+    }
     // Note: autopilot prompt template has moved to @glrs-dev/autopilot package
     // Copy bin scripts
     try {
