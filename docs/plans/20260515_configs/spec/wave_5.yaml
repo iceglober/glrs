@@ -427,7 +427,7 @@ items:
       / typecheck 60s, e2e 120s, custom uses config.verify_timeout
       (default 300s). The verify runner reads proof_type from the
       item and applies the appropriate timeout.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/verify-runner.ts
         isNew: false
