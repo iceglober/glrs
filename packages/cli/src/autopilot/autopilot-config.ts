@@ -104,6 +104,48 @@ export interface AutopilotConfig {
   notify_events?: Array<"iteration_complete" | "phase_complete" | "run_complete" | "error" | "struggle" | "stall">;
 
   /**
+   * Per-phase iteration budget override.
+   * CLI --max-iterations-per-phase flag maps to this field.
+   * @default varies by tier (see MAX_ITERATIONS_PER_PHASE_BY_TIER)
+   */
+  max_iterations_per_phase?: number;
+
+  /**
+   * Per-iteration stall timeout in milliseconds.
+   * CLI --stall-timeout flag maps to this field.
+   * @default varies by tier (see STALL_MS_BY_TIER)
+   */
+  stall_timeout?: number;
+
+  /**
+   * Execution order for phases.
+   * CLI --parallel flag sets this to "parallel".
+   * @default "sequential"
+   */
+  execution_order?: "sequential" | "parallel";
+
+  /**
+   * Number of parallel lanes for phase execution.
+   * CLI --parallel N sets this field.
+   * @default 1
+   */
+  parallel_lanes?: number;
+
+  /**
+   * Auto-ship after all phases complete.
+   * CLI --ship flag maps to this field.
+   * @default undefined (require manual /ship)
+   */
+  auto_ship?: boolean;
+
+  /**
+   * Resume from checkpoint.
+   * CLI --resume flag maps to this field.
+   * @default undefined
+   */
+  checkpoint?: boolean;
+
+  /**
    * Adapter-specific configuration.
    * Discriminated by the active adapter — only the matching adapter's config is read at runtime.
    * Unknown adapter-specific keys are silently ignored.

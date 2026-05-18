@@ -228,7 +228,7 @@ items:
       `--notify URL` → `notify_url: URL`.
       `--adapter` takes highest precedence — it overrides both
       project and plan-level `adapter` settings.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/config-reader.ts
         isNew: true

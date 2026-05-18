@@ -15,10 +15,11 @@
  */
 
 import { command, option, positional, string as stringType, optional, number as numberType, flag, oneOf } from "cmd-ts";
-import { runRalphLoop, MAX_ITERATIONS, TIMEOUT_MS } from "@glrs-dev/autopilot";
+import { runRalphLoop, MAX_ITERATIONS, TIMEOUT_MS, applyCLIOverrides } from "@glrs-dev/autopilot";
 import { runDebrief, shouldRunDebrief } from "./debrief.js";
 import { createAdapter, ADAPTER_NAMES, DEFAULT_ADAPTER } from "../adapter-factory.js";
 import { resolveConfig } from "../autopilot/config-reader.js";
+import type { AutopilotConfig } from "../autopilot/autopilot-config.js";
 
 export const loopCmd = command({
   name: "loop",
@@ -99,24 +100,27 @@ export const loopCmd = command({
     // shut it down inside the loop's own finally block.
     const willDebrief = shouldRunDebrief({ noDebrief, env: process.env as Record<string, string | undefined> });
 
-    // Resolve config (before creating adapter)
-    const config = resolveConfig(cwd);
+    // Resolve config (project-level only, no plan path for loop)
+    const resolvedConfig = resolveConfig(cwd);
 
-    // CLI flag overrides config
-    if (adapterName) {
-      config.adapter = adapterName as "opencode" | "claude-code-cli";
-    }
+    // Apply CLI flag overrides
+    const config = applyCLIOverrides(resolvedConfig, {
+      adapter: adapterName,
+      stallTimeout,
+      notify,
+    }) as AutopilotConfig;
 
     // Create the adapter for this run
-    const adapter = await createAdapter((config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER, config);
+    const finalAdapterName = (config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER;
+    const adapter = await createAdapter(finalAdapterName, config);
 
     const result = await runRalphLoop({
       prompt,
       cwd,
       maxIterations: maxIterations ?? undefined,
       timeoutMs: timeout ?? undefined,
-      stallMs: stallTimeout ?? undefined,
-      notifyUrl: notify ?? undefined,
+      stallMs: config.stall_timeout ?? undefined,
+      notifyUrl: config.notify_url ?? undefined,
       keepAlive: willDebrief,
       adapter,
       config,

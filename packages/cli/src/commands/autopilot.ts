@@ -14,11 +14,12 @@
 import { command, flag, option, optional, string as stringType, number as numberType, oneOf } from "cmd-ts";
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { formatElapsed, formatCost, EventStreamReader, deriveState } from "@glrs-dev/autopilot";
+import { formatElapsed, formatCost, EventStreamReader, deriveState, applyCLIOverrides } from "@glrs-dev/autopilot";
 import { SessionRunner } from "@glrs-dev/autopilot";
 import { createCliRenderer } from "../cli-renderer.js";
 import { createAdapter, ADAPTER_NAMES, DEFAULT_ADAPTER } from "../adapter-factory.js";
 import { resolveConfig } from "../autopilot/config-reader.js";
+import type { AutopilotConfig } from "../autopilot/autopilot-config.js";
 
 export const autopilotInteractiveCmd = command({
   name: "autopilot",
@@ -200,13 +201,18 @@ export const autopilotInteractiveCmd = command({
       planPath = picked;
     }
 
-    // Resolve config (before enrichment and validation)
-    const config = resolveConfig(cwd, planPath);
+    // Resolve config (project + plan merge)
+    const resolvedConfig = resolveConfig(cwd, planPath);
 
-    // CLI flag overrides config
-    if (adapterName) {
-      config.adapter = adapterName as "opencode" | "claude-code-cli";
-    }
+    // Apply CLI flag overrides (after merge, before validation and execution)
+    const config = applyCLIOverrides(resolvedConfig, {
+      adapter: adapterName,
+      fast,
+      resume,
+      maxIterationsPerPhase,
+      parallel,
+      ship,
+    }) as AutopilotConfig;
 
     // Plan structure validation (item 4.5). Fail fast on missing
     // main.md or referenced-but-absent phase files. Errors abort the
@@ -241,8 +247,8 @@ export const autopilotInteractiveCmd = command({
     // can restore it after the run (though the adapter's shutdown() also handles restoration
     // to keep the parent process clean).
     const priorAgentOverridesEnv = process.env["GLRS_AGENT_OVERRIDES"];
-    const resolvedAdapterName = (config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER;
-    if (resolvedAdapterName === "opencode") {
+    const finalAdapterName = (config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER;
+    if (finalAdapterName === "opencode") {
       const agentOverrides = config.adapters?.opencode?.agents;
       if (agentOverrides && Object.keys(agentOverrides).length > 0) {
         process.env["GLRS_AGENT_OVERRIDES"] = JSON.stringify(agentOverrides);
@@ -251,7 +257,7 @@ export const autopilotInteractiveCmd = command({
 
     try {
       // Create SessionRunner — thin wrapper around enrichment + execution
-      const adapter = await createAdapter(resolvedAdapterName, config);
+      const adapter = await createAdapter(finalAdapterName, config);
       const runner = new SessionRunner({
         planPath: path.resolve(process.cwd(), planPath),
         cwd: process.cwd(),

@@ -79,6 +79,10 @@ export {
   MAX_ITERATIONS_PER_PHASE_BY_TIER,
 } from "./config.js";
 
+// CLI flag overrides
+export { applyCLIOverrides } from "./config-reader.js";
+export type { CLIFlags } from "./config-reader.js";
+
 // Status
 export { createStatusHeartbeat, formatElapsed, formatCost } from "./status.js";
 
