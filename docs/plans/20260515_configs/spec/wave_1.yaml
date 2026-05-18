@@ -251,7 +251,7 @@ items:
       plan-enrichment.ts) skips already-enriched files, so retries only
       pay for failures. Cap at `config.enrichment.max_retries` attempts
       (default: 3).
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/plan-enrichment.ts
         isNew: false
