@@ -87,6 +87,78 @@ export interface AutopilotConfig {
   phases?: Record<string, PhaseConfig>;
 
   /**
+   * Verify strategy.
+   * @default "after_phase"
+   */
+  verify?: "after_phase" | "after_item" | "skip";
+
+  /**
+   * Verify timeout in milliseconds.
+   * @default 300000 (5 minutes)
+   */
+  verify_timeout?: number;
+
+  /**
+   * Per-phase iteration budget override.
+   * @default varies by tier
+   */
+  max_iterations_per_phase?: number;
+
+  /**
+   * Per-item iteration budget override.
+   * @default varies by tier
+   */
+  max_iterations_per_item?: number;
+
+  /**
+   * Per-iteration stall timeout in milliseconds.
+   * @default varies by tier
+   */
+  stall_timeout?: number;
+
+  /**
+   * Execution order for phases.
+   * @default "sequential"
+   */
+  execution_order?: "sequential" | "parallel";
+
+  /**
+   * Number of parallel lanes for phase execution.
+   * @default 1
+   */
+  parallel_lanes?: number;
+
+  /**
+   * Auto-ship after all phases complete.
+   * @default false
+   */
+  auto_ship?: boolean;
+
+  /**
+   * Resume from checkpoint.
+   * @default false
+   */
+  checkpoint?: boolean;
+
+  /**
+   * Rollback strategy on failure.
+   * @default "soft"
+   */
+  rollback_on_failure?: "soft" | "off";
+
+  /**
+   * Changeset version bump strategy.
+   * @default "patch"
+   */
+  changeset_bump?: "patch" | "minor" | "major";
+
+  /**
+   * Log level for autopilot logging.
+   * @default "info"
+   */
+  log_level?: string;
+
+  /**
    * Adapter-specific configuration.
    * Discriminated by the active adapter — only the matching adapter's config is read at runtime.
    * Unknown adapter-specific keys are silently ignored.
@@ -160,6 +232,33 @@ export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
 
   /** No phase-specific config by default. */
   phases: {},
+
+  /** Default verify strategy. */
+  verify: "after_phase",
+
+  /** Default verify timeout: 5 minutes. */
+  verify_timeout: 5 * 60 * 1000,
+
+  /** Execution order: sequential by default. */
+  execution_order: "sequential",
+
+  /** Single lane (sequential) by default. */
+  parallel_lanes: 1,
+
+  /** Auto-ship disabled by default. */
+  auto_ship: false,
+
+  /** Checkpoint disabled by default. */
+  checkpoint: false,
+
+  /** Soft rollback by default. */
+  rollback_on_failure: "soft",
+
+  /** Patch version bump by default. */
+  changeset_bump: "patch",
+
+  /** Default log level. */
+  log_level: "info",
 
   /** Adapter-specific defaults for both adapters. */
   adapters: {

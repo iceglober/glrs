@@ -354,7 +354,7 @@ items:
       structured error listing every invalid field at once. Users
       see all problems on one screen, not one fix-and-retry per
       problem.
-    checked: false
+    checked: true
     files:
       - path: packages/harness-opencode/src/autopilot/config-reader.ts
         isNew: false

@@ -389,3 +389,297 @@ export function resolveConfig(repoRoot: string, planPath: string = "."): Autopil
 
   return config;
 }
+
+export interface ValidationError {
+  path: string;
+  message: string;
+}
+
+export type ValidationResult = { ok: true } | { ok: false; errors: ValidationError[] };
+
+// Allowed values for enum fields
+export const ALLOWED_ADAPTERS = ["opencode", "claude-code-cli"] as const;
+export const ALLOWED_VERIFY_STRATEGIES = ["after_phase", "after_item", "skip"] as const;
+export const ALLOWED_EXECUTION_ORDERS = ["sequential", "parallel"] as const;
+export const ALLOWED_ROLLBACK_STRATEGIES = ["soft", "off"] as const;
+export const ALLOWED_CHANGESET_BUMPS = ["patch", "minor", "major"] as const;
+const PINO_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace"] as const;
+
+/**
+ * Validates the fully-merged config (project + plan + phase + CLI).
+ * Collects all validation errors at once rather than short-circuiting on the first error.
+ *
+ * @param config The resolved config to validate
+ * @returns {ok: true} if valid, {ok: false; errors: [...]} if invalid
+ */
+export function validateConfig(config: AutopilotConfig): ValidationResult {
+  const errors: ValidationError[] = [];
+
+  // Validate adapter
+  if (config.adapter !== undefined) {
+    if (!ALLOWED_ADAPTERS.includes(config.adapter as any)) {
+      errors.push({
+        path: "adapter",
+        message: `must be one of: ${ALLOWED_ADAPTERS.join(", ")} (got "${config.adapter}")`,
+      });
+    }
+  }
+
+  // Validate verify strategy
+  if (config.verify !== undefined) {
+    if (!ALLOWED_VERIFY_STRATEGIES.includes(config.verify as any)) {
+      errors.push({
+        path: "verify",
+        message: `must be one of: ${ALLOWED_VERIFY_STRATEGIES.join(", ")} (got "${config.verify}")`,
+      });
+    }
+  }
+
+  // Validate verify_timeout is a positive integer
+  if (config.verify_timeout !== undefined) {
+    if (!Number.isInteger(config.verify_timeout) || config.verify_timeout <= 0) {
+      errors.push({
+        path: "verify_timeout",
+        message: `must be a positive integer (got ${config.verify_timeout})`,
+      });
+    }
+  }
+
+  // Validate max_iterations_per_phase is a positive integer
+  if (config.max_iterations_per_phase !== undefined) {
+    if (!Number.isInteger(config.max_iterations_per_phase) || config.max_iterations_per_phase <= 0) {
+      errors.push({
+        path: "max_iterations_per_phase",
+        message: `must be a positive integer (got ${config.max_iterations_per_phase})`,
+      });
+    }
+  }
+
+  // Validate max_iterations_per_item is a positive integer
+  if (config.max_iterations_per_item !== undefined) {
+    if (!Number.isInteger(config.max_iterations_per_item) || config.max_iterations_per_item <= 0) {
+      errors.push({
+        path: "max_iterations_per_item",
+        message: `must be a positive integer (got ${config.max_iterations_per_item})`,
+      });
+    }
+  }
+
+  // Validate stall_timeout is a positive integer
+  if (config.stall_timeout !== undefined) {
+    if (!Number.isInteger(config.stall_timeout) || config.stall_timeout <= 0) {
+      errors.push({
+        path: "stall_timeout",
+        message: `must be a positive integer (got ${config.stall_timeout})`,
+      });
+    }
+  }
+
+  // Validate execution_order
+  if (config.execution_order !== undefined) {
+    if (!ALLOWED_EXECUTION_ORDERS.includes(config.execution_order as any)) {
+      errors.push({
+        path: "execution_order",
+        message: `must be one of: ${ALLOWED_EXECUTION_ORDERS.join(", ")} (got "${config.execution_order}")`,
+      });
+    }
+  }
+
+  // Validate parallel_lanes is a positive integer
+  if (config.parallel_lanes !== undefined) {
+    if (!Number.isInteger(config.parallel_lanes) || config.parallel_lanes <= 0) {
+      errors.push({
+        path: "parallel_lanes",
+        message: `must be a positive integer (got ${config.parallel_lanes})`,
+      });
+    }
+  }
+
+  // Validate rollback_on_failure
+  if (config.rollback_on_failure !== undefined) {
+    if (!ALLOWED_ROLLBACK_STRATEGIES.includes(config.rollback_on_failure as any)) {
+      errors.push({
+        path: "rollback_on_failure",
+        message: `must be one of: ${ALLOWED_ROLLBACK_STRATEGIES.join(", ")} (got "${config.rollback_on_failure}")`,
+      });
+    }
+  }
+
+  // Validate changeset_bump
+  if (config.changeset_bump !== undefined) {
+    if (!ALLOWED_CHANGESET_BUMPS.includes(config.changeset_bump as any)) {
+      errors.push({
+        path: "changeset_bump",
+        message: `must be one of: ${ALLOWED_CHANGESET_BUMPS.join(", ")} (got "${config.changeset_bump}")`,
+      });
+    }
+  }
+
+  // Validate log_level is a valid pino level
+  if (config.log_level !== undefined) {
+    if (!PINO_LEVELS.includes(config.log_level as any)) {
+      errors.push({
+        path: "log_level",
+        message: `must be a valid pino level (${PINO_LEVELS.join(", ")}) (got "${config.log_level}")`,
+      });
+    }
+  }
+
+  // Validate hooks are non-empty strings
+  if (config.hooks) {
+    for (const [hookName, hookValue] of Object.entries(config.hooks)) {
+      if (Array.isArray(hookValue)) {
+        for (let i = 0; i < hookValue.length; i++) {
+          if (typeof hookValue[i] !== "string" || hookValue[i].trim() === "") {
+            errors.push({
+              path: `hooks.${hookName}[${i}]`,
+              message: "hook command must be a non-empty string",
+            });
+          }
+        }
+      } else if (typeof hookValue === "string") {
+        if (hookValue.trim() === "") {
+          errors.push({
+            path: `hooks.${hookName}`,
+            message: "hook command must be a non-empty string",
+          });
+        }
+      }
+    }
+  }
+
+  // Recursively validate each phase
+  if (config.phases) {
+    for (const [phaseName, phaseConfig] of Object.entries(config.phases)) {
+      if (typeof phaseConfig !== "object" || phaseConfig === null) continue;
+
+      const phaseObj = phaseConfig as Record<string, unknown>;
+
+      // Validate verify field in phase (if present)
+      if (phaseObj.verify !== undefined) {
+        if (!ALLOWED_VERIFY_STRATEGIES.includes(phaseObj.verify as any)) {
+          errors.push({
+            path: `phases.${phaseName}.verify`,
+            message: `must be one of: ${ALLOWED_VERIFY_STRATEGIES.join(", ")} (got "${phaseObj.verify}")`,
+          });
+        }
+      }
+
+      // Validate verify_timeout in phase (if present)
+      if (phaseObj.verify_timeout !== undefined) {
+        if (!Number.isInteger(phaseObj.verify_timeout) || phaseObj.verify_timeout <= 0) {
+          errors.push({
+            path: `phases.${phaseName}.verify_timeout`,
+            message: `must be a positive integer (got ${phaseObj.verify_timeout})`,
+          });
+        }
+      }
+
+      // Validate max_iterations_per_phase in phase (if present)
+      if (phaseObj.max_iterations_per_phase !== undefined) {
+        if (!Number.isInteger(phaseObj.max_iterations_per_phase) || phaseObj.max_iterations_per_phase <= 0) {
+          errors.push({
+            path: `phases.${phaseName}.max_iterations_per_phase`,
+            message: `must be a positive integer (got ${phaseObj.max_iterations_per_phase})`,
+          });
+        }
+      }
+
+      // Validate max_iterations_per_item in phase (if present)
+      if (phaseObj.max_iterations_per_item !== undefined) {
+        if (!Number.isInteger(phaseObj.max_iterations_per_item) || phaseObj.max_iterations_per_item <= 0) {
+          errors.push({
+            path: `phases.${phaseName}.max_iterations_per_item`,
+            message: `must be a positive integer (got ${phaseObj.max_iterations_per_item})`,
+          });
+        }
+      }
+
+      // Validate stall_timeout in phase (if present)
+      if (phaseObj.stall_timeout !== undefined) {
+        if (!Number.isInteger(phaseObj.stall_timeout) || phaseObj.stall_timeout <= 0) {
+          errors.push({
+            path: `phases.${phaseName}.stall_timeout`,
+            message: `must be a positive integer (got ${phaseObj.stall_timeout})`,
+          });
+        }
+      }
+
+      // Validate execution_order in phase (if present)
+      if (phaseObj.execution_order !== undefined) {
+        if (!ALLOWED_EXECUTION_ORDERS.includes(phaseObj.execution_order as any)) {
+          errors.push({
+            path: `phases.${phaseName}.execution_order`,
+            message: `must be one of: ${ALLOWED_EXECUTION_ORDERS.join(", ")} (got "${phaseObj.execution_order}")`,
+          });
+        }
+      }
+
+      // Validate parallel_lanes in phase (if present)
+      if (phaseObj.parallel_lanes !== undefined) {
+        if (!Number.isInteger(phaseObj.parallel_lanes) || phaseObj.parallel_lanes <= 0) {
+          errors.push({
+            path: `phases.${phaseName}.parallel_lanes`,
+            message: `must be a positive integer (got ${phaseObj.parallel_lanes})`,
+          });
+        }
+      }
+
+      // Validate rollback_on_failure in phase (if present)
+      if (phaseObj.rollback_on_failure !== undefined) {
+        if (!ALLOWED_ROLLBACK_STRATEGIES.includes(phaseObj.rollback_on_failure as any)) {
+          errors.push({
+            path: `phases.${phaseName}.rollback_on_failure`,
+            message: `must be one of: ${ALLOWED_ROLLBACK_STRATEGIES.join(", ")} (got "${phaseObj.rollback_on_failure}")`,
+          });
+        }
+      }
+
+      // Validate changeset_bump in phase (if present)
+      if (phaseObj.changeset_bump !== undefined) {
+        if (!ALLOWED_CHANGESET_BUMPS.includes(phaseObj.changeset_bump as any)) {
+          errors.push({
+            path: `phases.${phaseName}.changeset_bump`,
+            message: `must be one of: ${ALLOWED_CHANGESET_BUMPS.join(", ")} (got "${phaseObj.changeset_bump}")`,
+          });
+        }
+      }
+
+      // Validate log_level in phase (if present)
+      if (phaseObj.log_level !== undefined) {
+        if (!PINO_LEVELS.includes(phaseObj.log_level as any)) {
+          errors.push({
+            path: `phases.${phaseName}.log_level`,
+            message: `must be a valid pino level (${PINO_LEVELS.join(", ")}) (got "${phaseObj.log_level}")`,
+          });
+        }
+      }
+
+      // Validate hooks in phase (if present)
+      if (phaseObj.hooks && typeof phaseObj.hooks === "object") {
+        const phaseHooks = phaseObj.hooks as Record<string, unknown>;
+        for (const [hookName, hookValue] of Object.entries(phaseHooks)) {
+          if (Array.isArray(hookValue)) {
+            for (let i = 0; i < hookValue.length; i++) {
+              if (typeof hookValue[i] !== "string" || hookValue[i].trim() === "") {
+                errors.push({
+                  path: `phases.${phaseName}.hooks.${hookName}[${i}]`,
+                  message: "hook command must be a non-empty string",
+                });
+              }
+            }
+          } else if (typeof hookValue === "string") {
+            if (hookValue.trim() === "") {
+              errors.push({
+                path: `phases.${phaseName}.hooks.${hookName}`,
+                message: "hook command must be a non-empty string",
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return errors.length === 0 ? { ok: true } : { ok: false, errors };
+}
