@@ -69,7 +69,7 @@ items:
       (already a workspace dep). Return `Partial<AutopilotConfig>` or `null` when the file
       doesn't exist. Validate against the schema and reject unknown keys with a clear error
       listing the bad fields. Never throw on a missing file.
-    checked: false
+    checked: true
     files:
       - path: packages/harness-opencode/src/autopilot/config-reader.ts
         isNew: true
