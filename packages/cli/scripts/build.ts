@@ -2,10 +2,13 @@
 /**
  * Build orchestrator for @glrs-dev/cli.
  *
- * Runs three steps in strict order:
+ * Runs five steps in strict order:
  *   1. Build harness-opencode (sibling workspace package we vendor).
- *   2. Build cli itself (tsup bundle + DTS).
- *   3. Vendor harness-opencode's dist/ into cli/dist/vendor/.
+ *   2. Build @glrs-dev/autopilot (private package we vendor into dist/node_modules/).
+ *   3. Build @glrs-dev/adapter-opencode (private package we vendor into dist/node_modules/).
+ *   4. Build cli itself (tsup bundle + DTS).
+ *   5. Vendor all three packages into cli/dist/ (harness → dist/vendor/,
+ *      autopilot + adapter-opencode → dist/node_modules/@glrs-dev/).
  *
  * We do this in one script rather than spreading across npm scripts
  * because Bun's `--filter` at the top level runs packages in parallel,
@@ -22,6 +25,8 @@ import { resolve } from "node:path";
 
 const CLI_ROOT = resolve(import.meta.dir, "..");
 const HARNESS_ROOT = resolve(CLI_ROOT, "..", "harness-opencode");
+const AUTOPILOT_ROOT = resolve(CLI_ROOT, "..", "autopilot");
+const ADAPTER_ROOT = resolve(CLI_ROOT, "..", "adapter-opencode");
 const CLI_DIST = resolve(CLI_ROOT, "dist");
 
 async function step(name: string, fn: () => Promise<void>): Promise<void> {
@@ -43,7 +48,27 @@ async function main(): Promise<void> {
     }
   });
 
-  // Step 2: cli tsup build
+  // Step 2: autopilot build
+  await step("Building @glrs-dev/autopilot", async () => {
+    const result = await $`bun run build`.cwd(AUTOPILOT_ROOT).nothrow();
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `autopilot build failed (exit ${result.exitCode}):\n${result.stderr.toString()}`,
+      );
+    }
+  });
+
+  // Step 3: adapter-opencode build
+  await step("Building @glrs-dev/adapter-opencode", async () => {
+    const result = await $`bun run build`.cwd(ADAPTER_ROOT).nothrow();
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `adapter-opencode build failed (exit ${result.exitCode}):\n${result.stderr.toString()}`,
+      );
+    }
+  });
+
+  // Step 4: cli tsup build
   await step("Building @glrs-dev/cli", async () => {
     // tsup --clean wipes dist/, so remove manually first for predictability
     if (existsSync(CLI_DIST)) rmSync(CLI_DIST, { recursive: true });
@@ -58,9 +83,9 @@ async function main(): Promise<void> {
     }
   });
 
-  // Step 3: vendor harness-opencode into cli
-  await step("Vendoring harness-opencode into cli", async () => {
-    const result = await $`bun scripts/vendor-harness.ts`.cwd(CLI_ROOT).nothrow();
+  // Step 5: vendor all three packages into cli/dist/
+  await step("Vendoring packages into cli", async () => {
+    const result = await $`bun scripts/vendor.ts`.cwd(CLI_ROOT).nothrow();
     if (result.exitCode !== 0) {
       throw new Error(
         `vendor step failed (exit ${result.exitCode}):\n${result.stderr.toString()}`,

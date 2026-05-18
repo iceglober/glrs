@@ -28,12 +28,12 @@
     "dev:nobuild": "bash -c 'PKG_DIR=\"$PWD\"; cd \"${INIT_CWD:-$PWD}\" && GLRS_CLI_DISPATCHED=1 exec bun \"$PKG_DIR/dist/cli.js\" \"$@\"' --"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": "^1.14",
-    "@opencode-ai/sdk": "^1.14"
+    "@opencode-ai/plugin": "^1.15",
+    "@opencode-ai/sdk": "^1.15"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "^1.14.19",
-    "@opencode-ai/sdk": "^1.14.19",
+    "@opencode-ai/plugin": "^1.15",
+    "@opencode-ai/sdk": "^1.15",
     "@types/bun": "latest",
     "@types/node": "^22",
     "@types/picomatch": "^4.0.3",
