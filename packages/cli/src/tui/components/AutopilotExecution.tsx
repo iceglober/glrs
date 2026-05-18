@@ -528,14 +528,19 @@ function LogRow({ entry, maxWidth }: LogRowProps) {
 
 function applyEvent(prev: ExecutionState, event: SessionEvent): ExecutionState {
   switch (event.type) {
-    case "session:start":
+    case "session:start": {
+      const adapterLabel = (event as { adapter?: string }).adapter ?? "opencode";
+      const branchLabel = (event as { branch?: string }).branch ?? "unknown";
+      const logs = appendLog(prev.logEntries, `${event.cwd} · ${branchLabel} · ${adapterLabel}`);
+      const logs2 = appendLog(logs, `enrich: ${event.enrichModel ?? "unknown"} · execute: ${event.executeModel ?? "unknown"}`);
       return {
         ...prev,
         planPath: event.planPath,
         startedAt: Date.now(),
         executionMode: event.fast ? "fast" : "deep",
-        logEntries: appendLog(prev.logEntries, `session started (enrich: ${event.enrichModel ?? "prime"} · execute: ${event.executeModel ?? "build"})`),
+        logEntries: logs2,
       };
+    }
 
     case "enrich:start":
       return {

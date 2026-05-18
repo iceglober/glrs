@@ -115,7 +115,7 @@ items:
       description of what the acceptance proof should assert,
       specific enough for a code-generation model to write it.
       Also generate `proof_type` based on the verify command pattern.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/plan-enrichment.ts
         isNew: false

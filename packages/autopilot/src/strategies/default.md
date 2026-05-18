@@ -21,6 +21,8 @@ items:
     context: |
       // relevant code from the file being modified
     conventions: "ESM imports, named exports, bun:test"
+    proof: "The acceptance proof should verify that the new function accepts valid inputs and rejects invalid ones"
+    proof_type: "test"
 ```
 
 For each acceptance-criteria item in the plan:
@@ -30,6 +32,8 @@ For each acceptance-criteria item in the plan:
    - **mirror**: Reference to a similar file in the codebase that could serve as a pattern
    - **context**: Key function signatures, 10-20 lines of code for modified files
    - **conventions**: Import style, export pattern, test framework, naming conventions
+   - **proof**: Natural-language description of what the acceptance proof should assert — specific enough for a code-generation model to write the proof
+   - **proof_type**: Category of verification based on the verify command pattern (e.g., "test", "api", "script", "manual")
 
 ### {{phaseFile}}
 ```markdown

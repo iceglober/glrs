@@ -41,13 +41,13 @@ export interface EnrichmentRunConfig {
 }
 
 /**
- * The fraction of items that must declare all three enrichment fields
- * (mirror/context/conventions) for a plan to be considered "already
- * enriched" — the idempotency check skips enrichment entirely above
- * this threshold. Item 4.3.
+ * The fraction of items that must declare all enrichment fields
+ * (mirror/context/conventions/proof/proof_type) for a plan to be considered
+ * "already enriched" — the idempotency check skips enrichment entirely above
+ * this threshold. Item 4.3 and 5.2.
  */
 /**
- * Spec enrichment requires 100% — every item must have mirror/context/conventions.
+ * Spec enrichment requires 100% — every item must have all enrichment fields.
  * The old 0.8 threshold was a hedge for fuzzy markdown field detection.
  * With YAML, enrichment is binary: the field exists or it doesn't.
  */
@@ -67,7 +67,7 @@ export const ENRICHMENT_RATIO_THRESHOLD = 1.0;
  */
 export function computeEnrichmentRatio(
   planFiles: string[],
-  fieldNames: string[] = ["mirror", "context", "conventions"],
+  fieldNames: string[] = ["mirror", "context", "conventions", "proof", "proof_type"],
 ): number {
   let total = 0;
   let enriched = 0;
@@ -109,7 +109,7 @@ export function computeEnrichmentRatio(
  */
 export function computeSpecEnrichmentRatio(
   planDir: string,
-  fieldNames: string[] = ["mirror", "context", "conventions"],
+  fieldNames: string[] = ["mirror", "context", "conventions", "proof", "proof_type"],
 ): number {
   if (!hasSpec(planDir)) return 0;
   const phaseFiles = detectSpecPhases(planDir);
@@ -180,6 +180,8 @@ items:
     context: |
       // relevant code from the file being modified
     conventions: "ESM imports, named exports, bun:test"
+    proof: "The acceptance proof should verify that the new function accepts valid inputs and rejects invalid ones"
+    proof_type: "test"
 \`\`\``;
 
   const mainInstructions = `You are generating a YAML spec file from a markdown plan.
@@ -560,7 +562,7 @@ export async function enrichPlanForFastModel(
 
   // Load strategy and extract field names for idempotency check.
   // Tries to load the strategy; falls back to defaults if not found.
-  let fieldNames = ["mirror", "context", "conventions"];
+  let fieldNames = ["mirror", "context", "conventions", "proof", "proof_type"];
   try {
     const strategy = loadStrategy(cwd, "default");
     fieldNames = extractFieldNames(strategy);

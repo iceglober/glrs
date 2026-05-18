@@ -44,7 +44,7 @@ describe("computeEnrichmentRatio", () => {
     expect(computeEnrichmentRatio([f])).toBe(0);
   });
 
-  it("returns 1 when every item has all three fields", () => {
+  it("returns 1 when every item has all enrichment fields", () => {
     const dir = tmpDir();
     const f = writeFile(
       dir,
@@ -55,11 +55,15 @@ describe("computeEnrichmentRatio", () => {
   - mirror: src/foo.ts
   - context: existing code
   - conventions: bun:test
+  - proof: should validate input
+  - proof_type: test
 
 - [ ] 1.2 **Second item**
   - mirror: src/bar.ts
   - context: another snippet
   - conventions: bun:test
+  - proof: should handle edge case
+  - proof_type: test
 `,
     );
     expect(computeEnrichmentRatio([f])).toBe(1);
@@ -76,6 +80,8 @@ describe("computeEnrichmentRatio", () => {
   - mirror: src/foo.ts
   - context: existing code
   - conventions: bun:test
+  - proof: should validate input
+  - proof_type: test
 
 - [ ] 1.2 **Second item**
 - [ ] 1.3 **Third item**
@@ -97,6 +103,8 @@ describe("computeEnrichmentRatio", () => {
   - mirror: src/foo.ts
   - context: x
   - conventions: y
+  - proof: should do something
+  - proof_type: test
 `,
     );
     expect(computeEnrichmentRatio([f])).toBe(1);
@@ -111,6 +119,8 @@ describe("computeEnrichmentRatio", () => {
   - mirror: x
   - context: y
   - conventions: z
+  - proof: should do something
+  - proof_type: test
 - [ ] 1.2 **b**
 `,
     );
@@ -145,18 +155,26 @@ describe("computeEnrichmentRatio", () => {
   - mirror: x
   - context: y
   - conventions: z
+  - proof: p1
+  - proof_type: test
 - [ ] 1.2 **b**
   - mirror: x
   - context: y
   - conventions: z
+  - proof: p2
+  - proof_type: test
 - [ ] 1.3 **c**
   - mirror: x
   - context: y
   - conventions: z
+  - proof: p3
+  - proof_type: test
 - [ ] 1.4 **d**
   - mirror: x
   - context: y
   - conventions: z
+  - proof: p4
+  - proof_type: test
 - [ ] 1.5 **e**
 `,
     );
@@ -175,22 +193,32 @@ describe("computeEnrichmentRatio", () => {
   - mirror: x
   - context: y
   - conventions: z
+  - proof: p1
+  - proof_type: test
 - [ ] 1.2 **b**
   - mirror: x
   - context: y
   - conventions: z
+  - proof: p2
+  - proof_type: test
 - [ ] 1.3 **c**
   - mirror: x
   - context: y
   - conventions: z
+  - proof: p3
+  - proof_type: test
 - [ ] 1.4 **d**
   - mirror: x
   - context: y
   - conventions: z
+  - proof: p4
+  - proof_type: test
 - [ ] 1.5 **e**
   - mirror: x
   - context: y
   - conventions: z
+  - proof: p5
+  - proof_type: test
 `,
     );
     expect(computeEnrichmentRatio([f])).toBeGreaterThanOrEqual(
@@ -248,6 +276,8 @@ describe("computeEnrichmentRatio", () => {
   - mirror: x
   - context: y
   - conventions: z
+  - proof: should verify
+  - proof_type: test
 `,
     );
     // No field names provided, should use defaults

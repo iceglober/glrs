@@ -55,7 +55,7 @@ phases:
 `,
     );
 
-    // wave_0.yaml: 2 items, 1 enriched
+    // wave_0.yaml: 2 items, 1 enriched (with all enrichment fields)
     writeSpec(
       planDir,
       "wave_0.yaml",
@@ -66,6 +66,8 @@ phases:
     mirror: src/existing.ts
     context: "function foo() {}"
     conventions: bun:test
+    proof: "should validate"
+    proof_type: "test"
   - id: a2
     intent: Not enriched
     checked: false
@@ -128,12 +130,16 @@ phases:
     mirror: src/a.ts
     context: "code"
     conventions: bun:test
+    proof: "should handle case 1"
+    proof_type: test
   - id: a2
     intent: Also enriched
     checked: false
     mirror: src/b.ts
     context: "more code"
     conventions: bun:test
+    proof: "should handle case 2"
+    proof_type: test
 `,
     );
 

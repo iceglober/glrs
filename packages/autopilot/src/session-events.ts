@@ -21,6 +21,8 @@ export interface SessionStartEvent {
   resume: boolean;
   enrichModel?: string;
   executeModel?: string;
+  adapter?: string;
+  branch?: string;
 }
 
 export interface SessionDoneEvent {
