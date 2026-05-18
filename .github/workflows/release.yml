@@ -210,6 +210,17 @@ jobs:
       - name: Pack platform tarballs
         run: bun run --cwd packages/assume pack:platforms
 
+      # Strip workspace:* refs from cli/package.json before publish.
+      # changesets' `updateInternalDependencies: "patch"` rewrites harness-opencode's
+      # workspace:* to ^<version> on the Version PR, so by the time this runs the
+      # only remaining workspace: values are the private vendored packages.
+      - name: Strip workspace refs from cli/package.json (prepare-publish)
+        run: bun run --cwd packages/cli prepare-publish
+
+      # Fail fast if any workspace: ref survived the strip.
+      - name: Verify cli/package.json is publishable
+        run: bun run --cwd packages/cli verify-publishable
+
       # Publish all packages. NPM_CONFIG_DRY_RUN=true when workflow_dispatch dry_run is true.
       - name: Publish to npm
         id: npm-publish
@@ -219,6 +230,12 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || '' }}
+
+      # Restore cli/package.json from backup. Runs even if publish fails so the
+      # tracked file is never left in the mutated state.
+      - name: Restore cli/package.json
+        if: always()
+        run: bun run --cwd packages/cli restore-publish
 
       # Create a GitHub release for the main package and attach platform
       # binaries as release assets. Auto-upgrade in gs-assume (update_check.rs)

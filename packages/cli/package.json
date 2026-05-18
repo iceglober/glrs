@@ -19,6 +19,7 @@
   },
   "files": [
     "dist",
+    "dist/node_modules",
     "CHANGELOG.md"
   ],
   "publishConfig": {
@@ -39,15 +40,17 @@
     "build": "bun scripts/build.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test src/ test/",
-    "lint": "echo 'no linter configured yet'"
+    "lint": "echo 'no linter configured yet'",
+    "prepare-publish": "bun scripts/prepare-publish.ts",
+    "restore-publish": "bun scripts/restore-publish.ts",
+    "verify-publishable": "bun scripts/verify-publishable.ts",
+    "test:publish-shape": "bun test test/publish-shape.test.ts test/pack-install-smoke.test.ts"
   },
   "dependencies": {
-    "@glrs-dev/autopilot": "workspace:*",
-    "@glrs-dev/adapter-opencode": "workspace:*",
     "@inkjs/ui": "^2.0.0",
     "@inquirer/prompts": "^8.4.2",
     "@opencode-ai/plugin": "^1.14",
-    "@opencode-ai/sdk": "^1.14",
+    "@opencode-ai/sdk": "^1.15",
     "cmd-ts": "^0.15.0",
     "ink": "^5.0.0",
     "picomatch": "^4.0.4",
@@ -59,6 +62,8 @@
     "zod": "4.1.8"
   },
   "devDependencies": {
+    "@glrs-dev/autopilot": "workspace:*",
+    "@glrs-dev/adapter-opencode": "workspace:*",
     "@glrs-dev/harness-plugin-opencode": "workspace:*",
     "@types/bun": "latest",
     "@types/node": "^22",
