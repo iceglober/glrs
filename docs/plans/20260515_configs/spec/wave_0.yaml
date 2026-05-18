@@ -181,7 +181,7 @@ items:
       `models.execution: "autopilot-execute"`, `models.debrief: "deep"`. These are OpenCode
       tier names; when `adapter: "claude-code-cli"`, the adapter factory applies its own
       model defaults before config resolution (see 0.5). Inline-document each default.
-    checked: false
+    checked: true
     files:
       - path: packages/harness-opencode/src/autopilot/autopilot-config.ts
         isNew: false
