@@ -24,11 +24,7 @@ function makeExec(
     | { reject: { message?: string; stdout?: string; stderr?: string } }
   >,
 ): {
-  exec: (
-    file: string,
-    args: readonly string[],
-    options?: { cwd?: string },
-  ) => Promise<{ stdout: string; stderr: string }>;
+  exec: any;
   calls: ExecCall[];
 } {
   const calls: ExecCall[] = [];
@@ -51,7 +47,7 @@ function makeExec(
     }
     return { stdout: r.stdout, stderr: r.stderr ?? "" };
   };
-  return { exec: exec as never, calls };
+  return { exec, calls };
 }
 
 describe("createWorktree", () => {

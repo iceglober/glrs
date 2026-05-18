@@ -117,6 +117,7 @@ export interface IterationDoneEvent {
   filesChanged?: number;
   commitSubject?: string;
   costUsd?: number;
+  cumulativeCostUsd?: number;
   laneId?: string;
 }
 

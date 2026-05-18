@@ -27,13 +27,13 @@ describe("notifyWebhook — plain webhook", () => {
 
     // Intercept fetch
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       const body = init?.body ? JSON.parse(init.body as string) : null;
       const headers = (init?.headers ?? {}) as Record<string, string>;
       received.push({ url, body, headers });
       return new Response(null, { status: 200 });
-    };
+    }) as any;
 
     try {
       const event = makeEvent({ iteration: 3, costUsd: 0.042 });
@@ -61,9 +61,9 @@ describe("notifyWebhook — plain webhook", () => {
       warnMessages.push(args.map(String).join(" "));
     };
 
-    globalThis.fetch = async () => {
+    globalThis.fetch = (async () => {
       throw new Error("Network unreachable");
-    };
+    }) as any;
 
     try {
       // Should not throw
@@ -83,7 +83,7 @@ describe("notifyWebhook — plain webhook", () => {
       warnMessages.push(args.map(String).join(" "));
     };
 
-    globalThis.fetch = async () => new Response(null, { status: 500, statusText: "Internal Server Error" });
+    globalThis.fetch = (async () => new Response(null, { status: 500, statusText: "Internal Server Error" })) as any;
 
     try {
       await notifyWebhook("https://example.com/webhook", makeEvent());
@@ -100,11 +100,11 @@ describe("notifyWebhook — Slack webhook", () => {
     const received: { body: unknown }[] = [];
 
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (_input: string | URL, init?: RequestInit) => {
       const body = init?.body ? JSON.parse(init.body as string) : null;
       received.push({ body });
       return new Response(null, { status: 200 });
-    };
+    }) as any;
 
     try {
       const event = makeEvent({ event: "run_complete", iteration: 5, costUsd: 1.23 });

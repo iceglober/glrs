@@ -4,5 +4,6 @@
     "outDir": "dist",
     "types": ["bun"]
   },
-  "include": ["src/**/*", "test/**/*"]
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["test/fixtures/run-eslint-check.ts", "test/fixtures/run-tsc-check.ts"]
 }

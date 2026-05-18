@@ -69,7 +69,7 @@ phases: []
     await autoShip({
       planPath: planDir,
       repoRoot: tmpDir,
-      _deps: { execFile: mockExecFile as typeof import("node:util").promisify<typeof import("node:child_process").execFile> },
+      _deps: { execFile: mockExecFile as any },
     });
 
     // Title should come from spec/main.yaml, not main.md H1
