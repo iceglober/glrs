@@ -194,8 +194,11 @@ export interface RalphLoopOptions {
    */
   model?: string;
   /**
-   * Optional config object for iteration budget tuning (item 3.2).
+   * Optional config object for iteration budget tuning (item 3.2),
+   * commit settings (item 3.5), and other autopilot features.
    * - config.stall_timeout: per-iteration stall timeout in ms (overrides tier default)
+   * - config.auto_commit: boolean (default true) — whether to commit on SIGINT/SIGTERM
+   * - config.commit_prefix: string (optional) — prepended to commit subjects
    * When provided, extracted values override tier-based defaults in the loop.
    */
   config?: unknown;
@@ -277,6 +280,28 @@ async function getHeadSha(cwd: string): Promise<string> {
 }
 
 /**
+ * Amend the last commit with a prefix if not already present (idempotent).
+ * Returns true if amended, false otherwise.
+ */
+async function amendCommitWithPrefix(
+  cwd: string,
+  prefix: string,
+): Promise<boolean> {
+  try {
+    const { stdout: subject } = await execFile("git", ["log", "-1", "--pretty=%s"], { cwd });
+    const currentSubject = subject.trim();
+    if (!currentSubject || currentSubject.startsWith(prefix)) {
+      return false; // Already has prefix or no subject
+    }
+    const newSubject = `${prefix} ${currentSubject}`;
+    await execFile("git", ["commit", "--amend", "-m", newSubject], { cwd });
+    return true;
+  } catch {
+    return false; // Non-fatal amend failure
+  }
+}
+
+/**
  * Run the Ralph loop: send prompt → wait for idle → inspect response →
  * retry or exit.
  */
@@ -297,6 +322,10 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   const cfgStallMs = cfgObj?.stall_timeout as number | undefined;
   const stallMs = opts.stallMs ?? cfgStallMs ?? STALL_MS_BY_TIER[tier];
   const struggleThreshold = opts.struggleThreshold ?? STRUGGLE_THRESHOLD;
+
+  // Extract commit settings from config (item 3.5)
+  const autoCommit = (cfgObj?.auto_commit as boolean) ?? true;
+  const commitPrefix = (cfgObj?.commit_prefix as string | undefined);
 
   if (!opts.adapter) {
     throw new Error("runRalphLoop: adapter is required");
@@ -980,6 +1009,13 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
         } catch {
           // non-fatal
         }
+        // Amend agent-authored commit with prefix if configured (item 3.5)
+        // Fire-and-forget: don't block iteration on amendment
+        if (commitSubject && commitPrefix) {
+          amendCommitWithPrefix(opts.cwd, commitPrefix).catch(() => {
+            // Non-fatal amendment failure
+          });
+        }
         if (commitSubject) {
           log.info(`${lanePrefix}commit: ${commitSubject}`);
         }
@@ -1134,15 +1170,25 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       try {
         const { stdout: porcelain } = await execFile("git", ["status", "--porcelain"], { cwd: opts.cwd });
         if (porcelain.trim().length > 0) {
-          log.info({ signal: interruptedSignal }, "Committing WIP before exit");
-          try {
-            await execFile("git", ["add", "-A"], { cwd: opts.cwd });
-            // No --no-verify: hooks run normally per AGENTS.md hard rule.
-            // If a hook rejects the commit, log the failure and move on
-            // — the user's WIP is still in the index.
-            await execFile("git", ["commit", "-m", "[WIP] autopilot interrupted"], { cwd: opts.cwd });
-          } catch (err) {
-            log.warn({ err: err instanceof Error ? err.message : String(err) }, "WIP commit failed (hooks may have rejected)");
+          if (autoCommit) {
+            log.info({ signal: interruptedSignal }, "Committing WIP before exit");
+            try {
+              await execFile("git", ["add", "-A"], { cwd: opts.cwd });
+              // No --no-verify: hooks run normally per AGENTS.md hard rule.
+              // If a hook rejects the commit, log the failure and move on
+              // — the user's WIP is still in the index.
+              const commitMsg = commitPrefix
+                ? `${commitPrefix} [WIP] autopilot interrupted`
+                : "[WIP] autopilot interrupted";
+              await execFile("git", ["commit", "-m", commitMsg], { cwd: opts.cwd });
+            } catch (err) {
+              log.warn({ err: err instanceof Error ? err.message : String(err) }, "WIP commit failed (hooks may have rejected)");
+            }
+          } else {
+            log.warn(
+              { signal: interruptedSignal },
+              "Pending changes left unstaged (auto_commit: false)",
+            );
           }
         }
       } catch (err) {

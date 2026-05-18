@@ -321,7 +321,7 @@ items:
       every commit subject (e.g., `"feat(auth):"` becomes
       `"feat(auth): <agent's subject>"`). The WIP commit on
       SIGINT/SIGTERM also picks up the prefix.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/loop.ts
         isNew: false
