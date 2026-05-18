@@ -37,6 +37,7 @@ export interface EnrichmentRunConfig {
   retry?: boolean;
   max_retries?: number;
   stall_timeout?: number;
+  strategy?: string;
 }
 
 /**
@@ -235,6 +236,7 @@ async function runEnrichmentPass(
   handle: AgentHandle,
   stallMs: number,
   strategyName?: string,
+  config?: unknown,
 ): Promise<boolean> {
   let stallOccurred = false;
 
@@ -646,6 +648,7 @@ export async function enrichPlanForFastModel(
         handle,
         stallMs,
         strategyName,
+        config,
       );
       if (stallOccurred) {
         log?.warn("Enrichment stalled but retry is disabled");
@@ -676,6 +679,7 @@ export async function enrichPlanForFastModel(
             handle,
             stallMs,
             strategyName,
+            config,
           );
 
           if (!stallOccurred) {
