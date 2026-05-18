@@ -1,0 +1,409 @@
+items:
+  - id: "1.1"
+    intent: |
+      Strategy file loader. Read a named strategy from
+      `.glrs/plan-enrich-strategies/<name>.md`. Resolution order:
+      plan-local `./strategies/` (future) > `.glrs/plan-enrich-strategies/` >
+      built-in default. The built-in `default` strategy is the current
+      per-file prompt body (today: `buildSpecGenerationPrompt`'s
+      `phaseInstructions`) extracted to a file. Strategy files use
+      `{{file}}` and `{{content}}` as substitution placeholders.
+    checked: true
+    files:
+      - path: packages/harness-opencode/src/autopilot/enrich-strategy.ts
+        isNew: true
+        change: |
+          Export `loadStrategy(repoRoot: string, name: string): string` and
+          `applyStrategy(template: string, file: string, content: string): string`.
+          - `loadStrategy` resolves in order: `.glrs/plan-enrich-strategies/<name>.md`
+            in `repoRoot`, then the bundled built-in (see 1.2). Throws a plain
+            Error listing the searched paths when no candidate is found.
+          - `applyStrategy` does a string replace of `{{file}}` and
+            `{{content}}` against the template (every occurrence).
+      - path: packages/harness-opencode/test/enrich-strategy.test.ts
+        isNew: true
+        change: |
+          bun:test cases: (1) loads `default` from the bundled built-in when
+          no project file exists, (2) prefers `.glrs/plan-enrich-strategies/<name>.md`
+          over the built-in, (3) `applyStrategy` substitutes `{{file}}` and
+          `{{content}}` (multiple occurrences), (4) unknown name throws with
+          searched paths in the message.
+      - path: packages/harness-opencode/src/autopilot/strategies/default.md
+        isNew: true
+        change: |
+          Extracted body of the current per-file enrichment prompt (today this
+          is `phaseInstructions` inside `buildSpecGenerationPrompt` at
+          `packages/autopilot/src/plan-enrichment.ts:181-209`). Replace the
+          inlined `${phaseFile}` and `${content}` template literal slots with
+          `{{file}}` and `{{content}}` placeholders. Keep the YAML schema
+          example, the numbered field list (mirror/context/conventions), and
+          the "SPEC_COMPLETE" terminator instruction.
+    tests:
+      - packages/harness-opencode/test/enrich-strategy.test.ts
+    verify: "bun test test/enrich-strategy.test.ts"
+    mirror: packages/harness-opencode/src/cli/merge-config.ts
+    context: |
+      // Pattern reference — packages/autopilot/src/plan-enrichment.ts:181-209
+      // (current hardcoded prompt body that becomes default.md):
+      const phaseInstructions = `You are generating a YAML spec file from a markdown plan phase, enriched with codebase context.
+
+      Read the markdown plan content below and write \`${specPath}\` (relative to the plan directory: ${planDir}) using the write/edit tool.
+
+      The output file should follow this schema:
+
+      ${schemaExample}
+
+      For each acceptance-criteria item in the plan:
+      1. Extract \`id\`, \`intent\`, \`files\`, \`tests\`, \`verify\` from the markdown.
+      2. Set \`checked: false\` for all items.
+      3. Add enrichment fields by reading the actual codebase:
+         - **mirror**: ...
+         - **context**: ...
+         - **conventions**: ...
+      ...
+      ### ${phaseFile}
+      \`\`\`markdown
+      ${content}
+      \`\`\`
+      Write the file \`${planDir}/${specPath}\` ... respond with "SPEC_COMPLETE" when done.`;
+
+      // New surface — packages/harness-opencode/src/autopilot/enrich-strategy.ts:
+      export function loadStrategy(repoRoot: string, name: string): string {
+        const projectPath = path.join(repoRoot, ".glrs", "plan-enrich-strategies", `${name}.md`);
+        if (fs.existsSync(projectPath)) return fs.readFileSync(projectPath, "utf-8");
+        // Fall back to bundled built-in (dist/autopilot/strategies/<name>.md)
+        const builtinPath = path.join(__dirname, "strategies", `${name}.md`);
+        if (fs.existsSync(builtinPath)) return fs.readFileSync(builtinPath, "utf-8");
+        throw new Error(`Unknown enrichment strategy "${name}". Searched:\n  ${projectPath}\n  ${builtinPath}`);
+      }
+
+      export function applyStrategy(template: string, file: string, content: string): string {
+        return template.replaceAll("{{file}}", file).replaceAll("{{content}}", content);
+      }
+    conventions: |
+      ESM imports with `.js` suffix on relative paths; named exports only;
+      `node:fs` / `node:path` imports; bun:test (`import { describe, it, expect } from "bun:test"`);
+      throw plain `Error` with multi-line descriptive messages; tests create
+      tmp dirs via `fs.mkdtempSync(path.join(os.tmpdir(), "..."))` and clean
+      up in `afterEach` with `fs.rmSync(..., { recursive: true, force: true })`.
+
+  - id: "1.2"
+    intent: |
+      Ship the default strategy as a bundled file. Extract the current
+      per-file prompt body (`phaseInstructions` in `buildSpecGenerationPrompt`)
+      into `src/autopilot/strategies/default.md` (created in 1.1). Update
+      `tsup.config.ts` so the build's `onSuccess` step copies
+      `src/autopilot/strategies/` to `dist/autopilot/strategies/`. Switch
+      `buildSpecGenerationPrompt` (the today-equivalent of `buildPerFilePrompt`)
+      to read from the bundled file via `loadStrategy("default")` instead of
+      the hardcoded template literal.
+    checked: true
+    files:
+      - path: packages/autopilot/src/plan-enrichment.ts
+        isNew: false
+        change: |
+          Replace the hardcoded `phaseInstructions` template-literal in
+          `buildSpecGenerationPrompt` with `applyStrategy(loadStrategy(cwd,
+          strategyName), phaseFile, content)`. `buildSpecGenerationPrompt`
+          gains a `strategyName?: string` arg (default `"default"`) and a
+          `cwd: string` arg so the strategy loader can resolve project-local
+          strategy files. The `mainInstructions` branch (for `main.md`)
+          stays hardcoded — only the per-phase prompt is strategy-driven.
+          Note: this file lives in `packages/autopilot/`, NOT
+          `packages/harness-opencode/`. Import `loadStrategy`/`applyStrategy`
+          via the harness-opencode package re-export (or relocate the loader
+          to `packages/autopilot/src/` if cross-package import is awkward —
+          executor's judgment call).
+      - path: packages/harness-opencode/tsup.config.ts
+        isNew: false
+        change: |
+          Inside `onSuccess`, add a `copyDir("src/autopilot/strategies",
+          "dist/autopilot/strategies")` block alongside the existing
+          skills/prompts copies. Wrap in try/catch matching the surrounding
+          pattern. Log "✓ Copied autopilot strategies → dist/autopilot/strategies".
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/harness-opencode/tsup.config.ts
+    context: |
+      // packages/harness-opencode/tsup.config.ts — current onSuccess pattern
+      // to mirror:
+      async onSuccess() {
+        try {
+          copyDir("src/skills", "dist/skills", (rel) => rel === "AGENTS.md");
+          console.log("✓ Copied src/skills → dist/skills");
+        } catch (e) {
+          console.warn("! Could not copy skills:", e);
+        }
+        try {
+          copyDir("src/agents/prompts", "dist/agents/prompts");
+          copyDir("src/agents/shared", "dist/agents/shared");
+          console.log("✓ Copied agent prompts → dist/agents/");
+        } catch (e) {
+          console.warn("! Could not copy agent prompts:", e);
+        }
+        // ... new block goes here:
+        // try {
+        //   copyDir("src/autopilot/strategies", "dist/autopilot/strategies");
+        //   console.log("✓ Copied autopilot strategies → dist/autopilot/strategies");
+        // } catch (e) { console.warn("! Could not copy strategies:", e); }
+      }
+
+      // packages/autopilot/src/plan-enrichment.ts:118 — current call site:
+      function buildSpecGenerationPrompt(planDir: string, phaseFile: string, content: string): string {
+        // ... isMain branch unchanged ...
+        // Replace the `phaseInstructions = \`...\`` block with:
+        //   const template = loadStrategy(cwd, strategyName ?? "default");
+        //   return applyStrategy(template, phaseFile, content);
+        return isMain ? mainInstructions : phaseInstructions;
+      }
+    conventions: |
+      `copyDir` is already defined at the top of tsup.config.ts and recurses;
+      reuse it. Match the surrounding try/catch + `console.warn("! ...", e)`
+      shape exactly. ESM imports with `.js` suffix on relative paths;
+      tsup `onSuccess` runs after dts emit, so directory-copy is safe.
+
+  - id: "1.3"
+    intent: |
+      Strategy-aware idempotency check. Today `computeEnrichmentRatio` (and
+      its YAML twin `computeSpecEnrichmentRatio`) hardcodes the
+      `mirror/context/conventions` field set. Parse the loaded strategy's
+      numbered list to extract field names (regex
+      `/^\d+\.\s+\*\*(\w+):\*\*/gm` — matches lines like
+      `   - **mirror**: ...` when written with that bullet style; the
+      executor should verify the exact pattern against `default.md` and
+      tune the regex) and check for those fields. Falls back to
+      `mirror/context/conventions` when no strategy is loaded.
+    checked: true
+    files:
+      - path: packages/autopilot/src/plan-enrichment.ts
+        isNew: false
+        change: |
+          `computeEnrichmentRatio` and `computeSpecEnrichmentRatio` accept an
+          optional `fieldNames?: string[]` arg. When provided, the regex
+          / object-key check uses those names; when omitted, defaults to
+          `["mirror", "context", "conventions"]` (current behavior). Wire
+          the call sites in `enrichPlanForFastModel` to extract field names
+          from the active strategy (via `extractFieldNames` from 1.1's
+          enrich-strategy.ts) and pass them through.
+      - path: packages/harness-opencode/src/autopilot/enrich-strategy.ts
+        isNew: false
+        change: |
+          Add `export function extractFieldNames(strategy: string): string[]`.
+          Run the regex `/^\d+\.\s+\*\*(\w+):\*\*/gm` against the template
+          body and collect capture groups, deduped in encounter order.
+          Returns `["mirror", "context", "conventions"]` for `default.md`.
+      - path: packages/autopilot/test/plan-enrichment.test.ts
+        isNew: false
+        change: |
+          Add cases: (1) ratio with default field set behaves as before,
+          (2) ratio with custom field names (e.g., `["pattern", "snippet"]`)
+          counts only items declaring those fields, (3) empty field list
+          falls back to defaults.
+    tests:
+      - packages/autopilot/test/plan-enrichment.test.ts
+      - packages/harness-opencode/test/enrich-strategy.test.ts
+    verify: "bun test test/plan-enrichment.test.ts && bun test test/enrich-strategy.test.ts"
+    mirror: packages/autopilot/src/plan-enrichment.ts
+    context: |
+      // Current hardcoded behavior — packages/autopilot/src/plan-enrichment.ts:60-89
+      export function computeEnrichmentRatio(planFiles: string[]): number {
+        let total = 0;
+        let enriched = 0;
+        for (const f of planFiles) {
+          // ...
+          const hasMirror = (content.match(/^\s*-?\s*mirror:/gm) ?? []).length;
+          const hasContext = (content.match(/^\s*-?\s*context/gm) ?? []).length;
+          const hasConventions = (content.match(/^\s*-?\s*conventions:/gm) ?? []).length;
+          enriched += Math.min(hasMirror, hasContext, hasConventions);
+        }
+        return total > 0 ? enriched / total : 0;
+      }
+
+      // And computeSpecEnrichmentRatio — packages/autopilot/src/plan-enrichment.ts:98-115
+      export function computeSpecEnrichmentRatio(planDir: string): number {
+        // ...
+        for (const item of items) {
+          const it = item as typeof item & { mirror?: string; context?: string; conventions?: string };
+          if (it.mirror && it.context && it.conventions) enriched++;
+        }
+        return total > 0 ? enriched / total : 0;
+      }
+
+      // New signature shape:
+      export function computeEnrichmentRatio(planFiles: string[], fieldNames?: string[]): number;
+      export function computeSpecEnrichmentRatio(planDir: string, fieldNames?: string[]): number;
+    conventions: |
+      Keep the existing default-argument fallback so callers passing no
+      `fieldNames` get the legacy three-field check; tests use `tmpDir()` +
+      `writeFile()` helpers already present in `plan-enrichment.test.ts`;
+      regex pattern survives both markdown bullet forms (`- **mirror**:` and
+      `**mirror**:`); dedupe field names by encounter order.
+
+  - id: "1.4"
+    intent: |
+      Enrichment retry on stall/error. When `config.enrichment.retry` is true
+      (default: true), wrap the enrichment pass in a retry loop. On any
+      per-file stall (`adapter.sendAndWait` returns `kind: "stall"`,
+      exceeding `config.enrichment.stall_timeout`) or server error, kill
+      the server (`adapter.shutdown(handle)`), start a fresh one
+      (`adapter.start(...)`), and restart the entire enrichment pass from
+      the top. The existing per-file idempotency check (lines 337-379 of
+      plan-enrichment.ts) skips already-enriched files, so retries only
+      pay for failures. Cap at `config.enrichment.max_retries` attempts
+      (default: 3).
+    checked: true
+    files:
+      - path: packages/autopilot/src/plan-enrichment.ts
+        isNew: false
+        change: |
+          Refactor `enrichPlanForFastModel` to wrap its server-spawn-through-
+          shutdown body in a retry loop. Pseudocode:
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              try {
+                handle = await adapter.start({ cwd });
+                const stalled = await runEnrichmentPass(handle, ...);
+                if (!stalled) break;
+              } catch (err) { /* log + continue */ }
+              finally { await adapter.shutdown(handle); }
+              if (attempt === maxRetries) throw new Error("enrichment exhausted retries");
+            }
+          A pass is considered "stalled" if any file returned
+          `kind: "stall"`. Accept a new optional arg
+          `enrichmentConfig?: { retry?: boolean; max_retries?: number; stall_timeout?: number }`.
+          When `retry === false`, behave exactly as today (single attempt).
+          `stall_timeout` (in ms) overrides the hardcoded `5 * 60 * 1000`
+          stall budget on `adapter.sendAndWait`.
+      - path: packages/autopilot/test/enrichment-retry.test.ts
+        isNew: true
+        change: |
+          New file. Use a fake `AgentAdapter` (mirror existing adapter mocks
+          in `packages/autopilot/test/`) where `sendAndWait` returns
+          `kind: "stall"` on the first call and `kind: "ok"` on the second.
+          Assert: (a) server is shut down + restarted between attempts,
+          (b) already-enriched files are skipped on retry (idempotency
+          preserved), (c) `max_retries: 1` throws after one failure,
+          (d) `retry: false` skips the retry loop entirely.
+    tests:
+      - packages/autopilot/test/enrichment-retry.test.ts
+    verify: "bun test test/enrichment-retry.test.ts"
+    mirror: packages/autopilot/src/plan-enrichment.ts
+    context: |
+      // Current single-pass shape — packages/autopilot/src/plan-enrichment.ts:226-574
+      export async function enrichPlanForFastModel(
+        cwd: string,
+        planPath: string,
+        logger?: AutopilotLogger,
+        emitter?: SessionEventEmitter,
+        adapter?: AgentAdapter,
+      ): Promise<void> {
+        // ... idempotency check ...
+        const handle = await adapter.start({ cwd });
+        try {
+          for (const f of planFiles) {
+            // per-file idempotency at lines 337-379 already skips enriched files
+            const sessionResult = await adapter.sendAndWait(handle, {
+              sessionId, message: prompt,
+              stallMs: 5 * 60 * 1000, // <- replace with config.stall_timeout
+              ...
+            });
+            if (sessionResult.kind === "stall") {
+              // today: log + continue. New: surface to outer retry loop.
+            }
+          }
+        } finally {
+          await adapter.shutdown(handle);
+        }
+      }
+
+      // Signature to evolve to:
+      export interface EnrichmentRunConfig {
+        retry?: boolean;        // default true
+        max_retries?: number;   // default 3
+        stall_timeout?: number; // ms; default 5*60_000
+      }
+      export async function enrichPlanForFastModel(
+        cwd: string, planPath: string,
+        logger?, emitter?, adapter?,
+        enrichmentConfig?: EnrichmentRunConfig,
+      ): Promise<void>;
+    conventions: |
+      Use the existing `AgentAdapter` interface (`adapter.start`,
+      `adapter.shutdown`, `adapter.sendAndWait`, `adapter.createSession`) —
+      don't reach around it. The retry loop emits the same
+      `enrich:start` / `enrich:done` events at the outer boundary (one pair
+      per overall pass, not per attempt) so consumers don't see duplicate
+      events; per-file events fire normally each attempt and are de-duped
+      by idempotency skips. Tests follow the fake-adapter pattern used in
+      `packages/autopilot/test/session-runner.test.ts`.
+
+  - id: "1.5"
+    intent: |
+      Wire strategy + retry into the resolved config. Read
+      `config.enrichment.strategy`, `config.enrichment.retry`,
+      `config.enrichment.max_retries`, and `config.enrichment.stall_timeout`
+      from `AutopilotConfig` (resolved in wave 0) and pass them through to
+      `enrichPlanForFastModel` from the CLI command handler. CLI `--fast`
+      still triggers enrichment; the resolved config controls *how* it runs.
+    checked: true
+    files:
+      - path: packages/cli/src/commands/autopilot.ts
+        isNew: false
+        change: |
+          The plan markdown names this file `autopilot-cmd.ts` — the real
+          handler lives at `packages/cli/src/commands/autopilot.ts`. After
+          wave 0's `resolveConfig(cwd, planPath)` lands, read
+          `config.enrichment` and pass it into the enrichment entry point
+          via `new SessionRunner({..., enrichmentConfig: config.enrichment })`,
+          which `SessionRunner` then forwards to `enrichPlanForFastModel`.
+          Mirror the same wiring in `commands/loop.ts` and
+          `commands/autopilot-tui.ts` if they invoke enrichment directly.
+      - path: packages/autopilot/src/plan-enrichment.ts
+        isNew: false
+        change: |
+          `enrichPlanForFastModel` consumes the `enrichmentConfig` arg
+          added in 1.4: passes `enrichmentConfig.strategy` to
+          `buildSpecGenerationPrompt` (which calls `loadStrategy`), reads
+          `enrichmentConfig.stall_timeout` for `sendAndWait`, and threads
+          `retry` / `max_retries` into the retry loop.
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/cli/src/commands/autopilot.ts
+    context: |
+      // packages/cli/src/commands/autopilot.ts:225-241 — current enrichment
+      // banner + SessionRunner construction:
+      if (fast && planPath) {
+        process.stderr.write("\n\x1b[1m→ Enriching plan for fast execution\x1b[0m ...\n");
+      }
+      const adapter = await createAdapter((adapterName ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER);
+      const runner = new SessionRunner({
+        planPath: path.resolve(process.cwd(), planPath),
+        cwd: process.cwd(),
+        fast, resume, maxIterationsPerPhase, parallel, ship, adapter,
+      });
+      // After wave 0 lands, `config` will be in scope:
+      //   const config = resolveConfig(process.cwd(), planPath);
+      //   const adapter = await createAdapter(config.adapter, config);
+      // Add:
+      //   new SessionRunner({ ..., enrichmentConfig: config.enrichment });
+
+      // packages/autopilot/src/plan-enrichment.ts — final signature:
+      export async function enrichPlanForFastModel(
+        cwd: string, planPath: string,
+        logger?: AutopilotLogger,
+        emitter?: SessionEventEmitter,
+        adapter?: AgentAdapter,
+        enrichmentConfig?: {
+          strategy?: string;
+          retry?: boolean;
+          max_retries?: number;
+          stall_timeout?: number;
+        },
+      ): Promise<void>;
+    conventions: |
+      CLI flags continue to win over config (the existing `--fast` /
+      `--adapter` precedence in wave_0.yaml 0.5 is the model); `config`
+      threading goes through `SessionRunner` options rather than positional
+      args; debug-level pino logs only (don't add stderr noise); the
+      `enrichmentConfig` arg is optional everywhere so existing tests that
+      call `enrichPlanForFastModel(cwd, planPath, logger, emitter, adapter)`
+      keep compiling.

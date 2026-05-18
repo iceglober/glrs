@@ -15,14 +15,14 @@
     - `packages/harness-opencode/src/autopilot/strategies/default.md` — extracted from current `buildPerFilePrompt`
   - verify: `bun test test/enrich-strategy.test.ts`
 
-- [ ] 1.2 **Ship default strategy as a bundled file.** Extract the current `buildPerFilePrompt` body into `src/autopilot/strategies/default.md`. Update `tsup.config.ts` or the build's `onSuccess` to copy `src/autopilot/strategies/` to `dist/autopilot/strategies/`. Update `buildPerFilePrompt` to read from the bundled file instead of hardcoding the prompt string.
+- [x] 1.2 **Ship default strategy as a bundled file.** Extract the current `buildPerFilePrompt` body into `src/autopilot/strategies/default.md`. Update `tsup.config.ts` or the build's `onSuccess` to copy `src/autopilot/strategies/` to `dist/autopilot/strategies/`. Update `buildPerFilePrompt` to read from the bundled file instead of hardcoding the prompt string.
 
   - files (MODIFIED):
     - `packages/harness-opencode/src/autopilot/plan-enrichment.ts` — replace hardcoded prompt with `loadStrategy` call
     - `packages/harness-opencode/tsup.config.ts` — copy strategies dir to dist (if not already handled)
   - verify: `bun run build && bun test`
 
-- [ ] 1.3 **Strategy-aware idempotency check.** Today `computeEnrichmentRatio` checks for hardcoded `mirror/context/conventions` fields. Instead, parse the strategy's numbered list to extract field names (regex: `/^\d+\.\s+\*\*(\w+):\*\*/gm`) and check for those. Falls back to `mirror/context/conventions` when no strategy is loaded.
+- [x] 1.3 **Strategy-aware idempotency check.** Today `computeEnrichmentRatio` checks for hardcoded `mirror/context/conventions` fields. Instead, parse the strategy's numbered list to extract field names (regex: `/^\d+\.\s+\*\*(\w+):\*\*/gm`) and check for those. Falls back to `mirror/context/conventions` when no strategy is loaded.
 
   - files (MODIFIED):
     - `packages/harness-opencode/src/autopilot/plan-enrichment.ts` — `computeEnrichmentRatio` accepts field names

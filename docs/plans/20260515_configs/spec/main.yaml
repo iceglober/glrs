@@ -1,0 +1,46 @@
+title: Declarative Autopilot Configuration
+goal: Make the autopilot workflow fully configurable via `.glrs/autopilot.yaml`
+  so different teams, repos, and plans can customize behavior without code
+  changes.
+constraints: >
+  - Missing config file = all defaults. Zero config is the happy path.
+
+  - CLI flags always override config (explicit user intent wins).
+
+  - Agent overrides are ephemeral — they live and die with the per-phase server.
+  The attended harness never sees them.
+
+  - Adapter-specific config is silently ignored when the selected adapter
+  doesn't support it. `adapters.opencode.agents` is a no-op when `adapter:
+  claude-code-cli`. No error, no warning — it's valid config that simply doesn't
+  apply.
+
+  - Invalid config fails fast with a clear error message listing the bad fields.
+  Never silently ignore.
+
+  - Enrichment strategies are read-only templates. The LLM edits plan files,
+  never strategy files.
+
+  - Custom agent prompts/permissions are paths relative to repo root. Absolute
+  paths are rejected.
+
+  - Hooks run in the repo root with the user's shell. Timeout = verify_timeout.
+  Non-zero exit = hook failure.
+
+  - Model values must be valid for the selected adapter. OpenCode tier names
+  (`deep`, `mid`, `autopilot-execute`) are invalid for `claude-code-cli`. Full
+  model IDs (containing `/`) are valid for both. Validation catches this at
+  config resolution time.
+phases:
+  - file: wave_0.yaml
+    completed: true
+  - file: wave_1.yaml
+    completed: true
+  - file: wave_2.yaml
+    completed: false
+  - file: wave_3.yaml
+    completed: false
+  - file: wave_4.yaml
+    completed: false
+  - file: wave_5.yaml
+    completed: false

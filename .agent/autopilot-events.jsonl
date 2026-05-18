@@ -1,0 +1,2 @@
+{"type":"session:start","timestamp":"2026-05-18T04:57:48.830Z","planPath":"/Users/austinhess/.glorious/worktrees/glrs/wt-260503-214007-131/docs/plans/20260515_configs","cwd":"/Users/austinhess/.glorious/worktrees/glrs/wt-260503-214007-131","fast":true,"resume":false,"enrichModel":"amazon-bedrock/global.anthropic.claude-opus-4-7","executeModel":"amazon-bedrock/zai.glm-5"}
+{"type":"enrich:start","timestamp":"2026-05-18T04:57:48.836Z","planPath":"/Users/austinhess/.glorious/worktrees/glrs/wt-260503-214007-131/docs/plans/20260515_configs","fileCount":0}

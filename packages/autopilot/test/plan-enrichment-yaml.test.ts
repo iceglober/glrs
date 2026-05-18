@@ -267,4 +267,84 @@ phases:
     // (0 sessions means the file was skipped before adapter.createSession)
     expect(wave0Sessions).toHaveLength(0);
   });
+
+  it("uses custom field names with computeSpecEnrichmentRatio", () => {
+    const planDir = path.join(tmpDir, "plan-custom-fields");
+    fs.mkdirSync(planDir);
+
+    writeSpec(
+      planDir,
+      "main.yaml",
+      `title: My Plan
+phases:
+  - file: wave_0.yaml
+    completed: false
+`,
+    );
+
+    // YAML spec with custom field names
+    writeSpec(
+      planDir,
+      "wave_0.yaml",
+      `items:
+  - id: a1
+    intent: Item with custom fields
+    checked: false
+    template: src/existing.ts
+    examples: function foo() {}
+    requirements: "must handle edge case"
+  - id: a2
+    intent: Not enriched
+    checked: false
+`,
+    );
+
+    // With default fields, ratio should be 0 (no mirror/context/conventions)
+    expect(computeSpecEnrichmentRatio(planDir)).toBe(0);
+
+    // With custom fields extracted from strategy
+    const customFields = ["template", "examples", "requirements"];
+    expect(computeSpecEnrichmentRatio(planDir, customFields)).toBeCloseTo(0.5, 2);
+  });
+
+  it("returns 1 when all items have custom enrichment fields", () => {
+    const planDir = path.join(tmpDir, "plan-all-custom");
+    fs.mkdirSync(planDir);
+
+    writeSpec(
+      planDir,
+      "main.yaml",
+      `title: My Plan
+phases:
+  - file: wave_0.yaml
+    completed: false
+`,
+    );
+
+    writeSpec(
+      planDir,
+      "wave_0.yaml",
+      `items:
+  - id: a1
+    intent: Item 1
+    checked: false
+    alpha: value1
+    bravo: value2
+    charlie: value3
+  - id: a2
+    intent: Item 2
+    checked: false
+    alpha: value4
+    bravo: value5
+    charlie: value6
+`,
+    );
+
+    // With custom strategy fields
+    const customFields = ["alpha", "bravo", "charlie"];
+    expect(computeSpecEnrichmentRatio(planDir, customFields)).toBe(1);
+
+    // With default fields
+    expect(computeSpecEnrichmentRatio(planDir)).toBe(0);
+  });
 });

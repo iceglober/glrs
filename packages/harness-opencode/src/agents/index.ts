@@ -2,6 +2,7 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 import { WORKFLOW_MECHANICS_RULE, UI_EVALUATION_LADDER } from "./shared/index.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import * as path from "node:path";
 import { dirname, join } from "node:path";
 
 // Read prompt files at runtime from the bundled location.
@@ -848,4 +849,67 @@ export function createAgents(): Record<string, AgentConfig> {
     }),
 
   };
+}
+
+/**
+ * Apply agent config overrides: model reassignment and custom prompts.
+ *
+ * For each entry in overrides:
+ * - If the agent exists, override its `model` (if provided)
+ * - If `prompt` is provided, treat it as a repo-root-relative path, read the file,
+ *   apply placeholder injections, and replace the agent's prompt
+ * - Absolute paths are rejected with a thrown Error
+ * - Unknown agent names are logged as warnings and ignored
+ *
+ * Mutates agents in place and returns the same reference.
+ */
+export function applyAgentOverrides(
+  agents: Record<string, AgentConfig>,
+  overrides: Record<string, { model?: string; prompt?: string }> | undefined,
+  repoRoot: string,
+): Record<string, AgentConfig> {
+  if (!overrides) return agents;
+
+  for (const [agentName, override] of Object.entries(overrides)) {
+    const agent = agents[agentName];
+    if (!agent) {
+      console.warn(`applyAgentOverrides: unknown agent "${agentName}" — ignoring`);
+      continue;
+    }
+
+    // Override model if provided
+    if (override.model !== undefined) {
+      agent.model = override.model;
+    }
+
+    // Override prompt if provided
+    if (override.prompt !== undefined) {
+      // Reject absolute paths
+      if (path.isAbsolute(override.prompt)) {
+        throw new Error(
+          `applyAgentOverrides: absolute path not allowed for agent "${agentName}"; ` +
+          `got "${override.prompt}". Paths must be relative to repo root.`,
+        );
+      }
+
+      // Read the prompt file
+      const promptPath = path.join(repoRoot, override.prompt);
+      try {
+        const rawPrompt = readFileSync(promptPath, "utf8");
+        // Apply the same injection pipeline as bundled prompts
+        const processedPrompt = injectUIEvaluationLadder(
+          injectWorkflowMechanics(rawPrompt),
+        );
+        agent.prompt = processedPrompt;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `applyAgentOverrides: failed to read prompt file for agent "${agentName}": ` +
+          `"${promptPath}" — ${message}`,
+        );
+      }
+    }
+  }
+
+  return agents;
 }

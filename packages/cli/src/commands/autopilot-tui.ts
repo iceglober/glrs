@@ -3,13 +3,15 @@ import { render } from "ink";
 import { AutopilotPicker } from "../tui/components/AutopilotPicker.js";
 import { AutopilotExecution } from "../tui/components/AutopilotExecution.js";
 import { SessionRunner } from "@glrs-dev/autopilot";
-import { OpenCodeAdapter } from "@glrs-dev/adapter-opencode";
+import type { AgentAdapter } from "@glrs-dev/autopilot";
+import { createAdapter, DEFAULT_ADAPTER, type AdapterName } from "../adapter-factory.js";
+import { resolveConfig } from "../autopilot/config-reader.js";
 
 /**
  * `glrs autopilot` — TUI plan picker at cwd, then run the autopilot session
  * with live event rendering to stderr.
  */
-export async function runAutopilot(): Promise<void> {
+export async function runAutopilot(adapterName?: AdapterName): Promise<void> {
   const cwd = process.cwd();
 
   if (!process.stderr.isTTY) {
@@ -24,8 +26,16 @@ export async function runAutopilot(): Promise<void> {
     return;
   }
 
-  // Step 2: Create the runner (events emitter is available before run())
-  const adapter = new OpenCodeAdapter();
+  // Step 2: Resolve config (before creating adapter)
+  const config = resolveConfig(cwd, planPath);
+
+  // CLI parameter overrides config
+  if (adapterName) {
+    config.adapter = adapterName as "opencode" | "claude-code-cli";
+  }
+
+  // Step 3: Create the runner (events emitter is available before run())
+  const adapter: AgentAdapter = await createAdapter(config.adapter ?? DEFAULT_ADAPTER, config);
 
   const runner = new SessionRunner({
     planPath,
@@ -34,7 +44,7 @@ export async function runAutopilot(): Promise<void> {
     adapter,
   });
 
-  // Step 3: Mount the full-viewport TUI — it subscribes to runner.events.
+  // Step 4: Mount the full-viewport TUI — it subscribes to runner.events.
   // exitOnCtrlC: false so we can handle Ctrl+C gracefully (first press
   // triggers a checkpoint write; second press force-exits).
   const app = render(
@@ -52,10 +62,10 @@ export async function runAutopilot(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 50));
 
   try {
-    // Step 4: Run the autopilot — the TUI updates live as events arrive
+    // Step 5: Run the autopilot — the TUI updates live as events arrive
     await runner.run();
 
-    // Step 5: Give the user 2 seconds to read the completion summary, then exit
+    // Step 6: Give the user 2 seconds to read the completion summary, then exit
     await new Promise<void>((resolve) => setTimeout(resolve, 2000));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

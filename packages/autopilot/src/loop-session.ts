@@ -42,6 +42,7 @@ import {
   type VerifyResult,
 } from "./verify-runner.js";
 import { validatePlan } from "./plan-validator.js";
+import { resolveModel, type AdapterName } from "./model-resolver.js";
 
 export type { LoopSessionOptions, LoopResult };
 
@@ -304,7 +305,22 @@ export async function runLoopSession(
       `Work the plan at ${opts.planPath}. ` +
       `Complete all items in ## Acceptance criteria. ` +
       `Mark items done as they complete.`;
-    return _runRalphLoop({ prompt, cwd: opts.cwd, agentName: opts.fast ? "autopilot-fast" : undefined, logger: opts.logger, emitter, adapter: opts.adapter });
+    const adapterName = opts.adapter?.name as AdapterName | undefined;
+    const cfgObj = opts.config as Record<string, unknown> | undefined;
+    const models = cfgObj?.models as Record<string, unknown> | undefined;
+    const executionSpecifier = models?.execution as string | undefined;
+    const executionModel = executionSpecifier
+      ? resolveModel(executionSpecifier, adapterName ?? "opencode")
+      : undefined;
+    return _runRalphLoop({
+      prompt,
+      cwd: opts.cwd,
+      agentName: opts.fast ? "autopilot-fast" : undefined,
+      model: executionModel,
+      logger: opts.logger,
+      emitter,
+      adapter: opts.adapter,
+    });
   }
 
   // Multi-file plan: per-phase session execution
@@ -517,6 +533,7 @@ export async function runLoopSession(
     logger?: import("./lib/logger.js").AutopilotLogger;
     emitter?: SessionEventEmitter;
     adapter?: import("./adapter.js").AgentAdapter;
+    config?: unknown;
   }): Promise<LoopResult> => {
     const { phaseFile, phasePath, laneId, runCwd, useParallel } = args;
     const phaseContent = args.readFileSync(phasePath);
@@ -534,10 +551,18 @@ export async function runLoopSession(
         `## Constraints\n${constraints}\n\n` +
         `## Your phase (${phaseFile})\n${phaseContent}\n\n` +
         `Do not work on items from other phases. Do not ask questions.`;
+      const adapterName = args.adapter?.name as AdapterName | undefined;
+      const cfgObj = args.config as Record<string, unknown> | undefined;
+      const models = cfgObj?.models as Record<string, unknown> | undefined;
+      const executionSpecifier = models?.execution as string | undefined;
+      const executionModel = executionSpecifier
+        ? resolveModel(executionSpecifier, adapterName ?? "opencode")
+        : undefined;
       return args.runRalphLoop({
         prompt,
         cwd: runCwd,
         agentName: "autopilot-fast",
+        model: executionModel,
         maxIterations: maxIterationsPerPhase,
         laneId: useParallel ? laneId : undefined,
         logger: args.logger,
@@ -595,10 +620,18 @@ export async function runLoopSession(
         `  - Do NOT work on items other than ${item.id}.\n\n` +
         `When done: mark the checkbox for item ${item.id} in ${phaseFile} as [x], commit, and emit the autopilot-done sentinel.`;
 
+      const adapterName = args.adapter?.name as AdapterName | undefined;
+      const cfgObj = args.config as Record<string, unknown> | undefined;
+      const models = cfgObj?.models as Record<string, unknown> | undefined;
+      const executionSpecifier = models?.execution as string | undefined;
+      const executionModel = executionSpecifier
+        ? resolveModel(executionSpecifier, adapterName ?? "opencode")
+        : undefined;
       const itemResult = await args.runRalphLoop({
         prompt: itemPrompt,
         cwd: runCwd,
         agentName: "autopilot-fast",
+        model: executionModel,
         maxIterations: perItemCap,
         laneId: useParallel ? laneId : undefined,
         logger: args.logger,
@@ -711,6 +744,7 @@ export async function runLoopSession(
         logger: opts.logger,
         emitter,
         adapter: opts.adapter,
+        config: opts.config,
       });
     } else {
       const retrySection = retryContext
@@ -724,10 +758,18 @@ export async function runLoopSession(
         retrySection +
         `\nDo not work on items from other phases. Do not ask questions — pick sensible defaults and note decisions in ## Open questions.`;
 
+      const adapterName = opts.adapter?.name as AdapterName | undefined;
+      const cfgObj = opts.config as Record<string, unknown> | undefined;
+      const models = cfgObj?.models as Record<string, unknown> | undefined;
+      const executionSpecifier = models?.execution as string | undefined;
+      const executionModel = executionSpecifier
+        ? resolveModel(executionSpecifier, adapterName ?? "opencode")
+        : undefined;
       result = await _runRalphLoop({
         prompt,
         cwd: runCwd,
         agentName: undefined,
+        model: executionModel,
         maxIterations: maxIterationsPerPhase,
         laneId: useParallel ? laneId : undefined,
         logger: opts.logger,
@@ -1178,7 +1220,22 @@ export async function runLoopSession(
         `## main.md\n${finalMainContent}\n\n` +
         `Only work on the unchecked items in main.md's acceptance criteria. Phase items are already done. Do not ask questions.`;
 
-      const crossResult = await _runRalphLoop({ prompt: crossCuttingPrompt, cwd: opts.cwd, agentName: opts.fast ? "autopilot-fast" : undefined, logger: opts.logger, emitter, adapter: opts.adapter });
+      const adapterName = opts.adapter?.name as AdapterName | undefined;
+      const cfgObj = opts.config as Record<string, unknown> | undefined;
+      const models = cfgObj?.models as Record<string, unknown> | undefined;
+      const executionSpecifier = models?.execution as string | undefined;
+      const executionModel = executionSpecifier
+        ? resolveModel(executionSpecifier, adapterName ?? "opencode")
+        : undefined;
+      const crossResult = await _runRalphLoop({
+        prompt: crossCuttingPrompt,
+        cwd: opts.cwd,
+        agentName: opts.fast ? "autopilot-fast" : undefined,
+        model: executionModel,
+        logger: opts.logger,
+        emitter,
+        adapter: opts.adapter,
+      });
       totalIterations += crossResult.iterations;
       totalCostUsd += crossResult.cumulativeCostUsd ?? 0;
       lastResult = crossResult;

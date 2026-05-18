@@ -96,14 +96,19 @@ if (sub === "wt" || sub === "worktree") {
 }
 
 // Handle autopilot subcommand natively (TUI plan picker)
-if (sub === "autopilot") {
-  await runAutopilot();
-  process.exit(0);
-}
-
-// Handle dashboard subcommand (alias for now)
-if (sub === "dashboard") {
-  await runAutopilot();
+if (sub === "autopilot" || sub === "dashboard") {
+  // Extract -a / --adapter from remaining args
+  const subArgs = args.slice(1);
+  let adapterArg: string | undefined;
+  for (let i = 0; i < subArgs.length; i++) {
+    if ((subArgs[i] === "-a" || subArgs[i] === "--adapter") && subArgs[i + 1]) {
+      adapterArg = subArgs[i + 1];
+      break;
+    }
+  }
+  const { ADAPTER_NAMES } = await import("./adapter-factory.js");
+  const adapterName = adapterArg && (ADAPTER_NAMES as readonly string[]).includes(adapterArg) ? adapterArg as (typeof ADAPTER_NAMES)[number] : undefined;
+  await runAutopilot(adapterName);
   process.exit(0);
 }
 

@@ -1,0 +1,514 @@
+items:
+  - id: "4.1"
+    intent: |
+      Per-phase config resolution. Before each phase starts, resolve
+      `config.phases.<phase-name>` and deep-merge it over the base
+      config. The phase name is the filename without `.md` (e.g.,
+      `wave_0`). This produces a phase-specific config that
+      `runPhaseInner` uses for model routing, iteration budgets, verify
+      strategy, hooks, and agent overrides.
+    checked: false
+    files:
+      - path: packages/harness-opencode/src/autopilot/config-reader.ts
+        isNew: false
+        change: |
+          Add `resolvePhaseConfig(baseConfig: AutopilotConfig,
+          phaseName: string): AutopilotConfig`. `phaseName` is the
+          phase filename without the `.md` (or `.yaml`) extension —
+          strip it before lookup. When `baseConfig.phases?.[phaseName]`
+          is undefined, return `baseConfig` unchanged. Otherwise
+          deep-merge the phase override over the base (phase wins on
+          conflict), specifically including the nested `models`,
+          `hooks`, `agents`, `adapters.opencode.agents`, and
+          `adapters.claude_code_cli` blocks. Re-use whatever
+          deep-merge helper wave 0 introduced for plan-over-project
+          merging — same semantics (arrays replace, not concat;
+          scalars overwrite; objects recurse).
+      - path: packages/harness-opencode/src/autopilot/loop-session.ts
+        isNew: false
+        change: |
+          Inside `runPhaseInner` (loop-session.ts:662), before reading
+          tier-derived budgets / verify strategy / hooks, call
+          `resolvePhaseConfig(baseConfig, phaseName)` where `phaseName`
+          is the `phaseFile` stripped of its extension. Use the
+          returned `phaseConfig` for every downstream config lookup in
+          that phase (models, iteration budgets, verify, hooks, agent
+          overrides). The base config stays on the session for other
+          uses (post-run hooks, changeset settings, etc.).
+    tests:
+      - packages/harness-opencode/test/phase-config.test.ts
+    verify: "bun test test/phase-config.test.ts"
+    mirror: packages/harness-opencode/src/autopilot/config-reader.ts
+    context: |
+      // packages/autopilot/src/loop-session.ts:662 — runPhaseInner
+      // signature; insert phase-config resolution near the top of the
+      // function body so every downstream read uses the merged values:
+      const runPhaseInner = async (
+        phaseFile: string,
+        laneId: string,
+        runCwd: string,
+        retryContext?: string,
+      ): Promise<PhaseResult & { phaseLoopResult: LoopResult; phaseComplete: boolean; verifyFailures?: string }> => {
+        // ...
+        // const phaseName = phaseFile.replace(/\.(md|ya?ml)$/, "");
+        // const phaseConfig = resolvePhaseConfig(baseConfig, phaseName);
+
+      // New surface — packages/harness-opencode/src/autopilot/config-reader.ts:
+      export function resolvePhaseConfig(
+        baseConfig: AutopilotConfig,
+        phaseName: string,
+      ): AutopilotConfig;
+
+      // Spec phase filenames (loop-session.ts:341) use the `.yaml`
+      // suffix when `hasSpec(planPath)` is true; markdown phases use
+      // `.md`. Strip both before lookup so users key the override
+      // under the bare name (e.g., `phases.wave_0`).
+    conventions: |
+      ESM imports with `.js` suffix on relative paths; named exports
+      only; bun:test (`import { describe, it, expect } from
+      "bun:test"`); YAML field names snake_case (`phases.wave_0`,
+      `models.execution`); TS opts camelCase; deep-merge semantics
+      identical to wave 0's project↔plan merge (arrays REPLACE, never
+      concat; objects recurse; scalars overwrite). `resolvePhaseConfig`
+      is a pure function — no I/O, no logging. Tests live in
+      `packages/harness-opencode/test/phase-config.test.ts` and cover:
+      (1) no `phases` block returns base unchanged, (2) deep merge of
+      `phases.wave_0.models.execution` overrides base, (3) phase hooks
+      override plan hooks, (4) phase agents merge with base agents
+      (per-agent override), (5) extension-stripping for both `.md` and
+      `.yaml` phase files.
+
+  - id: "4.2"
+    intent: |
+      Per-phase agent overrides. When `config.phases.<phase>.agents`
+      has entries, apply them to the server started for that phase.
+      Since the harness starts a fresh server per phase (or per lane
+      in parallel mode), each phase can have its own agent-to-model
+      mapping. The override-injection plumbing from wave 2 item 2.4
+      already accepts a per-call `agents` argument — this item wires
+      the phase-resolved config into that call site.
+    checked: false
+    files:
+      - path: packages/harness-opencode/src/autopilot/loop-session.ts
+        isNew: false
+        change: |
+          Inside `runPhaseInner` (loop-session.ts:662), after computing
+          `phaseConfig` (item 4.1), read
+          `phaseConfig.adapters?.opencode?.agents` (or
+          `phaseConfig.agents` — whichever wave 2 standardized on) and
+          pass it via the existing per-call options to
+          `_runRalphLoop` / `runItemsForPhase`. Both call paths
+          (loop-session.ts:703 per-item and loop-session.ts:307
+          single-file) need the agent map threaded through. When the
+          phase has no agent overrides, fall back to the base
+          config's `adapters.opencode.agents` (already used today).
+      - path: packages/autopilot/src/loop.ts
+        isNew: false
+        change: |
+          Add `agentOverrides?: Record<string, AgentOverride>` to
+          `RalphLoopOptions` and forward it to the adapter's
+          `start({ cwd, agents })` call (or whatever shape wave 2's
+          item 2.4 settled on for injecting per-server overrides).
+          When undefined, the adapter falls back to whatever was wired
+          at construction (today: nothing — overrides come exclusively
+          from the per-call argument once wave 2 lands).
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/autopilot/src/loop.ts
+    context: |
+      // packages/autopilot/src/loop-session.ts:702-714 — per-item
+      // execution call site where the phase-resolved agent overrides
+      // need to be threaded:
+      if (opts.fast) {
+        result = await runItemsForPhase({
+          phaseFile,
+          phasePath,
+          laneId,
+          runCwd,
+          runRalphLoop: _runRalphLoop,
+          readFileSync: _readFileSync,
+          useParallel,
+          logger: opts.logger,
+          emitter,
+          adapter: opts.adapter,
+          // agentOverrides: phaseConfig.adapters?.opencode?.agents,
+        });
+      }
+
+      // packages/autopilot/src/loop.ts:188 — adapter is threaded into
+      // RalphLoopOptions; add `agentOverrides` alongside it and pass
+      // it to `adapter.start(...)` at the spawn site (wave 2 item 2.4
+      // expects `start({ cwd, agents })` to accept it).
+    conventions: |
+      A fresh server per phase (or per lane) means agent overrides
+      apply for the lifetime of that server only — no leakage across
+      phases. The override shape is the discriminated
+      `adapters.opencode.agents` block (wave 0 schema); the
+      claude-code-cli adapter ignores it (its overrides live under
+      `adapters.claude_code_cli`). Field names: YAML snake_case
+      (`adapters.opencode.agents`), TS camelCase (`agentOverrides`).
+      Bridge the rename at the loop-session boundary, not inside the
+      adapter. No new tests for this item — coverage flows through
+      wave 2 item 2.4's agent-override tests plus the phase-config
+      tests in item 4.1.
+
+  - id: "4.3"
+    intent: |
+      Per-phase hooks. Phase-level hooks override plan-level hooks.
+      `phases.wave_0.hooks.post_phase: "cargo test"` replaces the
+      plan-level `hooks.post_phase` for wave_0 only. Other phases
+      still use the plan-level hook. Deep-merge semantics from item
+      4.1 already give this for free — this item documents and tests
+      the hook-specific path through the four hook call sites added
+      in wave 3 item 3.3.
+    checked: false
+    files:
+      - path: packages/harness-opencode/src/autopilot/loop-session.ts
+        isNew: false
+        change: |
+          At the four `runHook(...)` call sites added in wave 3 item
+          3.3 (pre_phase, post_phase, post_run, on_error), source the
+          hook command from the phase-resolved config rather than the
+          base config. `pre_phase`, `post_phase`, and `on_error` use
+          `phaseConfig.hooks?.<name>` (phase-specific). `post_run`
+          remains base-only — it fires once after every phase, so
+          there is no "current phase" at that point. The fallback
+          path when `phaseConfig.hooks?.<name>` is undefined is
+          `baseConfig.hooks?.<name>` (preserved by the deep-merge in
+          item 4.1, so no extra wiring needed beyond reading from the
+          phase-resolved config).
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/autopilot/src/loop-session.ts
+    context: |
+      // From wave 3 item 3.3 — hook call sites inside loop-session.ts
+      // that need to read from phaseConfig (not baseConfig):
+      //   - pre_phase: before runPhase() in both sequential and parallel
+      //   - post_phase: inside recordPhaseCompletion (loop-session.ts:905)
+      //   - on_error:   inside the fatal phase-failed branch (loop-session.ts:830-859)
+      // post_run stays on baseConfig (fires once, after all phases).
+      //
+      // Resolution sketch:
+      //   const phaseConfig = resolvePhaseConfig(baseConfig, phaseName);
+      //   await runHook(phaseConfig.hooks?.pre_phase, runCwd, hookTimeoutMs);
+      //   // ... phase body ...
+      //   await runHook(phaseConfig.hooks?.post_phase, runCwd, hookTimeoutMs);
+      //
+      // The deep-merge in resolvePhaseConfig means an absent phase-
+      // level hook transparently falls back to the plan-level one;
+      // no extra `?? baseConfig.hooks?.X` needed at the call site.
+    conventions: |
+      Hook resolution lives at the call site, not inside `runHook` —
+      `runHook` only cares about a final command string. Deep-merge
+      semantics (item 4.1) give the plan→phase fallback for free; do
+      not duplicate the fallback chain at the call site. `post_run`
+      is intentionally NOT per-phase (it has no "current phase"
+      context). YAML snake_case (`hooks.pre_phase`, `hooks.post_phase`,
+      `hooks.on_error`, `hooks.post_run`). Hook timeout still sourced
+      from `config.verify_timeout` (wave 3 item 3.3 convention). No
+      new test file for this item — extend the wave-3 hook-runner
+      tests and the wave-4 phase-config tests to assert the
+      override path.
+
+  - id: "4.4"
+    intent: |
+      CLI flag precedence. CLI flags override config fields after
+      project + plan + phase merging, before execution. Map each
+      flag to its config equivalent:
+      `--adapter NAME` / `-a NAME` → `adapter: NAME`;
+      `--fast` → `models.execution` = `autopilot-execute` (OpenCode)
+      or `claude-haiku-4-5-20251001` (Claude Code CLI, resolved by
+      the adapter's tier alias);
+      `--parallel N` → `execution_order: parallel` +
+      `parallel_lanes: N`;
+      `--ship` → `auto_ship: true`;
+      `--resume` → `checkpoint: true` (implicit);
+      `--max-iterations-per-phase N` → `max_iterations_per_phase: N`;
+      `--stall-timeout N` → `stall_timeout: N`;
+      `--notify URL` → `notify_url: URL`.
+      `--adapter` takes highest precedence — it overrides both
+      project and plan-level `adapter` settings.
+    checked: false
+    files:
+      - path: packages/autopilot/src/config-reader.ts
+        isNew: true
+        change: |
+          Add `applyCLIOverrides(config: AutopilotConfig, flags: CLIFlags):
+          AutopilotConfig`. `CLIFlags` is a typed shape mirroring the
+          cmd-ts arg shape from `packages/cli/src/commands/autopilot.ts`
+          and `loop.ts` (all fields optional). Apply each flag only
+          when defined (undefined = "don't override"). `--fast` resolves
+          to the active adapter's execution tier: when
+          `(flags.adapter ?? config.adapter)` is `"claude-code-cli"`
+          set `models.execution = "claude-haiku-4-5-20251001"`,
+          otherwise `"autopilot-execute"`. `--parallel N` sets BOTH
+          `execution_order: "parallel"` AND `parallel_lanes: N`.
+          Return a NEW config object (do not mutate the input).
+      - path: packages/cli/src/commands/autopilot.ts
+        isNew: false
+        change: |
+          Inside the handler (autopilot.ts:74), after loading the
+          merged project+plan config (wave 0/1) and BEFORE creating
+          the `SessionRunner`, call
+          `applyCLIOverrides(resolvedConfig, { adapter: adapterName,
+          fast, resume, maxIterationsPerPhase, parallel, ship })`.
+          Use the result for all downstream decisions including
+          `createAdapter((finalConfig.adapter ?? DEFAULT_ADAPTER))`.
+          Drop the existing `(adapterName ?? DEFAULT_ADAPTER)` form —
+          the CLI override now flows through `applyCLIOverrides`.
+      - path: packages/cli/src/commands/loop.ts
+        isNew: false
+        change: |
+          Inside the handler (loop.ts:68), after loading the merged
+          config (no plan path for `loop`, so project-config only),
+          call `applyCLIOverrides(projectConfig, { adapter:
+          adapterName, stallTimeout, notify })`. Use
+          `finalConfig.adapter`, `finalConfig.stall_timeout`,
+          `finalConfig.notify_url` when building the `runRalphLoop`
+          options (replacing today's direct `notify ?? undefined`,
+          `stallTimeout ?? undefined`, and `adapterName ??
+          DEFAULT_ADAPTER` reads). `--max-iterations` and `--timeout`
+          remain CLI-only (no config equivalent yet).
+      - path: packages/autopilot/test/cli-overrides.test.ts
+        isNew: true
+        change: |
+          bun:test cases: (1) all flags undefined returns input
+          unchanged; (2) `--adapter claude-code-cli` overrides
+          `config.adapter: opencode`; (3) `--fast` with OpenCode
+          adapter sets `models.execution = "autopilot-execute"`;
+          (4) `--fast` with Claude Code CLI adapter sets
+          `models.execution = "claude-haiku-4-5-20251001"`;
+          (5) `--parallel 4` sets both `execution_order: parallel`
+          and `parallel_lanes: 4`; (6) `--ship` sets `auto_ship: true`;
+          (7) `--notify URL` sets `notify_url`; (8) input config not
+          mutated (assert via deep-equal against a deep-cloned copy).
+    tests:
+      - packages/autopilot/test/cli-overrides.test.ts
+    verify: "bun test test/cli-overrides.test.ts"
+    mirror: packages/harness-opencode/src/autopilot/config-reader.ts
+    context: |
+      // packages/cli/src/commands/autopilot.ts:74 — handler signature
+      // already destructures every flag we need to map:
+      handler: async ({ plan, fast, resume, maxIterationsPerPhase,
+                       parallel, ship, status, adapter: adapterName }) => {
+        // ...
+        // const projectConfig = readConfig(cwd) ?? {};
+        // const planConfig    = readPlanConfig(planPath) ?? {};
+        // const merged        = mergeConfigs(projectConfig, planConfig);
+        // const finalConfig   = applyCLIOverrides(merged, {
+        //   adapter: adapterName, fast, resume,
+        //   maxIterationsPerPhase, parallel, ship,
+        // });
+
+      // packages/cli/src/commands/autopilot.ts:67-72 — current --adapter
+      // flag declaration (the cmd-ts `oneOf(ADAPTER_NAMES as unknown as
+      // string[])` typing stays — applyCLIOverrides only sees the
+      // resolved string).
+      adapter: option({
+        long: "adapter",
+        short: "a",
+        type: optional(oneOf(ADAPTER_NAMES as unknown as string[])),
+        description: `...`,
+      }),
+
+      // packages/cli/src/commands/autopilot.ts:231 — current adapter
+      // construction; replace with finalConfig.adapter lookup:
+      const adapter = await createAdapter(
+        (adapterName ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER,
+      );
+
+      // New surface — packages/autopilot/src/config-reader.ts:
+      export interface CLIFlags {
+        adapter?: string;
+        fast?: boolean;
+        resume?: boolean;
+        maxIterationsPerPhase?: number;
+        parallel?: number;
+        ship?: boolean;
+        stallTimeout?: number;
+        notify?: string;
+      }
+      export function applyCLIOverrides(
+        config: AutopilotConfig,
+        flags: CLIFlags,
+      ): AutopilotConfig;
+    conventions: |
+      Pure function — no I/O, no logging, no mutation of the input.
+      CLI flag (camelCase, mirrors cmd-ts arg names) → config field
+      (snake_case in YAML, camelCase or snake_case in the TS type per
+      wave 0). Undefined flag = leave config field alone (preserves
+      whatever the merge produced). Boolean flags only override TO
+      `true` — `--fast` absent does NOT set `models.execution`
+      to a default. `--adapter` has highest precedence (overrides
+      plan AND project). `--parallel N` is a compound override (sets
+      two fields). Tests use deep-clone + deep-equal to prove
+      immutability; do not rely on JSON-serialize equality (loses
+      `undefined` field distinctions).
+
+  - id: "4.5"
+    intent: |
+      Config validation errors. When the fully-merged config
+      (project + plan + phase + CLI) has invalid values — unknown
+      verify strategy, negative iteration budget, malformed hook
+      command, undefined adapter name, etc. — fail fast with a
+      structured error listing every invalid field at once. Users
+      see all problems on one screen, not one fix-and-retry per
+      problem.
+    checked: false
+    files:
+      - path: packages/harness-opencode/src/autopilot/config-reader.ts
+        isNew: false
+        change: |
+          Add `validateConfig(config: AutopilotConfig): ValidationResult`
+          where `ValidationResult = { ok: true } | { ok: false; errors:
+          ValidationError[] }` and `ValidationError = { path: string;
+          message: string }`. Walk the resolved config and record
+          every violation; never short-circuit on the first error.
+          Checks: `adapter` ∈ {`opencode`, `claude-code-cli`};
+          `verify` ∈ {`after_phase`, `after_item`, `skip`};
+          `verify_timeout`, `max_iterations_per_phase`,
+          `max_iterations_per_item`, `stall_timeout`, `parallel_lanes`
+          are positive integers; `execution_order` ∈ {`sequential`,
+          `parallel`}; `rollback_on_failure` ∈ {`soft`, `off`};
+          `changeset_bump` ∈ {`patch`, `minor`, `major`};
+          `log_level` ∈ pino levels; each `hooks.*` is a non-empty
+          string when present; each `phases.<name>` recursively
+          validated. The `path` field uses dotted notation
+          (e.g., `phases.wave_0.verify`).
+      - path: packages/harness-opencode/src/autopilot/autopilot-cmd.ts
+        isNew: false
+        change: |
+          After applying CLI overrides (item 4.4), call
+          `validateConfig(finalConfig)`. On `ok: false`, write each
+          error to stderr (`✗ <path>: <message>`) and `process.exit(1)`
+          BEFORE constructing the `SessionRunner`. Mirror the
+          existing plan-validation error rendering at
+          packages/cli/src/commands/autopilot.ts:212-221 — same red
+          `✗` prefix, same two-space indent, same one-line-per-error
+          format. Do NOT throw — `process.exit(1)` so the user sees
+          a clean error block, not a Bun stack trace.
+      - path: packages/harness-opencode/test/config-validation.test.ts
+        isNew: true
+        change: |
+          bun:test cases: (1) empty config (all defaults) is `ok: true`;
+          (2) `adapter: "claude"` (typo) records a path/message
+          error; (3) `verify: "after_item"` is valid;
+          (4) `verify_timeout: -1` records error;
+          (5) multiple invalid fields produce multiple errors
+          (assert ALL appear, in any order); (6) invalid field
+          inside `phases.wave_0.verify` records error with path
+          `phases.wave_0.verify`; (7) `hooks.pre_phase: ""` records
+          an error (empty hook command is invalid); (8) `log_level:
+          "verbose"` records error (not a pino level).
+    tests:
+      - packages/harness-opencode/test/config-validation.test.ts
+    verify: "bun test test/config-validation.test.ts"
+    mirror: packages/autopilot/src/plan-validator.ts
+    context: |
+      // packages/cli/src/commands/autopilot.ts:202-222 — pattern to
+      // mirror for printing validation failures and exiting cleanly:
+      const { validatePlan } = await import("@glrs-dev/autopilot");
+      const validation = validatePlan(path.resolve(process.cwd(), planPath));
+      for (const w of validation.warnings) {
+        process.stderr.write(`  ⚠ ${w.message}${w.file ? ` (${w.file})` : ""}\n`);
+      }
+      if (validation.errors.length > 0) {
+        process.stderr.write(`\n\x1b[31m✗ Plan validation failed:\x1b[0m\n`);
+        for (const e of validation.errors) {
+          process.stderr.write(`  ${e.message}${e.file ? ` (${e.file})` : ""}\n`);
+        }
+        process.exit(1);
+      }
+
+      // New surface — packages/harness-opencode/src/autopilot/config-reader.ts:
+      export interface ValidationError { path: string; message: string }
+      export type ValidationResult =
+        | { ok: true }
+        | { ok: false; errors: ValidationError[] };
+      export function validateConfig(config: AutopilotConfig): ValidationResult;
+    conventions: |
+      Collect-all-errors (never short-circuit) — single round-trip
+      for the user. `path` field is dotted (`phases.wave_0.verify`)
+      so users can grep their YAML. Validation runs AFTER full merge
+      (project + plan + phase + CLI), not on each layer — wave 4
+      item 4.4 is the last mutation before validation. Never throw;
+      callers `process.exit(1)` on `ok: false` so the message stays
+      clean (no stack trace). `validateConfig` is pure — no I/O, no
+      logging, no env reads. Allowed-value lists for `adapter`,
+      `verify`, `execution_order`, `rollback_on_failure`,
+      `changeset_bump`, `log_level` live as exported const arrays in
+      the same module so tests can import and assert against them
+      (DRY across the schema docs in `autopilot.yaml.example` and
+      item 4.6).
+
+  - id: "4.6"
+    intent: |
+      Documentation. Write `autopilot.yaml.example` with every field
+      documented, grouped by section, with defaults shown in
+      comments. Ships with the plugin (copied to `dist/`) and is
+      referenced by `glrs oc configure` as a starting point.
+    checked: false
+    files:
+      - path: packages/harness-opencode/src/autopilot/autopilot.yaml.example
+        isNew: true
+        change: |
+          Plain YAML file (no executable code). Group fields under
+          comment headers: `# Adapter`, `# Models`, `# Execution`,
+          `# Verify`, `# Hooks`, `# Phases`, `# Rollback &
+          checkpoints`, `# Logging`, `# Notifications`,
+          `# Changeset`, `# Auto-ship`. Every field commented with
+          `# default: <value>`. Show both adapter blocks under
+          `adapters:` (opencode and claude_code_cli) with a comment
+          noting only the block matching `adapter:` is read. Provide
+          a `phases:` example showing per-phase model and hook
+          overrides for `wave_0`. Allowed-value lists for enum
+          fields rendered as inline comments (e.g.,
+          `# verify: after_phase | after_item | skip`). All examples
+          commented out (lines start with `# `) so the file is a
+          safe drop-in default — copying it produces no behavior
+          change until users uncomment fields.
+    tests: []
+    verify: "bun run build"
+    mirror: packages/harness-opencode/src/autopilot/autopilot-config.ts
+    context: |
+      // packages/harness-opencode/src/autopilot/autopilot-config.ts
+      // (wave 0 item 0.1) defines the canonical field list. The
+      // example file MUST stay in sync with that interface — every
+      // field documented in TS JSDoc gets a commented line here with
+      // the same default note.
+      //
+      // Sketch of the example layout:
+      //   # ===== Adapter =====
+      //   # adapter: opencode  # opencode | claude-code-cli (default: opencode)
+      //
+      //   # ===== Models =====
+      //   # models:
+      //   #   enrichment: deep              # default: deep
+      //   #   execution:  autopilot-execute # default: autopilot-execute
+      //   #   debrief:    deep              # default: deep
+      //
+      //   # ===== Phases (per-phase overrides) =====
+      //   # phases:
+      //   #   wave_0:
+      //   #     models:
+      //   #       execution: deep           # use the deep model for wave_0 only
+      //   #     hooks:
+      //   #       post_phase: "cargo test"  # phase-specific hook
+      //
+      // Build-time copy: ensure the file lands in
+      // `packages/harness-opencode/dist/autopilot/` so it ships with
+      // the published plugin. The bun build script already copies
+      // non-`.ts` files in `src/` to `dist/` — verify by running
+      // `bun run build` and checking the dist tree.
+    conventions: |
+      Pure YAML with leading-`# ` comments — every example field is
+      commented out so the file is a safe template. Defaults appear
+      as `# default: <value>` at the end of each field's line. Enum
+      fields document allowed values inline (e.g.,
+      `# verify: after_phase | after_item | skip`). Section headers
+      use `# ===== <Name> =====` (visually scannable, mirrors the
+      tone of other example configs in the repo). The file is the
+      source of truth for the user-facing docs — keep field order
+      stable so diffs against the TS interface are easy to spot in
+      review. `glrs oc configure` (future) will copy this file into
+      `.glrs/autopilot.yaml` as the starting point.
