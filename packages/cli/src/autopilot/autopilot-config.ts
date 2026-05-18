@@ -122,6 +122,12 @@ export interface AutopilotConfig {
        * @default []
        */
       allowed_tools?: string[];
+
+      /**
+       * Maximum number of turns for a single Claude Code CLI session.
+       * @default undefined (no limit)
+       */
+      max_turns?: number;
     };
   };
 }

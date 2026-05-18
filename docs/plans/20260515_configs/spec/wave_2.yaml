@@ -438,7 +438,7 @@ items:
       - `max_turns: number` (optional) → `--max-turns`
       Replaces the hardcoded `{ dangerouslySkipPermissions: true, models: {...} }`
       in `packages/cli/src/adapter-factory.ts:22-28`.
-    checked: false
+    checked: true
     files:
       - path: packages/cli/src/adapter-factory.ts
         isNew: false

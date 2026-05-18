@@ -47,6 +47,8 @@ export async function createAdapter(name: AdapterName, config?: AutopilotConfig)
           enrich: resolvedConfig.models?.enrichment || "claude-opus-4-7",
           execute: resolvedConfig.models?.execution || "claude-haiku-4-5-20251001",
         },
+        ...(cliConfig.allowed_tools ? { allowedTools: cliConfig.allowed_tools } : {}),
+        ...(cliConfig.max_turns != null ? { maxTurns: cliConfig.max_turns } : {}),
       });
     }
     default:
