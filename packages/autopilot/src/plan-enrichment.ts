@@ -100,7 +100,8 @@ export function computeEnrichmentRatio(
 /**
  * Compute the enrichment ratio for a YAML spec plan directory.
  * Counts items with all enrichment fields across all phase files
- * referenced in spec/main.yaml.
+ * referenced in spec/main.yaml. Strategy-aware: checks for the
+ * specified fieldNames instead of hardcoded mirror/context/conventions.
  *
  * Returns 0 if no items found (avoids NaN division).
  */
@@ -114,11 +115,20 @@ export function computeSpecEnrichmentRatio(
   let enriched = 0;
   for (const phaseFile of phaseFiles) {
     const phasePath = path.join(planDir, "spec", phaseFile);
-    const items = parseSpecItems(phasePath);
+    let content: string;
+    try {
+      content = fs.readFileSync(phasePath, "utf-8");
+    } catch {
+      // Unreadable file → contribute 0 to both sides
+      continue;
+    }
+    const raw = yamlParse(content) as unknown;
+    const items = Array.isArray((raw as Record<string, unknown>)?.items)
+      ? ((raw as Record<string, unknown>).items as Record<string, unknown>[])
+      : [];
     total += items.length;
     for (const item of items) {
-      const it = item as Record<string, unknown>;
-      const hasAllFields = fieldNames.every((field) => it[field]);
+      const hasAllFields = fieldNames.every((field) => item[field]);
       if (hasAllFields) {
         enriched++;
       }

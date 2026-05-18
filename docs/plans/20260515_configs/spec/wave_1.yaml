@@ -173,7 +173,7 @@ items:
       executor should verify the exact pattern against `default.md` and
       tune the regex) and check for those fields. Falls back to
       `mirror/context/conventions` when no strategy is loaded.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/plan-enrichment.ts
         isNew: false

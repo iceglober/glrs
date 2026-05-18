@@ -253,4 +253,32 @@ describe("computeEnrichmentRatio", () => {
     // No field names provided, should use defaults
     expect(computeEnrichmentRatio([f])).toBe(1);
   });
+
+  it("is strategy-aware: uses extracted field names instead of defaults", () => {
+    const dir = tmpDir();
+    const f = writeFile(
+      dir,
+      "phase.md",
+      `# Title
+
+Strategy fields:
+   - **template**: Reference file
+   - **examples**: Code snippets
+   - **requirements**: Feature spec
+
+- [ ] 1.1 **First item**
+  - template: src/similar.ts
+  - examples: function foo() {}
+  - requirements: must handle edge case
+
+- [ ] 1.2 **Second item**
+`,
+    );
+    // Without custom fields, ratio should be 0 (mirror/context/conventions not present)
+    expect(computeEnrichmentRatio([f])).toBe(0);
+
+    // With custom fields extracted from the strategy, ratio should be 0.5
+    const customFields = ["template", "examples", "requirements"];
+    expect(computeEnrichmentRatio([f], customFields)).toBe(0.5);
+  });
 });
