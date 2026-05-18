@@ -247,6 +247,7 @@ export const autopilotInteractiveCmd = command({
       parallel,
       ship,
       adapter,
+      enrichmentConfig: config.enrichment,
     });
 
     // Attach CLI renderer — subscribes to events and writes formatted text to stderr

@@ -133,6 +133,7 @@ function buildSpecGenerationPrompt(
   planDir: string,
   phaseFile: string,
   content: string,
+  strategyName?: string,
 ): string {
   const isMain = phaseFile === "main.md";
   const specFileName = isMain
@@ -196,7 +197,7 @@ Write the file \`${planDir}/${specPath}\` using the write/edit tool, then respon
     return mainInstructions;
   }
 
-  const phaseTemplate = loadStrategy(cwd, "default");
+  const phaseTemplate = loadStrategy(cwd, strategyName ?? "default");
   const phaseInstructions = phaseTemplate
     .replaceAll("{{specPath}}", specPath)
     .replaceAll("{{planDir}}", planDir)
@@ -222,6 +223,7 @@ async function runEnrichmentPass(
   adapter: AgentAdapter,
   handle: AgentHandle,
   stallMs: number,
+  strategyName?: string,
 ): Promise<boolean> {
   let stallOccurred = false;
 
@@ -344,7 +346,7 @@ async function runEnrichmentPass(
       continue;
     }
 
-    const prompt = buildSpecGenerationPrompt(cwd, resolvedPath, phaseFile, content);
+    const prompt = buildSpecGenerationPrompt(cwd, resolvedPath, phaseFile, content, strategyName);
 
     let toolCalls = 0;
     let fileCost = 0;
@@ -594,6 +596,7 @@ export async function enrichPlanForFastModel(
   const enableRetry = enrichmentConfig?.retry !== false;
   const maxRetries = enrichmentConfig?.max_retries ?? 3;
   const stallMs = enrichmentConfig?.stall_timeout ?? (5 * 60 * 1000);
+  const strategyName = enrichmentConfig?.strategy;
 
   if (!adapter) {
     throw new Error("enrichPlanForFastModel: adapter is required");
@@ -622,6 +625,7 @@ export async function enrichPlanForFastModel(
         adapter,
         handle,
         stallMs,
+        strategyName,
       );
       if (stallOccurred) {
         log?.warn("Enrichment stalled but retry is disabled");
@@ -651,6 +655,7 @@ export async function enrichPlanForFastModel(
             adapter,
             handle,
             stallMs,
+            strategyName,
           );
 
           if (!stallOccurred) {

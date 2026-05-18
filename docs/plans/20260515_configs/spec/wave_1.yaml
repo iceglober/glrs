@@ -344,7 +344,7 @@ items:
       from `AutopilotConfig` (resolved in wave 0) and pass them through to
       `enrichPlanForFastModel` from the CLI command handler. CLI `--fast`
       still triggers enrichment; the resolved config controls *how* it runs.
-    checked: false
+    checked: true
     files:
       - path: packages/cli/src/commands/autopilot.ts
         isNew: false

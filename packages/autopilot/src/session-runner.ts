@@ -45,6 +45,16 @@ export interface SessionRunnerOptions {
    */
   eventStreamPath?: string;
   /**
+   * Enrichment configuration (strategy, retry, timeouts).
+   * Passed through to enrichPlanForFastModel when --fast is used.
+   */
+  enrichmentConfig?: {
+    strategy?: string;
+    retry?: boolean;
+    max_retries?: number;
+    stall_timeout?: number;
+  };
+  /**
    * Injectable dependencies for testing.
    * @internal
    */
@@ -344,7 +354,7 @@ export class SessionRunner {
             });
           } else {
             const { enrichPlanForFastModel } = await import("./plan-enrichment.js");
-            await enrichPlanForFastModel(cwd, planPath, logger, this.events, this.opts.adapter);
+            await enrichPlanForFastModel(cwd, planPath, logger, this.events, this.opts.adapter, this.opts.enrichmentConfig);
             // Note: enrichPlanForFastModel emits its own enrich:done event
             // internally — do NOT emit a duplicate here.
           }
