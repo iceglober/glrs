@@ -658,30 +658,76 @@ export async function runLoopSession(
         .join(", ");
       const verify = item.verify?.trim() || "(no verify command declared)";
 
+      // Extract execution_style from phase config to determine TDD mode
+      const phaseConfigForItem = resolvePhaseConfig(
+        args.config as Record<string, unknown>,
+        phaseFile.replace(/\.(md|ya?ml)$/, ""),
+      );
+      const executionStyle = (phaseConfigForItem as Record<string, unknown>)?.execution_style as string | undefined;
+      const isTddMode = executionStyle === "tdd";
+
       // Structured handoff for strict executors (per the existing PRIME
       // system prompt). Each per-item prompt frames the work as a tight
       // single-file/single-test-list task.
-      const itemPrompt =
-        `You are executing ONE item of a multi-item phase. Complete only this item, mark its checkbox in ${phaseFile}, commit, and stop. Do not work on other items.\n\n` +
-        `## Overall goal\n${goal}\n\n` +
-        `## Constraints\n${constraints}\n\n` +
-        `## Your item\n` +
-        `- [ ] id: ${item.id}\n` +
-        `  intent: ${item.intent}\n` +
-        `  files: ${filesList || "(none declared)"}\n` +
-        `  verify: ${verify}\n\n` +
-        `## Structured context\n\n` +
-        `Files you may touch (ONLY these):\n` +
-        (item.files.length > 0
-          ? item.files
-              .map((f) => `  - ${f.path} (${f.isNew ? "CREATE" : "EDIT"})`)
-              .join("\n")
-          : "  (none declared — confine edits to the phase's natural scope)") +
-        `\n\nVerify command (must exit 0):\n  - ${verify}\n\n` +
-        `Non-goals:\n` +
-        `  - Do NOT modify files outside the list above.\n` +
-        `  - Do NOT work on items other than ${item.id}.\n\n` +
-        `When done: mark the checkbox for item ${item.id} in ${phaseFile} as [x], commit, and emit the autopilot-done sentinel.`;
+      let itemPrompt: string;
+      if (isTddMode) {
+        // TDD mode: enforce red-green-refactor cycle
+        itemPrompt =
+          `You are executing ONE item of a multi-item phase using TDD (test-driven development). Follow the red-green-refactor cycle strictly:\n\n` +
+          `1. RED: Write a failing test/proof first. Run verify to confirm it fails.\n` +
+          `2. GREEN: Implement the minimal code to make the test pass. Run verify to confirm it passes.\n` +
+          `3. REFACTOR: Clean up the code if needed, re-run verify to ensure it still passes.\n` +
+          `4. MARK: Mark the item checkbox and commit only after the verify command passes.\n\n` +
+          `Complete only this item, mark its checkbox in ${phaseFile}, commit, and stop. Do not work on other items.\n\n` +
+          `## Overall goal\n${goal}\n\n` +
+          `## Constraints\n${constraints}\n\n` +
+          `## Your item\n` +
+          `- [ ] id: ${item.id}\n` +
+          `  intent: ${item.intent}\n` +
+          `  files: ${filesList || "(none declared)"}\n` +
+          `  verify: ${verify}\n\n` +
+          `## Structured context\n\n` +
+          `Files you may touch (ONLY these):\n` +
+          (item.files.length > 0
+            ? item.files
+                .map((f) => `  - ${f.path} (${f.isNew ? "CREATE" : "EDIT"})`)
+                .join("\n")
+            : "  (none declared — confine edits to the phase's natural scope)") +
+          `\n\nVerify command (must exit 0):\n  - ${verify}\n\n` +
+          `TDD workflow:\n` +
+          `  1. Write a test that fails (RED phase)\n` +
+          `  2. Implement to make it pass (GREEN phase)\n` +
+          `  3. Refactor if needed, re-verify (REFACTOR phase)\n` +
+          `  4. Mark checkbox when verify passes\n\n` +
+          `Non-goals:\n` +
+          `  - Do NOT skip the RED phase — always write the test first.\n` +
+          `  - Do NOT modify files outside the list above.\n` +
+          `  - Do NOT work on items other than ${item.id}.\n\n` +
+          `When done: mark the checkbox for item ${item.id} in ${phaseFile} as [x], commit, and emit the autopilot-done sentinel.`;
+      } else {
+        // Standard mode: no TDD constraints
+        itemPrompt =
+          `You are executing ONE item of a multi-item phase. Complete only this item, mark its checkbox in ${phaseFile}, commit, and stop. Do not work on other items.\n\n` +
+          `## Overall goal\n${goal}\n\n` +
+          `## Constraints\n${constraints}\n\n` +
+          `## Your item\n` +
+          `- [ ] id: ${item.id}\n` +
+          `  intent: ${item.intent}\n` +
+          `  files: ${filesList || "(none declared)"}\n` +
+          `  verify: ${verify}\n\n` +
+          `## Structured context\n\n` +
+          `Files you may touch (ONLY these):\n` +
+          (item.files.length > 0
+            ? item.files
+                .map((f) => `  - ${f.path} (${f.isNew ? "CREATE" : "EDIT"})`)
+                .join("\n")
+            : "  (none declared — confine edits to the phase's natural scope)") +
+          `\n\nVerify command (must exit 0):\n  - ${verify}\n\n` +
+          `Non-goals:\n` +
+          `  - Do NOT modify files outside the list above.\n` +
+          `  - Do NOT work on items other than ${item.id}.\n\n` +
+          `When done: mark the checkbox for item ${item.id} in ${phaseFile} as [x], commit, and emit the autopilot-done sentinel.`;
+      }
 
       const adapterName = args.adapter?.name as AdapterName | undefined;
       const cfgObj = args.config as Record<string, unknown> | undefined;

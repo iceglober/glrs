@@ -195,7 +195,7 @@ items:
       (must fail), implements, verifies (must pass), then marks
       checked. Only swap the prompt when `execution_style` is
       `"tdd"` (default — see item 5.5).
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/loop-session.ts
         isNew: false
