@@ -676,13 +676,15 @@ export async function runLoopSession(
         .join(", ");
       const verify = item.verify?.trim() || "(no verify command declared)";
 
-      // Extract execution_style from phase config to determine TDD mode
+      // Extract execution_style from phase config to determine TDD mode.
+      // Resolution order: phase override > global config > default "tdd".
+      // When explicitly set to "direct", use direct mode; otherwise default to TDD.
       const phaseConfigForItem = resolvePhaseConfig(
         args.config as Record<string, unknown>,
         phaseFile.replace(/\.(md|ya?ml)$/, ""),
       );
       const executionStyle = (phaseConfigForItem as Record<string, unknown>)?.execution_style as string | undefined;
-      const isTddMode = executionStyle === "tdd";
+      const isTddMode = executionStyle !== "direct";
 
       // Structured handoff for strict executors (per the existing PRIME
       // system prompt). Each per-item prompt frames the work as a tight

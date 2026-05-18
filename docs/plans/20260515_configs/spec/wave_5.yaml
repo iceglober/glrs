@@ -359,7 +359,7 @@ items:
       `"tdd"`. When `"direct"`, use the current prompt (no
       red-green enforcement). When `"tdd"`, use the new prompt
       from 5.3. Lets repos that don't want TDD opt out.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/loop-session-types.ts
         isNew: false

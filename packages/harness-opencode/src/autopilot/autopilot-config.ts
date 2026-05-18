@@ -117,6 +117,14 @@ export interface AutopilotConfig {
   stall_timeout?: number;
 
   /**
+   * Execution style for the execution phase.
+   * "tdd" enforces test-driven development (red-green-refactor cycle).
+   * "direct" uses the current prompt without TDD enforcement.
+   * @default "tdd"
+   */
+  execution_style?: "tdd" | "direct";
+
+  /**
    * Execution order for phases.
    * @default "sequential"
    */
@@ -238,6 +246,9 @@ export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
 
   /** Default verify timeout: 5 minutes. */
   verify_timeout: 5 * 60 * 1000,
+
+  /** Default to TDD execution style. */
+  execution_style: "tdd",
 
   /** Execution order: sequential by default. */
   execution_order: "sequential",

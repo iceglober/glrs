@@ -118,6 +118,15 @@ export interface AutopilotConfig {
   stall_timeout?: number;
 
   /**
+   * Execution style for the execution phase.
+   * "tdd" enforces test-driven development (red-green-refactor cycle).
+   * "direct" uses the current prompt without TDD enforcement.
+   * CLI flag overrides this setting when both are provided.
+   * @default "tdd"
+   */
+  execution_style?: "tdd" | "direct";
+
+  /**
    * Execution order for phases.
    * CLI --parallel flag sets this to "parallel".
    * @default "sequential"
@@ -229,6 +238,9 @@ export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
   /** No webhook notification by default. */
   notify_url: undefined,
   notify_events: undefined,
+
+  /** Default to TDD execution style. */
+  execution_style: "tdd",
 
   /** Adapter-specific defaults for both adapters. */
   adapters: {
