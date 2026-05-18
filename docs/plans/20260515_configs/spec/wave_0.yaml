@@ -230,7 +230,7 @@ items:
       Pass the resolved config through to enrichment and loop-session. The adapter factory
       now accepts the resolved `AutopilotConfig` and reads `config.models` +
       `config.adapters.<name>` to build the adapter, replacing the hardcoded defaults.
-    checked: false
+    checked: true
     files:
       - path: packages/cli/src/adapter-factory.ts
         isNew: false

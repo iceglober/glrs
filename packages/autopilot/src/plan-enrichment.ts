@@ -229,6 +229,7 @@ export async function enrichPlanForFastModel(
   logger?: AutopilotLogger,
   emitter?: SessionEventEmitter,
   adapter?: AgentAdapter,
+  config?: unknown,
 ): Promise<void> {
   const log = logger ? childLogger(logger.root, "autopilot.enrichment") : undefined;
   const resolvedPath = path.resolve(cwd, planPath);
