@@ -107,7 +107,7 @@ items:
         on the spawned subprocess. The current hardcoded
         `ClaudeCodeCliAdapter.resolveModel(agentName)` is replaced with a
         config-driven lookup keyed by workflow stage.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/plan-enrichment.ts
         isNew: false

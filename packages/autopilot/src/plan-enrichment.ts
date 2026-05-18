@@ -31,6 +31,7 @@ import { childLogger } from "./lib/logger.js";
 import type { AgentAdapter, AgentHandle } from "./adapter.js";
 import type { SessionEventEmitter } from "./session-runner.js";
 import { loadStrategy, extractFieldNames } from "./enrich-strategy.js";
+import { resolveModel, type AdapterName } from "./model-resolver.js";
 
 export interface EnrichmentRunConfig {
   retry?: boolean;
@@ -341,8 +342,16 @@ async function runEnrichmentPass(
     // (single-pass legacy) to 5 min — smaller scope, smaller budget.
     let sessionId: string;
     try {
+      const adapterName = adapter?.name as AdapterName | undefined;
+      const cfgObj = config as Record<string, unknown> | undefined;
+      const models = cfgObj?.models as Record<string, unknown> | undefined;
+      const enrichmentSpecifier = models?.enrichment as string | undefined;
+      const resolvedModel = enrichmentSpecifier
+        ? resolveModel(enrichmentSpecifier, adapterName ?? "opencode")
+        : undefined;
       sessionId = await adapter.createSession(handle, {
         agentName: "prime",
+        model: resolvedModel,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -514,6 +523,7 @@ export async function enrichPlanForFastModel(
   emitter?: SessionEventEmitter,
   adapter?: AgentAdapter,
   enrichmentConfig?: EnrichmentRunConfig,
+  config?: unknown,
 ): Promise<void> {
   const log = logger ? childLogger(logger.root, "autopilot.enrichment") : undefined;
   const resolvedPath = path.resolve(cwd, planPath);

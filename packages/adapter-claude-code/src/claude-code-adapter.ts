@@ -69,12 +69,12 @@ export class ClaudeCodeCliAdapter implements AgentAdapter {
 
   async createSession(
     handle: AgentHandle,
-    opts: { agentName?: string },
+    opts: { agentName?: string; model?: string },
   ): Promise<string> {
     const h = handle as ClaudeCodeHandle;
     const placeholderId = randomUUID();
     h.sessions.set(placeholderId, {
-      model: this.resolveModel(opts.agentName),
+      model: opts.model ?? this.resolveModel(opts.agentName),
       lastResponse: "",
       totalCost: 0,
       totalTokensIn: 0,

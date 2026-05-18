@@ -10,6 +10,7 @@
  */
 
 import type { LoopResult, AgentAdapter, AgentHandle } from "@glrs-dev/autopilot";
+import { resolveModel, type AdapterName } from "@glrs-dev/autopilot/src/model-resolver.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,6 +25,8 @@ export interface DebriefOptions {
   prompt: string;
   /** Working directory (used for git diff stat). */
   cwd: string;
+  /** Autopilot configuration (for model resolution). */
+  config?: unknown;
   /**
    * Injectable dependencies for testing.
    * @internal
@@ -216,8 +219,16 @@ export async function runDebrief(opts: DebriefOptions): Promise<void> {
     const contextMessage = buildContextMessage(opts.loopResult, opts.prompt, gitDiffStat);
 
     // Create a new @debriefer session
+    const adapterName = adapter.name as AdapterName;
+    const cfgObj = opts.config as Record<string, unknown> | undefined;
+    const models = cfgObj?.models as Record<string, unknown> | undefined;
+    const debriefSpecifier = models?.debrief as string | undefined;
+    const debriefModel = debriefSpecifier
+      ? resolveModel(debriefSpecifier, adapterName)
+      : undefined;
     const sessionId = await adapter.createSession(handle, {
       agentName: "debriefer",
+      model: debriefModel,
     });
 
     // Send the context and wait for idle

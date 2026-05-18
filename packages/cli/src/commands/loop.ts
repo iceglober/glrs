@@ -148,6 +148,7 @@ export const loopCmd = command({
             loopResult: result,
             prompt,
             cwd,
+            config,
           });
         } catch {
           process.stderr.write("\x1b[33m⚠ Debrief failed (non-fatal)\x1b[0m\n");
@@ -163,6 +164,7 @@ export const loopCmd = command({
             loopResult: result,
             prompt,
             cwd,
+            config,
           });
         } catch {
           process.stderr.write("\x1b[33m⚠ Debrief agent failed to start (non-fatal)\x1b[0m\n");

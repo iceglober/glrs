@@ -55,6 +55,11 @@ export interface SessionRunnerOptions {
     stall_timeout?: number;
   };
   /**
+   * Resolved autopilot configuration from `.glrs/autopilot.yaml`.
+   * Passed through to enrichment, loop execution, and debrief for model resolution.
+   */
+  config?: unknown;
+  /**
    * Injectable dependencies for testing.
    * @internal
    */
@@ -354,7 +359,7 @@ export class SessionRunner {
             });
           } else {
             const { enrichPlanForFastModel } = await import("./plan-enrichment.js");
-            await enrichPlanForFastModel(cwd, planPath, logger, this.events, this.opts.adapter, this.opts.enrichmentConfig);
+            await enrichPlanForFastModel(cwd, planPath, logger, this.events, this.opts.adapter, this.opts.enrichmentConfig, this.opts.config);
             // Note: enrichPlanForFastModel emits its own enrich:done event
             // internally — do NOT emit a duplicate here.
           }
@@ -381,6 +386,7 @@ export class SessionRunner {
         logger,
         emitter: this.events,
         adapter: this.opts.adapter,
+        config: this.opts.config,
         signal: this._abortController?.signal,
       };
 

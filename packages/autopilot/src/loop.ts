@@ -186,6 +186,12 @@ export interface RalphLoopOptions {
    * Optional only when _deps.startServer is provided (legacy test path).
    */
   adapter?: AgentAdapter;
+  /**
+   * Resolved model ID for this loop session. When provided, overrides
+   * the default model resolution based on agentName or adapter config.
+   * This field enables config-driven model routing for workflow stages.
+   */
+  model?: string;
 }
 
 /**
@@ -426,7 +432,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
     // autopilot-fast for autopilot-execute tier when --fast is used).
     const agentName = opts.agentName ?? "autopilot-prime";
     const tierLabel = agentName === "autopilot-fast" ? "autopilot-execute tier" : "deep tier";
-    sessionId = await adapter.createSession(handle, { agentName });
+    sessionId = await adapter.createSession(handle, { agentName, model: opts.model });
     log.info({ sessionId, agentName, tier: tierLabel }, `Session created with ${agentName} (${tierLabel})`);
 
     // Create the status heartbeat now that we have a session — the cost
