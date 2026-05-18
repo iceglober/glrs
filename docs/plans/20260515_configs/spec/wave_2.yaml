@@ -1,0 +1,510 @@
+items:
+  - id: "2.1"
+    intent: |
+      Adapter-aware model resolver. Accepts a model specifier and the active
+      adapter name; returns the concrete model ID. Resolution strategy depends
+      on the adapter:
+      - OpenCode: tier names (`deep`, `mid`, `mid-execute`, `autopilot-execute`,
+        `fast`) resolve through the user's `opencode.json` tier config; full
+        model IDs pass through. Unknown tier names fall back to `deep` with a
+        warning.
+      - Claude Code CLI: values are Claude model IDs
+        (`claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`);
+        tier aliases map to sensible defaults
+        (`deep` → opus, `mid`/`mid-execute`/`autopilot-execute` → sonnet,
+        `fast` → haiku). Full model IDs pass through.
+      - Both: any value containing `/` (e.g.,
+        `amazon-bedrock/global.anthropic.claude-opus-4-7`) is always treated
+        as a full model ID.
+    checked: false
+    files:
+      - path: packages/autopilot/src/model-resolver.ts
+        isNew: true
+        change: |
+          Export `resolveModel(specifier: string, adapterName: "opencode" |
+          "claude-code-cli", opencodeTiers?: Record<string, string | string[]>):
+          string`. Containment of `/` short-circuits to passthrough. For
+          claude-code-cli, map known tier aliases (`deep`/`mid`/`mid-execute`/
+          `autopilot-execute`/`fast`) to the documented Claude IDs; otherwise
+          passthrough. For opencode, look up `opencodeTiers?.[specifier]`
+          (first element if array); on miss with a known tier name, fall back
+          to `opencodeTiers?.deep` and emit a one-shot `console.warn`; on
+          miss with a full model ID, passthrough.
+      - path: packages/autopilot/test/model-resolver.test.ts
+        isNew: true
+        change: |
+          bun:test cases: (1) full model ID with `/` passes through for both
+          adapters; (2) claude-code-cli alias map produces expected Claude IDs
+          for each known tier; (3) claude-code-cli unknown literal (no `/`,
+          not a known alias) passes through unchanged; (4) opencode tier
+          resolves via supplied `opencodeTiers`; (5) opencode unknown tier
+          falls back to `deep` and warns once; (6) opencode array-valued tier
+          returns the first element.
+    tests:
+      - packages/autopilot/test/model-resolver.test.ts
+    verify: "bun test test/model-resolver.test.ts"
+    mirror: packages/harness-opencode/src/config-hook.ts
+    context: |
+      // packages/harness-opencode/src/config-hook.ts — existing pattern for
+      // tier resolution + array-first-element + warn-once dedupe to mirror:
+      // resolveHarnessModels(...)
+      //   const perAgent = modelsConfig[agentName];
+      //   if (perAgent !== undefined) {
+      //     const picked = Array.isArray(perAgent) ? perAgent[0]! : perAgent;
+      //     agentCfg.model = picked;
+      //     warnIfInvalid(picked, `models.${agentName}`);
+      //     continue;
+      //   }
+      //   const tier = AGENT_TIERS[agentName];
+      //   if (tier) {
+      //     let perTier = modelsConfig[tier];
+      //     if (tier === "autopilot-execute" && perTier === undefined) {
+      //       perTier = modelsConfig["mid-execute"] ?? modelsConfig["mid"];
+      //     }
+      //     if (tier === "mid-execute" && perTier === undefined) {
+      //       perTier = modelsConfig["mid"];
+      //     }
+      //     if (perTier !== undefined) {
+      //       const picked = Array.isArray(perTier) ? perTier[0]! : perTier;
+      //       agentCfg.model = picked;
+      //     }
+      //   }
+      //
+      // New surface — packages/autopilot/src/model-resolver.ts:
+      // export type AdapterName = "opencode" | "claude-code-cli";
+      // export function resolveModel(
+      //   specifier: string,
+      //   adapterName: AdapterName,
+      //   opencodeTiers?: Record<string, string | string[]>,
+      // ): string;
+      //
+      // Claude alias map (mirrors today's hardcoded resolver in
+      // packages/adapter-claude-code/src/claude-code-adapter.ts:86-92):
+      // const CLAUDE_TIER_ALIASES: Record<string, string> = {
+      //   deep: "claude-opus-4-7",
+      //   mid: "claude-sonnet-4-6",
+      //   "mid-execute": "claude-sonnet-4-6",
+      //   "autopilot-execute": "claude-sonnet-4-6",
+      //   fast: "claude-haiku-4-5-20251001",
+      // };
+    conventions: |
+      ESM imports with `.js` suffix on relative paths; named exports only;
+      bun:test (`import { describe, it, expect } from "bun:test"`); `console.warn`
+      for soft warnings (mirrors `formatModelOverrideWarning` style elsewhere);
+      no thrown errors for unknown tiers — fall back + warn so the autopilot
+      keeps running; dedupe warnings by `Set<string>` within a single call.
+
+  - id: "2.2"
+    intent: |
+      Workflow-stage model routing. Replace the hardcoded model/agent selection
+      at each workflow stage (enrichment, execution loop, debrief) with
+      config-driven resolution via `resolveModel`.
+      - For OpenCode: the resolved model drives agent selection — current call
+        sites already pass `agentName` (e.g., `"prime"`, `"autopilot-fast"`,
+        `"debriefer"`). The model value flows through the OpenCode adapter via
+        config.models tier resolution.
+      - For Claude Code CLI: the resolved model becomes the `--model <id>` flag
+        on the spawned subprocess. The current hardcoded
+        `ClaudeCodeCliAdapter.resolveModel(agentName)` is replaced with a
+        config-driven lookup keyed by workflow stage.
+    checked: false
+    files:
+      - path: packages/autopilot/src/plan-enrichment.ts
+        isNew: false
+        change: |
+          In `enrichPlanForFastModel`, before `adapter.createSession`, resolve
+          the enrichment model from `config.models.enrichment` (the
+          `AutopilotConfig` arg threaded from wave 0/1.5). Pass it through to
+          the adapter — for OpenCode via `agentName` (today: `"prime"`), for
+          claude-code-cli via a new optional `model?` field on
+          `createSession` opts. The current line is `agentName: "prime"`
+          at plan-enrichment.ts:428-430.
+      - path: packages/autopilot/src/loop-session.ts
+        isNew: false
+        change: |
+          In `_runRalphLoop` invocations (and any direct `createSession`
+          calls), use `config.models.execution` instead of the
+          `opts.fast ? "autopilot-fast" : undefined` branch. The resolved
+          value continues to flow through as `agentName` for OpenCode and
+          maps to `--model` for claude-code-cli. Call sites at
+          loop-session.ts:307, 540, 601, 730, 1181.
+      - path: packages/cli/src/commands/debrief.ts
+        isNew: false
+        change: |
+          Replace the hardcoded `agentName: "debriefer"` at debrief.ts:219-221
+          with config-driven resolution: read `config.models.debrief` and pass
+          through. For OpenCode, the `debriefer` agent remains the routing
+          handle (agents are bound to tiers via `AGENT_TIERS`); for
+          claude-code-cli, the resolved model ID drives `--model`.
+      - path: packages/adapter-claude-code/src/claude-code-adapter.ts
+        isNew: false
+        change: |
+          Replace the hardcoded `resolveModel(agentName)` at
+          claude-code-adapter.ts:86-92 (which maps `autopilot-fast` →
+          `models.execute`, anything else → `models.enrich`) with config-driven
+          lookup. Extend `createSession` opts to accept an explicit `model?:
+          string` that, when present, takes precedence over agentName-based
+          inference. Keep the agentName fallback for callers that haven't
+          migrated.
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/autopilot/src/plan-enrichment.ts
+    context: |
+      // packages/adapter-claude-code/src/claude-code-adapter.ts:70-92 — current
+      // hardcoded mapping to be replaced:
+      async createSession(handle, opts: { agentName?: string }): Promise<string> {
+        const h = handle as ClaudeCodeHandle;
+        const placeholderId = randomUUID();
+        h.sessions.set(placeholderId, {
+          model: this.resolveModel(opts.agentName),
+          // ...
+        });
+        return placeholderId;
+      }
+      private resolveModel(agentName?: string): string | undefined {
+        const { models, model } = this.opts;
+        if (!models) return model;
+        if (agentName === "autopilot-fast") return models.execute ?? model;
+        return models.enrich ?? model;
+      }
+
+      // packages/autopilot/src/plan-enrichment.ts:428-430 — enrichment call site:
+      sessionId = await adapter.createSession(handle, {
+        agentName: "prime",   // <- replace with config-resolved value
+      });
+
+      // packages/autopilot/src/loop-session.ts:307 — loop call site:
+      return _runRalphLoop({ prompt, cwd: opts.cwd,
+        agentName: opts.fast ? "autopilot-fast" : undefined,  // <- replace
+        ... });
+
+      // packages/cli/src/commands/debrief.ts:219-221 — debrief call site:
+      const sessionId = await adapter.createSession(handle, {
+        agentName: "debriefer",  // <- keep agentName but also pass model
+      });
+    conventions: |
+      `createSession` opts shape stays backward-compatible — `agentName`
+      remains optional and `model` is additive. AgentAdapter interface lives
+      in `@glrs-dev/autopilot`; both adapters must accept the same shape.
+      Config threading goes through existing options objects, not positional
+      args. Tests follow the fake-adapter pattern in
+      `packages/autopilot/test/session-runner.test.ts`.
+
+  - id: "2.3"
+    intent: |
+      Agent override injection (OpenCode only). When
+      `config.adapters.opencode.agents` has entries, merge them into the
+      agent registrations at server startup. The plugin's `config` hook
+      already runs `input.agent = { ...ourAgents, ...(input.agent ?? {}) }`
+      (config-hook.ts:205). Add a step that applies config overrides BEFORE
+      this merge: for each agent in the config, override `model`, and if
+      `prompt` is set, read the file and replace the agent's prompt. Skipped
+      entirely when `config.adapter !== "opencode"`.
+    checked: false
+    files:
+      - path: packages/harness-opencode/src/index.ts
+        isNew: false
+        change: |
+          The actual config-hook entry is `applyConfig` in
+          `packages/harness-opencode/src/config-hook.ts` (called from
+          `index.ts:148-154`). Accept agent overrides via plugin options
+          (`PluginOptions["agents"]` or similar) and forward into `applyConfig`,
+          which then calls `applyAgentOverrides(ourAgents, overrides)` AFTER
+          `resolveHarnessModels` and BEFORE the user-wins spread.
+      - path: packages/harness-opencode/src/agents/index.ts
+        isNew: false
+        change: |
+          Export `applyAgentOverrides(agents: Record<string, AgentConfig>,
+          overrides: Record<string, { model?: string; prompt?: string }>):
+          Record<string, AgentConfig>`. For each override entry whose key
+          matches an existing agent: set `model` when provided; if `prompt`
+          is provided, treat it as a path relative to repoRoot, read with
+          `readFileSync`, then run it through the existing
+          `injectWorkflowMechanics`/`injectUIEvaluationLadder` substitutions
+          and replace `agents[name].prompt`. Reject absolute paths with a
+          thrown Error. Unknown agent names log a warning and are ignored.
+      - path: packages/harness-opencode/test/agent-overrides.test.ts
+        isNew: true
+        change: |
+          bun:test cases: (1) model-only override updates `agents.<name>.model`
+          and leaves prompt untouched; (2) prompt override reads the file and
+          replaces the agent prompt (with placeholder injections applied);
+          (3) unknown agent name does not throw — warns and is ignored;
+          (4) absolute path for prompt throws; (5) empty overrides map is
+          a no-op.
+    tests:
+      - packages/harness-opencode/test/agent-overrides.test.ts
+    verify: "bun test test/agent-overrides.test.ts"
+    mirror: packages/harness-opencode/src/config-hook.ts
+    context: |
+      // packages/harness-opencode/src/config-hook.ts:199-205 — current merge
+      // point to mirror:
+      export function applyConfig(config: Config, pluginOptions?: PluginOptions): void {
+        const ourAgents = createAgents();
+        resolveHarnessModels(ourAgents, config, pluginOptions);
+        // <-- applyAgentOverrides(ourAgents, pluginOptions?.agents, repoRoot) here
+        (config as any).agent = { ...ourAgents, ...((config as any).agent ?? {}) };
+        // ...
+      }
+
+      // packages/harness-opencode/src/agents/index.ts — pattern to follow for
+      // building prompts (already used in agentFromPrompt at line 149):
+      function agentFromPrompt(raw: string, overrides: Partial<AgentConfig> = {}): AgentConfig {
+        const fm = parseFrontmatter(raw);
+        const body = stripFrontmatter(raw);
+        const prompt = injectUIEvaluationLadder(injectWorkflowMechanics(body));
+        // ...
+      }
+
+      // New surface:
+      export function applyAgentOverrides(
+        agents: Record<string, AgentConfig>,
+        overrides: Record<string, { model?: string; prompt?: string }> | undefined,
+        repoRoot: string,
+      ): Record<string, AgentConfig>;
+    conventions: |
+      Mutate `agents` in place and return same reference (mirrors
+      `resolveHarnessModels`); use `readFileSync` / `node:fs` and
+      `node:path` (no async I/O in plugin config hook — it must be sync);
+      apply existing `injectWorkflowMechanics` / `injectUIEvaluationLadder`
+      placeholders to user-supplied prompts so substitutions stay consistent;
+      `console.warn` for unknown agent names, throw for absolute paths;
+      bun:test with tmp-dir fixtures (`fs.mkdtempSync` + `afterEach` cleanup,
+      mirrors enrich-strategy test pattern from wave 1).
+
+  - id: "2.4"
+    intent: |
+      Pass config to server startup (OpenCode only). The autopilot starts a
+      server via `startServer({ cwd })` (in
+      `packages/adapter-opencode/src/opencode-adapter.ts:70`). Add an
+      optional `agentOverrides` parameter that flows into the plugin's
+      config hook. Since the plugin is loaded by OpenCode at server init,
+      overrides must be communicated via environment variable
+      (`GLRS_AGENT_OVERRIDES`, JSON-encoded) — same precedence as today's
+      `GLRS_AUTOPILOT_HEADLESS` / `HARNESS_OPENCODE_PERM_DEBUG` env vars
+      already read in `index.ts:176` and `config-hook.ts:61`. Not applicable
+      to claude-code-cli — no persistent server, no plugin system.
+    checked: false
+    files:
+      - path: packages/cli/src/commands/autopilot.ts
+        isNew: false
+        change: |
+          The plan markdown names this `packages/harness-opencode/src/autopilot/
+          autopilot-cmd.ts`, but the real handler is in
+          `packages/cli/src/commands/autopilot.ts`. Before calling
+          `createAdapter`/`startServer`, when `config.adapter === "opencode"`
+          and `config.adapters?.opencode?.agents` is non-empty, set
+          `process.env["GLRS_AGENT_OVERRIDES"] = JSON.stringify(...)`. Unset
+          (delete) the env var after server shutdown so subsequent runs
+          don't inherit stale overrides.
+      - path: packages/harness-opencode/src/config-hook.ts
+        isNew: false
+        change: |
+          In `applyConfig`, read `process.env["GLRS_AGENT_OVERRIDES"]` and
+          JSON.parse it (try/catch — malformed JSON warns and is ignored).
+          Pass the parsed overrides into `applyAgentOverrides` (2.3) after
+          `resolveHarnessModels` and before the user-wins spread. Add a
+          regression test asserting the env-var contract.
+      - path: packages/adapter-opencode/src/opencode-adapter.ts
+        isNew: false
+        change: |
+          Extend `startServer` options with `agentOverrides?: Record<string,
+          { model?: string; prompt?: string }>`. When present, set
+          `GLRS_AGENT_OVERRIDES` in the spawned server's environment (env
+          inheritance via `process.env` mutation before `createOpencode()`,
+          then restore the prior value in `shutdown()` to keep the parent
+          process clean). Plan markdown calls this
+          `packages/harness-opencode/src/lib/opencode-server.ts` — the actual
+          file is in `packages/adapter-opencode/`.
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/harness-opencode/src/plugins/dotenv.ts
+    context: |
+      // packages/adapter-opencode/src/opencode-adapter.ts:70-87 — current
+      // startServer signature:
+      export async function startServer(opts: {
+        cwd: string;
+        port?: number;
+        timeoutMs?: number;
+      }): Promise<StartedServer> {
+        await ensureOpencodeOnPath();
+        const timeoutMs = opts.timeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
+        const port = opts.port ?? 0;
+        const { client, server } = await createOpencode({
+          port, timeout: timeoutMs, hostname: "127.0.0.1",
+        });
+        // ...
+      }
+
+      // packages/harness-opencode/src/config-hook.ts:60-92 — env-var read
+      // pattern already used by writePermDebugSnapshot:
+      export function writePermDebugSnapshot(config: Config): void {
+        if (process.env["HARNESS_OPENCODE_PERM_DEBUG"] !== "1") return;
+        try {
+          // ...
+        } catch {
+          // Probe is best-effort. Never let it break plugin startup.
+        }
+      }
+
+      // New env-var contract:
+      // GLRS_AGENT_OVERRIDES = JSON.stringify({
+      //   "build": { "model": "...", "prompt": "./prompts/build.md" },
+      //   "code-reviewer": { "model": "..." },
+      // });
+    conventions: |
+      Env-var name pattern follows `GLRS_*` (uppercase, snake) — matches
+      `GLRS_AUTOPILOT_HEADLESS` and `GLRS_DEBUG_SSE` already in the codebase;
+      malformed JSON warns + ignores rather than throws (best-effort, mirror
+      `writePermDebugSnapshot`); always restore prior env var value in
+      `shutdown()` finally-block to avoid cross-test pollution.
+
+  - id: "2.5"
+    intent: |
+      Custom agent prompts (OpenCode only). When
+      `config.adapters.opencode.agents.<name>.prompt` is set, treat the value
+      as a path relative to repo root, read the `.md` file, and use it as the
+      agent's prompt. Validate the file exists at config resolution time
+      (not at plugin load) — fail fast with a clear error if missing.
+      Absolute paths are rejected. For `claude-code-cli`, the equivalent is
+      CLAUDE.md (read automatically by the CLI). A future item could add
+      `config.adapters.claude_code_cli.claude_md_path` — out of scope here.
+    checked: false
+    files:
+      - path: packages/harness-opencode/src/agents/index.ts
+        isNew: false
+        change: |
+          `applyAgentOverrides` (from 2.3) reads the prompt file via
+          `readFileSync(path.join(repoRoot, override.prompt), "utf8")` and
+          applies the same `injectWorkflowMechanics` /
+          `injectUIEvaluationLadder` pipeline used by `agentFromPrompt`. If
+          the file is missing at runtime, throw a plain Error naming the
+          searched path. Absolute paths (`path.isAbsolute(value)`) throw
+          before any FS access.
+      - path: packages/harness-opencode/src/autopilot/config-reader.ts
+        isNew: false
+        change: |
+          The config-reader (created in wave 0) gains a validation step:
+          after merging configs, walk `config.adapters?.opencode?.agents`
+          and for each entry with a `prompt` field, check
+          `fs.existsSync(path.join(repoRoot, prompt))`. Missing files
+          throw an Error listing every missing path. Absolute paths throw
+          a separate Error. This runs once at config resolution, not per
+          agent invocation — fail-fast semantics.
+    tests:
+      - packages/harness-opencode/test/agent-overrides.test.ts
+    verify: "bun test test/agent-overrides.test.ts"
+    mirror: packages/harness-opencode/src/agents/index.ts
+    context: |
+      // packages/harness-opencode/src/agents/index.ts:14-30 — existing readPrompt
+      // pattern to mirror for custom prompt resolution:
+      function readPrompt(name: string): string {
+        const candidates = [
+          join(HERE, "prompts", name),
+          join(HERE, "agents", "prompts", name),
+          join(HERE, "..", "..", "src", "agents", "prompts", name),
+        ];
+        for (const p of candidates) {
+          try {
+            return readFileSync(p, "utf8");
+          } catch { /* try next */ }
+        }
+        throw new Error(`Could not find prompt file: ${name}`);
+      }
+
+      // packages/harness-opencode/src/agents/index.ts:138-145 — injection
+      // pipeline that custom prompts must also pass through:
+      function injectWorkflowMechanics(prompt: string): string {
+        return prompt.replace("{WORKFLOW_MECHANICS_RULE}", WORKFLOW_MECHANICS_RULE);
+      }
+      function injectUIEvaluationLadder(prompt: string): string {
+        return prompt.replace("{UI_EVALUATION_LADDER}", UI_EVALUATION_LADDER);
+      }
+    conventions: |
+      Reject absolute paths up-front with a distinct error (security boundary
+      — config-supplied paths must stay inside the repo); use
+      `path.isAbsolute()` rather than string-startswith checks; missing-file
+      errors list the resolved absolute path so users can debug; run the same
+      injection pipeline so `{WORKFLOW_MECHANICS_RULE}` and
+      `{UI_EVALUATION_LADDER}` placeholders work in user-supplied prompts.
+
+  - id: "2.6"
+    intent: |
+      Claude Code CLI adapter-specific config. Read
+      `config.adapters.claude_code_cli` and pass it to `ClaudeCodeCliAdapter`
+      constructor. Supported fields:
+      - `skip_permissions: boolean` (default true) → `--dangerously-skip-permissions`
+      - `allowed_tools: string[]` (optional) → `--allowedTools`
+      - `max_turns: number` (optional) → `--max-turns`
+      Replaces the hardcoded `{ dangerouslySkipPermissions: true, models: {...} }`
+      in `packages/cli/src/adapter-factory.ts:22-28`.
+    checked: false
+    files:
+      - path: packages/cli/src/adapter-factory.ts
+        isNew: false
+        change: |
+          `createAdapter` accepts an `AutopilotConfig` arg (added in wave 0).
+          In the `"claude-code-cli"` branch, read
+          `config.adapters?.claude_code_cli` and translate YAML field names
+          to the existing `ClaudeCodeAdapterOptions` shape:
+          `skip_permissions` → `dangerouslySkipPermissions` (default true),
+          `allowed_tools` → `allowedTools`, `max_turns` → `maxTurns`. The
+          `models` field stays populated from `config.models` (wave 0
+          resolves these per stage). Remove the hardcoded model defaults.
+      - path: packages/adapter-claude-code/src/claude-code-cli.ts
+        isNew: false
+        change: |
+          `ClaudeCodeAdapterOptions` interface at claude-code-cli.ts:16-29
+          already uses camelCase (`dangerouslySkipPermissions`, `maxTurns`,
+          `allowedTools`) — keep it as-is. The YAML→options translation
+          happens in `adapter-factory.ts`. Verify the CLI argument plumbing
+          in `sendMessage` correctly forwards each of the three fields.
+          If any are missing from the spawn args, add them.
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/cli/src/adapter-factory.ts
+    context: |
+      // packages/cli/src/adapter-factory.ts:14-34 — current hardcoded shape:
+      export async function createAdapter(name: AdapterName): Promise<AgentAdapter> {
+        switch (name) {
+          case "opencode": {
+            const { OpenCodeAdapter } = await import("@glrs-dev/adapter-opencode");
+            return new OpenCodeAdapter();
+          }
+          case "claude-code-cli": {
+            const { ClaudeCodeCliAdapter } = await import("@glrs-dev/adapter-claude-code");
+            return new ClaudeCodeCliAdapter({
+              dangerouslySkipPermissions: true,
+              models: {
+                enrich: "claude-opus-4-7",
+                execute: "claude-haiku-4-5-20251001",
+              },
+            });
+          }
+          // ...
+        }
+      }
+
+      // packages/adapter-claude-code/src/claude-code-cli.ts:16-29 — existing
+      // options interface (already supports all three fields):
+      export interface ClaudeCodeAdapterOptions {
+        model?: string;
+        models?: { enrich?: string; execute?: string };
+        dangerouslySkipPermissions?: boolean;
+        maxTurns?: number;
+        allowedTools?: string[];
+      }
+
+      // New signature (after wave 0):
+      export async function createAdapter(
+        name: AdapterName,
+        config?: AutopilotConfig,
+      ): Promise<AgentAdapter>;
+    conventions: |
+      YAML uses snake_case (`skip_permissions`, `allowed_tools`, `max_turns`);
+      TypeScript interfaces use camelCase (`dangerouslySkipPermissions`,
+      `allowedTools`, `maxTurns`) — translation happens at the adapter-factory
+      boundary, not inside the adapter; defaults applied at translation time
+      (`skip_permissions ?? true`); preserve the dynamic `await import(...)`
+      pattern (adapter packages are optional deps); no validation at
+      adapter-factory — wave 0's schema validation catches malformed shapes.

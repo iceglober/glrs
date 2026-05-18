@@ -30,7 +30,7 @@ import type { AutopilotLogger } from "./lib/logger.js";
 import { childLogger } from "./lib/logger.js";
 import type { AgentAdapter } from "./adapter.js";
 import type { SessionEventEmitter } from "./session-runner.js";
-import { loadStrategy } from "./enrich-strategy.js";
+import { loadStrategy, extractFieldNames } from "./enrich-strategy.js";
 
 /**
  * The fraction of items that must declare all three enrichment fields
@@ -47,18 +47,20 @@ export const ENRICHMENT_RATIO_THRESHOLD = 1.0;
 
 /**
  * Compute the fraction of plan items across `planFiles` that already
- * have mirror/context/conventions fields. Pure synchronous I/O — no
- * server spawn — so this is cheap to call before the enrichment pass.
+ * have enrichment fields. Pure synchronous I/O — no server spawn — so
+ * this is cheap to call before the enrichment pass.
  *
  * Heuristic: count items as "enriched" by taking the minimum across
- * the three field-marker counts in the file. This is conservative
- * (an item with mirror+conventions but no context counts as 0) and
- * forgiving on parse errors (unreadable file → contributes 0 to both
- * sides, not infinity).
+ * all field-marker counts in the file. This is conservative
+ * (an item missing any required field counts as 0) and forgiving on
+ * parse errors (unreadable file → contributes 0 to both sides).
  *
  * Returns 0 if no items found across all files (avoids NaN division).
  */
-export function computeEnrichmentRatio(planFiles: string[]): number {
+export function computeEnrichmentRatio(
+  planFiles: string[],
+  fieldNames: string[] = ["mirror", "context", "conventions"],
+): number {
   let total = 0;
   let enriched = 0;
   for (const f of planFiles) {
@@ -78,25 +80,28 @@ export function computeEnrichmentRatio(planFiles: string[]): number {
     const checkboxItems = (content.match(/^- \[[ xX]\]/gm) ?? []).length;
     const headingItems = (content.match(/^###\s+\d+\.\d+\s/gm) ?? []).length;
     total += headingItems > 0 ? headingItems : checkboxItems;
-    // Field markers — count occurrences of each type, then take the
-    // min as a proxy for "items with all three fields".
-    const hasMirror = (content.match(/^\s*-?\s*mirror:/gm) ?? []).length;
-    const hasContext = (content.match(/^\s*-?\s*context/gm) ?? []).length;
-    const hasConventions = (content.match(/^\s*-?\s*conventions:/gm) ?? [])
-      .length;
-    enriched += Math.min(hasMirror, hasContext, hasConventions);
+    // Field markers — count occurrences of each field, then take the
+    // min as a proxy for "items with all fields".
+    const fieldCounts = fieldNames.map((field) => {
+      const regex = new RegExp(`^\\s*-?\\s*${field}:`, "gm");
+      return (content.match(regex) ?? []).length;
+    });
+    enriched += Math.min(...fieldCounts);
   }
   return total > 0 ? enriched / total : 0;
 }
 
 /**
  * Compute the enrichment ratio for a YAML spec plan directory.
- * Counts items with all three enrichment fields (mirror/context/conventions)
- * across all phase files referenced in spec/main.yaml.
+ * Counts items with all enrichment fields across all phase files
+ * referenced in spec/main.yaml.
  *
  * Returns 0 if no items found (avoids NaN division).
  */
-export function computeSpecEnrichmentRatio(planDir: string): number {
+export function computeSpecEnrichmentRatio(
+  planDir: string,
+  fieldNames: string[] = ["mirror", "context", "conventions"],
+): number {
   if (!hasSpec(planDir)) return 0;
   const phaseFiles = detectSpecPhases(planDir);
   let total = 0;
@@ -106,8 +111,9 @@ export function computeSpecEnrichmentRatio(planDir: string): number {
     const items = parseSpecItems(phasePath);
     total += items.length;
     for (const item of items) {
-      const it = item as typeof item & { mirror?: string; context?: string; conventions?: string };
-      if (it.mirror && it.context && it.conventions) {
+      const it = item as Record<string, unknown>;
+      const hasAllFields = fieldNames.every((field) => it[field]);
+      if (hasAllFields) {
         enriched++;
       }
     }
@@ -246,14 +252,24 @@ export async function enrichPlanForFastModel(
     fileCount: planFiles.length,
   });
 
+  // Load strategy and extract field names for idempotency check.
+  // Tries to load the strategy; falls back to defaults if not found.
+  let fieldNames = ["mirror", "context", "conventions"];
+  try {
+    const strategy = loadStrategy(cwd, "default");
+    fieldNames = extractFieldNames(strategy);
+  } catch (err) {
+    log?.warn({ err }, "Failed to load strategy — using defaults");
+  }
+
   // Whole-plan idempotency check (item 4.3). Run BEFORE the server
   // spawn so an already-enriched plan costs nothing extra.
   // For YAML spec plans, use computeSpecEnrichmentRatio which reads
   // spec/main.yaml and the phase YAML files directly.
   const isYamlSpec = isDir && hasSpec(resolvedPath);
   const wholePlanRatio = isYamlSpec
-    ? computeSpecEnrichmentRatio(resolvedPath)
-    : computeEnrichmentRatio(planFiles);
+    ? computeSpecEnrichmentRatio(resolvedPath, fieldNames)
+    : computeEnrichmentRatio(planFiles, fieldNames);
   if (wholePlanRatio >= ENRICHMENT_RATIO_THRESHOLD) {
     log?.info({ ratio: wholePlanRatio }, "Plan already enriched — skipping");
     emitter?.emitEvent({
@@ -346,8 +362,8 @@ export async function enrichPlanForFastModel(
         const phaseTotal = phaseItems.length;
         const phaseEnriched = phaseItems.filter(
           (it) => {
-            const item = it as typeof it & { mirror?: string; context?: string; conventions?: string };
-            return item.mirror && item.context && item.conventions;
+            const item = it as Record<string, unknown>;
+            return fieldNames.every((field) => item[field]);
           }
         ).length;
         const phaseRatio = phaseTotal > 0 ? phaseEnriched / phaseTotal : 0;

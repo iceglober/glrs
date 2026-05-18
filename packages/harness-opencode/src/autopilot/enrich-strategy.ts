@@ -22,6 +22,26 @@ export function loadStrategy(repoRoot: string, name: string): string {
 }
 
 /**
+ * Extract enrichment field names from a strategy template.
+ * Matches lines like:
+ *   - **fieldname**: description
+ * or
+ *   1. **fieldname**: description
+ *
+ * Falls back to the default mirror/context/conventions if no fields are found.
+ */
+export function extractFieldNames(strategy: string): string[] {
+  const regex = /^\s*(?:-|\d+\.)\s+\*\*(\w+)\*\*:/gm;
+  const matches: string[] = [];
+  let match;
+  while ((match = regex.exec(strategy)) !== null) {
+    matches.push(match[1]);
+  }
+  // Fall back to defaults if no fields found
+  return matches.length > 0 ? matches : ["mirror", "context", "conventions"];
+}
+
+/**
  * Apply a strategy template by substituting {{file}} and {{content}}
  * placeholders. Replaces all occurrences (case-sensitive).
  */

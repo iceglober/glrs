@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@glrs-dev/autopilot": "workspace:*",
+    "@glrs-dev/adapter-claude-code": "workspace:*",
     "@glrs-dev/adapter-opencode": "workspace:*",
     "@inkjs/ui": "^2.0.0",
     "@inquirer/prompts": "^8.4.2",

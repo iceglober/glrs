@@ -1,0 +1,497 @@
+items:
+  - id: "5.1"
+    intent: |
+      Add `proof` and `proof_type` to spec schema. Update
+      `spec-schema.ts` to accept optional `proof: string` and
+      `proof_type: string` fields on `SpecItem`. Update
+      `specItemToPlanItem` to pass them through. Backward
+      compatible — existing specs without these fields still work.
+    checked: false
+    files:
+      - path: packages/autopilot/src/spec-schema.ts
+        isNew: false
+        change: |
+          Add two optional fields to the `SpecItem` interface,
+          alongside the existing `mirror`/`context`/`conventions`
+          enrichment fields: `proof?: string` (natural-language
+          description of the acceptance proof) and `proof_type?:
+          string` (one of `unit_test` | `api_check` | `structural`
+          | `typecheck` | `e2e` | `custom`). No runtime validation
+          change needed — `validatePhaseSpec` only enforces `id`
+          and `intent`; the new fields are accepted opportunistically
+          and missing values stay `undefined` (backward compatible).
+      - path: packages/autopilot/src/spec-parser.ts
+        isNew: false
+        change: |
+          In `specItemToPlanItem` (spec-parser.ts:49), pass `proof`
+          and `proof_type` through to the returned PlanItem shape
+          using the same `...(item.X !== undefined ? { X: item.X } : {})`
+          pattern as the existing enrichment fields. Update the
+          function's return-type intersection (and the
+          `parseSpecItems` return type at line 77) to include
+          `proof?: string` and `proof_type?: string`.
+      - path: packages/autopilot/src/plan-parser.ts
+        isNew: false
+        change: |
+          Add `proof?: string` and `proof_type?: string` to the
+          `PlanItem` interface (plan-parser.ts:37). Markdown plans
+          do not populate these fields — they remain `undefined` on
+          that path. Only the YAML spec path (wave 5) fills them in.
+    tests: []
+    verify: "cd packages/autopilot && bun test"
+    mirror: packages/autopilot/src/spec-schema.ts
+    context: |
+      // packages/autopilot/src/spec-schema.ts:22-33 — existing
+      // SpecItem shape; add `proof` and `proof_type` alongside the
+      // enrichment fields:
+      export interface SpecItem {
+        id: string;
+        intent: string;
+        checked: boolean;
+        files?: SpecFileEntry[];
+        tests?: string[];
+        verify?: string;
+        /** Enrichment fields (added by plan-enrichment pass) */
+        mirror?: string;
+        context?: string;
+        conventions?: string;
+        // proof?: string;        // wave 5
+        // proof_type?: string;   // wave 5
+      }
+
+      // packages/autopilot/src/spec-parser.ts:49-71 — pass-through
+      // pattern to follow for the new fields:
+      function specItemToPlanItem(item: SpecItem): PlanItem & {
+        mirror?: string;
+        context?: string;
+        conventions?: string;
+        // proof?: string; proof_type?: string;
+      } {
+        // ...
+        return {
+          id: item.id,
+          intent: item.intent,
+          checked: item.checked ?? false,
+          files,
+          tests: item.tests ?? [],
+          verify: item.verify ?? "",
+          ...(item.mirror !== undefined ? { mirror: item.mirror } : {}),
+          ...(item.context !== undefined ? { context: item.context } : {}),
+          ...(item.conventions !== undefined ? { conventions: item.conventions } : {}),
+          // ...(item.proof !== undefined ? { proof: item.proof } : {}),
+          // ...(item.proof_type !== undefined ? { proof_type: item.proof_type } : {}),
+        };
+      }
+
+      // packages/autopilot/src/plan-parser.ts:37-44 — PlanItem
+      // shape to extend with the same optional fields:
+      export interface PlanItem {
+        id: string;
+        intent: string;
+        files: PlanFileEntry[];
+        tests: string[];
+        verify: string;
+        checked: boolean;
+        // proof?: string;       // YAML spec only
+        // proof_type?: string;  // YAML spec only
+      }
+    conventions: |
+      ESM imports with `.js` suffix on relative paths; named exports
+      only; bun:test (`import { describe, it, expect } from
+      "bun:test"`); YAML field names snake_case (`proof_type`); TS
+      field names mirror the YAML key when the source of truth is
+      YAML (so `proof_type` stays snake_case in the TS interface,
+      matching existing `isNew` exception-pattern). Backward-
+      compatibility rule: every new field on `SpecItem` and
+      `PlanItem` is optional — never required — so older spec
+      files parse cleanly. No runtime validator additions; the
+      existing `validatePhaseSpec` only checks required fields.
+
+  - id: "5.2"
+    intent: |
+      Update enrichment prompt to generate `proof` field. The
+      enrichment prompt for wave files should instruct the LLM
+      to generate a `proof` field for each item — a natural-language
+      description of what the acceptance proof should assert,
+      specific enough for a code-generation model to write it.
+      Also generate `proof_type` based on the verify command pattern.
+    checked: false
+    files:
+      - path: packages/autopilot/src/plan-enrichment.ts
+        isNew: false
+        change: |
+          Update `buildSpecGenerationPrompt` (plan-enrichment.ts:118)
+          for the phase-file branch (`phaseInstructions`). Extend
+          the schema example to include `proof: |` and
+          `proof_type: ...` after `conventions:`. Add a fourth
+          enrichment bullet under "Add enrichment fields by reading
+          the actual codebase" telling the LLM: (a) **proof**:
+          write a natural-language description of what the
+          acceptance proof should assert (specific enough that a
+          code-generation model can implement it as a test file or
+          shell command), (b) **proof_type**: classify the verify
+          command into one of `unit_test` | `api_check` |
+          `structural` | `typecheck` | `e2e` | `custom`. The main.yaml
+          branch (`mainInstructions`) is untouched — `proof` is a
+          per-item field, not a plan-level one.
+    tests: []
+    verify: "cd packages/autopilot && bun test"
+    mirror: packages/autopilot/src/plan-enrichment.ts
+    context: |
+      // packages/autopilot/src/plan-enrichment.ts:139-156 — current
+      // phase schema example; the `proof` and `proof_type` fields
+      // need to be appended so the LLM emits them in generated YAML:
+      `\`\`\`yaml
+      # spec/${specFileName}
+      items:
+        - id: "0.1"
+          intent: "What this item does"
+          checked: false
+          files:
+            - path: src/foo.ts
+              isNew: false
+              change: "What changes"
+          tests:
+            - "test/foo.test.ts"
+          verify: "bun test test/foo.test.ts"
+          mirror: "src/similar-file.ts"
+          context: |
+            // relevant code from the file being modified
+          conventions: "ESM imports, named exports, bun:test"
+          # proof: |
+          #   Test file: test/foo.test.ts
+          #   Assertions: ...
+          # proof_type: "unit_test"
+      \`\`\``
+
+      // packages/autopilot/src/plan-enrichment.ts:189-200 — current
+      // enrichment-bullet list inside `phaseInstructions`; add a
+      // fourth bullet describing the proof field generation:
+      For each acceptance-criteria item in the plan:
+      1. Extract id, intent, files, tests, verify from the markdown.
+      2. Set checked: false for all items.
+      3. Add enrichment fields by reading the actual codebase:
+         - mirror: ...
+         - context: ...
+         - conventions: ...
+         // - proof: natural-language description of the acceptance proof
+         // - proof_type: unit_test | api_check | structural | typecheck | e2e | custom
+    conventions: |
+      Prompt strings live inline in `buildSpecGenerationPrompt` as
+      tagged template literals — keep them readable, no string
+      concatenation. The `proof_type` enum values are written as a
+      pipe-separated list in the prompt so the LLM treats them as
+      a closed set. Backtick-escape any code samples inside the
+      template literal (already done for the existing schema
+      example). No new tests file for this item — coverage flows
+      through existing `plan-enrichment.test.ts` snapshot/string
+      tests once the prompt text changes. The `mainInstructions`
+      branch is intentionally untouched; `proof` is per-item.
+
+  - id: "5.3"
+    intent: |
+      TDD execution prompt. Rewrite the per-item execution prompt
+      to enforce red-green-refactor: model writes proof first
+      (must fail), implements, verifies (must pass), then marks
+      checked. Only swap the prompt when `execution_style` is
+      `"tdd"` (default — see item 5.5).
+    checked: false
+    files:
+      - path: packages/autopilot/src/loop-session.ts
+        isNew: false
+        change: |
+          Update the per-item prompt inside `runItemsForPhase`
+          (loop-session.ts:576). Replace today's `itemPrompt` with
+          the TDD workflow: (1) WRITE THE PROOF FIRST — create or
+          update the test/check described in `proof`; run `verify`
+          and confirm it fails (red); (2) IMPLEMENT — write the
+          minimum code; (3) VERIFY — run `verify` and confirm it
+          passes (green); (4) MARK DONE — set checked: true only
+          after verify passes. Include the item's `proof` and
+          `proof_type` fields in the prompt (read via
+          `parseSpecItems` which now surfaces them per item 5.1).
+          Wrap the new prompt behind the execution_style branch
+          added in item 5.5 — fall back to today's prompt when
+          `executionStyle === "direct"`.
+    tests: []
+    verify: "cd packages/autopilot && bun test"
+    mirror: packages/autopilot/src/loop-session.ts
+    context: |
+      // packages/autopilot/src/loop-session.ts:576-596 — current
+      // per-item prompt that needs to gain a TDD branch:
+      const itemPrompt =
+        `You are executing ONE item of a multi-item phase. Complete only this item, mark its checkbox in ${phaseFile}, commit, and stop. Do not work on other items.\n\n` +
+        `## Overall goal\n${goal}\n\n` +
+        `## Constraints\n${constraints}\n\n` +
+        `## Your item\n` +
+        `- [ ] id: ${item.id}\n` +
+        `  intent: ${item.intent}\n` +
+        `  files: ${filesList || "(none declared)"}\n` +
+        `  verify: ${verify}\n\n` +
+        // ... existing "Files you may touch" / "Verify command" / "Non-goals" sections ...
+        `When done: mark the checkbox for item ${item.id} in ${phaseFile} as [x], commit, and emit the autopilot-done sentinel.`;
+
+      // New TDD prompt sketch (gated on executionStyle === "tdd"):
+      //   `You are implementing ONE item using test-driven development.
+      //
+      //   ## Your item
+      //   - id: ${item.id}
+      //   - intent: ${item.intent}
+      //   - verify: ${verify}
+      //   - proof: ${item.proof}
+      //
+      //   ## Workflow (follow exactly):
+      //   1. WRITE THE PROOF FIRST. Create/update the test/check described in proof.
+      //      Run ${verify} — it MUST fail (red). If it passes, your proof is trivial.
+      //   2. IMPLEMENT. Write the minimum code to make ${verify} pass.
+      //   3. VERIFY. Run ${verify} — it MUST pass (green).
+      //   4. MARK DONE. Only after verify passes: set checked: true in the spec YAML.`
+    conventions: |
+      Prompts are inline template literals — match the style of
+      the existing `itemPrompt` (newline-separated headed sections,
+      no leading whitespace inside multi-line strings beyond what
+      renders in the final output). The TDD prompt is gated on
+      `executionStyle` (item 5.5); when undefined, default to
+      `"tdd"` so existing callers opt in by default. The proof
+      and proof_type fields come from `parseSpecItems` (item 5.1) —
+      reach them via `item.proof` / `item.proof_type` and gracefully
+      fall back to a placeholder ("(no proof declared — write any
+      deterministic check)") when undefined so older specs still
+      execute. No new test file — extend existing loop-session
+      tests if a prompt-shape assertion is added.
+
+  - id: "5.4"
+    intent: |
+      Verify-before-check enforcement. After the verify gate, if
+      an item is marked `checked: true` but its verify command
+      failed, UNCHECK it (set `checked: false`) so the next
+      iteration retries. Log a warning when this happens — the
+      model lied about completion.
+    checked: false
+    files:
+      - path: packages/autopilot/src/loop-session.ts
+        isNew: false
+        change: |
+          After the verify-runner returns (loop-session.ts:781)
+          and before the phaseComplete=false branch, iterate over
+          `failed` and call `markItemUnchecked(opts.planPath,
+          phaseFile, f.itemId)` for each failed verify whose item
+          was previously checked. Log at warn level:
+          "verify failed but item was marked checked — unchecking".
+          This only applies on the YAML spec path
+          (`useYamlSpec`); markdown plans keep today's behavior
+          (no programmatic uncheck — caller writes a fresh prompt
+          and lets the model fix its own checkbox).
+      - path: packages/autopilot/src/spec-writer.ts
+        isNew: false
+        change: |
+          Add `markItemUnchecked(planDir: string, phaseFile: string,
+          itemId: string): void`. Mirror `markItemChecked`
+          (spec-writer.ts:35) exactly — read the phase YAML, find
+          the item by id, set `item["checked"] = false`,
+          atomic-write the file back. Silent on any failure
+          (orchestrator continues regardless).
+    tests: []
+    verify: "cd packages/autopilot && bun test"
+    mirror: packages/autopilot/src/spec-writer.ts
+    context: |
+      // packages/autopilot/src/spec-writer.ts:35-63 — pattern to
+      // mirror for `markItemUnchecked` (identical body except
+      // `checked = false`):
+      export function markItemChecked(
+        planDir: string,
+        phaseFile: string,
+        itemId: string,
+      ): void {
+        const phasePath = path.join(planDir, "spec", phaseFile);
+        try {
+          const content = fs.readFileSync(phasePath, "utf-8");
+          const raw = yamlParse(content) as unknown;
+          if (typeof raw !== "object" || raw === null) return;
+          const obj = raw as Record<string, unknown>;
+          if (!Array.isArray(obj["items"])) return;
+          const items = obj["items"] as Array<Record<string, unknown>>;
+          let found = false;
+          for (const item of items) {
+            if (item["id"] === itemId) {
+              item["checked"] = true;  // markItemUnchecked: false
+              found = true;
+              break;
+            }
+          }
+          if (!found) return;
+          atomicWriteFileSync(phasePath, yamlStringify(raw));
+        } catch { /* silent */ }
+      }
+
+      // packages/autopilot/src/loop-session.ts:781-812 — verify
+      // result handling; uncheck the failed items before building
+      // the failure summary so the next iteration sees clean state:
+      const phaseVerify = await _runVerifyCommands(itemsWithVerify, runCwd);
+      const failed = phaseVerify.filter((r) => !r.passed);
+      if (failed.length > 0) {
+        // for (const f of failed) {
+        //   if (useYamlSpec) {
+        //     markItemUnchecked(opts.planPath, phaseFile, f.itemId);
+        //     log.warn({ phase: phaseFile, itemId: f.itemId }, "verify failed — unchecking");
+        //   }
+        // }
+        // ...
+      }
+    conventions: |
+      `markItemUnchecked` is a pure mirror of `markItemChecked` —
+      same atomic-write contract, same silent-failure semantics.
+      Apply the uncheck ONLY on the YAML spec path
+      (`useYamlSpec` boolean already in scope inside `runPhaseInner`).
+      The markdown path stays unchanged (no programmatic uncheck —
+      keeps backward compatibility with existing markdown plans).
+      Log level: `warn` with `{ phase, itemId }` fields — matches
+      the surrounding "verify command failed" warn at
+      loop-session.ts:798. No new test file — extend
+      `loop-session.test.ts` and `spec-writer.test.ts` with one
+      case each (uncheck wired in loop-session, function-level
+      uncheck behavior in spec-writer).
+
+  - id: "5.5"
+    intent: |
+      Config: `execution_style` setting. Add `execution_style:
+      "tdd" | "direct"` to the autopilot config schema. Default:
+      `"tdd"`. When `"direct"`, use the current prompt (no
+      red-green enforcement). When `"tdd"`, use the new prompt
+      from 5.3. Lets repos that don't want TDD opt out.
+    checked: false
+    files:
+      - path: packages/autopilot/src/loop-session-types.ts
+        isNew: false
+        change: |
+          Add `executionStyle?: "tdd" | "direct"` to
+          `LoopSessionOptions` (loop-session-types.ts:21). When
+          undefined, callers (loop-session.ts) treat it as `"tdd"`.
+          The CLI threads the value through from the resolved
+          config (snake_case `execution_style` in YAML → camelCase
+          `executionStyle` in TS, mirroring wave-0/4 conventions).
+      - path: packages/autopilot/src/loop-session.ts
+        isNew: false
+        change: |
+          Inside `runItemsForPhase` (loop-session.ts:509), branch
+          on `opts.executionStyle ?? "tdd"` when constructing
+          `itemPrompt`. `"tdd"` → new red-green prompt from item
+          5.3; `"direct"` → today's prompt unchanged. The verify
+          gate (item 5.4 uncheck behavior) runs regardless of
+          style — `"direct"` callers still benefit from the
+          verify-before-check enforcement, just without the
+          red-green narrative.
+    tests: []
+    verify: "cd packages/autopilot && bun test"
+    mirror: packages/autopilot/src/loop-session-types.ts
+    context: |
+      // packages/autopilot/src/loop-session-types.ts:21-93 —
+      // existing LoopSessionOptions; insert executionStyle near
+      // the top-level config-derived flags:
+      export interface LoopSessionOptions {
+        planPath: string;
+        cwd: string;
+        fast?: boolean;
+        resume?: boolean;
+        maxIterationsPerPhase?: number;
+        maxPhaseRetries?: number;
+        parallel?: number;
+        ship?: boolean;
+        // executionStyle?: "tdd" | "direct";  // wave 5 item 5.5
+        logger?: AutopilotLogger;
+        emitter?: SessionEventEmitter;
+        adapter?: AgentAdapter;
+        signal?: AbortSignal;
+      }
+
+      // Branch inside runItemsForPhase:
+      //   const style = opts.executionStyle ?? "tdd";
+      //   const itemPrompt = style === "tdd"
+      //     ? buildTddPrompt(item, goal, constraints, phaseFile)
+      //     : buildDirectPrompt(item, goal, constraints, phaseFile);
+    conventions: |
+      YAML snake_case (`execution_style`), TS camelCase
+      (`executionStyle`). The default-when-undefined convention is
+      "tdd" — explicit at the call site (`opts.executionStyle ??
+      "tdd"`), NOT in the type definition (the field stays
+      optional). When wave-4 item 4.4's `applyCLIOverrides` lands,
+      add `execution_style` to its CLI flag mapping if a `--style`
+      flag exists; today, the field is config-only. Backward
+      compatible — pre-wave-5 callers that omit `executionStyle`
+      get the default TDD behavior.
+
+  - id: "5.6"
+    intent: |
+      Proof-type-aware verify timeout. Different proof types need
+      different timeouts: unit_test 30s, api_check 10s, structural
+      / typecheck 60s, e2e 120s, custom uses config.verify_timeout
+      (default 300s). The verify runner reads proof_type from the
+      item and applies the appropriate timeout.
+    checked: false
+    files:
+      - path: packages/autopilot/src/verify-runner.ts
+        isNew: false
+        change: |
+          Extend `runVerifyCommands` to read `item.proof_type` and
+          apply a per-item timeout. Build a `TIMEOUTS_BY_PROOF_TYPE`
+          constant: `unit_test: 30_000`, `api_check: 10_000`,
+          `structural: 60_000`, `typecheck: 60_000`, `e2e:
+          120_000`, `custom: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS`.
+          For each item, resolve `perItemTimeoutMs =
+          TIMEOUTS_BY_PROOF_TYPE[item.proof_type ?? "custom"]` and
+          pass it as the `AbortSignal.timeout(...)` argument
+          (verify-runner.ts:77). The function-level `timeoutMs`
+          option (today the global default) becomes the fallback
+          for `custom` only. Update `VerifyResult.durationMs`
+          semantics: unchanged (still wall-clock).
+    tests: []
+    verify: "cd packages/autopilot && bun test"
+    mirror: packages/autopilot/src/verify-runner.ts
+    context: |
+      // packages/autopilot/src/verify-runner.ts:50-90 — current
+      // single-timeout flow; switch to per-item resolution:
+      const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+
+      export async function runVerifyCommands(
+        items: PlanItem[],
+        cwd: string,
+        opts: RunVerifyCommandsOptions = {},
+      ): Promise<VerifyResult[]> {
+        const execFile = opts._deps?.execFile ?? execFileDefault;
+        const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+        // const TIMEOUTS_BY_PROOF_TYPE = {
+        //   unit_test:  30_000,
+        //   api_check:  10_000,
+        //   structural: 60_000,
+        //   typecheck:  60_000,
+        //   e2e:       120_000,
+        //   custom:    timeoutMs,
+        // } as const;
+        for (const item of items) {
+          const command = item.verify?.trim();
+          if (!command) continue;
+          // const perItemTimeout =
+          //   TIMEOUTS_BY_PROOF_TYPE[(item.proof_type ?? "custom") as keyof typeof TIMEOUTS_BY_PROOF_TYPE]
+          //   ?? timeoutMs;
+          const { stdout, stderr } = await execFile("/bin/sh", ["-c", command], {
+            cwd,
+            signal: AbortSignal.timeout(timeoutMs), // → perItemTimeout
+            maxBuffer: 10 * 1024 * 1024,
+          });
+          // ...
+        }
+      }
+    conventions: |
+      Constants live as a frozen `as const` object at module top
+      (no separate file — verify-runner is the only consumer).
+      Unknown `proof_type` values fall back to the function-level
+      `timeoutMs` (treated as `custom`), so older specs without
+      `proof_type` keep today's 5-minute default. The
+      `AbortSignal.timeout(...)` semantics are unchanged — only
+      the value changes per item. Timeout-stderr message
+      (verify-runner.ts:117) reads the actual timeout used,
+      not the global default, so the message reflects what
+      actually fired. No new test file required — extend
+      `verify-runner.test.ts` with one case per proof_type bucket
+      asserting the timeout argument passed to a mocked
+      `execFile`.

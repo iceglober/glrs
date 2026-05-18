@@ -22,7 +22,7 @@
     - `packages/harness-opencode/tsup.config.ts` — copy strategies dir to dist (if not already handled)
   - verify: `bun run build && bun test`
 
-- [ ] 1.3 **Strategy-aware idempotency check.** Today `computeEnrichmentRatio` checks for hardcoded `mirror/context/conventions` fields. Instead, parse the strategy's numbered list to extract field names (regex: `/^\d+\.\s+\*\*(\w+):\*\*/gm`) and check for those. Falls back to `mirror/context/conventions` when no strategy is loaded.
+- [x] 1.3 **Strategy-aware idempotency check.** Today `computeEnrichmentRatio` checks for hardcoded `mirror/context/conventions` fields. Instead, parse the strategy's numbered list to extract field names (regex: `/^\d+\.\s+\*\*(\w+):\*\*/gm`) and check for those. Falls back to `mirror/context/conventions` when no strategy is loaded.
 
   - files (MODIFIED):
     - `packages/harness-opencode/src/autopilot/plan-enrichment.ts` — `computeEnrichmentRatio` accepts field names

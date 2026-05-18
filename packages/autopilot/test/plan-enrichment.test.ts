@@ -9,6 +9,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import {
   computeEnrichmentRatio,
+  computeSpecEnrichmentRatio,
   ENRICHMENT_RATIO_THRESHOLD,
 } from "../src/plan-enrichment.js";
 
@@ -195,5 +196,61 @@ describe("computeEnrichmentRatio", () => {
     expect(computeEnrichmentRatio([f])).toBeGreaterThanOrEqual(
       ENRICHMENT_RATIO_THRESHOLD,
     );
+  });
+
+  it("supports custom field names", () => {
+    const dir = tmpDir();
+    const f = writeFile(
+      dir,
+      "phase.md",
+      `# Title
+
+- [ ] 1.1 **First item**
+  - template: src/foo.ts
+  - examples: existing code
+  - requirements: custom requirement
+
+- [ ] 1.2 **Second item**
+  - template: src/bar.ts
+  - examples: another snippet
+  - requirements: another requirement
+`,
+    );
+    const customFields = ["template", "examples", "requirements"];
+    expect(computeEnrichmentRatio([f], customFields)).toBe(1);
+  });
+
+  it("custom field names return 0 when not present", () => {
+    const dir = tmpDir();
+    const f = writeFile(
+      dir,
+      "phase.md",
+      `# Title
+
+- [ ] 1.1 **First item**
+  - mirror: src/foo.ts
+  - context: existing code
+  - conventions: bun:test
+`,
+    );
+    const customFields = ["template", "examples", "requirements"];
+    expect(computeEnrichmentRatio([f], customFields)).toBe(0);
+  });
+
+  it("falls back to default fields when none provided", () => {
+    const dir = tmpDir();
+    const f = writeFile(
+      dir,
+      "phase.md",
+      `# Title
+
+- [ ] 1.1 **a**
+  - mirror: x
+  - context: y
+  - conventions: z
+`,
+    );
+    // No field names provided, should use defaults
+    expect(computeEnrichmentRatio([f])).toBe(1);
   });
 });
