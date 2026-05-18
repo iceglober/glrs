@@ -59,6 +59,16 @@ const AdaptersSchema = z
   })
   .strict();
 
+/** Schema for webhook event types */
+const WebhookEventTypeSchema = z.enum([
+  "iteration_complete",
+  "phase_complete",
+  "run_complete",
+  "error",
+  "struggle",
+  "stall",
+]);
+
 /** Full schema for AutopilotConfig */
 const AutopilotConfigSchema = z
   .object({
@@ -69,6 +79,8 @@ const AutopilotConfigSchema = z
     execution: z.record(z.string(), z.unknown()).optional(),
     hooks: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(),
     phases: z.record(z.string(), PhaseConfigSchema).optional(),
+    notify_url: z.string().optional(),
+    notify_events: z.array(WebhookEventTypeSchema).optional(),
     adapters: AdaptersSchema.optional(),
   })
   .strict()

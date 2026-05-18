@@ -160,6 +160,13 @@ export interface RalphLoopOptions {
    */
   notifyUrl?: string;
   /**
+   * Webhook event types to send (optional).
+   * When empty or undefined, all events are sent.
+   * Valid event types: "iteration_complete", "phase_complete", "run_complete", "error", "struggle", "stall".
+   * Events outside this list are silently dropped before any network call.
+   */
+  notifyEvents?: Array<"iteration_complete" | "phase_complete" | "run_complete" | "error" | "struggle" | "stall">;
+  /**
    * When true, the agent adapter is NOT shut down in the finally block.
    * Instead, the adapter + handle are exposed on the LoopResult so the
    * caller can reuse them (e.g., for the debrief). The caller is
@@ -327,6 +334,15 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   const autoCommit = (cfgObj?.auto_commit as boolean) ?? true;
   const commitPrefix = (cfgObj?.commit_prefix as string | undefined);
 
+  // Extract notification settings from config (item 3.6)
+  // CLI flags override config settings
+  const cfgNotifyUrl = cfgObj?.notify_url as string | undefined;
+  const cfgNotifyEvents = cfgObj?.notify_events as Array<string> | undefined;
+  const resolvedNotifyUrl = opts.notifyUrl ?? cfgNotifyUrl;
+  const resolvedNotifyEvents = cfgNotifyEvents as Array<"iteration_complete" | "phase_complete" | "run_complete" | "error" | "struggle" | "stall"> | undefined;
+  // Merge CLI events with config events (or use CLI events if both present)
+  const finalNotifyEvents = opts.notifyEvents ?? resolvedNotifyEvents;
+
   if (!opts.adapter) {
     throw new Error("runRalphLoop: adapter is required");
   }
@@ -339,8 +355,8 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   // Fire-and-forget webhook notification helper.
   // Never throws — errors are swallowed by notifyWebhook itself.
   const notify = (event: WebhookEvent) => {
-    if (opts.notifyUrl) {
-      notifyWebhook(opts.notifyUrl, event).catch(() => {});
+    if (resolvedNotifyUrl) {
+      notifyWebhook(resolvedNotifyUrl, event, finalNotifyEvents).catch(() => {});
     }
   };
 

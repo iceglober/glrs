@@ -87,6 +87,23 @@ export interface AutopilotConfig {
   phases?: Record<string, PhaseConfig>;
 
   /**
+   * Webhook URL to POST lifecycle events to (optional).
+   * Supports plain webhooks and Slack incoming webhooks (auto-detected).
+   * CLI --notify flag overrides this setting when both are provided.
+   * @default undefined
+   */
+  notify_url?: string;
+
+  /**
+   * Webhook event types to send (optional).
+   * When empty or undefined, all events are sent.
+   * Valid event types: "iteration_complete", "phase_complete", "run_complete", "error", "struggle", "stall".
+   * CLI flag overrides this setting when both are provided.
+   * @default undefined (send all events)
+   */
+  notify_events?: Array<"iteration_complete" | "phase_complete" | "run_complete" | "error" | "struggle" | "stall">;
+
+  /**
    * Adapter-specific configuration.
    * Discriminated by the active adapter — only the matching adapter's config is read at runtime.
    * Unknown adapter-specific keys are silently ignored.
@@ -166,6 +183,10 @@ export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
 
   /** No phase-specific config by default. */
   phases: {},
+
+  /** No webhook notification by default. */
+  notify_url: undefined,
+  notify_events: undefined,
 
   /** Adapter-specific defaults for both adapters. */
   adapters: {

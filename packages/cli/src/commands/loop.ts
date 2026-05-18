@@ -119,6 +119,7 @@ export const loopCmd = command({
       notifyUrl: notify ?? undefined,
       keepAlive: willDebrief,
       adapter,
+      config,
     });
 
     // Loop has fully exited — remove pre-loop signal hooks so we don't
