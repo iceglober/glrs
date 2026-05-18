@@ -16,7 +16,7 @@ items:
       - Both: any value containing `/` (e.g.,
         `amazon-bedrock/global.anthropic.claude-opus-4-7`) is always treated
         as a full model ID.
-    checked: false
+    checked: true
     files:
       - path: packages/autopilot/src/model-resolver.ts
         isNew: true
