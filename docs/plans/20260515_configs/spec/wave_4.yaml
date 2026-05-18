@@ -447,7 +447,7 @@ items:
       documented, grouped by section, with defaults shown in
       comments. Ships with the plugin (copied to `dist/`) and is
       referenced by `glrs oc configure` as a starting point.
-    checked: false
+    checked: true
     files:
       - path: packages/harness-opencode/src/autopilot/autopilot.yaml.example
         isNew: true
