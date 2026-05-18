@@ -271,6 +271,37 @@ function validateAgentPromptFiles(config: Partial<AutopilotConfig>, repoRoot: st
 }
 
 /**
+ * Resolves phase-level config overrides by deep-merging phase-specific config
+ * over the base config.
+ *
+ * When `baseConfig.phases?.[phaseName]` exists, deep-merges it over the base
+ * (phase wins on conflict). The phase name should be the filename without
+ * extension (e.g., `wave_0` not `wave_0.md` or `wave_0.yaml`).
+ *
+ * If the phase is not found in the config, returns the base config unchanged.
+ *
+ * @param baseConfig The resolved base configuration (project + plan + defaults)
+ * @param phaseName The phase name without extension (e.g., `wave_0`)
+ * @returns A config object with phase-specific overrides merged in
+ */
+export function resolvePhaseConfig(
+  baseConfig: AutopilotConfig,
+  phaseName: string,
+): AutopilotConfig {
+  const phaseOverride = baseConfig.phases?.[phaseName];
+  if (!phaseOverride) {
+    return baseConfig;
+  }
+
+  const merged = deepMerge(
+    baseConfig as Record<string, unknown>,
+    phaseOverride as Record<string, unknown>,
+  );
+
+  return merged as AutopilotConfig;
+}
+
+/**
  * Resolves autopilot configuration with plan-specific overrides.
  *
  * Performs a three-layer merge:

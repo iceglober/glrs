@@ -7,7 +7,7 @@ items:
       `wave_0`). This produces a phase-specific config that
       `runPhaseInner` uses for model routing, iteration budgets, verify
       strategy, hooks, and agent overrides.
-    checked: false
+    checked: true
     files:
       - path: packages/harness-opencode/src/autopilot/config-reader.ts
         isNew: false
