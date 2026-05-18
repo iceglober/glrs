@@ -29,7 +29,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
-import { createAgents, AGENT_TIERS, getStrictPrompt } from "./agents/index.js";
+import { createAgents, AGENT_TIERS, getStrictPrompt, applyAgentOverrides } from "./agents/index.js";
 import type { AgentConfig } from "@opencode-ai/sdk";
 import { createCommands } from "./commands/index.js";
 import { createMcpConfig } from "./mcp/index.js";
@@ -202,6 +202,15 @@ export function applyConfig(config: Config, pluginOptions?: PluginOptions): void
   // precedence).
   const ourAgents = createAgents();
   resolveHarnessModels(ourAgents, config, pluginOptions);
+
+  // Apply agent overrides from plugin options (model + prompt customization)
+  const agentOverrides = (pluginOptions as any)?.agents as
+    | Record<string, { model?: string; prompt?: string }>
+    | undefined;
+  if (agentOverrides) {
+    applyAgentOverrides(ourAgents, agentOverrides, process.cwd());
+  }
+
   (config as any).agent = { ...ourAgents, ...((config as any).agent ?? {}) };
 
   // Commands: user-wins

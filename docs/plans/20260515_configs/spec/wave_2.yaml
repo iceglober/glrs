@@ -200,7 +200,7 @@ items:
       this merge: for each agent in the config, override `model`, and if
       `prompt` is set, read the file and replace the agent's prompt. Skipped
       entirely when `config.adapter !== "opencode"`.
-    checked: false
+    checked: true
     files:
       - path: packages/harness-opencode/src/index.ts
         isNew: false
