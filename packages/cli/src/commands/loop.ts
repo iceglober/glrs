@@ -14,9 +14,11 @@
  * GLRS_AUTOPILOT_DEBRIEF=off.
  */
 
-import { command, option, positional, string as stringType, optional, number as numberType, flag } from "cmd-ts";
+import { command, option, positional, string as stringType, optional, number as numberType, flag, oneOf } from "cmd-ts";
 import { runRalphLoop, MAX_ITERATIONS, TIMEOUT_MS } from "@glrs-dev/autopilot";
 import { runDebrief, shouldRunDebrief } from "./debrief.js";
+import { createAdapter, ADAPTER_NAMES, DEFAULT_ADAPTER } from "../adapter-factory.js";
+import { resolveConfig } from "../autopilot/config-reader.js";
 
 export const loopCmd = command({
   name: "loop",
@@ -57,8 +59,14 @@ export const loopCmd = command({
       long: "debrief-only",
       description: "Run the debrief against the most recent log file without re-executing the loop. (Not yet implemented — requires log-directory discovery.)",
     }),
+    adapter: option({
+      long: "adapter",
+      short: "a",
+      type: optional(oneOf(ADAPTER_NAMES as unknown as string[])),
+      description: `Agent adapter to use (default: ${DEFAULT_ADAPTER}). Available: ${ADAPTER_NAMES.join(", ")}`,
+    }),
   },
-  handler: async ({ prompt, maxIterations, timeout, stallTimeout, noDebrief, notify, debriefOnly }) => {
+  handler: async ({ prompt, maxIterations, timeout, stallTimeout, noDebrief, notify, debriefOnly, adapter: adapterName }) => {
     const cwd = process.cwd();
 
     // Pre-loop signal hooks: if SIGINT/SIGTERM arrives before runRalphLoop
@@ -91,9 +99,16 @@ export const loopCmd = command({
     // shut it down inside the loop's own finally block.
     const willDebrief = shouldRunDebrief({ noDebrief, env: process.env as Record<string, string | undefined> });
 
-    // Create the OpenCode adapter for this run
-    const { OpenCodeAdapter } = await import("@glrs-dev/adapter-opencode");
-    const adapter = new OpenCodeAdapter();
+    // Resolve config (before creating adapter)
+    const config = resolveConfig(cwd);
+
+    // CLI flag overrides config
+    if (adapterName) {
+      config.adapter = adapterName as "opencode" | "claude-code-cli";
+    }
+
+    // Create the adapter for this run
+    const adapter = await createAdapter((config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER, config);
 
     const result = await runRalphLoop({
       prompt,
@@ -140,7 +155,7 @@ export const loopCmd = command({
           await loopHandle.adapter.shutdown(loopHandle.handle).catch(() => {});
         }
       } else {
-        const debriefAdapter = new OpenCodeAdapter();
+        const debriefAdapter = await createAdapter((config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER, config);
         const debriefHandle = await debriefAdapter.start({ cwd });
         try {
           await runDebrief({

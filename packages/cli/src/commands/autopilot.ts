@@ -11,12 +11,14 @@
  * This is a thin wrapper: parse args → create SessionRunner → attach CLI renderer → run.
  */
 
-import { command, flag, option, optional, string as stringType, number as numberType } from "cmd-ts";
+import { command, flag, option, optional, string as stringType, number as numberType, oneOf } from "cmd-ts";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { formatElapsed, formatCost, EventStreamReader, deriveState } from "@glrs-dev/autopilot";
 import { SessionRunner } from "@glrs-dev/autopilot";
 import { createCliRenderer } from "../cli-renderer.js";
+import { createAdapter, ADAPTER_NAMES, DEFAULT_ADAPTER } from "../adapter-factory.js";
+import { resolveConfig } from "../autopilot/config-reader.js";
 
 export const autopilotInteractiveCmd = command({
   name: "autopilot",
@@ -63,8 +65,14 @@ export const autopilotInteractiveCmd = command({
       description:
         "Read and pretty-print the current autopilot status from .agent/autopilot-status.json. Exits 0 if found, 1 if not running.",
     }),
+    adapter: option({
+      long: "adapter",
+      short: "a",
+      type: optional(oneOf(ADAPTER_NAMES as unknown as string[])),
+      description: `Agent adapter to use (default: ${DEFAULT_ADAPTER}). Available: ${ADAPTER_NAMES.join(", ")}`,
+    }),
   },
-  handler: async ({ plan, fast, resume, maxIterationsPerPhase, parallel, ship, status }) => {
+  handler: async ({ plan, fast, resume, maxIterationsPerPhase, parallel, ship, status, adapter: adapterName }) => {
     const cwd = process.cwd();
 
     // --status: short-circuit — read and pretty-print the current session state
@@ -192,6 +200,14 @@ export const autopilotInteractiveCmd = command({
       planPath = picked;
     }
 
+    // Resolve config (before enrichment and validation)
+    const config = resolveConfig(cwd, planPath);
+
+    // CLI flag overrides config
+    if (adapterName) {
+      config.adapter = adapterName as "opencode" | "claude-code-cli";
+    }
+
     // Plan structure validation (item 4.5). Fail fast on missing
     // main.md or referenced-but-absent phase files. Errors abort the
     // command immediately; warnings are surfaced so the user can fix
@@ -221,6 +237,7 @@ export const autopilotInteractiveCmd = command({
     }
 
     // Create SessionRunner — thin wrapper around enrichment + execution
+    const adapter = await createAdapter((config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER, config);
     const runner = new SessionRunner({
       planPath: path.resolve(process.cwd(), planPath),
       cwd: process.cwd(),
@@ -229,6 +246,7 @@ export const autopilotInteractiveCmd = command({
       maxIterationsPerPhase,
       parallel,
       ship,
+      adapter,
     });
 
     // Attach CLI renderer — subscribes to events and writes formatted text to stderr

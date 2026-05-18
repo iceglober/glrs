@@ -44,7 +44,7 @@
     - `packages/harness-opencode/src/autopilot/autopilot-config.ts` — add `DEFAULT_AUTOPILOT_CONFIG`
   - verify: `bun test test/autopilot-config.test.ts`
 
-- [ ] 0.5 **Wire into CLI commands.** At the top of the handler (before enrichment, before validation), call `resolveConfig(cwd, planPath)`. Use `config.adapter` to call `createAdapter(config.adapter)` instead of the hardcoded default. Pass the resolved config through to `enrichPlanForFastModel` and `runInteractiveAutopilot`. For now, only log the resolved config at debug level — subsequent waves consume individual fields.
+- [x] 0.5 **Wire into CLI commands.** At the top of the handler (before enrichment, before validation), call `resolveConfig(cwd, planPath)`. Use `config.adapter` to call `createAdapter(config.adapter)` instead of the hardcoded default. Pass the resolved config through to `enrichPlanForFastModel` and `runInteractiveAutopilot`. For now, only log the resolved config at debug level — subsequent waves consume individual fields.
 
   The adapter factory (`packages/cli/src/adapter-factory.ts`) reads `config.models` and `config.adapters.<name>` to construct the adapter with the right options. This replaces the current hardcoded model defaults in the factory.
 
@@ -55,4 +55,7 @@
     - `packages/cli/src/adapter-factory.ts` — accept `AutopilotConfig` and read models + adapter-specific settings from it, replacing hardcoded defaults
     - `packages/autopilot/src/plan-enrichment.ts` — accept `config?: AutopilotConfig` param (unused this wave)
     - `packages/autopilot/src/loop-session.ts` — thread `config` through `LoopSessionOptions`
-  - verify: `bun run build && bun test`
+  - files (NEW):
+    - `packages/cli/src/autopilot/autopilot-config.ts` — copied from harness-opencode
+    - `packages/cli/src/autopilot/config-reader.ts` — copied from harness-opencode
+  - verify: `bun run build && bun test` ✓
