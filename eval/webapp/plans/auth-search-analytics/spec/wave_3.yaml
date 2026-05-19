@@ -36,7 +36,7 @@ items:
 
   - id: "3.2"
     intent: "Create test/analytics.test.ts (bun:test integration suite) covering all three endpoints plus authorization. beforeAll: run migrations, start server on a unique port. beforeEach: TRUNCATE users + posts RESTART IDENTITY CASCADE, register one admin user (then UPDATE users SET role='admin' WHERE id=...) and two regular users, then INSERT 5 posts across the users with explicit created_at timestamps (mix of today, 3 days ago, 10 days ago, etc.). Tests assert: (a) /overview returns correct counts including avg_posts_per_user, (b) /top-authors returns authors ordered by post_count DESC with correct counts, (c) /activity returns daily entries with correct counts and includes zero-activity days, (d) non-admin (regular user) JWT receives 403 from each endpoint, (e) request with no Authorization header receives 401."
-    checked: false
+    checked: true
     files:
       - path: test/analytics.test.ts
         isNew: true
