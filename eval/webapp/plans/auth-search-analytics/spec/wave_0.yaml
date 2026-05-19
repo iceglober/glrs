@@ -58,7 +58,7 @@ items:
 
   - id: "0.3"
     intent: "Create src/routes/auth.ts with POST /register and POST /login endpoints, mount at /api/auth in src/app.ts."
-    checked: false
+    checked: true
     files:
       - path: src/routes/auth.ts
         isNew: true
