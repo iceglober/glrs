@@ -192,3 +192,76 @@ describe("Pagination", () => {
   });
 });
 
+describe("Search", () => {
+  it("search_vector column and GIN index exist in pg_indexes", async () => {
+    const { rows: cols } = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'posts' AND column_name = 'search_vector'`,
+    );
+    expect(cols).toHaveLength(1);
+
+    const { rows: idxs } = await pool.query(
+      `SELECT indexname FROM pg_indexes
+       WHERE tablename = 'posts' AND indexdef ILIKE '%gin%'`,
+    );
+    expect(idxs.length).toBeGreaterThan(0);
+  });
+
+  it("trigger populates search_vector on INSERT", async () => {
+    const res = await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ title: "Banana split recipe", body: "Use fresh bananas daily" }),
+    });
+    const post = await res.json();
+    const { rows } = await pool.query(
+      `SELECT search_vector @@ to_tsquery('english', 'banana') AS matches
+       FROM posts WHERE id = $1`,
+      [post.id],
+    );
+    expect(rows[0].matches).toBe(true);
+  });
+
+  it("trigger updates search_vector on UPDATE", async () => {
+    const createRes = await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ title: "Original title", body: "Original content here" }),
+    });
+    const post = await createRes.json();
+
+    await fetch(`${BASE}/${post.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ body: "Updated content elephant stampede" }),
+    });
+
+    const { rows } = await pool.query(
+      `SELECT search_vector @@ to_tsquery('english', 'elephant') AS matches
+       FROM posts WHERE id = $1`,
+      [post.id],
+    );
+    expect(rows[0].matches).toBe(true);
+  });
+
+  it("GET /api/posts/search?q=<term> returns matching posts with <b> headline", async () => {
+    await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ title: "Learning guide", body: "Study and learn everything here" }),
+    });
+    const res = await fetch(`${BASE}/search?q=learn`);
+    expect(res.status).toBe(200);
+    const rows = await res.json();
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0].headline).toMatch(/<b>/);
+  });
+
+  it("GET /api/posts/search without q returns 400", async () => {
+    const res = await fetch(`${BASE}/search`);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toBe("q is required");
+  });
+});
+
