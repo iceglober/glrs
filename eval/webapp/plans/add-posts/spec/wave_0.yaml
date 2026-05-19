@@ -24,7 +24,7 @@ items:
 
   - id: "0.2"
     intent: "Create an Express router at `src/routes/posts.ts` with five endpoints: GET /api/posts (list all, ordered by created_at DESC), GET /api/posts/:id (404 if not found), POST /api/posts (require title, body, user_id; validate user_id exists; return 201), PUT /api/posts/:id (update title and/or body), DELETE /api/posts/:id (204 on success). Follow the same patterns as src/routes/users.ts."
-    checked: false
+    checked: true
     files:
       - path: src/routes/posts.ts
         isNew: true
