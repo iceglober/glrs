@@ -2,7 +2,8 @@ import { createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from "cr
 import { promisify } from "util";
 
 const scrypt = promisify(scryptCb);
-const AUTH_SECRET = process.env.AUTH_SECRET ?? "dev-secret-change-in-production";
+const SECRET = process.env.JWT_SECRET ?? "dev-secret-change-in-prod";
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -11,39 +12,34 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [salt, hash] = stored.split(":");
-  const candidate = (await scrypt(password, salt, 64)) as Buffer;
-  const storedBuf = Buffer.from(hash, "hex");
-  return candidate.length === storedBuf.length && timingSafeEqual(candidate, storedBuf);
+  const [salt, hashHex] = stored.split(":");
+  const expected = Buffer.from(hashHex, "hex");
+  const derived = (await scrypt(password, salt, 64)) as Buffer;
+  return timingSafeEqual(derived, expected);
+}
+
+function sign(payload: string): string {
+  return createHmac("sha256", SECRET).update(payload).digest("base64url");
 }
 
 export function generateToken(userId: number): string {
-  const payload = { userId, exp: Date.now() + 24 * 60 * 60 * 1000 };
-  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const sig = createHmac("sha256", AUTH_SECRET).update(payloadB64).digest("base64url");
-  return `${payloadB64}.${sig}`;
+  const payload = Buffer.from(
+    JSON.stringify({ userId, exp: Date.now() + TOKEN_TTL_MS }),
+  ).toString("base64url");
+  return `${payload}.${sign(payload)}`;
 }
 
 export function verifyToken(token: string): { userId: number } | null {
-  const dotIdx = token.lastIndexOf(".");
-  if (dotIdx === -1) return null;
-  const payloadB64 = token.slice(0, dotIdx);
-  const sig = token.slice(dotIdx + 1);
-
-  const expectedSig = createHmac("sha256", AUTH_SECRET).update(payloadB64).digest("base64url");
-  const expectedBuf = Buffer.from(expectedSig);
-  const actualBuf = Buffer.from(sig);
-  if (expectedBuf.length !== actualBuf.length || !timingSafeEqual(expectedBuf, actualBuf)) {
-    return null;
-  }
-
-  let payload: { userId: number; exp: number };
+  const dot = token.lastIndexOf(".");
+  if (dot < 0) return null;
+  const payload = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  if (sign(payload) !== sig) return null;
   try {
-    payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString());
+    const { userId, exp } = JSON.parse(Buffer.from(payload, "base64url").toString());
+    if (typeof userId !== "number" || Date.now() > exp) return null;
+    return { userId };
   } catch {
     return null;
   }
-
-  if (payload.exp < Date.now()) return null;
-  return { userId: payload.userId };
 }
