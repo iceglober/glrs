@@ -1,0 +1,101 @@
+items:
+  - id: "3.1"
+    intent: "Create src/routes/analytics.ts with three admin-only reporting endpoints: GET /overview (totals + posts in last 7/30 days + avg posts/user via single CTE query), GET /top-authors?limit=N (JOIN + GROUP BY users/posts, default limit 10, ordered by post_count DESC), GET /activity?days=N (daily new_users/new_posts via generate_series for the last N days, default 30). Apply requireAdmin to all three. Mount at /api/analytics in app.ts."
+    checked: true
+    files:
+      - path: src/routes/analytics.ts
+        isNew: true
+        change: "New router. Import requireAdmin from ../middleware/auth.js and pool from ../db.js. Three handlers: overview uses WITH ... AS CTEs to compute counts in one round trip; top-authors does SELECT u.id, u.name, u.email, COUNT(p.id) AS post_count, MAX(p.created_at) AS latest_post_at FROM users u LEFT JOIN posts p ON p.user_id=u.id GROUP BY u.id ORDER BY post_count DESC LIMIT $1 (parse + clamp limit, default 10); activity uses generate_series(CURRENT_DATE - ($1::int - 1), CURRENT_DATE, '1 day') with LEFT JOINs on users and posts grouped by day."
+      - path: src/app.ts
+        isNew: false
+        change: "Import analyticsRouter from ./routes/analytics.js and add app.use('/api/analytics', analyticsRouter) alongside the other route mounts."
+    tests:
+      - "test/analytics.test.ts"
+    verify: "bun test test/analytics.test.ts"
+    mirror: "src/routes/posts.ts"
+    context: |
+      // src/app.ts (current mounts — add analyticsRouter alongside these)
+      import { usersRouter } from "./routes/users.js";
+      import { postsRouter } from "./routes/posts.js";
+      export const app = express();
+      app.use(express.json());
+      app.use(express.static(join(import.meta.dir, "..", "public")));
+      app.use("/api/users", usersRouter);
+      app.use("/api/posts", postsRouter);
+
+      // existing router pattern (src/routes/posts.ts):
+      import { Router, type Request, type Response } from "express";
+      import { pool } from "../db.js";
+      export const postsRouter = Router();
+      postsRouter.get("/", async (_req: Request, res: Response) => { ... });
+      // requireAdmin comes from src/middleware/auth.ts (wave 1.1)
+    conventions: "ESM imports with .js extension, named export of the Router (e.g. analyticsRouter), typed (Request, Response) handlers, pool.query with $-bound params, attach middleware as the second arg to router.get(path, requireAdmin, handler), validation errors via res.status(400).json({ error: \"...\" }) with lowercase reason."
+    proof: "Hitting GET /api/analytics/overview as admin returns a JSON object with the keys total_users, total_posts, posts_last_7_days, posts_last_30_days, avg_posts_per_user (numbers matching seeded data). GET /api/analytics/top-authors?limit=2 returns an array of length 2 sorted by post_count DESC, each entry having user_id, name, email, post_count, latest_post_at. GET /api/analytics/activity?days=7 returns 7 entries (one per day) with date, new_users, new_posts — including zero-activity days. All three endpoints return 403 for a non-admin authenticated user and 401 for an unauthenticated request."
+    proof_type: "test"
+
+  - id: "3.2"
+    intent: "Create test/analytics.test.ts with integration tests for the three analytics endpoints. Setup: in beforeAll register one user via POST /api/auth/register then UPDATE users SET role='admin' WHERE id=$1 to promote them; in beforeEach truncate tables then re-register the admin + 2 regular users and INSERT 5 posts across the regular users with explicit created_at timestamps spanning the activity window. Tests: (a) overview returns correct counts, (b) top-authors sorted by post_count DESC, (c) activity returns daily rows including zero-activity days, (d) non-admin gets 403 on all three endpoints, (e) missing/invalid bearer token gets 401."
+    checked: false
+    files:
+      - path: test/analytics.test.ts
+        isNew: true
+        change: "New bun:test integration suite. Use unique PORT (e.g. 3460), import { app } from ../src/app.js and { pool } from ../src/db.js, run all migrations in beforeAll (readdirSync + sort, same pattern as users.test.ts), TRUNCATE posts, users, sessions RESTART IDENTITY CASCADE in beforeEach. Helpers: registerUser(name,email,password) -> {user, token}, promoteToAdmin(userId) -> UPDATE users SET role='admin'. Seed posts via direct pool.query INSERT INTO posts (title, body, user_id, created_at) VALUES (...) with timestamps like NOW(), NOW() - INTERVAL '3 days', NOW() - INTERVAL '20 days', etc."
+    tests:
+      - "test/analytics.test.ts"
+    verify: "bun test test/analytics.test.ts"
+    mirror: "test/users.test.ts"
+    context: |
+      // test/users.test.ts harness pattern this file should mirror
+      import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+      import { pool } from "../src/db.js";
+      import { app } from "../src/app.js";
+      import type { Server } from "http";
+
+      const PORT = 3457;
+      let server: Server;
+
+      beforeAll(async () => {
+        // read + run every *.sql in migrations/ in sorted order
+        server = app.listen(PORT);
+        await new Promise<void>((resolve) => server.on("listening", resolve));
+      });
+      afterAll(async () => { server.close(); });
+      beforeEach(async () => {
+        await pool.query("TRUNCATE posts, users RESTART IDENTITY CASCADE");
+      });
+    conventions: "bun:test (describe/it/expect/beforeAll/afterAll/beforeEach), unique PORT per test file to avoid collisions (users=3457, posts=3458, pick a new one like 3460), TRUNCATE ... RESTART IDENTITY CASCADE between tests, fetch() against http://localhost:PORT/api/..., Authorization: Bearer <token> header for protected routes, assert res.status before res.json()."
+    proof: "Running bun test test/analytics.test.ts: all five test cases pass — overview returns numeric totals matching the 3 seeded users and 5 seeded posts with the expected last-7-day / last-30-day buckets, top-authors returns the 2 regular users ordered by post_count DESC with correct latest_post_at, activity for days=30 returns 30 rows (one per day) with the seeded posts/users falling on the right dates and other days reporting 0/0, a request from a regular-user token gets 403, a request with no Authorization header gets 401."
+    proof_type: "test"
+
+  - id: "3.3"
+    intent: "Run the full test suite to confirm no regressions. Update test/users.test.ts and test/posts.test.ts so their existing GET /api/users and GET /api/posts assertions handle the new pagination envelope {data, next_cursor, has_more} introduced in 2.3 instead of bare arrays. Auth tests (test/auth.test.ts) and all other suites must remain green."
+    checked: false
+    files:
+      - path: test/users.test.ts
+        isNew: false
+        change: "In the 'GET /api/users lists users' test, replace `expect(users).toHaveLength(1); expect(users[0].name).toBe('Bob');` with assertions against the envelope: `expect(users.data).toHaveLength(1); expect(users.data[0].name).toBe('Bob'); expect(users.has_more).toBe(false); expect(users.next_cursor).toBeNull();`. Leave all other tests untouched."
+      - path: test/posts.test.ts
+        isNew: false
+        change: "Apply the same envelope-aware fix to any GET /api/posts assertion that currently treats the response as a bare array — extract `.data` for the rows, also assert `has_more` and `next_cursor` shape. Leave single-post GET /api/posts/:id assertions alone (they still return a bare object)."
+    tests:
+      - "test/users.test.ts"
+      - "test/posts.test.ts"
+      - "test/auth.test.ts"
+    verify: "bun test"
+    mirror: "test/users.test.ts"
+    context: |
+      // test/users.test.ts current assertion that breaks under 2.3:
+      it("GET /api/users lists users", async () => {
+        await fetch(BASE, { method: "POST", ... body: JSON.stringify({ name: "Bob", ... }) });
+        const res = await fetch(BASE);
+        expect(res.status).toBe(200);
+        const users = await res.json();
+        expect(users).toHaveLength(1);          // breaks: response is now {data, next_cursor, has_more}
+        expect(users[0].name).toBe("Bob");      // breaks: 'users' is no longer an array
+      });
+
+      // After 2.3 the envelope is:
+      // { data: User[], next_cursor: string | null, has_more: boolean }
+    conventions: "bun:test (describe/it/expect), keep changes surgical — only adjust assertions that touch the bare-array return shape; don't restructure beforeAll/beforeEach or auth setup added in wave 1.3."
+    proof: "Running bun test from the webapp root exits 0 with every test file green: test/users.test.ts, test/posts.test.ts, test/auth.test.ts, test/auth-middleware.test.ts, test/auth-protected.test.ts, test/search.test.ts, test/pagination.test.ts, test/analytics.test.ts all pass with no skipped or failing assertions."
+    proof_type: "test"
