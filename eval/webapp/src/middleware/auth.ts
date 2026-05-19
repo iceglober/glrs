@@ -17,12 +17,12 @@ export async function requireAuth(
 ): Promise<void> {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Authentication required" });
     return;
   }
   const payload = verifyToken(auth.slice(7));
   if (!payload) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Authentication required" });
     return;
   }
   const { rows } = await pool.query(
@@ -30,7 +30,7 @@ export async function requireAuth(
     [payload.userId],
   );
   if (rows.length === 0) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Authentication required" });
     return;
   }
   req.user = { userId: payload.userId, role: rows[0].role as string };
