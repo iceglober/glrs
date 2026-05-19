@@ -74,7 +74,7 @@ items:
 
   - id: "1.3"
     intent: "Update existing test/users.test.ts and test/posts.test.ts to register a user in beforeAll, capture token, and send Authorization: Bearer <token> on all mutation requests. GETs unchanged. All 13 prior tests still pass."
-    checked: false
+    checked: true
     files:
       - path: test/users.test.ts
         isNew: false
