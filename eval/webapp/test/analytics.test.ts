@@ -59,10 +59,14 @@ beforeEach(async () => {
     "INSERT INTO posts (title, body, user_id, created_at) VALUES ($1, $2, $3, NOW() - INTERVAL '15 days')",
     ["Alice Post 3", "Content 3", alice.id],
   );
-  // Bob: 1 post within 30 days but not 7
+  // Bob: 2 posts within 30 days, neither within 7 days
   await pool.query(
     "INSERT INTO posts (title, body, user_id, created_at) VALUES ($1, $2, $3, NOW() - INTERVAL '10 days')",
     ["Bob Post 1", "Content 4", bob.id],
+  );
+  await pool.query(
+    "INSERT INTO posts (title, body, user_id, created_at) VALUES ($1, $2, $3, NOW() - INTERVAL '20 days')",
+    ["Bob Post 2", "Content 5", bob.id],
   );
 });
 
@@ -74,10 +78,10 @@ describe("GET /api/analytics/overview", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.total_users).toBe(3);
-    expect(body.total_posts).toBe(4);
+    expect(body.total_posts).toBe(5);
     expect(body.posts_last_7_days).toBe(2);
-    expect(body.posts_last_30_days).toBe(4);
-    expect(typeof body.avg_posts_per_user).toBe("number");
+    expect(body.posts_last_30_days).toBe(5);
+    expect(body.avg_posts_per_user).toBeCloseTo(5 / 3, 3);
   });
 
   it("returns 401 for unauthenticated request", async () => {
@@ -105,7 +109,7 @@ describe("GET /api/analytics/top-authors", () => {
     expect(body[0].name).toBe("Alice");
     expect(body[0].post_count).toBe(3);
     expect(body[1].name).toBe("Bob");
-    expect(body[1].post_count).toBe(1);
+    expect(body[1].post_count).toBe(2);
     expect(body[0]).toHaveProperty("user_id");
     expect(body[0]).toHaveProperty("email");
     expect(body[0]).toHaveProperty("latest_post_at");

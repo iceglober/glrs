@@ -44,7 +44,7 @@ items:
 
   - id: "3.2"
     intent: "Create test/analytics.test.ts. Setup: register one user and promote it to admin via UPDATE users SET role='admin' WHERE id=... in beforeAll; register 2 regular users; seed 5 posts across the regular users with explicit created_at timestamps via SQL INSERT. Tests: (a) /overview returns correct counts (total_users=3, total_posts=5, posts_last_7_days/posts_last_30_days reflect the inserted timestamps, avg_posts_per_user = 5/3); (b) /top-authors returns the regular users sorted by post_count desc; (c) /activity returns daily breakdown over the requested window including zero-activity days; (d) any analytics endpoint hit by a non-admin token returns 403; (e) any analytics endpoint hit without an Authorization header returns 401."
-    checked: false
+    checked: true
     files:
       - path: test/analytics.test.ts
         isNew: true
