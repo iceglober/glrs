@@ -33,7 +33,7 @@ items:
 
   - id: "0.2"
     intent: "Create src/auth.ts exporting hashPassword (scrypt with random salt, 'salt:hash' format), verifyPassword (parses stored value, recomputes hash), generateToken (HMAC-SHA256-signed base64url payload with userId and exp 24h ahead, secret from AUTH_SECRET env, default 'dev-secret'), and verifyToken (validates signature + expiration, returns {userId} or null)."
-    checked: false
+    checked: true
     files:
       - path: src/auth.ts
         isNew: true

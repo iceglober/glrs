@@ -1,73 +1,61 @@
-import {
-  createHmac,
-  randomBytes,
-  scrypt,
-  timingSafeEqual,
-} from "node:crypto";
+import { scrypt, randomBytes, createHmac, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 
 const scryptAsync = promisify(scrypt);
 
-const SECRET = process.env.AUTH_SECRET ?? "dev-secret";
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
-
-function base64urlEncode(data: Buffer | string): string {
-  const b = typeof data === "string" ? Buffer.from(data) : data;
-  return b.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-
-function base64urlDecode(s: string): Buffer {
-  const padded = s.replace(/-/g, "+").replace(/_/g, "/");
-  return Buffer.from(padded, "base64");
-}
-
 export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16);
+  const salt = randomBytes(16).toString("hex");
   const hash = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${salt.toString("hex")}:${hash.toString("hex")}`;
+  return `${salt}:${hash.toString("hex")}`;
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [saltHex, hashHex] = stored.split(":");
-  const salt = Buffer.from(saltHex, "hex");
-  const expected = Buffer.from(hashHex, "hex");
-  const actual = (await scryptAsync(password, salt, 64)) as Buffer;
-  if (actual.length !== expected.length) return false;
-  return timingSafeEqual(actual, expected);
+  try {
+    const colonIdx = stored.indexOf(":");
+    if (colonIdx === -1) return false;
+    const salt = stored.slice(0, colonIdx);
+    const storedHash = stored.slice(colonIdx + 1);
+    const hash = (await scryptAsync(password, salt, 64)) as Buffer;
+    const storedHashBuf = Buffer.from(storedHash, "hex");
+    if (hash.length !== storedHashBuf.length) return false;
+    return timingSafeEqual(hash, storedHashBuf);
+  } catch {
+    return false;
+  }
+}
+
+function getSecret(): string {
+  return process.env.AUTH_SECRET ?? "dev-secret";
 }
 
 export function generateToken(userId: number): string {
-  const payload = base64urlEncode(
-    JSON.stringify({ userId, exp: Date.now() + TOKEN_TTL_MS }),
-  );
-  const sig = base64urlEncode(
-    createHmac("sha256", SECRET).update(payload).digest(),
-  );
-  return `${payload}.${sig}`;
+  const payload = JSON.stringify({ userId, exp: Date.now() + 24 * 60 * 60 * 1000 });
+  const encodedPayload = Buffer.from(payload).toString("base64url");
+  const sig = createHmac("sha256", getSecret()).update(encodedPayload).digest("base64url");
+  return `${encodedPayload}.${sig}`;
 }
 
 export function verifyToken(token: string): { userId: number } | null {
-  const dot = token.lastIndexOf(".");
-  if (dot === -1) return null;
-  const payload = token.slice(0, dot);
-  const sig = token.slice(dot + 1);
-
-  const expected = createHmac("sha256", SECRET).update(payload).digest();
-  const actual = base64urlDecode(sig);
-  if (
-    actual.length !== expected.length ||
-    !timingSafeEqual(actual, expected)
-  ) {
-    return null;
-  }
-
-  let parsed: { userId: number; exp: number };
   try {
-    parsed = JSON.parse(base64urlDecode(payload).toString());
+    const dotIdx = token.lastIndexOf(".");
+    if (dotIdx === -1) return null;
+    const encodedPayload = token.slice(0, dotIdx);
+    const sig = token.slice(dotIdx + 1);
+    if (!encodedPayload || !sig) return null;
+
+    const expectedSig = createHmac("sha256", getSecret()).update(encodedPayload).digest("base64url");
+    const sigBuf = Buffer.from(sig, "base64url");
+    const expectedSigBuf = Buffer.from(expectedSig, "base64url");
+    if (sigBuf.length !== expectedSigBuf.length || !timingSafeEqual(sigBuf, expectedSigBuf)) {
+      return null;
+    }
+
+    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString());
+    if (typeof payload.exp !== "number" || payload.exp < Date.now()) return null;
+    if (typeof payload.userId !== "number") return null;
+
+    return { userId: payload.userId };
   } catch {
     return null;
   }
-
-  if (Date.now() > parsed.exp) return null;
-  return { userId: parsed.userId };
 }
