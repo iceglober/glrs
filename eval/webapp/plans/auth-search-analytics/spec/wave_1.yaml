@@ -38,7 +38,7 @@ items:
 
   - id: "1.2"
     intent: "Protect mutation endpoints with requireAuth. All POST/PUT/DELETE handlers in users and posts routers require a valid Bearer token; GET handlers remain public. POST /api/posts derives user_id from req.user.userId (no longer accepts user_id in body). DELETE /api/users/:id only succeeds if req.user.userId === :id OR req.user.role === 'admin' (else 403)."
-    checked: false
+    checked: true
     files:
       - path: src/routes/users.ts
         isNew: false
