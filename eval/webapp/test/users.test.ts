@@ -64,9 +64,9 @@ describe("Users API", () => {
     // Bob was registered in beforeEach — no additional POST needed
     const res = await fetch(BASE);
     expect(res.status).toBe(200);
-    const users = await res.json();
-    expect(users).toHaveLength(1);
-    expect(users[0].name).toBe("Bob");
+    const body = await res.json();
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].name).toBe("Bob");
   });
 
   it("GET /api/users/:id returns a specific user", async () => {

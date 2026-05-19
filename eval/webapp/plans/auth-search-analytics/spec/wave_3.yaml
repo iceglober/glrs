@@ -69,7 +69,7 @@ items:
 
   - id: "3.3"
     intent: "Run the full test suite to confirm no regressions. Update test/users.test.ts and test/posts.test.ts so their existing GET /api/users and GET /api/posts assertions handle the new pagination envelope {data, next_cursor, has_more} introduced in 2.3 instead of bare arrays. Auth tests (test/auth.test.ts) and all other suites must remain green."
-    checked: false
+    checked: true
     files:
       - path: test/users.test.ts
         isNew: false

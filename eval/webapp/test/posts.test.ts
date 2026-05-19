@@ -70,9 +70,9 @@ describe("Posts API", () => {
     });
     const res = await fetch(BASE);
     expect(res.status).toBe(200);
-    const posts = await res.json();
-    expect(posts).toHaveLength(1);
-    expect(posts[0].title).toBe("Post 1");
+    const body = await res.json();
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].title).toBe("Post 1");
   });
 
   it("GET /api/posts/:id returns a specific post", async () => {
