@@ -35,7 +35,7 @@ items:
 
   - id: "3.2"
     intent: "Create test/analytics.test.ts with integration tests for the three analytics endpoints. Setup: in beforeAll register one user via POST /api/auth/register then UPDATE users SET role='admin' WHERE id=$1 to promote them; in beforeEach truncate tables then re-register the admin + 2 regular users and INSERT 5 posts across the regular users with explicit created_at timestamps spanning the activity window. Tests: (a) overview returns correct counts, (b) top-authors sorted by post_count DESC, (c) activity returns daily rows including zero-activity days, (d) non-admin gets 403 on all three endpoints, (e) missing/invalid bearer token gets 401."
-    checked: false
+    checked: true
     files:
       - path: test/analytics.test.ts
         isNew: true
