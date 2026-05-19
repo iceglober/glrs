@@ -1,0 +1,92 @@
+items:
+  - id: "0.1"
+    intent: "Add a SQL migration that creates the `posts` table with columns: id SERIAL PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at TIMESTAMPTZ DEFAULT NOW()."
+    checked: true
+    files:
+      - path: migrations/002_create_posts.sql
+        isNew: true
+        change: "New SQL migration that creates the posts table with the specified columns and foreign key on user_id."
+    tests:
+      - "Manually verify via `bun run src/migrate.ts`"
+    verify: "bun run src/migrate.ts"
+    mirror: "migrations/001_create_users.sql"
+    context: |
+      -- migrations/001_create_users.sql
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    conventions: "SQL migration files use CREATE TABLE IF NOT EXISTS, SERIAL PRIMARY KEY, snake_case column names, TIMESTAMPTZ DEFAULT NOW() for created_at. File naming: NNN_action_target.sql."
+    proof: "Running `bun run src/migrate.ts` applies the migration without error and the resulting `posts` table has id (serial PK), title (text not null), body (text not null), user_id (integer not null with FK to users.id ON DELETE CASCADE), and created_at (timestamptz default now())."
+    proof_type: "script"
+
+  - id: "0.2"
+    intent: "Create an Express router at `src/routes/posts.ts` with five endpoints: GET /api/posts (list all, ordered by created_at DESC), GET /api/posts/:id (404 if not found), POST /api/posts (require title, body, user_id; validate user_id exists; return 201), PUT /api/posts/:id (update title and/or body), DELETE /api/posts/:id (204 on success). Follow the same patterns as src/routes/users.ts."
+    checked: false
+    files:
+      - path: src/routes/posts.ts
+        isNew: true
+        change: "New Express Router exporting `postsRouter` with the five CRUD endpoints described in intent."
+    tests:
+      - "test/posts.test.ts"
+    verify: "bun test test/posts.test.ts"
+    mirror: "src/routes/users.ts"
+    context: |
+      // src/routes/users.ts
+      import { Router, type Request, type Response } from "express";
+      import { pool } from "../db.js";
+
+      export const usersRouter = Router();
+
+      // GET /api/users — list all
+      usersRouter.get("/", async (_req, res) => {
+        const { rows } = await pool.query("SELECT * FROM users ORDER BY id");
+        res.json(rows);
+      });
+
+      // POST /api/users — create
+      usersRouter.post("/", async (req, res) => {
+        const { name, email } = req.body;
+        if (!name || !email) {
+          res.status(400).json({ error: "name and email are required" });
+          return;
+        }
+        const { rows } = await pool.query(
+          "INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *",
+          [name, email],
+        );
+        res.status(201).json(rows[0]);
+      });
+    conventions: "ESM imports with `.js` extensions, named export of `Router()` instance, parameterized pool.query with $1/$2 placeholders, 404 with `{ error: \"... not found\" }`, 204 send() for delete, COALESCE pattern for partial updates, bun:test."
+    proof: "Tests in test/posts.test.ts cover: POST creates a post and returns 201 with the row; POST without required fields returns 400; POST with non-existent user_id returns 400 (or 404); GET / returns posts ordered by created_at DESC; GET /:id returns the post or 404; PUT /:id updates title and/or body and returns 200; DELETE /:id returns 204 and the post is gone."
+    proof_type: "test"
+
+  - id: "0.3"
+    intent: "Import the posts router in src/app.ts and mount it at /api/posts, leaving the existing users router unchanged."
+    checked: false
+    files:
+      - path: src/app.ts
+        isNew: false
+        change: "Add `import { postsRouter } from \"./routes/posts.js\";` and `app.use(\"/api/posts\", postsRouter);` alongside the existing users mount."
+    tests:
+      - "test/posts.test.ts"
+    verify: "bun test test/posts.test.ts"
+    mirror: "src/app.ts"
+    context: |
+      // src/app.ts (current)
+      import express from "express";
+      import { join } from "path";
+      import { usersRouter } from "./routes/users.js";
+
+      export const app = express();
+
+      app.use(express.json());
+      app.use(express.static(join(import.meta.dir, "..", "public")));
+
+      // Mount routes
+      app.use("/api/users", usersRouter);
+    conventions: "ESM `.js` import suffix, named import of router, mount via `app.use(\"/api/<resource>\", <resource>Router)` placed in the Mount routes section."
+    proof: "After change, src/app.ts imports postsRouter from ./routes/posts.js and calls app.use(\"/api/posts\", postsRouter); the existing usersRouter mount at /api/users remains intact; bun test test/posts.test.ts passes against the wired-up app."
+    proof_type: "test"
