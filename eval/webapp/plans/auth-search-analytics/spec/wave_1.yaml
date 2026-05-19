@@ -70,7 +70,7 @@ items:
 
   - id: "1.3"
     intent: "Update test/users.test.ts and test/posts.test.ts: in beforeAll/beforeEach register a test user via POST /api/auth/register, capture the returned token, and attach Authorization: Bearer <token> on all mutation (POST/PUT/DELETE) requests. GET requests stay unauthenticated. All 13 existing tests must still pass."
-    checked: false
+    checked: true
     files:
       - path: test/users.test.ts
         isNew: false
