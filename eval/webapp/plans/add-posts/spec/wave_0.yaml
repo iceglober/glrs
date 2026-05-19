@@ -65,7 +65,7 @@ items:
 
   - id: "0.3"
     intent: "Import the posts router in src/app.ts and mount it at /api/posts, leaving the existing users router unchanged."
-    checked: false
+    checked: true
     files:
       - path: src/app.ts
         isNew: false
