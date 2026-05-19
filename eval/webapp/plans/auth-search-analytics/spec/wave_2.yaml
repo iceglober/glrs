@@ -28,7 +28,7 @@ items:
 
   - id: "2.2"
     intent: "Add GET /api/posts/search?q=<query> to the posts router. Uses to_tsquery('english', $1) against posts.search_vector, orders by ts_rank desc, attaches a headline column via ts_headline('english', body, query). Returns [] for no matches and 400 when q is missing."
-    checked: false
+    checked: true
     files:
       - path: src/routes/posts.ts
         isNew: false
