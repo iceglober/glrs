@@ -46,7 +46,7 @@ items:
 
   - id: "1.2"
     intent: "Update public/index.html to add a posts section below the users section. Show a list of posts (title, body, author name) and a form to create a new post (user dropdown, title input, body textarea). Use the same vanilla JS fetch pattern as the existing users UI."
-    checked: false
+    checked: true
     files:
       - path: public/index.html
         isNew: false

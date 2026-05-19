@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Users App</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    th { background: #f5f5f5; }
+    form { display: flex; gap: 0.5rem; margin-top: 1rem; }
+    input, select, textarea { padding: 0.4rem; flex: 1; }
+    button { padding: 0.4rem 1rem; cursor: pointer; }
+    .delete-btn { color: red; cursor: pointer; background: none; border: none; }
+    section { margin-top: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>Users</h1>
+  <table>
+    <thead><tr><th>ID</th><th>Name</th><th>Email</th><th></th></tr></thead>
+    <tbody id="users-body"></tbody>
+  </table>
+  <form id="add-form">
+    <input id="name-input" placeholder="Name" required>
+    <input id="email-input" placeholder="Email" type="email" required>
+    <button type="submit">Add User</button>
+  </form>
+
+  <section>
+    <h1>Posts</h1>
+    <table>
+      <thead><tr><th>Title</th><th>Body</th><th>Author</th><th></th></tr></thead>
+      <tbody id="posts-body"></tbody>
+    </table>
+    <form id="add-post-form">
+      <select id="post-user-select" required></select>
+      <input id="post-title-input" placeholder="Title" required>
+      <textarea id="post-body-input" placeholder="Body" required></textarea>
+      <button type="submit">Add Post</button>
+    </form>
+  </section>
+
+  <script>
+    const tbody = document.getElementById('users-body');
+    const form = document.getElementById('add-form');
+
+    async function loadUsers() {
+      const res = await fetch('/api/users');
+      const users = await res.json();
+      tbody.innerHTML = '';
+      for (const u of users) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${u.id}</td>
+          <td>${u.name}</td>
+          <td>${u.email}</td>
+          <td><button class="delete-btn" data-id="${u.id}">&times;</button></td>
+        `;
+        tr.querySelector('.delete-btn').addEventListener('click', async () => {
+          await fetch('/api/users/' + u.id, { method: 'DELETE' });
+          loadUsers();
+          loadPosts();
+        });
+        tbody.appendChild(tr);
+      }
+      // Refresh user dropdown
+      const select = document.getElementById('post-user-select');
+      select.innerHTML = '<option value="">— select user —</option>';
+      for (const u of users) {
+        const opt = document.createElement('option');
+        opt.value = u.id;
+        opt.textContent = u.name;
+        select.appendChild(opt);
+      }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('name-input').value;
+      const email = document.getElementById('email-input').value;
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email }),
+      });
+      form.reset();
+      loadUsers();
+    });
+
+    const postsTbody = document.getElementById('posts-body');
+    const addPostForm = document.getElementById('add-post-form');
+
+    async function loadPosts() {
+      const res = await fetch('/api/posts');
+      const posts = await res.json();
+      postsTbody.innerHTML = '';
+      for (const p of posts) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${p.title}</td>
+          <td>${p.body}</td>
+          <td>${p.author_name || p.user_id}</td>
+          <td><button class="delete-btn" data-id="${p.id}">&times;</button></td>
+        `;
+        tr.querySelector('.delete-btn').addEventListener('click', async () => {
+          await fetch('/api/posts/' + p.id, { method: 'DELETE' });
+          loadPosts();
+        });
+        postsTbody.appendChild(tr);
+      }
+    }
+
+    addPostForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const user_id = parseInt(document.getElementById('post-user-select').value, 10);
+      const title = document.getElementById('post-title-input').value;
+      const body = document.getElementById('post-body-input').value;
+      await fetch('/api/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id, title, body }),
+      });
+      addPostForm.reset();
+      loadPosts();
+    });
+
+    loadUsers();
+    loadPosts();
+  </script>
+</body>
+</html>
