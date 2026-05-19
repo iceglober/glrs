@@ -1,79 +1,72 @@
 items:
   - id: "1.1"
-    intent: "Create src/middleware/auth.ts exporting requireAuth and requireAdmin; apply requireAuth to all mutating endpoints on users and posts routers; enforce self-or-admin on DELETE /api/users/:id; auto-set posts.user_id from req.user.userId; update test/users.test.ts and test/posts.test.ts to register a user via /api/auth/register and pass Authorization: Bearer <token> on mutations while keeping GETs public."
+    intent: "Add auth middleware (requireAuth, requireAdmin) with Request type augmentation, protect all mutation endpoints on /api/users and /api/posts, drive POST /api/posts user_id from req.user.userId, restrict DELETE /api/users/:id to self or admin, and update existing users/posts tests to register a user in beforeAll and send a Bearer token with every mutation request."
     checked: true
     files:
       - path: src/middleware/auth.ts
         isNew: true
-        change: "New file. Declaration-merge express-serve-static-core's Request to add user?: {userId: number, role: string}. Export requireAuth(req, res, next): parse Authorization header, expect 'Bearer <token>', call verifyToken from ../auth.js; on missing/invalid token respond 401 {error: 'Authentication required'}; on success look up user row to attach req.user = {userId, role} and call next(). Export requireAdmin(req, res, next) that chains requireAuth then checks req.user?.role === 'admin'; otherwise respond 403 {error: 'Admin access required'}."
+        change: "Export `requireAuth` and `requireAdmin` RequestHandler functions. `requireAuth` parses `Authorization: Bearer <token>`, calls `verifyToken` from src/auth.js, returns 401 {error:'Authentication required'} if missing/invalid, otherwise sets `req.user = {userId, role}` (role fetched via SELECT role FROM users WHERE id = userId) and calls next(). `requireAdmin` runs requireAuth then checks `req.user.role === 'admin'`, returns 403 {error:'Admin access required'} otherwise. Add `declare global { namespace Express { interface Request { user?: {userId: number, role: string} } } }` for type augmentation."
       - path: src/routes/users.ts
         isNew: false
-        change: "Import requireAuth from ../middleware/auth.js. Add requireAuth to POST '/', PUT '/:id', DELETE '/:id'. In DELETE handler, before running the query, enforce: if Number(req.params.id) !== req.user!.userId && req.user!.role !== 'admin' -> res.status(403).json({error: 'Forbidden'}) and return. GET '/' and GET '/:id' remain public."
+        change: "Import requireAuth from ../middleware/auth.js. Add requireAuth as middleware on POST /, PUT /:id, DELETE /:id. For DELETE /:id: gate with `if (req.user!.userId !== Number(req.params.id) && req.user!.role !== 'admin') return 403 {error:'Forbidden'}`. GET handlers stay public."
       - path: src/routes/posts.ts
         isNew: false
-        change: "Import requireAuth from ../middleware/auth.js. Add requireAuth to POST '/', PUT '/:id', DELETE '/:id'. In POST '/' handler, drop user_id from req.body and use req.user!.userId in the INSERT instead (INSERT INTO posts (title, body, user_id) VALUES ($1, $2, $3))."
+        change: "Import requireAuth from ../middleware/auth.js. Add requireAuth as middleware on POST /, PUT /:id, DELETE /:id. POST / no longer reads user_id from body; instead reads `req.user!.userId` and inserts that into the user_id column. GET handlers stay public."
       - path: test/users.test.ts
         isNew: false
-        change: "Add AUTH_BASE constant. In beforeAll (or beforeEach after TRUNCATE) POST to /api/auth/register with {name, email, password} to obtain {token, user:{id}}; store as authToken/authUserId. Add 'Authorization: Bearer ${authToken}' header to all POST/PUT/DELETE fetch calls. For the DELETE test, delete the authenticated user (authUserId) so the self-rule allows it. GET requests stay unauthenticated. All previously passing assertions must still pass."
+        change: "Add an `AUTH_BASE` constant and module-level `authToken` / `authUserId`. In beforeEach (after TRUNCATE), POST to /api/auth/register with a fixed user and capture token + id. Add `Authorization: Bearer ${authToken}` header to all POST/PUT/DELETE fetches. GET requests remain unauthenticated. All 13 prior assertions must still pass."
       - path: test/posts.test.ts
         isNew: false
-        change: "Same pattern as test/users.test.ts: register a user in beforeAll/beforeEach, capture token, send it on every POST/PUT/DELETE. Remove user_id from POST /api/posts request bodies (server derives it from the token). GETs remain unauthenticated."
+        change: "Same pattern as users test: register a user in beforeEach, send Bearer token on mutations. Remove `user_id` from POST /api/posts bodies (server derives from token). Keep GET requests unauthenticated. All prior assertions must still pass."
     tests:
       - "test/users.test.ts"
       - "test/posts.test.ts"
     verify: "bun test test/users.test.ts && bun test test/posts.test.ts"
-    mirror: "src/routes/auth.ts"
+    mirror: "src/routes/users.ts"
     context: |
-      // src/routes/users.ts (current — to be modified)
+      // src/auth.ts exports (from wave 0)
+      export function verifyToken(token: string): { userId: number } | null;
+
+      // src/app.ts mounts (existing)
+      app.use("/api/auth", authRouter);
+      app.use("/api/users", usersRouter);
+      app.use("/api/posts", postsRouter);
+
+      // src/routes/users.ts (current shape — POST/PUT/DELETE need protection)
       import { Router, type Request, type Response } from "express";
       import { pool } from "../db.js";
       export const usersRouter = Router();
-
-      usersRouter.get("/", async (req, res) => { /* paginated list */ });
-      usersRouter.get("/:id", async (req, res) => { /* by id */ });
-
-      // POST /api/users — create
-      usersRouter.post("/", async (req: Request, res: Response) => {
+      usersRouter.get("/", async (req, res) => { /* paginated list, public */ });
+      usersRouter.get("/:id", async (req, res) => { /* public */ });
+      usersRouter.post("/", async (req, res) => {
         const { name, email } = req.body;
         if (!name || !email) { res.status(400).json({ error: "name and email are required" }); return; }
         const { rows } = await pool.query("INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *", [name, email]);
         res.status(201).json(rows[0]);
       });
-      // PUT/DELETE follow the same shape — need requireAuth prepended.
-      // DELETE additionally must enforce: Number(req.params.id) === req.user!.userId || req.user!.role === 'admin'.
+      usersRouter.delete("/:id", async (req, res) => { /* needs self-or-admin gate */ });
 
-      // src/routes/posts.ts POST handler (current — to be modified)
-      postsRouter.post("/", async (req: Request, res: Response) => {
-        const { title, body, user_id } = req.body;          // user_id will be removed
-        if (!title || !body || !user_id) { res.status(400).json({ error: "..." }); return; }
-        const { rows } = await pool.query(
-          "INSERT INTO posts (title, body, user_id) VALUES ($1, $2, $3) RETURNING *",
-          [title, body, user_id],
-        );
-        res.status(201).json(rows[0]);
+      // src/routes/posts.ts — POST currently reads user_id from body; replace with req.user!.userId
+      postsRouter.post("/", async (req, res) => {
+        const { title, body, user_id } = req.body;
+        // becomes: const { title, body } = req.body; ... INSERT ... [title, body, req.user!.userId]
       });
 
-      // src/auth.ts (existing, from wave 0) provides:
-      export function verifyToken(token: string): { userId: number } | null;
-
-      // Pattern for the new middleware (declaration-merging Request):
-      declare global {
-        namespace Express {
-          interface Request {
-            user?: { userId: number; role: string };
-          }
-        }
-      }
-      export function requireAuth(req, res, next) { /* parse Bearer, verifyToken, attach req.user, else 401 */ }
-      export function requireAdmin(req, res, next) { requireAuth(req, res, () => { if (req.user?.role !== 'admin') return res.status(403).json({error: 'Admin access required'}); next(); }); }
-
-      // test/users.test.ts (current shape — needs auth wiring)
-      const PORT = 3457;
-      const BASE = `http://localhost:${PORT}/api/users`;
-      // add: const AUTH_BASE = `http://localhost:${PORT}/api/auth`;
-      // add: let authToken: string; let authUserId: number;
-      // beforeAll / beforeEach: TRUNCATE then POST {AUTH_BASE}/register {name,email,password} -> {token, user:{id}}
-      // mutation requests: headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` }
-    conventions: "ESM imports with .js extension on relative paths; named exports; express Router with typed Request/Response from 'express'; middleware signature (req: Request, res: Response, next: NextFunction); declaration-merge Express.Request via a global namespace block in src/middleware/auth.ts; use req.user! non-null assertion only inside requireAuth-guarded handlers; pg pool via parameterized queries; bun:test (describe/it/expect/beforeAll/afterAll/beforeEach); respond with res.status(...).json({...}) then return; do not throw from handlers."
-    proof: "After changes, run `bun test test/users.test.ts && bun test test/posts.test.ts`: all 13 previously passing assertions still pass with auth wiring. Specifically prove (1) POST/PUT/DELETE on /api/users and /api/posts without an Authorization header return 401 {error: 'Authentication required'}; (2) the same requests with a valid Bearer token succeed (201/200/204); (3) GET /api/users, GET /api/users/:id, GET /api/posts, GET /api/posts/:id still respond 200/404 without any auth header; (4) POST /api/posts no longer requires user_id in the body — the inserted row's user_id equals the authenticated user's id; (5) DELETE /api/users/:id where :id !== authenticated userId and the caller is not admin returns 403 {error: 'Forbidden'}, while deleting one's own id returns 204; (6) req.user is typed as {userId: number, role: string} (type-check via tsc passes)."
+      // test/users.test.ts beforeEach pattern to add
+      const AUTH_BASE = `http://localhost:${PORT}/api/auth`;
+      let authToken: string;
+      let authUserId: number;
+      beforeEach(async () => {
+        await pool.query("TRUNCATE posts, users RESTART IDENTITY CASCADE");
+        const res = await fetch(`${AUTH_BASE}/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Bob", email: "bob@example.com", password: "password123" }),
+        });
+        const data = await res.json();
+        authToken = data.token;
+        authUserId = data.user.id;
+      });
+    conventions: "ESM imports with .js extensions; named exports; express RequestHandler signatures use (req: Request, res: Response, next: NextFunction); pool from ../db.js; verifyToken from ../auth.js; JSON error responses {error: string}; declaration-merge Express.Request via `declare global { namespace Express { interface Request { user?: ... } } }` at module top-level; bun:test (describe/it/expect, beforeAll/afterAll/beforeEach); tests TRUNCATE between cases and re-register the auth user because the FK CASCADE invalidates the prior token."
+    proof: "Tests must verify: (1) Unauthenticated POST/PUT/DELETE on /api/users and /api/posts return 401 {error:'Authentication required'}; (2) GET /api/users, GET /api/users/:id, GET /api/posts, GET /api/posts/:id still succeed without a token; (3) With a valid Bearer token, POST/PUT/DELETE succeed as before; (4) POST /api/posts ignores user_id in the body and persists req.user.userId as the post's user_id; (5) DELETE /api/users/:id with a non-matching, non-admin user returns 403 {error:'Forbidden'} and does not delete; same call by the owning user (or by an admin) returns 204; (6) Invalid/expired/tampered tokens return 401; (7) All 13 pre-existing assertions in test/users.test.ts and test/posts.test.ts still pass after adding the auth header to mutation requests."
     proof_type: "test"

@@ -119,6 +119,51 @@ describe("Users API", () => {
     const getRes = await fetch(`${BASE}/${authUserId}`);
     expect(getRes.status).toBe(404);
   });
+
+  it("POST /api/users without auth returns 401 Authentication required", async () => {
+    const res = await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "NoAuth", email: "noauth@example.com" }),
+    });
+    expect(res.status).toBe(401);
+    const data = await res.json();
+    expect(data.error).toBe("Authentication required");
+  });
+
+  it("POST /api/users with invalid token returns 401", async () => {
+    const res = await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer tampered.token" },
+      body: JSON.stringify({ name: "Tampered", email: "tampered@example.com" }),
+    });
+    expect(res.status).toBe(401);
+    const data = await res.json();
+    expect(data.error).toBe("Authentication required");
+  });
+
+  it("DELETE /api/users/:id by non-owner returns 403 Forbidden", async () => {
+    // Register a second user
+    const reg2 = await fetch(`${AUTH_BASE}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Eve", email: "eve@example.com", password: "password123" }),
+    });
+    const { user: user2 } = await reg2.json();
+
+    // authToken belongs to Bob — try to delete Eve's account
+    const delRes = await fetch(`${BASE}/${user2.id}`, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${authToken}` },
+    });
+    expect(delRes.status).toBe(403);
+    const data = await delRes.json();
+    expect(data.error).toBe("Forbidden");
+
+    // Eve's account should still exist
+    const getRes = await fetch(`${BASE}/${user2.id}`);
+    expect(getRes.status).toBe(200);
+  });
 });
 
 describe("Pagination", () => {
