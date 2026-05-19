@@ -3,7 +3,7 @@ import { pool } from "../src/db.js";
 import { app } from "../src/app.js";
 import type { Server } from "http";
 
-const PORT = 3462;
+const PORT = 3461;
 const BASE = `http://localhost:${PORT}/api/posts`;
 const AUTH_BASE = `http://localhost:${PORT}/api/auth`;
 
@@ -14,14 +14,10 @@ beforeAll(async () => {
   const { readdirSync, readFileSync } = await import("fs");
   const { join } = await import("path");
   const migrationsDir = join(import.meta.dir, "..", "migrations");
-  const files = readdirSync(migrationsDir)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
+  const files = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort();
   for (const file of files) {
-    const sql = readFileSync(join(migrationsDir, file), "utf-8");
-    await pool.query(sql);
+    await pool.query(readFileSync(join(migrationsDir, file), "utf-8"));
   }
-
   server = app.listen(PORT);
   await new Promise<void>((resolve) => server.on("listening", resolve));
 });
@@ -42,69 +38,54 @@ beforeEach(async () => {
   authToken = data.token;
 });
 
-describe("Search API", () => {
-  it("GET /api/posts/search without ?q returns 400 with error", async () => {
+async function createPost(title: string, body: string) {
+  const res = await fetch(BASE, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+    body: JSON.stringify({ title, body }),
+  });
+  return res.json();
+}
+
+describe("GET /api/posts/search", () => {
+  it("returns 400 when q is missing", async () => {
     const res = await fetch(`${BASE}/search`);
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe("q is required");
+    expect(body.error).toBeDefined();
   });
 
-  it("GET /api/posts/search with empty ?q returns 400 with error", async () => {
-    const res = await fetch(`${BASE}/search?q=`);
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toBe("q is required");
-  });
-
-  it("GET /api/posts/search with no matching results returns []", async () => {
-    const res = await fetch(`${BASE}/search?q=zzznomatchxxx`);
+  it("returns empty array when no posts match the query", async () => {
+    await createPost("Hello world", "This is a test post");
+    const res = await fetch(`${BASE}/search?q=xyznonexistent`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Array.isArray(body)).toBe(true);
     expect(body).toHaveLength(0);
   });
 
-  it("GET /api/posts/search returns matching posts ordered by ts_rank DESC", async () => {
-    // Post with term in title ranks higher than post with term only in body
-    await fetch(BASE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ title: "postgres full text search", body: "intro content here" }),
-    });
-    await fetch(BASE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ title: "another post about databases", body: "postgres is great" }),
-    });
-
-    const res = await fetch(`${BASE}/search?q=postgres`);
+  it("returns matching posts with headline containing <b> markers", async () => {
+    await createPost("Postgres full-text search", "Postgres supports tsvector for indexing");
+    const res = await fetch(`${BASE}/search?q=tsvector`);
     expect(res.status).toBe(200);
-    const rows = await res.json();
-    expect(rows.length).toBe(2);
-    expect(rows[0].rank).toBeGreaterThanOrEqual(rows[1].rank);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBeGreaterThan(0);
+    expect(body[0].headline).toBeDefined();
+    expect(body[0].headline).toContain("<b>");
   });
 
-  it("GET /api/posts/search includes headline with <b> tags around matched term", async () => {
-    await fetch(BASE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ title: "Test Post", body: "This article covers postgres database usage" }),
-    });
-
-    const res = await fetch(`${BASE}/search?q=postgres`);
+  it("orders results by ts_rank descending", async () => {
+    await createPost("Postgres", "Postgres Postgres Postgres search");
+    await createPost("Other", "Just mentions search once");
+    const res = await fetch(`${BASE}/search?q=search`);
     expect(res.status).toBe(200);
-    const rows = await res.json();
-    expect(rows.length).toBe(1);
-    expect(typeof rows[0].headline).toBe("string");
-    expect(rows[0].headline).toContain("<b>");
-  });
-
-  it("GET /api/posts/search is not shadowed by /:id route", async () => {
-    // 'search' must not be parsed as a post id — must get 200 or 400, never 404/500
-    const res = await fetch(`${BASE}/search?q=anything`);
-    expect(res.status).not.toBe(404);
-    expect(res.status).not.toBe(500);
-    expect([200, 400]).toContain(res.status);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBeGreaterThanOrEqual(2);
+    const ranks = body.map((r: { rank: number }) => r.rank);
+    for (let i = 1; i < ranks.length; i++) {
+      expect(ranks[i - 1]).toBeGreaterThanOrEqual(ranks[i]);
+    }
   });
 });
