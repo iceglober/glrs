@@ -60,7 +60,7 @@ items:
 
   - id: "2.3"
     intent: "Switch GET /api/posts and GET /api/users from a bare array to a cursor-paginated envelope {data, next_cursor, has_more}. Accept ?limit=N (default 10, clamped 1..100) and ?cursor=<base64url JSON>. Posts cursor encodes {id, created_at} and uses keyset (created_at, id) < ($1,$2) ORDER BY created_at DESC, id DESC; users cursor encodes {id} and uses id < $1 ORDER BY id DESC. Fetch limit+1 to detect has_more, drop the extra, emit next_cursor = base64url(JSON(last row's cursor fields)) when has_more else null. Update test/users.test.ts and test/posts.test.ts to unwrap response.body.data wherever the previous bare-array shape was asserted."
-    checked: false
+    checked: true
     files:
       - path: src/routes/posts.ts
         isNew: false
