@@ -58,7 +58,7 @@ items:
     proof_type: "test"
   - id: "3.2"
     intent: "Run the full regression suite via `bun test` and ensure every test file (users, posts, auth, search, pagination, analytics) passes. If any test fails, read the failing test file plus the source it exercises, diagnose the root cause, and fix the underlying source or assertion — do not skip, comment out, or delete failing tests. Wave is complete only when `bun test` exits 0."
-    checked: false
+    checked: true
     files:
       - path: test/users.test.ts
         isNew: false
