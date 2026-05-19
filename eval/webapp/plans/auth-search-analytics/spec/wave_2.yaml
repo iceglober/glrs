@@ -55,7 +55,7 @@ items:
     proof_type: "test"
   - id: "2.2"
     intent: "Add cursor-based pagination to GET /api/posts and GET /api/users. Accept ?limit=N&cursor=<opaque>. Cursor is base64url-encoded JSON ({id, created_at} for posts; {id} for users). Response envelope: {data: [...], next_cursor: string|null, has_more: boolean}. Default limit 10, max 100; without a cursor start from most recent. Update test/users.test.ts and test/posts.test.ts so any assertion that expects a bare array from GET /api/users or GET /api/posts unwraps response.body.data instead. Full `bun test` must pass."
-    checked: false
+    checked: true
     files:
       - path: src/routes/posts.ts
         isNew: false
