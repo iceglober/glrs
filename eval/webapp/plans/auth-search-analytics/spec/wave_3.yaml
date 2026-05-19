@@ -70,7 +70,7 @@ items:
 
   - id: "3.3"
     intent: "Run the full test suite with bun test and ensure every test file passes (users, posts, auth, auth-middleware, auth-protected, search, pagination, analytics). When a test fails, read the failing test and the source under test, identify the underlying mismatch, and fix the code (or fix an incorrect assertion if the test was wrong) — never skip, .skip, or delete tests to make the suite green."
-    checked: false
+    checked: true
     files:
       - path: test/users.test.ts
         isNew: false
