@@ -31,7 +31,7 @@ items:
 
   - id: "2.2"
     intent: "Add GET /api/posts/search?q=<query> to the posts router (registered BEFORE the /:id route to avoid the param swallowing 'search'). Use to_tsquery('english', $1) joined against posts via search_vector @@ query, order by ts_rank DESC, include ts_headline('english', body, query) AS headline on each row. Return [] for no matches and 400 {error: 'q is required'} when q is missing/empty."
-    checked: false
+    checked: true
     files:
       - path: src/routes/posts.ts
         isNew: false
