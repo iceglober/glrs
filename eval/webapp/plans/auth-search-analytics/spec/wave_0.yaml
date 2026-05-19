@@ -35,7 +35,7 @@ items:
 
   - id: "0.2"
     intent: "Create src/auth.ts exporting hashPassword/verifyPassword (scrypt) and generateToken/verifyToken (HMAC-SHA256, 24h expiry, AUTH_SECRET env var)."
-    checked: false
+    checked: true
     files:
       - path: src/auth.ts
         isNew: true
