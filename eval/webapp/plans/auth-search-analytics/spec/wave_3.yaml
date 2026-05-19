@@ -1,26 +1,26 @@
 items:
   - id: "3.1"
-    intent: "Create src/routes/analytics.ts with three admin-only reporting endpoints (overview, top-authors, activity) mounted at /api/analytics, add integration tests in test/analytics.test.ts, and run the full bun test suite to verify all prior tests still pass."
+    intent: "Create src/routes/analytics.ts with three admin-only reporting endpoints (overview, top-authors, activity), mount at /api/analytics in app.ts, write integration tests in test/analytics.test.ts, and verify all test files pass (bun test)"
     checked: true
     files:
       - path: src/routes/analytics.ts
         isNew: true
-        change: "Export `analyticsRouter` (express.Router). All three routes use `requireAdmin` middleware (from ../middleware/auth.js). GET /overview: single CTE-based query returning `{total_users, total_posts, posts_last_7_days, posts_last_30_days, avg_posts_per_user}` (cast counts to int, avg to numeric). GET /top-authors: parse `limit` query (default 10, clamp 1..100); `SELECT u.id AS user_id, u.name, u.email, COUNT(p.id)::int AS post_count, MAX(p.created_at) AS latest_post_at FROM users u LEFT JOIN posts p ON p.user_id = u.id GROUP BY u.id ORDER BY post_count DESC LIMIT $1`. GET /activity: parse `days` query (default 30, clamp 1..365); use `generate_series(CURRENT_DATE - ($1 - 1) * INTERVAL '1 day', CURRENT_DATE, INTERVAL '1 day')` joined with daily counts from users and posts so zero-activity days appear with `{date, new_users:0, new_posts:0}`. Return arrays/objects directly (no envelope)."
+        change: "New Router with GET /api/analytics/overview (CTE-based aggregate), GET /api/analytics/top-authors?limit=N (JOIN + GROUP BY), GET /api/analytics/activity?days=N (generate_series for zero-fill); all routes guarded by requireAdmin"
       - path: src/app.ts
         isNew: false
-        change: "Already imports `analyticsRouter` from ./routes/analytics.js and mounts at /api/analytics — verify the import resolves once src/routes/analytics.ts exists. No edits expected unless the import or mount is missing."
+        change: "Already imports and mounts analyticsRouter at /api/analytics — verify the import path resolves once the file is created"
       - path: test/analytics.test.ts
         isNew: true
-        change: "Mirror harness from test/posts.test.ts: bun:test, PORT 3459 (distinct from 3457/3458), apply all migrations in beforeAll, start server, TRUNCATE users/posts RESTART IDENTITY CASCADE in beforeEach. Register an admin user via POST /api/auth/register, then `UPDATE users SET role='admin' WHERE id=$1` and re-fetch a fresh admin token (login again so the JWT carries role=admin), plus two regular users. Create several posts across the two regular users. Assert: (1) GET /api/analytics/overview with admin token returns the five keys with correct totals (total_users=3, total_posts=N, posts_last_7_days/30_days reflect inserted rows, avg_posts_per_user = total_posts/total_users). (2) GET /api/analytics/top-authors?limit=2 returns array ordered by post_count DESC with user_id/name/email/post_count/latest_post_at fields. (3) GET /api/analytics/activity?days=7 returns 7 entries, each with date/new_users/new_posts; days with no inserts have zeros. (4) Non-admin token returns 403. (5) No Authorization header returns 401."
+        change: "Integration tests: register admin (UPDATE role='admin'), register 2 regular users, create posts; assert overview counts, top-authors sorted DESC, activity daily breakdown, non-admin 403, unauthenticated 401"
       - path: test/users.test.ts
         isNew: false
-        change: "Only modify if a test fails during the final `bun test` run. Diagnose first; prefer fixing the underlying code unless the assertion is wrong."
+        change: "Fix or adjust any assertions broken by schema/middleware changes introduced in earlier waves"
       - path: test/posts.test.ts
         isNew: false
-        change: "Only modify if a test fails during the final `bun test` run. Diagnose first; prefer fixing the underlying code unless the assertion is wrong."
+        change: "Fix or adjust any assertions broken by schema/middleware changes introduced in earlier waves"
       - path: test/auth.test.ts
         isNew: false
-        change: "Only modify if a test fails during the final `bun test` run. Diagnose first; prefer fixing the underlying code unless the assertion is wrong."
+        change: "Fix or adjust any assertions broken by schema/middleware changes introduced in earlier waves"
     tests:
       - "test/analytics.test.ts"
       - "test/users.test.ts"
@@ -29,52 +29,32 @@ items:
     verify: "bun test"
     mirror: "src/routes/posts.ts"
     context: |
-      // src/app.ts — analyticsRouter is already imported and mounted; route file just needs to exist
-      import { analyticsRouter } from "./routes/analytics.js";
-      app.use("/api/analytics", analyticsRouter);
-
-      // src/routes/users.ts — shape to mirror for router + pg pool + auth middleware
+      // src/routes/posts.ts — Router pattern used by all route files
       import { Router, type Request, type Response } from "express";
       import { pool } from "../db.js";
       import { requireAuth } from "../middleware/auth.js";
-      export const usersRouter = Router();
+
+      export const postsRouter = Router();
+
+      postsRouter.post("/", requireAuth, async (req: Request, res: Response) => {
+        const { rows } = await pool.query(
+          "INSERT INTO posts (title, body, user_id) VALUES ($1, $2, $3) RETURNING *",
+          [title, body, req.user!.userId],
+        );
+        res.status(201).json(rows[0]);
+      });
+
+      // src/routes/users.ts — admin role check pattern
       usersRouter.delete("/:id", requireAuth, async (req: Request, res: Response) => {
-        if (req.user!.userId !== Number(req.params.id) && req.user!.role !== "admin") {
+        if (req.user!.userId !== targetId && req.user!.role !== "admin") {
           res.status(403).json({ error: "Forbidden" });
           return;
         }
-        // ...
       });
 
-      // migrations/001_create_users.sql — note: no role column by default; wave 1's auth migration adds it.
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-
-      // migrations/002_create_posts.sql
-      CREATE TABLE IF NOT EXISTS posts (
-        id SERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
-        body TEXT NOT NULL,
-        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-
-      // test/posts.test.ts — harness pattern to mirror in test/analytics.test.ts
-      const PORT = 3458; // pick a fresh port for analytics, e.g. 3459
-      beforeAll(async () => {
-        const files = readdirSync(migrationsDir).filter(f => f.endsWith(".sql")).sort();
-        for (const file of files) await pool.query(readFileSync(join(migrationsDir, file), "utf-8"));
-        server = app.listen(PORT);
-      });
-      beforeEach(async () => {
-        await pool.query("TRUNCATE posts RESTART IDENTITY CASCADE");
-        await pool.query("TRUNCATE users RESTART IDENTITY CASCADE");
-        // register a fresh auth user and capture token
-      });
-    conventions: "ESM imports with .js extensions; named router export (`export const analyticsRouter = Router()`); express Request/Response types; pg pool from ../db.js; auth middleware from ../middleware/auth.js (requireAuth, requireAdmin); JSON error responses `{error: string}`; parameterised SQL via $1/$2 placeholders, cast counts to ::int / dates to ::date for predictable JSON; bun:test (describe/it/expect, beforeAll/afterAll/beforeEach); each test file uses a unique port to allow parallel execution (3457 users, 3458 posts, e.g. 3459 analytics); migrations applied alphabetically in beforeAll from migrations/*.sql via src/migrate.ts and the test harness; tests TRUNCATE ... RESTART IDENTITY CASCADE and re-register users in beforeEach."
-    proof: "Tests must verify: (1) GET /api/analytics/overview with an admin token returns JSON with exactly the keys total_users, total_posts, posts_last_7_days, posts_last_30_days, avg_posts_per_user, and the values match seeded counts (e.g. 3 users + N posts ⇒ total_users=3, total_posts=N, avg_posts_per_user=N/3). (2) GET /api/analytics/top-authors?limit=2 returns an array of length ≤2 sorted by post_count DESC, each element has user_id, name, email, post_count, latest_post_at, and the user with the most posts is first. (3) GET /api/analytics/activity?days=7 returns exactly 7 entries each shaped {date, new_users, new_posts}; a day with no inserts has new_users=0 and new_posts=0 (generate_series fills gaps); date values cover the last 7 days inclusive. (4) A non-admin authenticated request to any analytics endpoint returns 403. (5) An unauthenticated request (no Authorization header) returns 401. (6) Running `bun test` over the entire suite (auth, users, posts, search, pagination, analytics, plus any other pre-existing files) passes with zero failures."
+      // src/app.ts — analytics already mounted
+      import { analyticsRouter } from "./routes/analytics.js";
+      app.use("/api/analytics", analyticsRouter);
+    conventions: "ESM imports with .js extensions on local paths; named Router exports (e.g. `export const analyticsRouter = Router()`); bun:test with describe/it/expect/beforeAll/afterAll/beforeEach; pool.query for all DB access; req.user!.userId and req.user!.role from auth middleware; no default exports"
+    proof: "test/analytics.test.ts must: (1) assert GET /api/analytics/overview returns an object with numeric keys total_users, total_posts, posts_last_7_days, posts_last_30_days, avg_posts_per_user matching seeded data; (2) assert GET /api/analytics/top-authors returns an array sorted by post_count DESC with user_id, name, email, post_count, latest_post_at fields; (3) assert GET /api/analytics/activity?days=7 returns an array of 7 objects each with date, new_users, new_posts (zero-filled days present); (4) assert non-admin token gets 403 on all three endpoints; (5) assert missing token gets 401 on all three endpoints; all other test files must still pass with 0 failures"
     proof_type: "test"
