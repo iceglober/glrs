@@ -65,7 +65,7 @@ items:
 
   - id: "0.3"
     intent: "Create src/routes/auth.ts with POST /api/auth/register (validates password length >= 8, rejects duplicate email with 409, hashes password, inserts user, issues token, returns {user, token} with 201) and POST /api/auth/login (verifies credentials, inserts session row, returns {user, token}, 401 on bad email or password). Mount router at /api/auth in src/app.ts."
-    checked: false
+    checked: true
     files:
       - path: src/routes/auth.ts
         isNew: true
