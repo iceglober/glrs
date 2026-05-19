@@ -1,0 +1,108 @@
+items:
+  - id: "1.1"
+    intent: "Create integration tests for all five posts endpoints. Tests should create a user first (posts need valid user_id), then test POST (create), GET list, GET by id, GET 404 for nonexistent, PUT update, DELETE. Also test that creating a post with nonexistent user_id returns an appropriate error. Use the same patterns as test/users.test.ts — same port style, beforeEach truncation, beforeAll migration."
+    checked: true
+    files:
+      - path: test/posts.test.ts
+        isNew: true
+        change: "New file with integration tests for /api/posts endpoints using bun:test, real Postgres via pool, and app.listen on a dedicated test port."
+    tests:
+      - "test/posts.test.ts"
+    verify: "bun test test/posts.test.ts"
+    mirror: "test/users.test.ts"
+    context: |
+      import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+      import { pool } from "../src/db.js";
+      import { app } from "../src/app.js";
+      import type { Server } from "http";
+
+      const PORT = 3457; // Use a different port for tests
+      const BASE = `http://localhost:${PORT}/api/users`;
+
+      let server: Server;
+
+      beforeAll(async () => {
+        // Run migrations
+        const { readdirSync, readFileSync } = await import("fs");
+        const { join } = await import("path");
+        const migrationsDir = join(import.meta.dir, "..", "migrations");
+        const files = readdirSync(migrationsDir)
+          .filter((f) => f.endsWith(".sql"))
+          .sort();
+        for (const file of files) {
+          const sql = readFileSync(join(migrationsDir, file), "utf-8");
+          await pool.query(sql);
+        }
+        server = app.listen(PORT);
+        await new Promise<void>((resolve) => server.on("listening", resolve));
+      });
+
+      beforeEach(async () => {
+        await pool.query("TRUNCATE users RESTART IDENTITY CASCADE");
+      });
+    conventions: "ESM .js import suffixes, bun:test (describe/it/expect/beforeAll/afterAll/beforeEach), real Postgres via shared pool, dedicated test port, beforeAll runs migrations from migrations/*.sql in sorted order, beforeEach truncates with RESTART IDENTITY CASCADE."
+    proof: "Running `bun test test/posts.test.ts` exits 0 with tests covering: POST /api/posts returns 201 with id and fields; POST with nonexistent user_id returns an error status (400 or 404); GET /api/posts returns a list including a freshly created post; GET /api/posts/:id returns the post; GET /api/posts/999 returns 404; PUT /api/posts/:id updates fields and returns 200; DELETE /api/posts/:id returns 204 and the subsequent GET returns 404. Each test creates its own user first since posts need a valid user_id (CASCADE truncate in beforeEach clears both tables)."
+    proof_type: "test"
+
+  - id: "1.2"
+    intent: "Update public/index.html to add a posts section below the users section. Show a list of posts (title, body, author name) and a form to create a new post (user dropdown, title input, body textarea). Use the same vanilla JS fetch pattern as the existing users UI."
+    checked: false
+    files:
+      - path: public/index.html
+        isNew: false
+        change: "Add a Posts heading, a list/table of posts (rendering title, body, and author name), and a form with a user-select dropdown, title input, and body textarea that POSTs to /api/posts. Reuse the existing inline-style and fetch-then-render pattern."
+    tests:
+      - "Manual visual check"
+    verify: "curl -s http://localhost:3456/ | grep -q \"posts\""
+    mirror: "public/index.html"
+    context: |
+      <h1>Users</h1>
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>Email</th><th></th></tr></thead>
+        <tbody id="users-body"></tbody>
+      </table>
+      <form id="add-form">
+        <input id="name-input" placeholder="Name" required>
+        <input id="email-input" placeholder="Email" type="email" required>
+        <button type="submit">Add User</button>
+      </form>
+
+      <script>
+        const tbody = document.getElementById('users-body');
+        const form = document.getElementById('add-form');
+
+        async function loadUsers() {
+          const res = await fetch('/api/users');
+          const users = await res.json();
+          tbody.innerHTML = '';
+          for (const u of users) { /* render row, wire delete */ }
+        }
+
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          await fetch('/api/users', { method: 'POST', headers: {...}, body: JSON.stringify({ name, email }) });
+          form.reset();
+          loadUsers();
+        });
+
+        loadUsers();
+      </script>
+    conventions: "Single-file inline `<style>` and `<script>`; vanilla JS (no frameworks); fetch with method/headers/body for mutations; reload-list pattern after mutations; getElementById; template-literal innerHTML; event listeners wired after render. Keep all post UI inside the same index.html — no new files."
+    proof: "Visiting http://localhost:3456/ shows a Posts section beneath Users with a list rendering each post's title, body, and author name (joined via user_id), plus a form containing a <select> populated from /api/users, a title text input, and a body textarea. Submitting the form POSTs to /api/posts and the new post appears in the list. `curl -s http://localhost:3456/ | grep -q \"posts\"` exits 0."
+    proof_type: "manual"
+
+  - id: "1.3"
+    intent: "Confirm that existing users tests still pass after introducing the posts migration, router, and frontend changes — the new wiring must not break any prior functionality."
+    checked: false
+    files: []
+    tests:
+      - "test/users.test.ts"
+    verify: "bun test test/users.test.ts"
+    mirror: "test/users.test.ts"
+    context: |
+      // No file changes; regression check that test/users.test.ts still passes
+      // after the posts migration adds a foreign key referencing users(id) and
+      // the new /api/posts router is mounted.
+    conventions: "Run the existing test suite unchanged; do not edit users.test.ts as part of this item."
+    proof: "Running `bun test test/users.test.ts` exits 0 with all existing user tests passing unchanged — POST/GET/GET-by-id/404/PUT/DELETE — after the posts migration and router are in place."
+    proof_type: "test"
