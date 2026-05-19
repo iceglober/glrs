@@ -80,7 +80,7 @@ items:
 
   - id: "3.3"
     intent: "Run the full `bun test` regression. Every test file (users, posts, auth, auth-middleware, auth-protected, search, pagination, analytics) must pass. If any fails, read the test file and source under test, diagnose the root cause, and fix the implementation or the assertion to be correct — never skip, comment out, or delete a failing test."
-    checked: false
+    checked: true
     files:
       - path: test/users.test.ts
         isNew: false
