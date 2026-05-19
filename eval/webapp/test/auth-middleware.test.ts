@@ -1,125 +1,135 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test";
-import express from "express";
+import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import type { Request, Response, NextFunction } from "express";
 import { pool } from "../src/db.js";
-import { generateToken } from "../src/auth.js";
+import { generateToken, hashPassword } from "../src/auth.js";
 import { requireAuth, requireAdmin } from "../src/middleware/auth.js";
-import type { Server } from "http";
 
-const PORT = 3460;
-const BASE = `http://localhost:${PORT}`;
+function mockReq(authHeader?: string): Request {
+  return {
+    headers: authHeader ? { authorization: authHeader } : {},
+  } as unknown as Request;
+}
 
-let server: Server;
-let userToken: string;
-let adminToken: string;
-let userId: number;
+function mockRes() {
+  const r = { _statusCode: 200, _body: undefined as unknown };
+  return Object.assign(r, {
+    status(code: number) { r._statusCode = code; return this as unknown as Response; },
+    json(body: unknown) { r._body = body; return this as unknown as Response; },
+  });
+}
 
-beforeAll(async () => {
-  const { readdirSync, readFileSync } = await import("fs");
-  const { join } = await import("path");
-  const migrationsDir = join(import.meta.dir, "..", "migrations");
-  const files = readdirSync(migrationsDir)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(migrationsDir, file), "utf-8");
-    await pool.query(sql);
-  }
-
-  const testApp = express();
-  testApp.use(express.json());
-
-  testApp.get("/protected", requireAuth, (req, res) => {
-    res.json({ userId: req.user!.userId, role: req.user!.role });
+describe("requireAuth — missing/invalid token", () => {
+  it("returns 401 with {error: 'Authentication required'} when Authorization header is absent", async () => {
+    const req = mockReq();
+    const res = mockRes();
+    let nextCalled = false;
+    await requireAuth(req, res as unknown as Response, (() => { nextCalled = true; }) as NextFunction);
+    expect(res._statusCode).toBe(401);
+    expect(res._body).toEqual({ error: "Authentication required" });
+    expect(nextCalled).toBe(false);
   });
 
-  testApp.get("/admin-only", requireAdmin, (_req, res) => {
-    res.json({ ok: true });
+  it("returns 401 when Authorization header lacks Bearer prefix", async () => {
+    const req = mockReq("Basic sometoken");
+    const res = mockRes();
+    let nextCalled = false;
+    await requireAuth(req, res as unknown as Response, (() => { nextCalled = true; }) as NextFunction);
+    expect(res._statusCode).toBe(401);
+    expect((res._body as { error: string }).error).toBe("Authentication required");
+    expect(nextCalled).toBe(false);
   });
 
-  server = testApp.listen(PORT);
-  await new Promise<void>((resolve) => server.on("listening", resolve));
-});
-
-afterAll(async () => {
-  server.close();
-});
-
-beforeEach(async () => {
-  await pool.query("TRUNCATE posts, users RESTART IDENTITY CASCADE");
-
-  const { rows: [user] } = await pool.query(
-    "INSERT INTO users (name, email, role) VALUES ('User', 'user@test.com', 'user') RETURNING id",
-  );
-  userId = user.id;
-  userToken = generateToken(userId);
-
-  const { rows: [admin] } = await pool.query(
-    "INSERT INTO users (name, email, role) VALUES ('Admin', 'admin@test.com', 'admin') RETURNING id",
-  );
-  const adminId = admin.id;
-  adminToken = generateToken(adminId);
-});
-
-describe("requireAuth middleware", () => {
-  it("returns 401 when Authorization header is missing", async () => {
-    const res = await fetch(`${BASE}/protected`);
-    expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body).toEqual({ error: "Authentication required" });
-  });
-
-  it("returns 401 when Authorization header has no Bearer prefix", async () => {
-    const res = await fetch(`${BASE}/protected`, {
-      headers: { Authorization: "Token abc123" },
-    });
-    expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body).toEqual({ error: "Authentication required" });
-  });
-
-  it("returns 401 when token is invalid", async () => {
-    const res = await fetch(`${BASE}/protected`, {
-      headers: { Authorization: "Bearer not-a-valid-token" },
-    });
-    expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body).toEqual({ error: "Authentication required" });
-  });
-
-  it("sets req.user and calls next with valid token", async () => {
-    const res = await fetch(`${BASE}/protected`, {
-      headers: { Authorization: `Bearer ${userToken}` },
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.userId).toBe(userId);
-    expect(body.role).toBe("user");
+  it("returns 401 when token has invalid signature", async () => {
+    const req = mockReq("Bearer tampered.invalidsig");
+    const res = mockRes();
+    let nextCalled = false;
+    await requireAuth(req, res as unknown as Response, (() => { nextCalled = true; }) as NextFunction);
+    expect(res._statusCode).toBe(401);
+    expect(nextCalled).toBe(false);
   });
 });
 
-describe("requireAdmin middleware", () => {
-  it("returns 403 when user is not admin", async () => {
-    const res = await fetch(`${BASE}/admin-only`, {
-      headers: { Authorization: `Bearer ${userToken}` },
-    });
-    expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body).toEqual({ error: "Admin access required" });
+describe("requireAuth — valid token", () => {
+  let regularUserId: number;
+  let regularToken: string;
+
+  beforeAll(async () => {
+    const { readdirSync, readFileSync } = await import("fs");
+    const { join } = await import("path");
+    const migrationsDir = join(import.meta.dir, "..", "migrations");
+    const files = readdirSync(migrationsDir).filter(f => f.endsWith(".sql")).sort();
+    for (const f of files) {
+      await pool.query(readFileSync(join(migrationsDir, f), "utf-8"));
+    }
+    await pool.query("TRUNCATE sessions, posts, users RESTART IDENTITY CASCADE");
+    const ph = await hashPassword("testpass1");
+    const result = await pool.query(
+      "INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id",
+      ["Regular", "regular@test.com", ph, "user"],
+    );
+    regularUserId = result.rows[0].id;
+    regularToken = generateToken(regularUserId);
   });
 
-  it("calls next when user is admin", async () => {
-    const res = await fetch(`${BASE}/admin-only`, {
-      headers: { Authorization: `Bearer ${adminToken}` },
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toEqual({ ok: true });
+  afterAll(async () => {
+    await pool.query("TRUNCATE sessions, posts, users RESTART IDENTITY CASCADE");
   });
 
-  it("returns 401 when no token is provided", async () => {
-    const res = await fetch(`${BASE}/admin-only`);
-    expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body).toEqual({ error: "Authentication required" });
+  it("calls next and attaches req.user = {userId, role} for a valid token", async () => {
+    const req = mockReq(`Bearer ${regularToken}`);
+    const res = mockRes();
+    let reached = false;
+    await requireAuth(req, res as unknown as Response, (() => { reached = true; }) as NextFunction);
+    expect(reached).toBe(true);
+    expect(req.user).toEqual({ userId: regularUserId, role: "user" });
+  });
+});
+
+describe("requireAdmin", () => {
+  let regularUserId: number;
+  let adminUserId: number;
+  let regularToken: string;
+  let adminToken: string;
+
+  beforeAll(async () => {
+    await pool.query("TRUNCATE sessions, posts, users RESTART IDENTITY CASCADE");
+    const ph = await hashPassword("testpass1");
+
+    const r1 = await pool.query(
+      "INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id",
+      ["Regular2", "regular2@test.com", ph, "user"],
+    );
+    regularUserId = r1.rows[0].id;
+    regularToken = generateToken(regularUserId);
+
+    const r2 = await pool.query(
+      "INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id",
+      ["Admin2", "admin2@test.com", ph, "admin"],
+    );
+    adminUserId = r2.rows[0].id;
+    adminToken = generateToken(adminUserId);
+  });
+
+  afterAll(async () => {
+    await pool.query("TRUNCATE sessions, posts, users RESTART IDENTITY CASCADE");
+  });
+
+  it("returns 403 with {error: 'Admin access required'} when role is 'user'", async () => {
+    const req = mockReq(`Bearer ${regularToken}`);
+    const res = mockRes();
+    let called = false;
+    await requireAdmin(req, res as unknown as Response, (() => { called = true; }) as NextFunction);
+    expect(res._statusCode).toBe(403);
+    expect(res._body).toEqual({ error: "Admin access required" });
+    expect(called).toBe(false);
+  });
+
+  it("calls next when role is 'admin'", async () => {
+    const req = mockReq(`Bearer ${adminToken}`);
+    const res = mockRes();
+    let called = false;
+    await requireAdmin(req, res as unknown as Response, (() => { called = true; }) as NextFunction);
+    expect(called).toBe(true);
+    expect(req.user).toEqual({ userId: adminUserId, role: "admin" });
   });
 });
