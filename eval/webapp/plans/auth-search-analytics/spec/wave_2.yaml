@@ -1,17 +1,17 @@
 items:
   - id: "2.1"
-    intent: "Add migration 004_search.sql: (a) ALTER posts ADD COLUMN search_vector TSVECTOR; (b) CREATE INDEX with USING GIN(search_vector); (c) CREATE OR REPLACE FUNCTION + CREATE TRIGGER that sets NEW.search_vector = to_tsvector('english', NEW.title || ' ' || NEW.body) BEFORE INSERT OR UPDATE; (d) backfill UPDATE posts SET search_vector = to_tsvector('english', title || ' ' || body)."
+    intent: "Add migration that adds search_vector TSVECTOR column to posts, creates a GIN index, creates a trigger function that auto-updates search_vector from title and body using to_tsvector('english', title || ' ' || body) on INSERT/UPDATE, and backfills existing rows."
     checked: true
     files:
       - path: migrations/004_search.sql
         isNew: true
-        change: "New SQL migration. Use IF NOT EXISTS / OR REPLACE so the migration runner can re-run it idempotently (src/migrate.ts replays all .sql files in order on every boot via the test beforeAll loop)."
+        change: "New migration. ALTER TABLE posts ADD COLUMN search_vector TSVECTOR; CREATE INDEX posts_search_vector_idx ON posts USING GIN (search_vector); CREATE OR REPLACE FUNCTION posts_search_vector_update() RETURNS trigger that sets NEW.search_vector = to_tsvector('english', coalesce(NEW.title,'') || ' ' || coalesce(NEW.body,'')); CREATE TRIGGER ... BEFORE INSERT OR UPDATE ON posts; UPDATE posts SET search_vector = to_tsvector('english', title || ' ' || body) to backfill."
     tests:
       - "test/search.test.ts"
     verify: "bun run src/migrate.ts"
     mirror: "migrations/002_create_posts.sql"
     context: |
-      -- migrations/002_create_posts.sql (target table):
+      -- migrations/002_create_posts.sql
       CREATE TABLE IF NOT EXISTS posts (
         id SERIAL PRIMARY KEY,
         title TEXT NOT NULL,
@@ -19,61 +19,60 @@ items:
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
-
-      -- Test runner replays every *.sql file in migrations/ alphabetically
-      -- (see test/posts.test.ts beforeAll), so 004_search.sql must be
-      -- idempotent: ALTER TABLE ... ADD COLUMN IF NOT EXISTS, CREATE INDEX
-      -- IF NOT EXISTS, CREATE OR REPLACE FUNCTION, DROP TRIGGER IF EXISTS
-      -- before CREATE TRIGGER.
-    conventions: "Plain Postgres DDL; one statement per SQL file is fine but multi-statement is also acceptable since pg.Pool.query supports it; prefer IF NOT EXISTS / OR REPLACE guards for replay safety; lowercase identifiers, snake_case columns."
-    proof: "After running `bun run src/migrate.ts`, querying `\\d posts` shows a `search_vector tsvector` column and a GIN index on it; inserting `('Hello', 'World', uid)` results in a row whose search_vector matches `to_tsquery('english', 'hello')`; updating an existing row's title or body refreshes search_vector; pre-existing rows (backfill) are also searchable. Re-running the migration on an already-migrated DB does not error."
+    conventions: "Plain SQL migrations numbered NNN_name.sql, applied in lexicographic order by src/migrate.ts. Use IF NOT EXISTS / CREATE OR REPLACE for idempotency since tests re-run migrations in beforeAll."
+    proof: "Running bun run src/migrate.ts applies the migration without error. After running it, posts table has a search_vector column (verify via information_schema.columns), a GIN index exists on it, the trigger exists, and inserting a row populates search_vector automatically. Existing rows have non-null search_vector after backfill."
     proof_type: "script"
 
   - id: "2.2"
-    intent: "Add GET /api/posts/search?q=<query> to the posts router (registered BEFORE the /:id route to avoid the param swallowing 'search'). Use to_tsquery('english', $1) joined against posts via search_vector @@ query, order by ts_rank DESC, include ts_headline('english', body, query) AS headline on each row. Return [] for no matches and 400 {error: 'q is required'} when q is missing/empty."
-    checked: true
+    intent: "Add GET /api/posts/search?q=<query> to the posts router. Uses to_tsquery('english', q) against search_vector. Returns matching posts ordered by ts_rank descending, each result including a headline field from ts_headline('english', body, query). Returns empty array when no matches, 400 when q missing."
+    checked: false
     files:
       - path: src/routes/posts.ts
         isNew: false
-        change: "Insert a `postsRouter.get('/search', ...)` handler BEFORE `postsRouter.get('/:id', ...)`. Validate `req.query.q`, run the FTS query (SELECT *, ts_rank(search_vector, query) AS rank, ts_headline('english', body, query) AS headline FROM posts, to_tsquery('english', $1) AS query WHERE search_vector @@ query ORDER BY rank DESC), and res.json(rows). Public endpoint — no requireAuth."
+        change: "Add a new route handler postsRouter.get('/search', ...) BEFORE the postsRouter.get('/:id', ...) handler so '/search' doesn't get captured as :id. Handler reads req.query.q, returns 400 if missing, otherwise runs the tsquery search and returns rows (with ts_rank and ts_headline). No auth required."
     tests:
       - "test/search.test.ts"
     verify: "bun test test/search.test.ts"
     mirror: "src/routes/posts.ts"
     context: |
-      // src/routes/posts.ts — current shape of GET handlers:
-      //   postsRouter.get("/", async (req, res) => { /* paginated list */ });
-      //   postsRouter.get("/:id", async (req, res) => { /* by id */ });
-      //
-      // Express matches routes in registration order, so /search MUST be
-      // registered before /:id or 'search' will be parsed as an id and the
-      // SELECT * FROM posts WHERE id = 'search' will fail with invalid input.
-      //
-      // db pattern (from existing handlers):
-      //   const { rows } = await pool.query(SQL, [param]);
-      //   res.json(rows);
-      //
-      // Error shape used elsewhere: res.status(400).json({ error: "..." });
-    conventions: "ESM imports with .js suffix; named exports; express Request/Response types; positional pg parameters ($1, $2); parameterise the user-supplied query string — never interpolate; route order matters for express param routes."
-    proof: "Tests verify: (a) GET /api/posts/search without ?q returns 400 with {error: 'q is required'}; (b) with a query that matches no rows, returns 200 with []; (c) with a query that matches multiple posts, returns rows ordered by ts_rank descending; (d) each result has a `headline` string containing the original term wrapped in the default <b>...</b> ts_headline markers; (e) /search is not shadowed by /:id (status is 200, not 404 'Post not found' or a 500 from invalid integer)."
+      // src/routes/posts.ts (existing pattern in this file)
+      postsRouter.get("/search", async (req: Request, res: Response) => {
+        const q = req.query.q as string | undefined;
+        if (!q) {
+          res.status(400).json({ error: "q is required" });
+          return;
+        }
+        const { rows } = await pool.query(
+          `SELECT *, ts_rank(search_vector, query) AS rank,
+                  ts_headline('english', body, query) AS headline
+           FROM posts, to_tsquery('english', $1) AS query
+           WHERE search_vector @@ query
+           ORDER BY rank DESC`,
+          [q],
+        );
+        res.json(rows);
+      });
+      // NOTE: Must be registered before postsRouter.get("/:id", ...)
+    conventions: "Express Router, ESM imports with .js suffix, async (req: Request, res: Response) handlers, parameterized pool.query with $1 placeholders, res.status().json() for errors. Route order matters: /search must precede /:id."
+    proof: "GET /api/posts/search without q returns 400. GET /api/posts/search?q=word with no matches returns []. GET /api/posts/search?q=word with matches returns an array ordered by ts_rank descending where each item has a headline field containing <b>...</b> markers around matched terms."
     proof_type: "test"
 
   - id: "2.3"
-    intent: "Switch GET /api/posts and GET /api/users from a bare array to a cursor-paginated envelope {data, next_cursor, has_more}. Accept ?limit=N (default 10, clamped 1..100) and ?cursor=<base64url JSON>. Posts cursor encodes {id, created_at} and uses keyset (created_at, id) < ($1,$2) ORDER BY created_at DESC, id DESC; users cursor encodes {id} and uses id < $1 ORDER BY id DESC. Fetch limit+1 to detect has_more, drop the extra, emit next_cursor = base64url(JSON(last row's cursor fields)) when has_more else null. Update test/users.test.ts and test/posts.test.ts to unwrap response.body.data wherever the previous bare-array shape was asserted."
-    checked: true
+    intent: "Convert GET /api/posts and GET /api/users to cursor-based pagination. Accept ?limit=N&cursor=<opaque base64url JSON>. Cursor for posts is {id, created_at}; for users {id}. Response envelope: {data, next_cursor, has_more}. Default limit 10, max 100. Update test/users.test.ts and test/posts.test.ts to unwrap response.body.data anywhere a bare array was expected."
+    checked: false
     files:
       - path: src/routes/posts.ts
         isNew: false
-        change: "Rewrite the `postsRouter.get('/', ...)` handler. Parse limit/cursor from req.query; if cursor present, base64url-decode and JSON.parse into {id:number, created_at:string} — return 400 {error:'invalid cursor'} on parse failure; query with keyset comparison `(created_at, id) < ($1::timestamptz, $2::int) ORDER BY created_at DESC, id DESC LIMIT $3` using limit+1; else fall through to ORDER BY created_at DESC, id DESC LIMIT $1. Compute has_more, slice, build next_cursor, res.json({data, next_cursor, has_more})."
+        change: "GET / handler: parse limit (clamp 1..100, default 10) and cursor (base64url-decoded JSON {id, created_at}). Without cursor: SELECT ... ORDER BY created_at DESC, id DESC LIMIT limit+1. With cursor: SELECT ... WHERE (created_at, id) < ($cursor_created_at, $cursor_id) ORDER BY created_at DESC, id DESC LIMIT limit+1. Compute has_more from rows.length > limit, slice to limit, build next_cursor by base64url-encoding {id, created_at} of last row when has_more. Return {data, next_cursor, has_more}. Return 400 on malformed cursor."
       - path: src/routes/users.ts
         isNew: false
-        change: "Same shape as posts, but cursor is just {id:number} and keyset is `id < $1 ORDER BY id DESC LIMIT $2`. Default limit 10, max 100."
+        change: "GET / handler: same shape as posts but cursor is just {id} and ordering is ORDER BY id DESC."
       - path: test/users.test.ts
         isNew: false
-        change: "Update any assertion that did `expect(Array.isArray(body)).toBe(true)` / `expect(body.length).toBe(N)` / `expect(body[0]...)` for GET /api/users to read `body.data` instead. Add at least one assertion that confirms the envelope shape (`expect(body).toHaveProperty('data')` and `expect(body).toHaveProperty('next_cursor')` and `expect(body).toHaveProperty('has_more')`)."
+        change: "Any assertion that expected a bare array from GET /api/users must read response.body.data instead. Existing length / element index checks must shift to data."
       - path: test/posts.test.ts
         isNew: false
-        change: "Same envelope updates for GET /api/posts. Tests that previously read `posts[0].title` should now read `body.data[0].title`."
+        change: "Same change as users.test.ts but for GET /api/posts."
     tests:
       - "test/pagination.test.ts"
       - "test/users.test.ts"
@@ -81,30 +80,41 @@ items:
     verify: "bun test"
     mirror: "src/routes/posts.ts"
     context: |
-      // Current (pre-pagination) GET /api/posts shape — returns a bare array:
-      //   postsRouter.get("/", async (req, res) => {
-      //     const { rows } = await pool.query("SELECT * FROM posts ORDER BY id DESC");
-      //     res.json(rows);
-      //   });
-      //
-      // Target shape (posts):
-      //   const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 10), 100);
-      //   const cursorParam = req.query.cursor as string | undefined;
-      //   if (cursorParam) {
-      //     const cursor = JSON.parse(Buffer.from(cursorParam, "base64url").toString());
-      //     // keyset query: (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3
-      //   } else {
-      //     // ORDER BY created_at DESC, id DESC LIMIT $1
-      //   }
-      //   const has_more = rows.length > limit;
-      //   if (has_more) rows = rows.slice(0, limit);
-      //   const last = rows[rows.length - 1];
-      //   const next_cursor = has_more && last
-      //     ? Buffer.from(JSON.stringify({id: last.id, created_at: last.created_at})).toString("base64url")
-      //     : null;
-      //   res.json({ data: rows, next_cursor, has_more });
-      //
-      // Users variant uses {id} only (no created_at column on the cursor).
-    conventions: "ESM imports with .js suffix; Buffer.from(s, 'base64url') / .toString('base64url') for cursor encoding; parameterised pg queries; fetch limit+1 sentinel pattern for has_more; clamp limit with Math.min(Math.max(1, n), 100); response envelope keys exactly: data, next_cursor, has_more (snake_case)."
-    proof: "Running `bun test` passes. Specifically: (a) GET /api/posts and GET /api/users return `{data: [...], next_cursor: null|string, has_more: boolean}` — bare-array assertions are gone; (b) with >10 rows seeded, default response has data.length === 10, has_more === true, next_cursor !== null; following next_cursor returns the next page; the final page has has_more === false and next_cursor === null; (c) ?limit=5 returns 5 rows; ?limit=200 is clamped to 100; ?limit=0 is clamped to 1; (d) ?cursor=garbage returns 400 {error:'invalid cursor'}; (e) test/users.test.ts and test/posts.test.ts pass with the new envelope assertions."
+      // src/routes/posts.ts — GET / pagination pattern
+      postsRouter.get("/", async (req: Request, res: Response) => {
+        const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 10), 100);
+        const cursorParam = req.query.cursor as string | undefined;
+        let rows: Record<string, unknown>[];
+        if (cursorParam) {
+          let cursor: { id: number; created_at: string };
+          try {
+            cursor = JSON.parse(Buffer.from(cursorParam, "base64url").toString());
+            if (!cursor.id || !cursor.created_at) throw new Error("invalid");
+          } catch {
+            res.status(400).json({ error: "invalid cursor" });
+            return;
+          }
+          ({ rows } = await pool.query(
+            `SELECT * FROM posts
+             WHERE (created_at, id) < ($1::timestamptz, $2::int)
+             ORDER BY created_at DESC, id DESC
+             LIMIT $3`,
+            [cursor.created_at, cursor.id, limit + 1],
+          ));
+        } else {
+          ({ rows } = await pool.query(
+            "SELECT * FROM posts ORDER BY created_at DESC, id DESC LIMIT $1",
+            [limit + 1],
+          ));
+        }
+        const has_more = rows.length > limit;
+        if (has_more) rows = rows.slice(0, limit);
+        const last = rows[rows.length - 1] as { id: number; created_at: string } | undefined;
+        const next_cursor = has_more && last
+          ? Buffer.from(JSON.stringify({ id: last.id, created_at: last.created_at })).toString("base64url")
+          : null;
+        res.json({ data: rows, next_cursor, has_more });
+      });
+    conventions: "Cursor encoded with Buffer.from(JSON.stringify(...)).toString('base64url') and decoded with Buffer.from(s, 'base64url').toString(). Limit clamped via Math.min(Math.max(1, parseInt(...) || 10), 100). Keyset pagination uses tuple comparison (created_at, id) for posts and plain id for users so ordering is total. Express ESM imports use .js suffix. Tests use bun:test (describe/it/expect/beforeAll/afterAll/beforeEach) and TRUNCATE ... RESTART IDENTITY CASCADE between cases."
+    proof: "GET /api/posts and GET /api/users with no params return {data: [...], next_cursor, has_more} with up to 10 items, most recent first. limit=N respects 1..100 clamp. With more than limit rows, has_more is true and next_cursor is a non-null base64url string. Passing that cursor back returns the next page and eventually has_more becomes false with next_cursor null. Malformed cursor returns 400. All existing tests (test/users.test.ts, test/posts.test.ts) pass after being updated to unwrap response.body.data. bun test (full suite) passes."
     proof_type: "test"
