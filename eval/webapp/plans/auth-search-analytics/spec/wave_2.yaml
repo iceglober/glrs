@@ -60,7 +60,7 @@ items:
 
   - id: "2.3"
     intent: "Replace bare-array responses on GET /api/posts and GET /api/users with cursor pagination. Accept ?limit=N (default 10, max 100) and ?cursor=<base64url JSON {id, created_at}>. Respond with {data, next_cursor, has_more}. With no cursor, start from the most recent (ORDER BY created_at DESC, id DESC)."
-    checked: false
+    checked: true
     files:
       - path: src/routes/posts.ts
         isNew: false

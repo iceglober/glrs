@@ -4,10 +4,40 @@ import { requireAuth } from "../middleware/auth.js";
 
 export const usersRouter = Router();
 
-// GET /api/users — list all
-usersRouter.get("/", async (_req: Request, res: Response) => {
-  const { rows } = await pool.query("SELECT * FROM users ORDER BY id");
-  res.json(rows);
+// GET /api/users — paginated list
+usersRouter.get("/", async (req: Request, res: Response) => {
+  const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 10), 100);
+  const cursorParam = req.query.cursor as string | undefined;
+
+  let rows: Record<string, unknown>[];
+  if (cursorParam) {
+    let cursor: { id: number };
+    try {
+      cursor = JSON.parse(Buffer.from(cursorParam, "base64url").toString());
+      if (!cursor.id) throw new Error("invalid");
+    } catch {
+      res.status(400).json({ error: "invalid cursor" });
+      return;
+    }
+    ({ rows } = await pool.query(
+      "SELECT * FROM users WHERE id < $1 ORDER BY id DESC LIMIT $2",
+      [cursor.id, limit + 1],
+    ));
+  } else {
+    ({ rows } = await pool.query(
+      "SELECT * FROM users ORDER BY id DESC LIMIT $1",
+      [limit + 1],
+    ));
+  }
+
+  const has_more = rows.length > limit;
+  if (has_more) rows = rows.slice(0, limit);
+  const last = rows[rows.length - 1] as { id: number } | undefined;
+  const next_cursor = has_more && last
+    ? Buffer.from(JSON.stringify({ id: last.id })).toString("base64url")
+    : null;
+
+  res.json({ data: rows, next_cursor, has_more });
 });
 
 // GET /api/users/:id — get by id
