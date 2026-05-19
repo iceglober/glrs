@@ -144,3 +144,50 @@ describe("Posts API", () => {
     expect(data.error).toBe("Authentication required");
   });
 });
+
+describe("Pagination", () => {
+  it("GET /api/posts returns {data, next_cursor, has_more} envelope", async () => {
+    const res = await fetch(BASE);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.has_more).toBe(false);
+    expect(body.next_cursor).toBeNull();
+  });
+
+  it("GET /api/posts?limit=2 with 3 posts sets has_more=true and non-null next_cursor", async () => {
+    for (let i = 1; i <= 3; i++) {
+      await fetch(BASE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ title: `Post ${i}`, body: `Body ${i}` }),
+      });
+    }
+    const res = await fetch(`${BASE}?limit=2`);
+    const body = await res.json();
+    expect(body.data).toHaveLength(2);
+    expect(body.has_more).toBe(true);
+    expect(typeof body.next_cursor).toBe("string");
+  });
+
+  it("GET /api/posts cursor traversal covers all pages", async () => {
+    for (let i = 1; i <= 3; i++) {
+      await fetch(BASE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ title: `Post ${i}`, body: `Body ${i}` }),
+      });
+    }
+    const p1 = await (await fetch(`${BASE}?limit=2`)).json();
+    expect(p1.has_more).toBe(true);
+    const p2 = await (await fetch(`${BASE}?limit=2&cursor=${p1.next_cursor}`)).json();
+    expect(p2.data).toHaveLength(1);
+    expect(p2.has_more).toBe(false);
+    expect(p2.next_cursor).toBeNull();
+  });
+
+  it("GET /api/posts with malformed cursor returns 400", async () => {
+    const res = await fetch(`${BASE}?cursor=malformed`);
+    expect(res.status).toBe(400);
+  });
+});

@@ -120,3 +120,47 @@ describe("Users API", () => {
     expect(getRes.status).toBe(404);
   });
 });
+
+describe("Pagination", () => {
+  it("GET /api/users returns {data, next_cursor, has_more} envelope with one existing user", async () => {
+    const res = await fetch(BASE);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data).toHaveLength(1);
+    expect(body.has_more).toBe(false);
+    expect(body.next_cursor).toBeNull();
+  });
+
+  it("GET /api/users?limit=1 with 2 users sets has_more=true and non-null next_cursor", async () => {
+    await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ name: "Carol", email: "carol@example.com" }),
+    });
+    const res = await fetch(`${BASE}?limit=1`);
+    const body = await res.json();
+    expect(body.data).toHaveLength(1);
+    expect(body.has_more).toBe(true);
+    expect(typeof body.next_cursor).toBe("string");
+  });
+
+  it("GET /api/users cursor traversal covers all pages", async () => {
+    await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ name: "Carol", email: "carol@example.com" }),
+    });
+    const p1 = await (await fetch(`${BASE}?limit=1`)).json();
+    expect(p1.has_more).toBe(true);
+    const p2 = await (await fetch(`${BASE}?limit=1&cursor=${p1.next_cursor}`)).json();
+    expect(p2.data).toHaveLength(1);
+    expect(p2.has_more).toBe(false);
+    expect(p2.next_cursor).toBeNull();
+  });
+
+  it("GET /api/users with malformed cursor returns 400", async () => {
+    const res = await fetch(`${BASE}?cursor=malformed`);
+    expect(res.status).toBe(400);
+  });
+});

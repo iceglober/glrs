@@ -59,7 +59,7 @@ items:
 
   - id: "2.3"
     intent: "Convert GET /api/posts and GET /api/users to cursor-based pagination. Accept ?limit=N&cursor=<opaque base64url JSON>. Cursor for posts is {id, created_at}; for users {id}. Response envelope: {data, next_cursor, has_more}. Default limit 10, max 100. Update test/users.test.ts and test/posts.test.ts to unwrap response.body.data anywhere a bare array was expected."
-    checked: false
+    checked: true
     files:
       - path: src/routes/posts.ts
         isNew: false
