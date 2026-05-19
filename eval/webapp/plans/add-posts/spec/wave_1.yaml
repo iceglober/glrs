@@ -93,7 +93,7 @@ items:
 
   - id: "1.3"
     intent: "Confirm that existing users tests still pass after introducing the posts migration, router, and frontend changes — the new wiring must not break any prior functionality."
-    checked: false
+    checked: true
     files: []
     tests:
       - "test/users.test.ts"
