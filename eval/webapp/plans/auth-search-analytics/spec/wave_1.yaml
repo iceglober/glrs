@@ -30,7 +30,7 @@ items:
 
   - id: "1.2"
     intent: "Apply requireAuth to all POST/PUT/DELETE endpoints on users and posts routers. GET endpoints stay public. POST /api/posts: drop user_id from request body and use req.user.userId as the inserted user_id. DELETE /api/users/:id: only allow if req.user.userId === Number(req.params.id) OR req.user.role === 'admin' (else 403)."
-    checked: false
+    checked: true
     files:
       - path: src/routes/users.ts
         isNew: false
