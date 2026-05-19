@@ -10,36 +10,29 @@ declare global {
   }
 }
 
-export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Authentication required" });
+export async function requireAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized" });
     return;
   }
-
-  const token = authHeader.slice(7);
-  const payload = verifyToken(token);
+  const payload = verifyToken(auth.slice(7));
   if (!payload) {
-    res.status(401).json({ error: "Authentication required" });
+    res.status(401).json({ error: "Unauthorized" });
     return;
   }
-
-  const { rows } = await pool.query("SELECT role FROM users WHERE id = $1", [payload.userId]);
+  const { rows } = await pool.query(
+    "SELECT role FROM users WHERE id = $1",
+    [payload.userId],
+  );
   if (rows.length === 0) {
-    res.status(401).json({ error: "Authentication required" });
+    res.status(401).json({ error: "Unauthorized" });
     return;
   }
-
-  req.user = { userId: payload.userId, role: rows[0].role };
+  req.user = { userId: payload.userId, role: rows[0].role as string };
   next();
-}
-
-export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
-  await requireAuth(req, res, async () => {
-    if (req.user?.role !== "admin") {
-      res.status(403).json({ error: "Admin access required" });
-      return;
-    }
-    next();
-  });
 }

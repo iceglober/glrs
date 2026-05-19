@@ -4,8 +4,14 @@ import { hashPassword, verifyPassword, generateToken } from "../auth.js";
 
 export const authRouter = Router();
 
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+
 authRouter.post("/register", async (req: Request, res: Response) => {
-  const { name, email, password } = req.body;
+  const { name, email, password } = req.body as {
+    name?: string;
+    email?: string;
+    password?: string;
+  };
   if (!name || !email || !password) {
     res.status(400).json({ error: "name, email, and password are required" });
     return;
@@ -14,65 +20,59 @@ authRouter.post("/register", async (req: Request, res: Response) => {
     res.status(400).json({ error: "password must be at least 8 characters" });
     return;
   }
-
   const password_hash = await hashPassword(password);
-
-  let user: Record<string, unknown>;
+  let userRow: Record<string, unknown>;
   try {
     const { rows } = await pool.query(
       "INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email, role",
       [name, email, password_hash],
     );
-    user = rows[0];
+    userRow = rows[0];
   } catch (err: unknown) {
     if ((err as { code?: string }).code === "23505") {
-      res.status(409).json({ error: "email already in use" });
+      res.status(409).json({ error: "Email already registered" });
       return;
     }
     throw err;
   }
-
-  const token = generateToken(user.id as number);
-  const expires_at = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const token = generateToken(userRow.id as number);
   await pool.query(
     "INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, $3)",
-    [user.id, token, expires_at],
+    [userRow.id, token, new Date(Date.now() + TOKEN_TTL_MS)],
   );
-
-  res.status(201).json({ user, token });
+  res.status(201).json({ user: userRow, token });
 });
 
 authRouter.post("/login", async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body as { email?: string; password?: string };
   if (!email || !password) {
     res.status(400).json({ error: "email and password are required" });
     return;
   }
-
   const { rows } = await pool.query(
     "SELECT id, name, email, role, password_hash FROM users WHERE email = $1",
     [email],
   );
-
-  if (rows.length === 0) {
-    res.status(401).json({ error: "invalid email or password" });
+  if (rows.length === 0 || !rows[0].password_hash) {
+    res.status(401).json({ error: "Invalid credentials" });
     return;
   }
-
-  const row = rows[0];
-  const valid = await verifyPassword(password, row.password_hash);
-  if (!valid) {
-    res.status(401).json({ error: "invalid email or password" });
+  const user = rows[0] as {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    password_hash: string;
+  };
+  if (!(await verifyPassword(password, user.password_hash))) {
+    res.status(401).json({ error: "Invalid credentials" });
     return;
   }
-
-  const token = generateToken(row.id);
-  const expires_at = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const token = generateToken(user.id);
   await pool.query(
     "INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, $3)",
-    [row.id, token, expires_at],
+    [user.id, token, new Date(Date.now() + TOKEN_TTL_MS)],
   );
-
-  const { password_hash: _omit, ...user } = row;
-  res.json({ user, token });
+  const { password_hash: _ph, ...userWithoutHash } = user;
+  res.json({ user: userWithoutHash, token });
 });

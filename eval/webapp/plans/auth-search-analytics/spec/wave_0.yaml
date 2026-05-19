@@ -1,17 +1,45 @@
 items:
   - id: "0.1"
-    intent: "Add migration 003_auth.sql adding password_hash and role columns to users (with CHECK constraint) and creating sessions table referencing users(id) ON DELETE CASCADE."
+    intent: "Implement the full auth foundation: migrations for password_hash/role columns and sessions table, src/auth.ts with scrypt hashing and HMAC-SHA256 token utilities, and POST /api/auth/register + /api/auth/login routes mounted at /api/auth."
     checked: true
     files:
       - path: migrations/003_auth.sql
         isNew: true
-        change: "New SQL migration: ALTER TABLE users ADD COLUMN password_hash TEXT and role TEXT DEFAULT 'user' CHECK (role IN ('user','admin')); CREATE TABLE sessions (id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, token TEXT UNIQUE NOT NULL, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())."
+        change: "ALTER users ADD COLUMN password_hash TEXT, ADD COLUMN role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin')); CREATE TABLE sessions (id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, token TEXT UNIQUE NOT NULL, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())."
+      - path: src/auth.ts
+        isNew: true
+        change: "Export hashPassword(password) using crypto.scrypt with random salt returning 'salt:hash'; verifyPassword(password, stored) splitting and verifying with timingSafeEqual; generateToken(userId) producing base64url-encoded payload.signature where payload={userId, exp: now+24h} and signature is HMAC-SHA256 using process.env.AUTH_SECRET (default 'dev-secret'); verifyToken(token) validating signature + expiration, returning {userId} or null."
+      - path: src/routes/auth.ts
+        isNew: true
+        change: "Export authRouter (express Router). POST /register: validate {name, email, password} (password >= 8 chars else 400), hash password, INSERT INTO users (name, email, password_hash) RETURNING id/name/email/role, generate token, INSERT INTO sessions, return 201 {user, token}; duplicate email -> 409. POST /login: SELECT user by email, verifyPassword, on success generate token + INSERT INTO sessions, return {user, token}; on failure return 401."
+      - path: src/app.ts
+        isNew: false
+        change: "Import authRouter from ./routes/auth.js and mount it with app.use('/api/auth', authRouter)."
     tests:
       - "test/auth.test.ts"
-    verify: "bun run src/migrate.ts"
-    mirror: "migrations/002_create_posts.sql"
+    verify: "bun run src/migrate.ts && bun test test/auth.test.ts"
+    mirror: "src/routes/users.ts"
     context: |
-      -- migrations/001_create_users.sql
+      // src/app.ts (existing)
+      import express from "express";
+      import { join } from "path";
+      import { usersRouter } from "./routes/users.js";
+      import { postsRouter } from "./routes/posts.js";
+      // need to add: import { authRouter } from "./routes/auth.js";
+      export const app = express();
+      app.use(express.json());
+      app.use(express.static(join(import.meta.dir, "..", "public")));
+      app.use("/api/users", usersRouter);
+      app.use("/api/posts", postsRouter);
+      // need to add: app.use("/api/auth", authRouter);
+
+      // src/db.ts — pool export already exists
+      import pg from "pg";
+      const { Pool } = pg;
+      const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://eval:eval@localhost:5433/evaldb";
+      export const pool = new Pool({ connectionString: DATABASE_URL });
+
+      // migrations/001_create_users.sql (existing schema being altered)
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
@@ -19,85 +47,16 @@ items:
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
 
-      -- migrations/002_create_posts.sql
-      CREATE TABLE IF NOT EXISTS posts (
-        id SERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
-        body TEXT NOT NULL,
-        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    conventions: "SQL migrations are plain .sql files in migrations/, numbered with 3-digit prefix (001_, 002_, 003_), executed in lexicographic order by src/migrate.ts via pool.query. Use IF NOT EXISTS / ADD COLUMN IF NOT EXISTS for idempotency since the migrate script re-runs all files. SERIAL PRIMARY KEY, TIMESTAMPTZ DEFAULT NOW(), REFERENCES ... ON DELETE CASCADE are existing patterns."
-    proof: "Running `bun run src/migrate.ts` succeeds with no errors. After migration, the users table has password_hash (TEXT, nullable) and role (TEXT, default 'user', CHECK constraint allowing only 'user'/'admin') columns, and a sessions table exists with id (serial PK), user_id (FK to users.id, ON DELETE CASCADE), token (TEXT UNIQUE NOT NULL), expires_at (TIMESTAMPTZ NOT NULL), created_at (TIMESTAMPTZ default NOW()). Re-running the migration is idempotent."
-    proof_type: "script"
-
-  - id: "0.2"
-    intent: "Create src/auth.ts exporting hashPassword (scrypt with random salt, 'salt:hash' format), verifyPassword (parses stored value, recomputes hash), generateToken (HMAC-SHA256-signed base64url payload with userId and exp 24h ahead, secret from AUTH_SECRET env, default 'dev-secret'), and verifyToken (validates signature + expiration, returns {userId} or null)."
-    checked: true
-    files:
-      - path: src/auth.ts
-        isNew: true
-        change: "New module exporting hashPassword(password): Promise<string>, verifyPassword(password, stored): Promise<boolean>, generateToken(userId): string, verifyToken(token): {userId: number} | null. Uses node:crypto (scrypt, randomBytes, createHmac, timingSafeEqual)."
-    tests:
-      - "test/auth.test.ts"
-    verify: "bun test test/auth.test.ts"
-    mirror: "src/db.ts"
-    context: |
-      // src/db.ts — module export pattern
-      import pg from "pg";
-      const { Pool } = pg;
-      const DATABASE_URL =
-        process.env.DATABASE_URL ??
-        "postgresql://eval:eval@localhost:5433/evaldb";
-      export const pool = new Pool({ connectionString: DATABASE_URL });
-
-      // Expected shape for src/auth.ts:
-      // import { scrypt, randomBytes, createHmac, timingSafeEqual } from "node:crypto";
-      // import { promisify } from "node:util";
-      // const scryptAsync = promisify(scrypt);
-      // export async function hashPassword(password: string): Promise<string> { ... }
-      // export async function verifyPassword(password: string, stored: string): Promise<boolean> { ... }
-      // export function generateToken(userId: number): string { ... }
-      // export function verifyToken(token: string): { userId: number } | null { ... }
-    conventions: "ESM with .js suffix on relative imports (tsconfig nodenext), named exports, env vars read with `process.env.X ?? 'default'`. Use node:crypto for primitives. Token format: base64url(JSON payload) + '.' + base64url(HMAC). Use timingSafeEqual for signature/hash comparisons to avoid timing attacks."
-    proof: "Tests verify (a) hashPassword returns a string in 'salt:hash' format with a non-empty random salt, and two calls with the same password yield different stored values; (b) verifyPassword returns true for the original password against its stored hash and false for any other password; (c) generateToken returns a string that verifyToken decodes back to {userId}; (d) verifyToken returns null for a tampered signature, an expired token, or malformed input; (e) AUTH_SECRET env override produces tokens that fail verification under the default secret."
-    proof_type: "test"
-
-  - id: "0.3"
-    intent: "Create src/routes/auth.ts with POST /api/auth/register (validates password length >= 8, rejects duplicate email with 409, hashes password, inserts user, issues token, returns {user, token} with 201) and POST /api/auth/login (verifies credentials, inserts session row, returns {user, token}, 401 on bad email or password). Mount router at /api/auth in src/app.ts."
-    checked: true
-    files:
-      - path: src/routes/auth.ts
-        isNew: true
-        change: "New Express router exporting `authRouter`. POST /register: validates body has name/email/password and password.length >= 8 (400), hashes password via hashPassword, INSERTs into users (name, email, password_hash) RETURNING id/name/email/role, catches Postgres unique_violation (23505) and returns 409, generates token, INSERTs into sessions, returns 201 with {user, token}. POST /login: SELECTs user by email, returns 401 if not found, verifyPassword check returns 401 on mismatch, generates token, INSERTs session, returns {user: {id,name,email,role}, token}."
-      - path: src/app.ts
-        isNew: false
-        change: "Already imports authRouter from './routes/auth.js' and mounts at /api/auth — verify the import resolves once src/routes/auth.ts exists."
-    tests:
-      - "test/auth.test.ts"
-    verify: "bun test test/auth.test.ts"
-    mirror: "src/routes/users.ts"
-    context: |
-      // src/app.ts (already wired)
-      import { authRouter } from "./routes/auth.js";
-      app.use("/api/auth", authRouter);
-
-      // src/routes/users.ts — Router + pool query pattern
+      // src/routes/users.ts pattern to mirror for routes/auth.ts:
       import { Router, type Request, type Response } from "express";
       import { pool } from "../db.js";
       export const usersRouter = Router();
-      usersRouter.post("/", requireAuth, async (req, res) => {
+      usersRouter.post("/", async (req: Request, res: Response) => {
         const { name, email } = req.body;
-        if (!name || !email) {
-          res.status(400).json({ error: "name and email are required" });
-          return;
-        }
-        const { rows } = await pool.query(
-          "INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *",
-          [name, email],
-        );
+        if (!name || !email) { res.status(400).json({ error: "..." }); return; }
+        const { rows } = await pool.query("INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *", [name, email]);
         res.status(201).json(rows[0]);
       });
-    conventions: "Express Router with named export (e.g. `export const authRouter = Router()`), async (req: Request, res: Response) handlers, parameterized SQL via pool.query with $1/$2 placeholders, JSON error responses `{ error: '...' }`, return early after res.status().json(). Relative imports end in .js. Use a 24-hour expires_at TIMESTAMPTZ for sessions (matches generateToken's 24h exp)."
-    proof: "Tests verify: (a) POST /api/auth/register with valid {name,email,password>=8} returns 201 with body {user:{id,name,email,role:'user'}, token:string}; password_hash is not exposed in the response; (b) duplicate email returns 409; (c) password shorter than 8 characters returns 400; (d) missing fields return 400; (e) POST /api/auth/login with correct credentials returns 200 with {user, token} and inserts a row into sessions; (f) login with unknown email or wrong password returns 401; (g) the returned token round-trips through verifyToken to yield the new user's id."
+    conventions: "ESM imports with .js extension on relative paths; named exports (export const fooRouter = Router()); express Router with typed Request/Response; pg pool from ../db.js using parameterized queries; bun:test for tests; migrations are idempotent CREATE TABLE IF NOT EXISTS / use ALTER TABLE ... IF NOT EXISTS-style guards when modifying; respond with res.status(...).json({...}) then return."
+    proof: "auth.test.ts must cover: (1) POST /api/auth/register with {name, email, password} returns 201 with {user: {id, name, email, role}, token} and the user.role defaults to 'user'; (2) registering the same email twice returns 409; (3) registering with password shorter than 8 chars returns 400; (4) POST /api/auth/login with correct credentials returns 200 with {user, token}; (5) login with wrong password returns 401; (6) login with unknown email returns 401; (7) the token returned by register/login is a valid base64url string that verifyToken() resolves to {userId}; (8) sessions row is inserted with the returned token. Run `bun run src/migrate.ts && bun test test/auth.test.ts` — migrations apply cleanly and all assertions pass."
     proof_type: "test"
