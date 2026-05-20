@@ -1,7 +1,7 @@
 items:
   - id: "2.1"
     intent: "Implement full-text search (migration with TSVECTOR + GIN index + trigger + backfill), search endpoint (GET /api/posts/search?q=), and cursor-based pagination on GET /api/posts and GET /api/users with envelope format {data, next_cursor, has_more}. Update existing tests to use new envelope format."
-    checked: true
+    checked: false
     files:
       - path: migrations/004_search.sql
         isNew: true

@@ -84,7 +84,13 @@ function savePlanSnapshot(iteration: number) {
   }
 }
 
-async function createAdapter(enrichModel = "claude-opus-4-7", executeModel = "claude-sonnet-4-6") {
+async function createAdapter(adapterType: "claude-code-cli" | "opencode", enrichModel = "claude-opus-4-7", executeModel = "claude-sonnet-4-6") {
+  if (adapterType === "opencode") {
+    const { OpenCodeAdapter } = await import(
+      "../../../packages/adapter-opencode/src/opencode-adapter-class.js"
+    );
+    return new OpenCodeAdapter();
+  }
   const { ClaudeCodeCliAdapter } = await import(
     "../../../packages/adapter-claude-code/src/claude-code-adapter.js"
   );
@@ -171,20 +177,30 @@ async function resetWebapp() {
   await $`cd ${WEBAPP_DIR} && DATABASE_URL=${DB_URL} bun run src/migrate.ts`.quiet();
 }
 
-async function runAndScore(iteration: number, opts?: { configOverrides?: Record<string, unknown>; enrichModel?: string; executeModel?: string }): Promise<IterationResult & { checks: Array<{ name: string; passed: boolean; detail?: string }> }> {
+async function runAndScore(iteration: number, opts?: { configOverrides?: Record<string, unknown>; enrichModel?: string; executeModel?: string; adapterType?: "claude-code-cli" | "opencode"; opencodeModel?: string }): Promise<IterationResult & { checks: Array<{ name: string; passed: boolean; detail?: string }> }> {
   await resetWebapp();
 
+  const adapterType = opts?.adapterType ?? "claude-code-cli";
   const enrichModel = opts?.enrichModel ?? "claude-opus-4-7";
   const executeModel = opts?.executeModel ?? "claude-sonnet-4-6";
-  const adapter = await createAdapter(enrichModel, executeModel);
+  const adapter = await createAdapter(adapterType, enrichModel, executeModel);
   const startTime = Date.now();
 
   const baseConfig: Record<string, unknown> = {
-    adapter: "claude-code-cli",
+    adapter: adapterType,
     models: {
-      enrichment: enrichModel,
-      execution: executeModel,
+      enrichment: adapterType === "opencode" ? "deep" : enrichModel,
+      execution: adapterType === "opencode" ? "autopilot-execute" : executeModel,
     },
+    ...(adapterType === "opencode" && opts?.opencodeModel ? {
+      adapters: {
+        opencode: {
+          agents: {
+            "autopilot-fast": { model: opts.opencodeModel },
+          },
+        },
+      },
+    } : {}),
     ...opts?.configOverrides,
   };
 
@@ -264,7 +280,11 @@ async function main() {
   const cacheSpec = args.includes("--cache-spec");
   const useCachedSpec = args.includes("--use-cached-spec");
   const useHaikuExecute = args.includes("--haiku-execute");
+  const useOpencode = args.includes("--opencode");
+  const adapterType: "claude-code-cli" | "opencode" = useOpencode ? "opencode" : "claude-code-cli";
   const executeModel = useHaikuExecute ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-6";
+  const ocModelIdx = args.indexOf("--oc-model");
+  const opencodeModel = ocModelIdx >= 0 ? args[ocModelIdx + 1] : undefined;
 
   ensureResultsDir();
   await ensureDocker();
@@ -284,6 +304,9 @@ async function main() {
   if (useHaikuExecute) {
     console.error("  Using haiku for execution (faster, potentially lower accuracy)");
   }
+  if (useOpencode) {
+    console.error(`  Using OpenCode adapter${opencodeModel ? ` with model override: ${opencodeModel}` : " (default model tiers)"}`);
+  }
 
   const history = loadHistory();
   let bestScore = history.length > 0 ? Math.max(...history.map((h) => h.score)) : 0;
@@ -302,6 +325,8 @@ async function main() {
       configOverrides: Object.keys(configOverrides).length > 0 ? configOverrides : undefined,
       enrichModel,
       executeModel,
+      adapterType,
+      opencodeModel,
     };
     const result = await runAndScore(i, runOpts);
     if (!result.changes_made) {
@@ -309,6 +334,7 @@ async function main() {
       if (useDirectMode) parts.push("direct");
       if (useSonnetEnrich) parts.push("sonnet-enrich");
       if (useHaikuExecute) parts.push("haiku-execute");
+      if (useOpencode) parts.push(opencodeModel ? `opencode(${opencodeModel})` : "opencode");
       if (useCachedSpec) parts.push("cached-spec");
       result.changes_made = parts.join(", ");
     }

@@ -107,5 +107,77 @@
     "failed_checks": [],
     "changes_made": "variant: aggressive, direct",
     "timestamp": "2026-05-19T23:55:53.163Z"
+  },
+  {
+    "iteration": 6,
+    "score": 0.880911,
+    "accuracy": 1,
+    "checks_passed": 32,
+    "checks_total": 32,
+    "cost_usd": 0,
+    "duration_s": 714.534,
+    "cost_score": 1,
+    "speed_score": 0.404555,
+    "failed_checks": [],
+    "changes_made": "variant: aggressive, direct, haiku-execute",
+    "timestamp": "2026-05-20T00:53:51.976Z"
+  },
+  {
+    "iteration": 7,
+    "score": 0.87302,
+    "accuracy": 0.96875,
+    "checks_passed": 31,
+    "checks_total": 32,
+    "cost_usd": 0,
+    "duration_s": 649.38,
+    "cost_score": 1,
+    "speed_score": 0.45885,
+    "failed_checks": [
+      "analytics_activity"
+    ],
+    "changes_made": "variant: aggressive, direct, haiku-execute",
+    "timestamp": "2026-05-20T01:05:18.371Z"
+  },
+  {
+    "iteration": 8,
+    "score": 0.8593531875,
+    "accuracy": 1,
+    "checks_passed": 32,
+    "checks_total": 32,
+    "cost_usd": 1.16648125,
+    "duration_s": 773.892,
+    "cost_score": 0.9416759375,
+    "speed_score": 0.3550899999999999,
+    "failed_checks": [],
+    "changes_made": "variant: aggressive, direct, opencode",
+    "timestamp": "2026-05-20T01:36:53.426Z"
+  },
+  {
+    "iteration": 9,
+    "score": 0.8703778683333334,
+    "accuracy": 1,
+    "checks_passed": 32,
+    "checks_total": 32,
+    "cost_usd": 1.3728464999999999,
+    "duration_s": 695.362,
+    "cost_score": 0.931357675,
+    "speed_score": 0.42053166666666675,
+    "failed_checks": [],
+    "changes_made": "variant: aggressive, direct, opencode(zai/glm-5)",
+    "timestamp": "2026-05-20T01:53:45.376Z"
+  },
+  {
+    "iteration": 10,
+    "score": 0.8281793925,
+    "accuracy": 1,
+    "checks_passed": 32,
+    "checks_total": 32,
+    "cost_usd": 1.27741075,
+    "duration_s": 954.279,
+    "cost_score": 0.9361294625,
+    "speed_score": 0.2047675,
+    "failed_checks": [],
+    "changes_made": "variant: aggressive, direct, opencode(amazon-bedrock/zai.glm-5)",
+    "timestamp": "2026-05-20T02:13:29.213Z"
   }
 ]

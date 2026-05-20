@@ -1,7 +1,7 @@
 items:
   - id: "1.1"
     intent: "Create auth middleware (requireAuth, requireAdmin) with Express Request type extension, apply to mutation routes, enforce self-or-admin on DELETE /api/users/:id, set user_id from token on POST /api/posts, and update existing tests to authenticate"
-    checked: true
+    checked: false
     files:
       - path: src/middleware/auth.ts
         isNew: true

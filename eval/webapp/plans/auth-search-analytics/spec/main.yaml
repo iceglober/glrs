@@ -12,7 +12,7 @@ constraints: "No new npm dependencies beyond what's already installed (express,
   header. The analytics endpoints must use raw SQL with CTEs — no ORM."
 phases:
   - file: wave_0.yaml
-    completed: true
+    completed: false
   - file: wave_1.yaml
     completed: false
   - file: wave_2.yaml
