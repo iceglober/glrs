@@ -53,6 +53,254 @@ export interface EnrichmentRunConfig {
  */
 export const ENRICHMENT_RATIO_THRESHOLD = 1.0;
 
+// ---------------------------------------------------------------------------
+// Freeform input decomposition
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when a file has no structured plan items — no checkboxes
+ * (`- [ ]`) and no numbered headings (`### N.N`). Such files need
+ * decomposition before the enrichment loop can process them.
+ */
+export function isFreeformFile(resolvedPath: string): boolean {
+  try {
+    if (fs.statSync(resolvedPath).isDirectory()) return false;
+  } catch {
+    return false;
+  }
+  let content: string;
+  try {
+    content = fs.readFileSync(resolvedPath, "utf-8");
+  } catch {
+    return false;
+  }
+  const checkboxItems = (content.match(/^- \[[ xX]\]/gm) ?? []).length;
+  const headingItems = (content.match(/^###\s+\d+\.\d+\s/gm) ?? []).length;
+  return Math.max(checkboxItems, headingItems) === 0;
+}
+
+function buildDecompositionPrompt(
+  cwd: string,
+  planDir: string,
+  sourceFile: string,
+  content: string,
+): string {
+  return `You are decomposing a freeform document into a structured multi-file plan for automated execution.
+
+Read the freeform content below and explore the codebase at ${cwd} to understand the project structure. Then write a structured plan as multiple files in the directory: ${planDir}
+
+## Required output files
+
+### 1. main.md
+Write \`${planDir}/main.md\` with this structure:
+
+\`\`\`markdown
+# <Title derived from the document>
+
+## Goal
+<1-3 sentence summary of what this work accomplishes>
+
+## Constraints
+<Technical constraints, conventions to follow, or boundaries on the work>
+
+## Phases
+- [ ] wave_0.md - <phase description>
+- [ ] wave_1.md - <phase description>
+(add more phases as needed)
+\`\`\`
+
+### 2. Phase files (wave_0.md, wave_1.md, etc.)
+For each phase, write \`${planDir}/wave_N.md\` with numbered items:
+
+\`\`\`markdown
+# Wave N: <Phase title>
+
+### N.1 <Item title>
+- intent: <What this item accomplishes>
+- files:
+    - <path/to/file.ts>
+      Change: <What changes in this file>
+- tests:
+    - <path/to/test.ts>
+- verify: <command to verify this item, e.g., "bun test path/to/test.ts">
+
+### N.2 <Item title>
+...
+\`\`\`
+
+## Guidelines for decomposition
+
+1. **Explore the codebase first.** Use file listing and reading tools to find:
+   - The project's test framework and test patterns
+   - Existing file naming conventions
+   - Related modules that items will modify or reference
+   - The package manager (bun/npm/pnpm/yarn) for verify commands
+
+2. **Group items into phases by dependency.** Items in wave_0 should have no dependencies on later waves. Items within a wave should be independent or naturally sequential.
+
+3. **Each item must be concrete and actionable.** Every item needs:
+   - A clear \`intent:\` describing the change
+   - Specific \`files:\` with real paths from the codebase
+   - At least one test file in \`tests:\`
+   - A runnable \`verify:\` command
+
+4. **Keep items small.** Each item should be completable in a single focused session (1-3 files modified). Split large changes across multiple items.
+
+5. **The heading format matters.** Use \`### N.M\` (e.g., \`### 0.1\`, \`### 0.2\`, \`### 1.1\`) — this is the format the enrichment pipeline recognizes.
+
+## Source document
+
+File: ${sourceFile}
+
+\`\`\`markdown
+${content}
+\`\`\`
+
+Write all the plan files using the write/edit tool, then respond with "DECOMPOSITION_COMPLETE" when done.`;
+}
+
+/**
+ * Decompose a freeform file into a structured plan directory that the
+ * standard enrichment pipeline can process. Spawns one LLM session.
+ *
+ * Returns the plan directory path on success, null on failure.
+ * Idempotent: if `<stem>/main.md` already exists, returns immediately.
+ */
+async function decomposeFreeformPlan(
+  cwd: string,
+  resolvedPath: string,
+  log: ReturnType<typeof childLogger> | undefined,
+  emitter: SessionEventEmitter | undefined,
+  adapter: AgentAdapter,
+  stallMs: number,
+  config?: unknown,
+): Promise<string | null> {
+  const parsed = path.parse(resolvedPath);
+  const planDir = path.join(parsed.dir, parsed.name);
+  const mainMdPath = path.join(planDir, "main.md");
+
+  if (fs.existsSync(mainMdPath)) {
+    log?.info({ planDir }, "Decomposed plan directory already exists — skipping");
+    emitter?.emitEvent({
+      type: "enrich:file:skip",
+      timestamp: new Date().toISOString(),
+      file: path.relative(cwd, resolvedPath),
+      reason: "decomposed directory already exists",
+    });
+    return planDir;
+  }
+
+  let content: string;
+  try {
+    content = fs.readFileSync(resolvedPath, "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log?.warn({ err: msg }, "Failed to read freeform file");
+    return null;
+  }
+
+  fs.mkdirSync(planDir, { recursive: true });
+
+  emitter?.emitEvent({
+    type: "enrich:file:start",
+    timestamp: new Date().toISOString(),
+    file: path.relative(cwd, resolvedPath),
+  });
+
+  const handle = await adapter.start({ cwd });
+  let sessionId: string;
+  try {
+    const adapterName = adapter.name as AdapterName | undefined;
+    const cfgObj = config as Record<string, unknown> | undefined;
+    const models = cfgObj?.models as Record<string, unknown> | undefined;
+    const enrichmentSpecifier = models?.enrichment as string | undefined;
+    const resolvedModel = enrichmentSpecifier
+      ? resolveModel(enrichmentSpecifier, adapterName ?? "opencode")
+      : undefined;
+    sessionId = await adapter.createSession(handle, {
+      agentName: "prime",
+      model: resolvedModel,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log?.warn({ err: msg }, "createSession failed for decomposition");
+    await adapter.shutdown(handle);
+    return null;
+  }
+
+  const prompt = buildDecompositionPrompt(cwd, planDir, resolvedPath, content);
+
+  try {
+    const result = await adapter.sendAndWait(handle, {
+      sessionId,
+      message: prompt,
+      stallMs,
+      onToolCall: (toolName) => {
+        log?.debug({ toolName }, "Decomposition tool call");
+      },
+      onTextDelta: () => {},
+      onCostUpdate: (cost, tokens) => {
+        emitter?.emitEvent({
+          type: "cost:update",
+          timestamp: new Date().toISOString(),
+          cumulativeCostUsd: cost,
+          isEstimated: false,
+          iteration: 0,
+          tokensIn: tokens.input,
+          tokensOut: tokens.output,
+        });
+      },
+    });
+
+    if (result.kind === "error" || result.kind === "stall") {
+      const errMsg = result.kind === "error"
+        ? ("message" in result ? (result as { message: string }).message : "session error")
+        : "session stalled";
+      log?.error({ err: errMsg }, "Decomposition session failed");
+      emitter?.emitEvent({
+        type: "enrich:file:error",
+        timestamp: new Date().toISOString(),
+        file: path.relative(cwd, resolvedPath),
+        error: `decomposition failed: ${errMsg}`,
+      });
+      return null;
+    }
+
+    const response = await adapter.getLastResponse(handle, sessionId);
+
+    if (!fs.existsSync(mainMdPath)) {
+      log?.warn("Decomposition completed but main.md was not written");
+      emitter?.emitEvent({
+        type: "enrich:file:error",
+        timestamp: new Date().toISOString(),
+        file: path.relative(cwd, resolvedPath),
+        error: "decomposition completed but main.md was not written",
+      });
+      return null;
+    }
+
+    if (!response.includes("DECOMPOSITION_COMPLETE")) {
+      log?.warn("Decomposition session did not emit completion sentinel");
+    }
+
+    log?.info({ planDir }, "Freeform file decomposed into structured plan");
+    emitter?.emitEvent({
+      type: "enrich:file:done",
+      timestamp: new Date().toISOString(),
+      file: path.relative(cwd, resolvedPath),
+      toolCalls: 0,
+    });
+
+    return planDir;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log?.error({ err: msg }, "Decomposition failed");
+    return null;
+  } finally {
+    await adapter.shutdown(handle);
+  }
+}
+
 /**
  * Compute the fraction of plan items across `planFiles` that already
  * have enrichment fields. Pure synchronous I/O — no server spawn — so
@@ -528,10 +776,44 @@ export async function enrichPlanForFastModel(
   adapter?: AgentAdapter,
   enrichmentConfig?: EnrichmentRunConfig,
   config?: unknown,
-): Promise<void> {
+): Promise<string> {
   const log = logger ? childLogger(logger.root, "autopilot.enrichment") : undefined;
   const resolvedPath = path.resolve(cwd, planPath);
   const isDir = fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory();
+
+  // Freeform input: decompose into a structured plan directory, then enrich that.
+  if (!isDir && isFreeformFile(resolvedPath)) {
+    if (!adapter) {
+      throw new Error("enrichPlanForFastModel: adapter is required for freeform decomposition");
+    }
+    log?.info({ file: resolvedPath }, "Freeform file detected — decomposing into structured plan");
+
+    const stallMs = enrichmentConfig?.stall_timeout ?? (5 * 60 * 1000);
+    const decomposedDir = await decomposeFreeformPlan(
+      cwd,
+      resolvedPath,
+      log,
+      emitter,
+      adapter,
+      stallMs,
+      config,
+    );
+
+    if (decomposedDir) {
+      log?.info({ planDir: decomposedDir }, "Decomposition complete — enriching structured plan");
+      return enrichPlanForFastModel(
+        cwd,
+        decomposedDir,
+        logger,
+        emitter,
+        adapter,
+        enrichmentConfig,
+        config,
+      );
+    }
+
+    log?.warn("Freeform decomposition failed — falling through to single-file enrichment");
+  }
 
   // Collect the plan files to enrich
   let planFiles: string[];
@@ -585,7 +867,7 @@ export async function enrichPlanForFastModel(
       timestamp: new Date().toISOString(),
       filesProcessed: 0,
     });
-    return;
+    return resolvedPath;
   }
 
   // Ensure spec/ directory exists for YAML spec generation
@@ -746,4 +1028,6 @@ export async function enrichPlanForFastModel(
     timestamp: new Date().toISOString(),
     filesProcessed: planFiles.length,
   });
+
+  return resolvedPath;
 }

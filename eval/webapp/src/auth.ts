@@ -17,9 +17,10 @@ export function verifyPassword(password: string, hash: string): boolean {
   return derived.toString("hex") === hashHex;
 }
 
-export function generateToken(userId: number): string {
+export function generateToken(userId: number, role: string = "user"): string {
   const payload = {
     userId,
+    role,
     iat: Date.now(),
     exp: Date.now() + TOKEN_EXPIRY,
   };
@@ -31,7 +32,7 @@ export function generateToken(userId: number): string {
   return `${tokenData}.${signature}`;
 }
 
-export function verifyToken(token: string): { userId: number } | null {
+export function verifyToken(token: string): { userId: number; role: string } | null {
   const [tokenData, signature] = token.split(".");
   if (!tokenData || !signature) return null;
 
@@ -46,7 +47,7 @@ export function verifyToken(token: string): { userId: number } | null {
     if (signature !== expectedSignature) return null;
     if (payload.exp < Date.now()) return null;
 
-    return { userId: payload.userId };
+    return { userId: payload.userId, role: payload.role };
   } catch {
     return null;
   }

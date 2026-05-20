@@ -317,6 +317,23 @@ const CORE_DESTRUCTIVE_BASH_DENIES = {
   "git push * --force-with-lease*": "allow",
 };
 
+/** Autopilot-specific denies. The model must never switch branches (loses
+ * the plan directory and uncommitted work), push code, or create PRs.
+ * Shipping is handled externally via --ship after the session completes.
+ */
+const AUTOPILOT_BASH_DENIES = {
+  ...CORE_DESTRUCTIVE_BASH_DENIES,
+  "git checkout *": "deny",
+  "git switch *": "deny",
+  "git push*": "deny",
+  "gh pr *": "deny",
+  // Allow checkout of individual files (git checkout <ref> -- <path>)
+  "git checkout * -- *": "allow",
+  // Allow git checkout for creating new branches from current HEAD only
+  // (but NOT switching to existing branches)
+  "git checkout -b *": "allow",
+};
+
 const PRIME_PERMISSIONS = {
   edit: "allow" as const,
   bash: {
@@ -736,6 +753,10 @@ export function createAgents(): Record<string, AgentConfig> {
       temperature: 0.2,
       permission: {
         ...PRIME_PERMISSIONS,
+        bash: {
+          ...(typeof PRIME_PERMISSIONS.bash === "object" ? PRIME_PERMISSIONS.bash : { "*": "allow" }),
+          ...AUTOPILOT_BASH_DENIES,
+        },
         question: "deny",
       } as AgentConfig["permission"],
       tools: AUTOPILOT_PRIME_DISABLED_TOOLS as AgentConfig["tools"],
@@ -747,6 +768,10 @@ export function createAgents(): Record<string, AgentConfig> {
       temperature: 0.1,
       permission: {
         ...PRIME_PERMISSIONS,
+        bash: {
+          ...(typeof PRIME_PERMISSIONS.bash === "object" ? PRIME_PERMISSIONS.bash : { "*": "allow" }),
+          ...AUTOPILOT_BASH_DENIES,
+        },
         question: "deny",
       } as AgentConfig["permission"],
       tools: AUTOPILOT_PRIME_DISABLED_TOOLS as AgentConfig["tools"],

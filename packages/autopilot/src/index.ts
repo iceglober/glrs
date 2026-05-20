@@ -52,8 +52,12 @@ export type { LoopSessionDeps } from "./loop-session.js";
 export { parsePlanState, parseItems } from "./plan-parser.js";
 export type { PlanState, PlanItem } from "./plan-parser.js";
 
+// Model resolver
+export { resolveModel } from "./model-resolver.js";
+export type { AdapterName } from "./model-resolver.js";
+
 // Plan enrichment
-export { enrichPlanForFastModel } from "./plan-enrichment.js";
+export { enrichPlanForFastModel, isFreeformFile } from "./plan-enrichment.js";
 
 // Spec schema/parser/writer
 export { validateMainSpec, validatePhaseSpec } from "./spec-schema.js";

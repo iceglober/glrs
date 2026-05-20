@@ -19,9 +19,10 @@ export type AdapterName = "opencode" | "claude-code-cli";
 
 const CLAUDE_TIER_ALIASES: Record<string, string> = {
   deep: "claude-opus-4-7",
+  prime: "claude-opus-4-7",
   mid: "claude-sonnet-4-6",
   "mid-execute": "claude-sonnet-4-6",
-  "autopilot-execute": "claude-sonnet-4-6",
+  "autopilot-execute": "claude-haiku-4-5-20251001",
   fast: "claude-haiku-4-5-20251001",
 };
 

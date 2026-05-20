@@ -615,10 +615,12 @@ export async function runLoopSession(
   }): Promise<LoopResult> => {
     const { phaseFile, phasePath, laneId, runCwd, useParallel } = args;
     const phaseContent = args.readFileSync(phasePath);
-    const items = (useYamlSpec
-      ? parseSpecItems(phasePath)
-      : parseItems(phaseContent)
-    ).filter((it) => !it.checked);
+    const allItems = useYamlSpec ? parseSpecItems(phasePath) : parseItems(phaseContent);
+    const items = allItems.filter((it) => !it.checked);
+    log.info(
+      { phase: phaseFile, total: allItems.length, unchecked: items.length, checked: allItems.length - items.length },
+      `phase items: ${items.length} unchecked of ${allItems.length} total`,
+    );
 
     if (items.length === 0) {
       // Fall through: no items parsed (legacy plan or pre-fence format).
@@ -676,6 +678,26 @@ export async function runLoopSession(
         .join(", ");
       const verify = item.verify?.trim() || "(no verify command declared)";
 
+      const enriched = item as Record<string, unknown>;
+      let enrichmentBlock = "";
+      if (enriched.mirror || enriched.context || enriched.conventions || enriched.proof) {
+        const parts: string[] = [];
+        if (typeof enriched.mirror === "string" && enriched.mirror.trim()) {
+          parts.push(`Pattern reference (read this file for the pattern to follow):\n  ${enriched.mirror}`);
+        }
+        if (typeof enriched.context === "string" && enriched.context.trim()) {
+          parts.push(`Code context:\n${enriched.context}`);
+        }
+        if (typeof enriched.conventions === "string" && enriched.conventions.trim()) {
+          parts.push(`Conventions: ${enriched.conventions}`);
+        }
+        if (typeof enriched.proof === "string" && enriched.proof.trim()) {
+          const proofType = typeof enriched.proof_type === "string" ? ` (${enriched.proof_type})` : "";
+          parts.push(`Acceptance proof${proofType}: ${enriched.proof}`);
+        }
+        enrichmentBlock = `\n## Enrichment context\n\n${parts.join("\n\n")}\n\n`;
+      }
+
       // Extract execution_style from phase config to determine TDD mode.
       // Resolution order: phase override > global config > default "tdd".
       // When explicitly set to "direct", use direct mode; otherwise default to TDD.
@@ -706,6 +728,7 @@ export async function runLoopSession(
           `  intent: ${item.intent}\n` +
           `  files: ${filesList || "(none declared)"}\n` +
           `  verify: ${verify}\n\n` +
+          enrichmentBlock +
           `## Structured context\n\n` +
           `Files you may touch (ONLY these):\n` +
           (item.files.length > 0
@@ -735,6 +758,7 @@ export async function runLoopSession(
           `  intent: ${item.intent}\n` +
           `  files: ${filesList || "(none declared)"}\n` +
           `  verify: ${verify}\n\n` +
+          enrichmentBlock +
           `## Structured context\n\n` +
           `Files you may touch (ONLY these):\n` +
           (item.files.length > 0
@@ -997,6 +1021,11 @@ export async function runLoopSession(
     let phaseComplete = useYamlSpec
       ? (() => {
           const yamlItems = parseSpecItems(phasePath);
+          const checkedCount = yamlItems.filter((i) => i.checked).length;
+          log.info(
+            { phase: phaseFile, total: yamlItems.length, checked: checkedCount },
+            `phase completion check: ${checkedCount}/${yamlItems.length} items checked`,
+          );
           return yamlItems.length > 0 && yamlItems.every((i) => i.checked);
         })()
       : isPhaseComplete(updatedPhaseContent);

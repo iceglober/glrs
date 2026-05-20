@@ -6,7 +6,7 @@
 
 ## Items
 
-- [ ] 1.1 **Strategy file loader.** Read a named strategy from `.glrs/plan-enrich-strategies/<name>.md`. Resolution: plan-local `./strategies/` (future) > `.glrs/plan-enrich-strategies/` > built-in default. The built-in `default` strategy is the current `buildPerFilePrompt` output extracted to a file. Strategy files use `{{file}}` and `{{content}}` as substitution placeholders.
+- [x] 1.1 **Strategy file loader.** Read a named strategy from `.glrs/plan-enrich-strategies/<name>.md`. Resolution: plan-local `./strategies/` (future) > `.glrs/plan-enrich-strategies/` > built-in default. The built-in `default` strategy is the current `buildPerFilePrompt` output extracted to a file. Strategy files use `{{file}}` and `{{content}}` as substitution placeholders.
 
   - files (NEW):
     - `packages/harness-opencode/src/autopilot/enrich-strategy.ts` — `loadStrategy(repoRoot, name): string`, `applyStrategy(template, file, content): string`
@@ -31,7 +31,7 @@
     - `packages/harness-opencode/test/plan-enrichment.test.ts` — test with custom field names
   - verify: `bun test test/plan-enrichment.test.ts && bun test test/enrich-strategy.test.ts`
 
-- [ ] 1.4 **Enrichment retry on stall/error.** When `config.enrichment.retry` is true (default: true), wrap the enrichment pass in a retry loop. On any file stall (exceeds `config.enrichment.stall_timeout`) or server error: kill the server, start a fresh one, restart the entire enrichment pass from the top. The per-file idempotency check skips already-enriched files, so retries only pay for failures. Up to `config.enrichment.max_retries` attempts (default: 3).
+- [x] 1.4 **Enrichment retry on stall/error.** When `config.enrichment.retry` is true (default: true), wrap the enrichment pass in a retry loop. On any file stall (exceeds `config.enrichment.stall_timeout`) or server error: kill the server, start a fresh one, restart the entire enrichment pass from the top. The per-file idempotency check skips already-enriched files, so retries only pay for failures. Up to `config.enrichment.max_retries` attempts (default: 3).
 
   - files (MODIFIED):
     - `packages/harness-opencode/src/autopilot/plan-enrichment.ts` — wrap `enrichPlanForFastModel` body in retry loop; accept `config.enrichment` settings
@@ -39,7 +39,7 @@
     - `packages/harness-opencode/test/enrichment-retry.test.ts`
   - verify: `bun test test/enrichment-retry.test.ts`
 
-- [ ] 1.5 **Wire strategy + retry into config.** Read `config.enrichment.strategy`, `config.enrichment.retry`, `config.enrichment.max_retries`, `config.enrichment.stall_timeout` from the resolved config and pass them into `enrichPlanForFastModel`. CLI `--fast` still triggers enrichment; the config controls *how* it runs.
+- [x] 1.5 **Wire strategy + retry into config.** Read `config.enrichment.strategy`, `config.enrichment.retry`, `config.enrichment.max_retries`, `config.enrichment.stall_timeout` from the resolved config and pass them into `enrichPlanForFastModel`. CLI `--fast` still triggers enrichment; the config controls *how* it runs.
 
   - files (MODIFIED):
     - `packages/harness-opencode/src/autopilot/autopilot-cmd.ts` — pass enrichment config fields

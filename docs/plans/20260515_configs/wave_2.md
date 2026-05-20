@@ -20,7 +20,7 @@ The model resolver must handle both. Config values in `models.*` are adapter-int
 
 ## Items
 
-- [ ] 2.1 **Adapter-aware model resolver.** Create a resolver that accepts a model specifier and the active adapter name, and returns the concrete model ID. Resolution strategy depends on the adapter:
+- [x] 2.1 **Adapter-aware model resolver.** Create a resolver that accepts a model specifier and the active adapter name, and returns the concrete model ID. Resolution strategy depends on the adapter:
 
   - **OpenCode:** Tier names (`deep`, `mid`, `mid-execute`, `autopilot-execute`, `fast`) resolve through the user's `opencode.json` tier config. Full model IDs pass through as-is. Unknown tier names fall back to `deep` with a warning.
   - **Claude Code CLI:** Values are expected to be Claude model IDs (`claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`). As a convenience, tier aliases are mapped to sensible defaults: `deep` → `claude-opus-4-7`, `mid`/`mid-execute`/`autopilot-execute` → `claude-sonnet-4-6`, `fast` → `claude-haiku-4-5-20251001`. Full model IDs pass through.
@@ -31,7 +31,7 @@ The model resolver must handle both. Config values in `models.*` are adapter-int
     - `packages/autopilot/test/model-resolver.test.ts`
   - verify: `bun test test/model-resolver.test.ts`
 
-- [ ] 2.2 **Workflow-stage model routing.** Use `config.models.enrichment` for the enrichment session, `config.models.execution` for the loop session, `config.models.debrief` for the debrief session. Today these are hardcoded: enrichment always uses `prime` (deep), execution uses `autopilot-fast` when `--fast` else deep, debrief uses deep. Replace with config-driven resolution.
+- [x] 2.2 **Workflow-stage model routing.** Use `config.models.enrichment` for the enrichment session, `config.models.execution` for the loop session, `config.models.debrief` for the debrief session. Today these are hardcoded: enrichment always uses `prime` (deep), execution uses `autopilot-fast` when `--fast` else deep, debrief uses deep. Replace with config-driven resolution.
 
   For **OpenCode**, the resolved model drives agent selection (`agentName` in `createSession`).
   For **Claude Code CLI**, the resolved model is passed to the adapter which adds `--model <id>` to the CLI args. The `ClaudeCodeCliAdapter.resolveModel()` method (already implemented) maps agentName to model — this item replaces that hardcoded mapping with config-driven resolution.
@@ -43,7 +43,7 @@ The model resolver must handle both. Config values in `models.*` are adapter-int
     - `packages/adapter-claude-code/src/claude-code-adapter.ts` — replace hardcoded `resolveModel()` with config-driven lookup
   - verify: `bun run build && bun test`
 
-- [ ] 2.3 **Agent override injection (OpenCode only).** When `config.adapters.opencode.agents` has entries, merge them into the agent registrations at server startup. The plugin's `config` hook already runs `input.agent = { ...ourAgents, ...(input.agent ?? {}) }`. Add a step that applies config overrides before this merge: for each agent in the config, override `model`, and if `prompt` is set, read the file and replace the agent's prompt.
+- [x] 2.3 **Agent override injection (OpenCode only).** When `config.adapters.opencode.agents` has entries, merge them into the agent registrations at server startup. The plugin's `config` hook already runs `input.agent = { ...ourAgents, ...(input.agent ?? {}) }`. Add a step that applies config overrides before this merge: for each agent in the config, override `model`, and if `prompt` is set, read the file and replace the agent's prompt.
 
   Skipped entirely when `config.adapter !== "opencode"`.
 
@@ -54,7 +54,7 @@ The model resolver must handle both. Config values in `models.*` are adapter-int
     - `packages/harness-opencode/test/agent-overrides.test.ts`
   - verify: `bun test test/agent-overrides.test.ts`
 
-- [ ] 2.4 **Pass config to server startup (OpenCode only).** The autopilot starts a server via `startServer({ cwd })`. Add an optional `agentOverrides` parameter that flows into the plugin's config hook. Since the plugin is loaded by OpenCode at server init, the overrides need to be communicated via environment variable or a temp config file that the plugin reads. Evaluate: env var `GLRS_AGENT_OVERRIDES` (JSON-encoded) vs temp file `.agent/autopilot-agent-overrides.json`.
+- [x] 2.4 **Pass config to server startup (OpenCode only).** The autopilot starts a server via `startServer({ cwd })`. Add an optional `agentOverrides` parameter that flows into the plugin's config hook. Since the plugin is loaded by OpenCode at server init, the overrides need to be communicated via environment variable or a temp config file that the plugin reads. Evaluate: env var `GLRS_AGENT_OVERRIDES` (JSON-encoded) vs temp file `.agent/autopilot-agent-overrides.json`.
 
   Not applicable to `claude-code-cli` — no persistent server, no plugin system.
 
@@ -64,7 +64,7 @@ The model resolver must handle both. Config values in `models.*` are adapter-int
     - `packages/harness-opencode/src/lib/opencode-server.ts` — accept and forward overrides
   - verify: `bun run build && bun test`
 
-- [ ] 2.5 **Custom agent prompts (OpenCode only).** When `config.adapters.opencode.agents.<name>.prompt` is set, read the `.md` file from the path (relative to repo root) and use it as the agent's prompt. Validate the file exists at config resolution time — fail fast if missing. Absolute paths are rejected.
+- [x] 2.5 **Custom agent prompts (OpenCode only).** When `config.adapters.opencode.agents.<name>.prompt` is set, read the `.md` file from the path (relative to repo root) and use it as the agent's prompt. Validate the file exists at config resolution time — fail fast if missing. Absolute paths are rejected.
 
   For `claude-code-cli`, the equivalent is CLAUDE.md (read automatically by the CLI). A future item could add `config.adapters.claude_code_cli.claude_md_path` to override the default location, but this is out of scope for wave 2.
 
@@ -73,7 +73,7 @@ The model resolver must handle both. Config values in `models.*` are adapter-int
     - `packages/harness-opencode/src/autopilot/config-reader.ts` — validate prompt paths exist
   - verify: `bun test test/agent-overrides.test.ts`
 
-- [ ] 2.6 **Claude Code CLI adapter-specific config.** Read `config.adapters.claude_code_cli` and pass it to `ClaudeCodeCliAdapter` constructor. Supported fields:
+- [x] 2.6 **Claude Code CLI adapter-specific config.** Read `config.adapters.claude_code_cli` and pass it to `ClaudeCodeCliAdapter` constructor. Supported fields:
   - `skip_permissions: boolean` (default: true) — maps to `--dangerously-skip-permissions`
   - `allowed_tools: string[]` (optional) — maps to `--allowedTools`
   - `max_turns: number` (optional) — maps to `--max-turns`

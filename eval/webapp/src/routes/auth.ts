@@ -25,7 +25,7 @@ authRouter.post("/register", async (req: Request, res: Response) => {
     );
 
     const user = rows[0];
-    const token = generateToken(user.id);
+    const token = generateToken(user.id, user.role);
 
     res.status(201).json({ user, token });
   } catch (err: unknown) {
@@ -63,7 +63,7 @@ authRouter.post("/login", async (req: Request, res: Response) => {
     return;
   }
 
-  const token = generateToken(user.id);
+  const token = generateToken(user.id, user.role);
 
   res.json({
     user: {

@@ -43,4 +43,4 @@ phases:
   - file: wave_4.yaml
     completed: true
   - file: wave_5.yaml
-    completed: false
+    completed: true

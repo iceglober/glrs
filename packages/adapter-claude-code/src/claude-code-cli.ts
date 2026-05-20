@@ -91,12 +91,31 @@ export async function sendMessage(opts: {
 }): Promise<SendResult> {
   const args = buildArgs(opts);
 
+  const debug = process.env["GLRS_DEBUG_CLAUDE"] === "1";
+  let debugFd: number | null = null;
+  const debugLog = debug
+    ? (() => {
+        const fs = require("node:fs") as typeof import("node:fs");
+        debugFd = fs.openSync("/tmp/glrs-claude-debug.log", "a");
+        const fd = debugFd;
+        return (msg: string) => { try { fs.writeSync(fd, `${new Date().toISOString()} ${msg}\n`); } catch {} };
+      })()
+    : (_msg: string) => {};
+
   const subprocess = execa("claude", args, {
     cwd: opts.cwd,
     input: opts.message,
     stdout: "pipe",
     stderr: "pipe",
     reject: false,
+  });
+
+  // Capture stderr for error context
+  const stderrChunks: string[] = [];
+  subprocess.stderr?.on("data", (chunk: Buffer) => {
+    const text = chunk.toString();
+    stderrChunks.push(text);
+    debugLog(`[stderr] ${text.trimEnd()}`);
   });
 
   const state: ParseState = {
@@ -146,6 +165,7 @@ export async function sendMessage(opts: {
       for await (const line of rl) {
         if (!line.trim()) continue;
         resetStall();
+        debugLog(`[event] ${line}`);
         parseEvent(line, state, opts);
       }
     }
@@ -171,10 +191,21 @@ export async function sendMessage(opts: {
       errorMessage: `Stalled after ${stallMs}ms of inactivity`,
     };
   }
+  const stderr = stderrChunks.join("");
   if (result.exitCode !== 0 && !state.isError) {
     state.isError = true;
     state.errorMessage =
-      result.stderr || `claude exited with code ${result.exitCode}`;
+      stderr.trim() || `claude exited with code ${result.exitCode}`;
+  }
+  // If we have a raw-event error and stderr has more context, append it
+  if (state.isError && state.errorMessage?.startsWith("claude error (raw:") && stderr.trim()) {
+    state.errorMessage = stderr.trim();
+  }
+
+  debugLog(`[result] isError=${state.isError} errorMessage=${state.errorMessage ?? "none"} exitCode=${result.exitCode}`);
+
+  if (debugFd !== null) {
+    try { (require("node:fs") as typeof import("node:fs")).closeSync(debugFd); } catch {}
   }
 
   return { ...state };
@@ -305,12 +336,14 @@ function parseEvent(
     state.cost = (event["cost_usd"] as number) ?? state.cost;
     state.numTurns = (event["num_turns"] as number) ?? state.numTurns;
 
-    if (event["is_error"] === true) {
+    if (event["is_error"] === true || event["subtype"] === "error") {
       state.isError = true;
-      state.errorMessage =
-        (event["error"] as string) ??
-        (event["message"] as string) ??
-        "claude reported an error";
+      const errorMsg =
+        (typeof event["error"] === "string" && event["error"]) ||
+        (typeof event["error_message"] === "string" && event["error_message"]) ||
+        (typeof event["message"] === "string" && event["message"]) ||
+        (typeof event["result"] === "string" && event["result"]);
+      state.errorMessage = errorMsg || `claude error (raw: ${JSON.stringify(event)})`;
     }
   }
 }

@@ -6,7 +6,7 @@
 
 ## Items
 
-- [ ] 0.1 **TypeScript schema definition.** Define `AutopilotConfig` as a fully-typed interface in `src/autopilot/autopilot-config.ts`. Every field is optional (defaults applied at resolution time). Nested types for `adapter`, `models`, `agents`, `enrichment`, `execution`, `hooks`, `phases`, `adapters`. Include JSDoc on every field with the default value.
+- [x] 0.1 **TypeScript schema definition.** Define `AutopilotConfig` as a fully-typed interface in `src/autopilot/autopilot-config.ts`. Every field is optional (defaults applied at resolution time). Nested types for `adapter`, `models`, `agents`, `enrichment`, `execution`, `hooks`, `phases`, `adapters`. Include JSDoc on every field with the default value.
 
   Key adapter-related fields:
   - `adapter?: "opencode" | "claude-code-cli"` — which adapter drives the agent. Default: `"opencode"`.
@@ -30,7 +30,7 @@
     - `packages/harness-opencode/package.json` — add `yaml` dep if not already present
   - verify: `bun test test/config-reader.test.ts`
 
-- [ ] 0.3 **Plan-specific config resolution.** Given a plan path (e.g., `docs/plans/v2_2/`), derive the slug (`v2_2`) and look for `.glrs/plans/v2_2/autopilot.yaml`. If found, deep-merge it over the project-level config. Resolution order: plan-specific > project > built-in defaults. The merge is field-level (not array-replace): `phases.wave_0.agents.build.model` overrides just that one field, not the entire `phases` block.
+- [x] 0.3 **Plan-specific config resolution.** Given a plan path (e.g., `docs/plans/v2_2/`), derive the slug (`v2_2`) and look for `.glrs/plans/v2_2/autopilot.yaml`. If found, deep-merge it over the project-level config. Resolution order: plan-specific > project > built-in defaults. The merge is field-level (not array-replace): `phases.wave_0.agents.build.model` overrides just that one field, not the entire `phases` block.
 
   - files (MODIFIED):
     - `packages/harness-opencode/src/autopilot/config-reader.ts` — add `resolveConfig(repoRoot, planPath): AutopilotConfig`
@@ -38,7 +38,7 @@
     - `packages/harness-opencode/test/config-resolution.test.ts` — fixture-based tests with project + plan configs
   - verify: `bun test test/config-resolution.test.ts`
 
-- [ ] 0.4 **Default config constant.** Export `DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig` with every field populated to its default value. This is the base layer that project and plan configs merge onto. Document each default inline. Key defaults: `adapter: "opencode"`, `models.enrichment: "deep"`, `models.execution: "autopilot-execute"`, `models.debrief: "deep"`. These are OpenCode tier names — when `adapter: "claude-code-cli"`, the adapter factory applies its own model defaults before config resolution (see 0.5).
+- [x] 0.4 **Default config constant.** Export `DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig` with every field populated to its default value. This is the base layer that project and plan configs merge onto. Document each default inline. Key defaults: `adapter: "opencode"`, `models.enrichment: "deep"`, `models.execution: "autopilot-execute"`, `models.debrief: "deep"`. These are OpenCode tier names — when `adapter: "claude-code-cli"`, the adapter factory applies its own model defaults before config resolution (see 0.5).
 
   - files (MODIFIED):
     - `packages/harness-opencode/src/autopilot/autopilot-config.ts` — add `DEFAULT_AUTOPILOT_CONFIG`

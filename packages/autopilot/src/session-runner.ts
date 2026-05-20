@@ -77,7 +77,7 @@ export interface SessionResult {
  */
 export interface SessionRunnerDeps {
   /** Override enrichPlanForFastModel for testing. */
-  enrichPlan?: (cwd: string, planPath: string, logger?: AutopilotLogger) => Promise<void>;
+  enrichPlan?: (cwd: string, planPath: string, logger?: AutopilotLogger) => Promise<string>;
   /** Override runLoopSession for testing. */
   runLoopSession?: (opts: LoopSessionOptions & { _deps?: unknown }) => Promise<LoopResult>;
   /** Override createAutopilotLogger for testing. */
@@ -357,6 +357,7 @@ export class SessionRunner {
     });
 
     let loopResult: LoopResult;
+    let effectivePlanPath = planPath;
 
     try {
       // Enrichment phase (only when --fast)
@@ -370,7 +371,7 @@ export class SessionRunner {
 
         try {
           if (_enrichPlan) {
-            await _enrichPlan(cwd, planPath, logger);
+            effectivePlanPath = await _enrichPlan(cwd, planPath, logger);
             // Test-injected enrichPlan doesn't emit events — emit done here.
             emitEvent({
               type: "enrich:done",
@@ -379,7 +380,7 @@ export class SessionRunner {
             });
           } else {
             const { enrichPlanForFastModel } = await import("./plan-enrichment.js");
-            await enrichPlanForFastModel(cwd, planPath, logger, this.events, this.opts.adapter, this.opts.enrichmentConfig, this.opts.config);
+            effectivePlanPath = await enrichPlanForFastModel(cwd, planPath, logger, this.events, this.opts.adapter, this.opts.enrichmentConfig, this.opts.config);
             // Note: enrichPlanForFastModel emits its own enrich:done event
             // internally — do NOT emit a duplicate here.
           }
@@ -394,9 +395,10 @@ export class SessionRunner {
         }
       }
 
-      // Execution phase
+      // Execution phase — use effectivePlanPath (may differ from planPath
+      // when freeform decomposition created a plan directory)
       const loopOpts: LoopSessionOptions = {
-        planPath,
+        planPath: effectivePlanPath,
         cwd,
         fast,
         resume,

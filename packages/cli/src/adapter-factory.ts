@@ -6,6 +6,7 @@
  */
 
 import type { AgentAdapter } from "@glrs-dev/autopilot";
+import { resolveModel } from "@glrs-dev/autopilot";
 import type { AutopilotConfig } from "./autopilot/autopilot-config.js";
 
 export const ADAPTER_NAMES = ["opencode", "claude-code-cli"] as const;
@@ -44,8 +45,8 @@ export async function createAdapter(name: AdapterName, config?: AutopilotConfig)
       return new ClaudeCodeCliAdapter({
         dangerouslySkipPermissions: cliConfig.skip_permissions ?? true,
         models: {
-          enrich: resolvedConfig.models?.enrichment || "claude-opus-4-7",
-          execute: resolvedConfig.models?.execution || "claude-haiku-4-5-20251001",
+          enrich: resolveModel(resolvedConfig.models?.enrichment || "deep", "claude-code-cli"),
+          execute: resolveModel(resolvedConfig.models?.execution || "autopilot-execute", "claude-code-cli"),
         },
         ...(cliConfig.allowed_tools ? { allowedTools: cliConfig.allowed_tools } : {}),
         ...(cliConfig.max_turns != null ? { maxTurns: cliConfig.max_turns } : {}),
