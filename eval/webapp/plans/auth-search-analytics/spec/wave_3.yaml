@@ -1,7 +1,7 @@
 items:
   - id: "3.1"
     intent: "Create analytics endpoints (overview, top-authors, activity) requiring admin auth, mount in app.ts, write integration tests, and run full regression"
-    checked: false
+    checked: true
     files:
       - path: src/routes/analytics.ts
         isNew: true
