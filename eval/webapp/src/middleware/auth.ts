@@ -31,3 +31,19 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   req.user = payload;
   next();
 }
+
+/**
+ * Middleware that requires the authenticated user to have admin role.
+ * Must be used after requireAuth (or calls it internally).
+ */
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  // First ensure the user is authenticated
+  requireAuth(req, res, () => {
+    // requireAuth calls next() only on success, so req.user is set here
+    if (req.user!.role !== "admin") {
+      res.status(403).json({ error: "Admin access required" });
+      return;
+    }
+    next();
+  });
+}
