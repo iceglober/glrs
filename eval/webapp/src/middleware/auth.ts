@@ -27,3 +27,14 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   req.user = { userId: payload.userId, role: payload.role };
   next();
 }
+
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  // First ensure authentication
+  requireAuth(req, res, () => {
+    if (!req.user || req.user.role !== "admin") {
+      res.status(403).json({ error: "Admin access required" });
+      return;
+    }
+    next();
+  });
+}
