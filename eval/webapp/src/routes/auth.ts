@@ -4,7 +4,7 @@ import { hashPassword, verifyPassword, generateToken } from "../auth.js";
 
 export const authRouter = Router();
 
-// POST /api/auth/register
+// POST /api/auth/register — create a new user with password
 authRouter.post("/register", async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
 
@@ -13,8 +13,8 @@ authRouter.post("/register", async (req: Request, res: Response) => {
     return;
   }
 
-  if (typeof password !== "string" || password.length < 8) {
-    res.status(400).json({ error: "password must be at least 8 characters" });
+  if (password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
     return;
   }
 
@@ -27,18 +27,26 @@ authRouter.post("/register", async (req: Request, res: Response) => {
     );
     const user = rows[0];
     const token = generateToken(user.id);
+
+    // Store session
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await pool.query(
+      "INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, $3)",
+      [user.id, token, expiresAt],
+    );
+
     res.status(201).json({ user, token });
   } catch (err: any) {
-    // Unique constraint on email
     if (err.code === "23505") {
-      res.status(409).json({ error: "email already exists" });
+      // unique_violation — email already exists
+      res.status(409).json({ error: "Email already registered" });
       return;
     }
     throw err;
   }
 });
 
-// POST /api/auth/login
+// POST /api/auth/login — authenticate with email + password
 authRouter.post("/login", async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
@@ -53,18 +61,26 @@ authRouter.post("/login", async (req: Request, res: Response) => {
   );
 
   if (rows.length === 0) {
-    res.status(401).json({ error: "invalid credentials" });
+    res.status(401).json({ error: "Invalid credentials" });
     return;
   }
 
   const user = rows[0];
 
   if (!user.password_hash || !verifyPassword(password, user.password_hash)) {
-    res.status(401).json({ error: "invalid credentials" });
+    res.status(401).json({ error: "Invalid credentials" });
     return;
   }
 
   const token = generateToken(user.id);
+
+  // Store session
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await pool.query(
+    "INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, $3)",
+    [user.id, token, expiresAt],
+  );
+
   res.json({
     user: { id: user.id, name: user.name, email: user.email, role: user.role },
     token,
