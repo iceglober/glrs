@@ -1,16 +1,27 @@
-ALTER TABLE posts ADD COLUMN IF NOT EXISTS search_vector tsvector;
-
-CREATE INDEX IF NOT EXISTS posts_search_vector_idx ON posts USING GIN(search_vector);
-
-CREATE OR REPLACE FUNCTION posts_search_vector_update() RETURNS TRIGGER AS $$
+-- Add search_vector column for full-text search
+DO $$
 BEGIN
-  NEW.search_vector := to_tsvector('english', COALESCE(NEW.title, '') || ' ' || COALESCE(NEW.body, ''));
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'posts' AND column_name = 'search_vector') THEN
+    ALTER TABLE posts ADD COLUMN search_vector tsvector;
+    -- Populate search_vector with existing data
+    UPDATE posts SET search_vector = to_tsvector('english', coalesce(title, '') || ' ' || coalesce(body, ''));
+  END IF;
+END $$;
+
+-- Create GIN index for full-text search performance
+CREATE INDEX IF NOT EXISTS idx_posts_search_vector ON posts USING GIN(search_vector);
+
+-- Trigger to update search_vector on insert/update
+CREATE OR REPLACE FUNCTION update_posts_search_vector()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.search_vector := to_tsvector('english', coalesce(NEW.title, '') || ' ' || coalesce(NEW.body, ''));
   RETURN NEW;
-END;
+END
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS posts_search_vector_trigger ON posts;
-CREATE TRIGGER posts_search_vector_trigger BEFORE INSERT OR UPDATE ON posts
-FOR EACH ROW EXECUTE FUNCTION posts_search_vector_update();
-
-UPDATE posts SET search_vector = to_tsvector('english', COALESCE(title, '') || ' ' || COALESCE(body, ''));
+DROP TRIGGER IF EXISTS trg_posts_search_vector ON posts;
+CREATE TRIGGER trg_posts_search_vector
+BEFORE INSERT OR UPDATE ON posts
+FOR EACH ROW
+EXECUTE FUNCTION update_posts_search_vector();
