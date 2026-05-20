@@ -1,7 +1,7 @@
 items:
   - id: "0.1"
     intent: "Implement auth foundation: migration adding password_hash/role to users and sessions table, token utilities (hash, verify, generate, validate), and register/login endpoints mounted at /api/auth"
-    checked: false
+    checked: true
     files:
       - path: migrations/003_auth.sql
         isNew: true
