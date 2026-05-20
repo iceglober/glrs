@@ -4,40 +4,25 @@ import { verifyToken } from "../auth.js";
 declare global {
   namespace Express {
     interface Request {
-      user?: {
-        userId: number;
-        role: string;
-      };
+      user?: { userId: number; role: string };
     }
   }
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
-
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     res.status(401).json({ error: "Authentication required" });
     return;
   }
 
   const token = authHeader.slice(7);
-  const decoded = verifyToken(token);
-
-  if (!decoded) {
+  const payload = verifyToken(token);
+  if (!payload) {
     res.status(401).json({ error: "Authentication required" });
     return;
   }
 
-  req.user = decoded;
+  req.user = { userId: payload.userId, role: "user" };
   next();
-}
-
-export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  requireAuth(req, res, () => {
-    if (req.user?.role !== "admin") {
-      res.status(403).json({ error: "Admin access required" });
-      return;
-    }
-    next();
-  });
 }

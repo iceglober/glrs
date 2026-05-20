@@ -1,53 +1,52 @@
-import { createHmac, scryptSync, randomBytes } from "crypto";
+import { scrypt, randomBytes, createHmac } from "crypto";
+import { promisify } from "util";
 
-const TOKEN_SECRET = process.env.TOKEN_SECRET || "dev-secret-key-change-in-production";
-const TOKEN_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
+const scryptAsync = promisify(scrypt);
+const SECRET = process.env.AUTH_SECRET || "dev-secret-change-in-production";
 
-export function hashPassword(password: string): string {
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = scryptSync(password, salt, 32);
-  return `${salt.toString("hex")}.${hash.toString("hex")}`;
+  const hash = await scryptAsync(password, salt, 64);
+  return `${salt.toString("base64")}:${(hash as Buffer).toString("base64")}`;
 }
 
-export function verifyPassword(password: string, hash: string): boolean {
-  const [saltHex, hashHex] = hash.split(".");
-  if (!saltHex || !hashHex) return false;
-  const salt = Buffer.from(saltHex, "hex");
-  const derived = scryptSync(password, salt, 32);
-  return derived.toString("hex") === hashHex;
+export async function verifyPassword(
+  password: string,
+  hash: string,
+): Promise<boolean> {
+  const [saltB64, hashB64] = hash.split(":");
+  if (!saltB64 || !hashB64) return false;
+  const salt = Buffer.from(saltB64, "base64");
+  const stored = Buffer.from(hashB64, "base64");
+  const computed = await scryptAsync(password, salt, 64);
+  return computed.equals(stored);
 }
 
-export function generateToken(userId: number, role: string = "user"): string {
-  const payload = {
-    userId,
-    role,
-    iat: Date.now(),
-    exp: Date.now() + TOKEN_EXPIRY,
-  };
-  const json = JSON.stringify(payload);
-  const hmac = createHmac("sha256", TOKEN_SECRET);
-  hmac.update(json);
-  const signature = hmac.digest("hex");
-  const tokenData = Buffer.from(json).toString("base64url");
-  return `${tokenData}.${signature}`;
+export function generateToken(userId: number): string {
+  const payload = { userId, iat: Math.floor(Date.now() / 1000) };
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const hmac = createHmac("sha256", SECRET);
+  hmac.update(payloadB64);
+  const signatureB64 = hmac.digest("base64url");
+  return `${payloadB64}.${signatureB64}`;
 }
 
-export function verifyToken(token: string): { userId: number; role: string } | null {
-  const [tokenData, signature] = token.split(".");
-  if (!tokenData || !signature) return null;
-
+export function verifyToken(token: string): { userId: number } | null {
   try {
-    const json = Buffer.from(tokenData, "base64url").toString();
-    const payload = JSON.parse(json);
+    const [payloadB64, signatureB64] = token.split(".");
+    if (!payloadB64 || !signatureB64) return null;
 
-    const hmac = createHmac("sha256", TOKEN_SECRET);
-    hmac.update(json);
-    const expectedSignature = hmac.digest("hex");
+    const hmac = createHmac("sha256", SECRET);
+    hmac.update(payloadB64);
+    const expected = hmac.digest("base64url");
+    if (expected !== signatureB64) return null;
 
-    if (signature !== expectedSignature) return null;
-    if (payload.exp < Date.now()) return null;
+    const payload = JSON.parse(
+      Buffer.from(payloadB64, "base64url").toString(),
+    );
+    if (!payload.userId || typeof payload.userId !== "number") return null;
 
-    return { userId: payload.userId, role: payload.role };
+    return { userId: payload.userId };
   } catch {
     return null;
   }

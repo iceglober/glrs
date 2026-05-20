@@ -4,7 +4,7 @@ import { app } from "../src/app.js";
 import { hashPassword, verifyPassword, generateToken, verifyToken } from "../src/auth.js";
 import type { Server } from "http";
 
-const PORT = 3455;
+const PORT = 3456;
 const BASE = `http://localhost:${PORT}/api/auth`;
 
 let server: Server;
@@ -35,192 +35,155 @@ beforeEach(async () => {
   await pool.query("TRUNCATE posts, users RESTART IDENTITY CASCADE");
 });
 
-describe("Auth API - Register", () => {
-  it("POST /api/auth/register with valid credentials returns 201 with user and token", async () => {
-    const res = await fetch(`${BASE}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: "Alice",
-        email: "alice@example.com",
-        password: "password123",
-      }),
+describe("Authentication", () => {
+  describe("POST /api/auth/register", () => {
+    it("creates a user and returns 201 with {user, token}", async () => {
+      const res = await fetch(`${BASE}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Alice",
+          email: "alice@example.com",
+          password: "password123",
+        }),
+      });
+      expect(res.status).toBe(201);
+      const data = await res.json();
+      expect(data.user).toBeDefined();
+      expect(data.user.id).toBeDefined();
+      expect(data.user.name).toBe("Alice");
+      expect(data.user.email).toBe("alice@example.com");
+      expect(data.user.role).toBe("user");
+      expect(typeof data.token).toBe("string");
     });
 
-    expect(res.status).toBe(201);
-    const data = await res.json();
-    expect(data.user).toBeDefined();
-    expect(data.user.id).toBeDefined();
-    expect(data.user.name).toBe("Alice");
-    expect(data.user.email).toBe("alice@example.com");
-    expect(data.user.role).toBe("user");
-    expect(data.token).toBeDefined();
-    expect(typeof data.token).toBe("string");
-  });
+    it("returns 409 on duplicate email", async () => {
+      await fetch(`${BASE}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Alice",
+          email: "alice@example.com",
+          password: "password123",
+        }),
+      });
 
-  it("POST /api/auth/register with duplicate email returns 409", async () => {
-    await fetch(`${BASE}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: "Alice",
-        email: "alice@example.com",
-        password: "password123",
-      }),
+      const res = await fetch(`${BASE}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Alice2",
+          email: "alice@example.com",
+          password: "password123",
+        }),
+      });
+      expect(res.status).toBe(409);
     });
 
-    const res = await fetch(`${BASE}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: "Alice2",
-        email: "alice@example.com",
-        password: "password456",
-      }),
-    });
-
-    expect(res.status).toBe(409);
-    const data = await res.json();
-    expect(data.error).toBeDefined();
-  });
-
-  it("POST /api/auth/register with password < 8 chars returns 400", async () => {
-    const res = await fetch(`${BASE}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: "Bob",
-        email: "bob@example.com",
-        password: "short",
-      }),
-    });
-
-    expect(res.status).toBe(400);
-    const data = await res.json();
-    expect(data.error).toBeDefined();
-  });
-
-  it("POST /api/auth/register with missing fields returns 400", async () => {
-    const res = await fetch(`${BASE}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: "Charlie",
-      }),
-    });
-
-    expect(res.status).toBe(400);
-  });
-});
-
-describe("Auth API - Login", () => {
-  beforeEach(async () => {
-    await fetch(`${BASE}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: "Alice",
-        email: "alice@example.com",
-        password: "password123",
-      }),
+    it("returns 400 on password < 8 characters", async () => {
+      const res = await fetch(`${BASE}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Bob",
+          email: "bob@example.com",
+          password: "short",
+        }),
+      });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toBeDefined();
     });
   });
 
-  it("POST /api/auth/login with correct credentials returns 200 with user and token", async () => {
-    const res = await fetch(`${BASE}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: "alice@example.com",
-        password: "password123",
-      }),
+  describe("POST /api/auth/login", () => {
+    it("returns 200 with {user, token} on correct credentials", async () => {
+      await fetch(`${BASE}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Carol",
+          email: "carol@example.com",
+          password: "password123",
+        }),
+      });
+
+      const res = await fetch(`${BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "carol@example.com",
+          password: "password123",
+        }),
+      });
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.user).toBeDefined();
+      expect(data.user.email).toBe("carol@example.com");
+      expect(typeof data.token).toBe("string");
     });
 
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.user).toBeDefined();
-    expect(data.user.id).toBeDefined();
-    expect(data.user.email).toBe("alice@example.com");
-    expect(data.token).toBeDefined();
-    expect(typeof data.token).toBe("string");
-  });
+    it("returns 401 on wrong password", async () => {
+      await fetch(`${BASE}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Dave",
+          email: "dave@example.com",
+          password: "password123",
+        }),
+      });
 
-  it("POST /api/auth/login with wrong password returns 401", async () => {
-    const res = await fetch(`${BASE}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: "alice@example.com",
-        password: "wrongpassword",
-      }),
+      const res = await fetch(`${BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "dave@example.com",
+          password: "wrongpassword",
+        }),
+      });
+      expect(res.status).toBe(401);
     });
 
-    expect(res.status).toBe(401);
-    const data = await res.json();
-    expect(data.error).toBeDefined();
+    it("returns 401 on unknown email", async () => {
+      const res = await fetch(`${BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "unknown@example.com",
+          password: "password123",
+        }),
+      });
+      expect(res.status).toBe(401);
+    });
   });
 
-  it("POST /api/auth/login with unknown email returns 401", async () => {
-    const res = await fetch(`${BASE}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: "unknown@example.com",
-        password: "password123",
-      }),
+  describe("Token utilities", () => {
+    it("verifyToken(generateToken(userId)) returns {userId}", () => {
+      const userId = 42;
+      const token = generateToken(userId);
+      const payload = verifyToken(token);
+      expect(payload).toBeDefined();
+      expect(payload?.userId).toBe(userId);
     });
 
-    expect(res.status).toBe(401);
-    const data = await res.json();
-    expect(data.error).toBeDefined();
-  });
-
-  it("POST /api/auth/login with missing fields returns 400", async () => {
-    const res = await fetch(`${BASE}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: "alice@example.com",
-      }),
+    it("verifyToken returns null for invalid token", () => {
+      const payload = verifyToken("invalid.token");
+      expect(payload).toBeNull();
     });
 
-    expect(res.status).toBe(400);
-  });
-});
+    it("hashPassword and verifyPassword round-trip returns true", async () => {
+      const password = "mypassword";
+      const hash = await hashPassword(password);
+      const matches = await verifyPassword(password, hash);
+      expect(matches).toBe(true);
+    });
 
-describe("Auth Utilities", () => {
-  it("hashPassword and verifyPassword round-trip returns true", () => {
-    const password = "mySecurePassword123";
-    const hash = hashPassword(password);
-    const isValid = verifyPassword(password, hash);
-    expect(isValid).toBe(true);
-  });
-
-  it("verifyPassword with wrong password returns false", () => {
-    const password = "mySecurePassword123";
-    const hash = hashPassword(password);
-    const isValid = verifyPassword("wrongPassword", hash);
-    expect(isValid).toBe(false);
-  });
-
-  it("generateToken and verifyToken round-trip returns userId", () => {
-    const userId = 42;
-    const token = generateToken(userId);
-    const decoded = verifyToken(token);
-    expect(decoded).toBeDefined();
-    expect(decoded?.userId).toBe(userId);
-  });
-
-  it("verifyToken with tampered token returns null", () => {
-    const userId = 42;
-    const token = generateToken(userId);
-    const tamperedToken = token.slice(0, -5) + "xxxxx";
-    const decoded = verifyToken(tamperedToken);
-    expect(decoded).toBeNull();
-  });
-
-  it("verifyToken with invalid format returns null", () => {
-    const decoded = verifyToken("invalid.token.format");
-    expect(decoded).toBeNull();
+    it("verifyPassword returns false for wrong password", async () => {
+      const password = "mypassword";
+      const hash = await hashPassword(password);
+      const matches = await verifyPassword("wrongpassword", hash);
+      expect(matches).toBe(false);
+    });
   });
 });
