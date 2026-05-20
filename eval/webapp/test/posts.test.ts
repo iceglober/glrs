@@ -191,3 +191,69 @@ describe("Pagination", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("Full-text search", () => {
+  it("GET /api/posts/search without q returns 400", async () => {
+    const res = await fetch(`${BASE}/search`);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toBe("q is required");
+  });
+
+  it("GET /api/posts/search returns empty array when no matches", async () => {
+    await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ title: "About Cats", body: "Cats are great" }),
+    });
+    const res = await fetch(`${BASE}/search?q=dog`);
+    expect(res.status).toBe(200);
+    const results = await res.json();
+    expect(Array.isArray(results)).toBe(true);
+    expect(results).toHaveLength(0);
+  });
+
+  it("GET /api/posts/search returns results with rank and headline", async () => {
+    await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ title: "PostgreSQL Guide", body: "Learn PostgreSQL and full-text search" }),
+    });
+    const res = await fetch(`${BASE}/search?q=PostgreSQL`);
+    expect(res.status).toBe(200);
+    const results = await res.json();
+    expect(results).toHaveLength(1);
+    expect(results[0].rank).toBeDefined();
+    expect(results[0].headline).toBeDefined();
+    expect(typeof results[0].headline).toBe("string");
+  });
+
+  it("GET /api/posts/search includes headline with <b> tags", async () => {
+    await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ title: "PostgreSQL Guide", body: "PostgreSQL is a powerful database system" }),
+    });
+    const res = await fetch(`${BASE}/search?q=PostgreSQL`);
+    const results = await res.json();
+    expect(results[0].headline).toContain("<b>");
+    expect(results[0].headline).toContain("</b>");
+  });
+
+  it("GET /api/posts/search ranks results by relevance", async () => {
+    await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ title: "PostgreSQL", body: "A database system" }),
+    });
+    await fetch(BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ title: "Another Post", body: "This mentions PostgreSQL once" }),
+    });
+    const res = await fetch(`${BASE}/search?q=PostgreSQL`);
+    const results = await res.json();
+    expect(results).toHaveLength(2);
+    expect(results[0].rank >= results[1].rank).toBe(true);
+  });
+});

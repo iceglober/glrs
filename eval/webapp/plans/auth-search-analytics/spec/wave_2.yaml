@@ -1,7 +1,7 @@
 items:
   - id: "2.1"
     intent: "Add full-text search to posts via a search_vector TSVECTOR column with GIN index and trigger, expose GET /api/posts/search?q=, and add cursor-based pagination envelope to GET /api/posts and GET /api/users"
-    checked: false
+    checked: true
     files:
       - path: migrations/004_search.sql
         isNew: true
