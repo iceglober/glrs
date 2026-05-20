@@ -23,6 +23,16 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     return;
   }
 
-  req.user = { userId: payload.userId, role: "user" };
+  req.user = { userId: payload.userId, role: payload.role };
   next();
+}
+
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  requireAuth(req, res, () => {
+    if (req.user?.role !== "admin") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    next();
+  });
 }

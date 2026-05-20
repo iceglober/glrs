@@ -22,8 +22,8 @@ export async function verifyPassword(
   return computed.equals(stored);
 }
 
-export function generateToken(userId: number): string {
-  const payload = { userId, iat: Math.floor(Date.now() / 1000) };
+export function generateToken(userId: number, role: string = "user"): string {
+  const payload = { userId, role, iat: Math.floor(Date.now() / 1000) };
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const hmac = createHmac("sha256", SECRET);
   hmac.update(payloadB64);
@@ -31,7 +31,7 @@ export function generateToken(userId: number): string {
   return `${payloadB64}.${signatureB64}`;
 }
 
-export function verifyToken(token: string): { userId: number } | null {
+export function verifyToken(token: string): { userId: number; role: string } | null {
   try {
     const [payloadB64, signatureB64] = token.split(".");
     if (!payloadB64 || !signatureB64) return null;
@@ -45,8 +45,9 @@ export function verifyToken(token: string): { userId: number } | null {
       Buffer.from(payloadB64, "base64url").toString(),
     );
     if (!payload.userId || typeof payload.userId !== "number") return null;
+    if (!payload.role || typeof payload.role !== "string") return null;
 
-    return { userId: payload.userId };
+    return { userId: payload.userId, role: payload.role };
   } catch {
     return null;
   }

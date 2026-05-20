@@ -35,7 +35,7 @@ authRouter.post("/register", async (req: Request<unknown, unknown, RegisterReque
       [name, email, passwordHash, "user"],
     );
     const user = rows[0];
-    const token = generateToken(user.id);
+    const token = generateToken(user.id, user.role);
     res.status(201).json({ user, token });
   } catch (err: unknown) {
     if (err instanceof Error && err.message.includes("duplicate key")) {
@@ -72,7 +72,7 @@ authRouter.post("/login", async (req: Request<unknown, unknown, LoginRequest>, r
     return;
   }
 
-  const token = generateToken(user.id);
+  const token = generateToken(user.id, user.role);
   res.status(200).json({
     user: {
       id: user.id,
