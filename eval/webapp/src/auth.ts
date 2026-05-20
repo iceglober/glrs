@@ -1,54 +1,52 @@
-import { createHmac, randomBytes, scrypt, timingSafeEqual } from "crypto";
+import { createHmac, scryptSync, randomBytes } from "crypto";
 
-const SECRET = process.env.JWT_SECRET ?? "dev-secret-change-in-production";
-const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const TOKEN_SECRET = process.env.TOKEN_SECRET || "dev-secret-key-change-in-production";
+const TOKEN_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  return new Promise((resolve, reject) => {
-    scrypt(password, salt, 64, (err, hash) => {
-      if (err) reject(err);
-      else resolve(`${salt}:${hash.toString("hex")}`);
-    });
-  });
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16);
+  const hash = scryptSync(password, salt, 32);
+  return `${salt.toString("hex")}.${hash.toString("hex")}`;
 }
 
-export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [salt, hash] = stored.split(":");
-  if (!salt || !hash) return false;
-  return new Promise((resolve, reject) => {
-    scrypt(password, salt, 64, (err, derived) => {
-      if (err) reject(err);
-      else {
-        try {
-          resolve(timingSafeEqual(derived, Buffer.from(hash, "hex")));
-        } catch {
-          resolve(false);
-        }
-      }
-    });
-  });
+export function verifyPassword(password: string, hash: string): boolean {
+  const [saltHex, hashHex] = hash.split(".");
+  if (!saltHex || !hashHex) return false;
+  const salt = Buffer.from(saltHex, "hex");
+  const derived = scryptSync(password, salt, 32);
+  return derived.toString("hex") === hashHex;
 }
 
-export function generateToken(userId: number, role: string = "user"): string {
-  const payload = Buffer.from(
-    JSON.stringify({ userId, role, exp: Date.now() + TOKEN_TTL_MS }),
-  ).toString("base64url");
-  const sig = createHmac("sha256", SECRET).update(payload).digest("base64url");
-  return `${payload}.${sig}`;
+export function generateToken(userId: number): string {
+  const payload = {
+    userId,
+    iat: Date.now(),
+    exp: Date.now() + TOKEN_EXPIRY,
+  };
+  const json = JSON.stringify(payload);
+  const hmac = createHmac("sha256", TOKEN_SECRET);
+  hmac.update(json);
+  const signature = hmac.digest("hex");
+  const tokenData = Buffer.from(json).toString("base64url");
+  return `${tokenData}.${signature}`;
 }
 
-export function verifyToken(token: string): { userId: number; role: string } | null {
-  const dot = token.lastIndexOf(".");
-  if (dot === -1) return null;
-  const payload = token.slice(0, dot);
-  const sig = token.slice(dot + 1);
-  const expected = createHmac("sha256", SECRET).update(payload).digest("base64url");
-  if (sig !== expected) return null;
+export function verifyToken(token: string): { userId: number } | null {
+  const [tokenData, signature] = token.split(".");
+  if (!tokenData || !signature) return null;
+
   try {
-    const data = JSON.parse(Buffer.from(payload, "base64url").toString());
-    if (typeof data.userId !== "number" || data.exp < Date.now()) return null;
-    return { userId: data.userId, role: data.role ?? "user" };
+    const json = Buffer.from(tokenData, "base64url").toString();
+    const payload = JSON.parse(json);
+
+    const hmac = createHmac("sha256", TOKEN_SECRET);
+    hmac.update(json);
+    const expectedSignature = hmac.digest("hex");
+
+    if (signature !== expectedSignature) return null;
+    if (payload.exp < Date.now()) return null;
+
+    return { userId: payload.userId };
   } catch {
     return null;
   }
