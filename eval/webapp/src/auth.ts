@@ -1,53 +1,65 @@
-import { scrypt, randomBytes, createHmac } from "crypto";
-import { promisify } from "util";
+import { scryptSync, randomBytes, createHmac, timingSafeEqual } from "crypto";
 
-const scryptAsync = promisify(scrypt);
-const SECRET = process.env.AUTH_SECRET || "dev-secret-change-in-production";
+const SECRET = process.env.AUTH_SECRET ?? "dev-secret-do-not-use-in-prod";
+const TOKEN_EXPIRY_SECONDS = 60 * 60 * 24; // 24 hours
 
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16);
-  const hash = await scryptAsync(password, salt, 64);
-  return `${salt.toString("base64")}:${(hash as Buffer).toString("base64")}`;
+/**
+ * Hash a plaintext password using scrypt with a random salt.
+ * Format: salt:hash (both hex-encoded).
+ */
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
 }
 
-export async function verifyPassword(
-  password: string,
-  hash: string,
-): Promise<boolean> {
-  const [saltB64, hashB64] = hash.split(":");
-  if (!saltB64 || !hashB64) return false;
-  const salt = Buffer.from(saltB64, "base64");
-  const stored = Buffer.from(hashB64, "base64");
-  const computed = await scryptAsync(password, salt, 64);
-  return computed.equals(stored);
+/**
+ * Verify a plaintext password against a stored salt:hash string.
+ */
+export function verifyPassword(password: string, stored: string): boolean {
+  const [salt, storedHash] = stored.split(":");
+  if (!salt || !storedHash) return false;
+  const hash = scryptSync(password, salt, 64).toString("hex");
+  const storedBuf = Buffer.from(storedHash, "hex");
+  const hashBuf = Buffer.from(hash, "hex");
+  if (storedBuf.length !== hashBuf.length) return false;
+  return timingSafeEqual(storedBuf, hashBuf);
 }
 
-export function generateToken(userId: number, role: string = "user"): string {
-  const payload = { userId, role, iat: Math.floor(Date.now() / 1000) };
-  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const hmac = createHmac("sha256", SECRET);
-  hmac.update(payloadB64);
-  const signatureB64 = hmac.digest("base64url");
-  return `${payloadB64}.${signatureB64}`;
+/**
+ * Generate a signed token containing the userId and expiry.
+ * Format: base64url(payload).base64url(signature)
+ */
+export function generateToken(userId: number): string {
+  const payload = JSON.stringify({
+    userId,
+    exp: Math.floor(Date.now() / 1000) + TOKEN_EXPIRY_SECONDS,
+  });
+  const payloadB64 = Buffer.from(payload).toString("base64url");
+  const signature = createHmac("sha256", SECRET).update(payloadB64).digest("base64url");
+  return `${payloadB64}.${signature}`;
 }
 
-export function verifyToken(token: string): { userId: number; role: string } | null {
+/**
+ * Verify a token's signature and expiry.
+ * Returns { userId } on success, or null if invalid/expired.
+ */
+export function verifyToken(token: string): { userId: number } | null {
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [payloadB64, signature] = parts;
+
+  const expectedSig = createHmac("sha256", SECRET).update(payloadB64).digest("base64url");
+  const sigBuf = Buffer.from(signature, "base64url");
+  const expectedBuf = Buffer.from(expectedSig, "base64url");
+  if (sigBuf.length !== expectedBuf.length) return null;
+  if (!timingSafeEqual(sigBuf, expectedBuf)) return null;
+
   try {
-    const [payloadB64, signatureB64] = token.split(".");
-    if (!payloadB64 || !signatureB64) return null;
-
-    const hmac = createHmac("sha256", SECRET);
-    hmac.update(payloadB64);
-    const expected = hmac.digest("base64url");
-    if (expected !== signatureB64) return null;
-
-    const payload = JSON.parse(
-      Buffer.from(payloadB64, "base64url").toString(),
-    );
-    if (!payload.userId || typeof payload.userId !== "number") return null;
-    if (!payload.role || typeof payload.role !== "string") return null;
-
-    return { userId: payload.userId, role: payload.role };
+    const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString());
+    if (!payload.userId || !payload.exp) return null;
+    if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return { userId: payload.userId };
   } catch {
     return null;
   }

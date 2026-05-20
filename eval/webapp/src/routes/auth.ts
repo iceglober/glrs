@@ -4,18 +4,8 @@ import { hashPassword, verifyPassword, generateToken } from "../auth.js";
 
 export const authRouter = Router();
 
-interface RegisterRequest {
-  name?: string;
-  email?: string;
-  password?: string;
-}
-
-interface LoginRequest {
-  email?: string;
-  password?: string;
-}
-
-authRouter.post("/register", async (req: Request<unknown, unknown, RegisterRequest>, res: Response) => {
+// POST /api/auth/register
+authRouter.post("/register", async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
 
   if (!name || !email || !password) {
@@ -23,30 +13,33 @@ authRouter.post("/register", async (req: Request<unknown, unknown, RegisterReque
     return;
   }
 
-  if (password.length < 8) {
+  if (typeof password !== "string" || password.length < 8) {
     res.status(400).json({ error: "password must be at least 8 characters" });
     return;
   }
 
+  const passwordHash = hashPassword(password);
+
   try {
-    const passwordHash = await hashPassword(password);
     const { rows } = await pool.query(
-      "INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role",
-      [name, email, passwordHash, "user"],
+      "INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email, role",
+      [name, email, passwordHash],
     );
     const user = rows[0];
-    const token = generateToken(user.id, user.role);
+    const token = generateToken(user.id);
     res.status(201).json({ user, token });
-  } catch (err: unknown) {
-    if (err instanceof Error && err.message.includes("duplicate key")) {
-      res.status(409).json({ error: "Email already in use" });
+  } catch (err: any) {
+    // Unique constraint on email
+    if (err.code === "23505") {
+      res.status(409).json({ error: "email already exists" });
       return;
     }
     throw err;
   }
 });
 
-authRouter.post("/login", async (req: Request<unknown, unknown, LoginRequest>, res: Response) => {
+// POST /api/auth/login
+authRouter.post("/login", async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -60,26 +53,20 @@ authRouter.post("/login", async (req: Request<unknown, unknown, LoginRequest>, r
   );
 
   if (rows.length === 0) {
-    res.status(401).json({ error: "Invalid email or password" });
+    res.status(401).json({ error: "invalid credentials" });
     return;
   }
 
   const user = rows[0];
-  const match = await verifyPassword(password, user.password_hash);
 
-  if (!match) {
-    res.status(401).json({ error: "Invalid email or password" });
+  if (!user.password_hash || !verifyPassword(password, user.password_hash)) {
+    res.status(401).json({ error: "invalid credentials" });
     return;
   }
 
-  const token = generateToken(user.id, user.role);
-  res.status(200).json({
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    },
+  const token = generateToken(user.id);
+  res.json({
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
     token,
   });
 });
