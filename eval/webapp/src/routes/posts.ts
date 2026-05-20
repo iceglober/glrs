@@ -43,24 +43,6 @@ postsRouter.get("/", async (req: Request, res: Response) => {
   res.json({ data: rows, next_cursor, has_more });
 });
 
-// GET /api/posts/search?q=<query> — full-text search (must be before /:id)
-postsRouter.get("/search", async (req: Request, res: Response) => {
-  const q = req.query.q as string | undefined;
-  if (!q) {
-    res.status(400).json({ error: "q is required" });
-    return;
-  }
-  const { rows } = await pool.query(
-    `SELECT *, ts_rank(search_vector, query) AS rank,
-            ts_headline('english', body, query) AS headline
-     FROM posts, to_tsquery('english', $1) AS query
-     WHERE search_vector @@ query
-     ORDER BY rank DESC`,
-    [q],
-  );
-  res.json(rows);
-});
-
 // GET /api/posts/:id — get by id
 postsRouter.get("/:id", async (req: Request, res: Response) => {
   const { rows } = await pool.query("SELECT * FROM posts WHERE id = $1", [
