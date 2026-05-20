@@ -1,7 +1,7 @@
 items:
   - id: "3.1"
     intent: "Create src/routes/analytics.ts with three admin-only reporting endpoints (overview, top-authors, activity), mount at /api/analytics in app.ts, write integration tests in test/analytics.test.ts, and verify all test files pass (bun test)"
-    checked: false
+    checked: true
     files:
       - path: src/routes/analytics.ts
         isNew: true
