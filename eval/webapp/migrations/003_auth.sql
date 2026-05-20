@@ -1,9 +1,18 @@
--- Add password_hash and role columns to users
+-- Add password_hash and role to users; create sessions table
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'
-  CHECK (role IN ('user', 'admin'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
 
--- Sessions table for token storage
+-- Add check constraint on role (use DO block to avoid error if already exists)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check'
+  ) THEN
+    ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'));
+  END IF;
+END
+$$;
+
 CREATE TABLE IF NOT EXISTS sessions (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -11,6 +20,3 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
-
-CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
-CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);

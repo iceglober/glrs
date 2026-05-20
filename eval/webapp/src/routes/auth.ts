@@ -4,7 +4,7 @@ import { hashPassword, verifyPassword, generateToken } from "../auth.js";
 
 export const authRouter = Router();
 
-// POST /api/auth/register — create a new user with password
+// POST /api/auth/register
 authRouter.post("/register", async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
 
@@ -13,8 +13,8 @@ authRouter.post("/register", async (req: Request, res: Response) => {
     return;
   }
 
-  if (password.length < 8) {
-    res.status(400).json({ error: "Password must be at least 8 characters" });
+  if (typeof password !== "string" || password.length < 8) {
+    res.status(400).json({ error: "password must be at least 8 characters" });
     return;
   }
 
@@ -22,11 +22,14 @@ authRouter.post("/register", async (req: Request, res: Response) => {
 
   try {
     const { rows } = await pool.query(
-      "INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email, role",
+      `INSERT INTO users (name, email, password_hash, role)
+       VALUES ($1, $2, $3, 'user')
+       RETURNING id, name, email, role, created_at`,
       [name, email, passwordHash],
     );
+
     const user = rows[0];
-    const token = generateToken(user.id);
+    const token = generateToken(user.id, user.role);
 
     // Store session
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -36,17 +39,22 @@ authRouter.post("/register", async (req: Request, res: Response) => {
     );
 
     res.status(201).json({ user, token });
-  } catch (err: any) {
-    if (err.code === "23505") {
-      // unique_violation — email already exists
-      res.status(409).json({ error: "Email already registered" });
+  } catch (err: unknown) {
+    // Unique constraint violation on email
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code: string }).code === "23505"
+    ) {
+      res.status(409).json({ error: "email already registered" });
       return;
     }
     throw err;
   }
 });
 
-// POST /api/auth/login — authenticate with email + password
+// POST /api/auth/login
 authRouter.post("/login", async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
@@ -61,18 +69,18 @@ authRouter.post("/login", async (req: Request, res: Response) => {
   );
 
   if (rows.length === 0) {
-    res.status(401).json({ error: "Invalid credentials" });
+    res.status(401).json({ error: "invalid credentials" });
     return;
   }
 
   const user = rows[0];
 
   if (!user.password_hash || !verifyPassword(password, user.password_hash)) {
-    res.status(401).json({ error: "Invalid credentials" });
+    res.status(401).json({ error: "invalid credentials" });
     return;
   }
 
-  const token = generateToken(user.id);
+  const token = generateToken(user.id, user.role);
 
   // Store session
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -81,8 +89,7 @@ authRouter.post("/login", async (req: Request, res: Response) => {
     [user.id, token, expiresAt],
   );
 
-  res.json({
-    user: { id: user.id, name: user.name, email: user.email, role: user.role },
-    token,
-  });
+  // Don't return password_hash
+  const { password_hash: _, ...safeUser } = user;
+  res.json({ user: safeUser, token });
 });
