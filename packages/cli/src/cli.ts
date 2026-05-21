@@ -104,17 +104,7 @@ if (sub === "autopilot") {
 
 // Handle dashboard subcommand (TUI picker, no flags)
 if (sub === "dashboard") {
-  const { ADAPTER_NAMES } = await import("./adapter-factory.js");
-  const subArgs = args.slice(1);
-  let adapterArg: string | undefined;
-  for (let i = 0; i < subArgs.length; i++) {
-    if ((subArgs[i] === "-a" || subArgs[i] === "--adapter") && subArgs[i + 1]) {
-      adapterArg = subArgs[i + 1];
-      break;
-    }
-  }
-  const adapterName = adapterArg && (ADAPTER_NAMES as readonly string[]).includes(adapterArg) ? adapterArg as (typeof ADAPTER_NAMES)[number] : undefined;
-  await runAutopilot(adapterName);
+  await runAutopilot();
   process.exit(0);
 }
 
