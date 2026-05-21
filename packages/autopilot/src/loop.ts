@@ -457,6 +457,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           iterations: iteration - 1,
           message: `Kill switch active (.agent/autopilot-disable exists). Stopping after ${iteration - 1} iteration(s).`,
           sessionId,
+          cumulativeCostUsd: heartbeat?.getState().cumulativeCostUsd,
           agentHandle: transferHandle(),
         };
       }
@@ -476,6 +477,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           iterations: iteration - 1,
           message: `Total timeout (${timeoutMs}ms) exceeded after ${iteration - 1} iteration(s).`,
           sessionId,
+          cumulativeCostUsd: heartbeat?.getState().cumulativeCostUsd,
           agentHandle: transferHandle(),
         };
       }
@@ -717,6 +719,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           iterations: iteration,
           message: `Aborted after ${iteration} iteration(s) (total timeout exceeded).`,
           sessionId,
+          cumulativeCostUsd: heartbeat?.getState().cumulativeCostUsd,
           agentHandle: transferHandle(),
         };
       }
@@ -735,6 +738,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           iterations: iteration,
           message: `Iteration ${iteration} stalled for ${result.stallMs}ms with no idle signal.`,
           sessionId,
+          cumulativeCostUsd: heartbeat?.getState().cumulativeCostUsd,
           agentHandle: transferHandle(),
         };
       }
@@ -816,6 +820,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           iterations: iteration,
           message: `Error in iteration ${iteration}: ${result.message}`,
           sessionId,
+          cumulativeCostUsd: heartbeat?.getState().cumulativeCostUsd,
           agentHandle: transferHandle(),
         };
       }
@@ -859,6 +864,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           iterations: iteration,
           message: `Agent emitted <autopilot-done> at iteration ${iteration}.`,
           sessionId,
+          cumulativeCostUsd: heartbeat?.getState().cumulativeCostUsd,
           agentHandle: transferHandle(),
         };
       }
@@ -1081,6 +1087,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
           iterations: iteration,
           message: `Agent made no filesystem progress for ${struggleThreshold} consecutive iteration(s). Stopping at iteration ${iteration}.`,
           sessionId,
+          cumulativeCostUsd: heartbeat?.getState().cumulativeCostUsd,
           agentHandle: transferHandle(),
         };
       }
@@ -1099,6 +1106,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       iterations: maxIterations,
       message: `Reached maximum iterations (${maxIterations}). Stopping.`,
       sessionId,
+      cumulativeCostUsd: heartbeat?.getState().cumulativeCostUsd,
       agentHandle: transferHandle(),
     };
   } finally {

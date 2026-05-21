@@ -95,13 +95,14 @@ if (sub === "wt" || sub === "worktree") {
   process.exit(0);
 }
 
-// Handle autopilot subcommand natively (TUI plan picker)
+// Handle autopilot subcommand — delegate to cmd-ts for full flag parsing
 if (sub === "autopilot") {
-  await runAutopilot();
+  const { autopilotInteractiveCmd } = await import("./commands/autopilot.js");
+  await run(autopilotInteractiveCmd, args.slice(1));
   process.exit(0);
 }
 
-// Handle dashboard subcommand (alias for now)
+// Handle dashboard subcommand (TUI picker, no flags)
 if (sub === "dashboard") {
   await runAutopilot();
   process.exit(0);
