@@ -95,15 +95,26 @@ if (sub === "wt" || sub === "worktree") {
   process.exit(0);
 }
 
-// Handle autopilot subcommand natively (TUI plan picker)
+// Handle autopilot subcommand — delegate to cmd-ts for full flag parsing
 if (sub === "autopilot") {
-  await runAutopilot();
+  const { autopilotInteractiveCmd } = await import("./commands/autopilot.js");
+  await run(autopilotInteractiveCmd, args.slice(1));
   process.exit(0);
 }
 
-// Handle dashboard subcommand (alias for now)
+// Handle dashboard subcommand (TUI picker, no flags)
 if (sub === "dashboard") {
-  await runAutopilot();
+  const { ADAPTER_NAMES } = await import("./adapter-factory.js");
+  const subArgs = args.slice(1);
+  let adapterArg: string | undefined;
+  for (let i = 0; i < subArgs.length; i++) {
+    if ((subArgs[i] === "-a" || subArgs[i] === "--adapter") && subArgs[i + 1]) {
+      adapterArg = subArgs[i + 1];
+      break;
+    }
+  }
+  const adapterName = adapterArg && (ADAPTER_NAMES as readonly string[]).includes(adapterArg) ? adapterArg as (typeof ADAPTER_NAMES)[number] : undefined;
+  await runAutopilot(adapterName);
   process.exit(0);
 }
 
