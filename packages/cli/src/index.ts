@@ -99,6 +99,8 @@ USAGE
 SUBCOMMANDS
   oc         OpenCode agent harness (install, pilot, etc.)
   wt         Worktree management (create, list, switch, delete, cleanup)
+  autopilot  Run the autopilot orchestrator (scope → plan → execute)
+  loop       Run the Ralph loop with a raw prompt
   dashboard  Live TUI dashboard for all running autopilot sessions
 
 Run 'glrs <subcommand> --help' for per-command help.
@@ -108,6 +110,8 @@ EXAMPLES
   glrs wt new
   glrs wt list
   glrs wt switch
+  glrs autopilot --plan docs/plans/my-plan/
+  glrs loop "implement the auth middleware"
   glrs dashboard
 
 REQUIREMENTS

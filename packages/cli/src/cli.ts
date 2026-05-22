@@ -95,6 +95,13 @@ if (sub === "wt" || sub === "worktree") {
   process.exit(0);
 }
 
+// Handle loop subcommand — delegate to cmd-ts for full flag parsing
+if (sub === "loop") {
+  const { loopCmd } = await import("./commands/loop.js");
+  await run(loopCmd, args.slice(1));
+  process.exit(0);
+}
+
 // Handle autopilot subcommand — delegate to cmd-ts for full flag parsing
 if (sub === "autopilot") {
   const { autopilotInteractiveCmd } = await import("./commands/autopilot.js");
