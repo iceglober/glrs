@@ -17,6 +17,7 @@ import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import type { AutopilotConfig } from "./autopilot-config.js";
+export type { AutopilotConfig };
 import { DEFAULT_AUTOPILOT_CONFIG } from "./autopilot-config.js";
 
 const ConfigPath = ".glrs/autopilot.yaml";
@@ -567,7 +568,7 @@ export function validateConfig(config: AutopilotConfig): ValidationResult {
 
       // Validate verify_timeout in phase (if present)
       if (phaseObj.verify_timeout !== undefined) {
-        if (!Number.isInteger(phaseObj.verify_timeout) || phaseObj.verify_timeout <= 0) {
+        if (!Number.isInteger(phaseObj.verify_timeout) || (phaseObj.verify_timeout as number) <= 0) {
           errors.push({
             path: `phases.${phaseName}.verify_timeout`,
             message: `must be a positive integer (got ${phaseObj.verify_timeout})`,
@@ -577,7 +578,7 @@ export function validateConfig(config: AutopilotConfig): ValidationResult {
 
       // Validate max_iterations_per_phase in phase (if present)
       if (phaseObj.max_iterations_per_phase !== undefined) {
-        if (!Number.isInteger(phaseObj.max_iterations_per_phase) || phaseObj.max_iterations_per_phase <= 0) {
+        if (!Number.isInteger(phaseObj.max_iterations_per_phase) || (phaseObj.max_iterations_per_phase as number) <= 0) {
           errors.push({
             path: `phases.${phaseName}.max_iterations_per_phase`,
             message: `must be a positive integer (got ${phaseObj.max_iterations_per_phase})`,
@@ -587,7 +588,7 @@ export function validateConfig(config: AutopilotConfig): ValidationResult {
 
       // Validate max_iterations_per_item in phase (if present)
       if (phaseObj.max_iterations_per_item !== undefined) {
-        if (!Number.isInteger(phaseObj.max_iterations_per_item) || phaseObj.max_iterations_per_item <= 0) {
+        if (!Number.isInteger(phaseObj.max_iterations_per_item) || (phaseObj.max_iterations_per_item as number) <= 0) {
           errors.push({
             path: `phases.${phaseName}.max_iterations_per_item`,
             message: `must be a positive integer (got ${phaseObj.max_iterations_per_item})`,
@@ -597,7 +598,7 @@ export function validateConfig(config: AutopilotConfig): ValidationResult {
 
       // Validate stall_timeout in phase (if present)
       if (phaseObj.stall_timeout !== undefined) {
-        if (!Number.isInteger(phaseObj.stall_timeout) || phaseObj.stall_timeout <= 0) {
+        if (!Number.isInteger(phaseObj.stall_timeout) || (phaseObj.stall_timeout as number) <= 0) {
           errors.push({
             path: `phases.${phaseName}.stall_timeout`,
             message: `must be a positive integer (got ${phaseObj.stall_timeout})`,
@@ -617,7 +618,7 @@ export function validateConfig(config: AutopilotConfig): ValidationResult {
 
       // Validate parallel_lanes in phase (if present)
       if (phaseObj.parallel_lanes !== undefined) {
-        if (!Number.isInteger(phaseObj.parallel_lanes) || phaseObj.parallel_lanes <= 0) {
+        if (!Number.isInteger(phaseObj.parallel_lanes) || (phaseObj.parallel_lanes as number) <= 0) {
           errors.push({
             path: `phases.${phaseName}.parallel_lanes`,
             message: `must be a positive integer (got ${phaseObj.parallel_lanes})`,

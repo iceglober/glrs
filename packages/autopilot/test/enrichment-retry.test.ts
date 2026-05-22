@@ -5,7 +5,7 @@ import * as os from "node:os";
 import { enrichPlanForFastModel } from "../src/plan-enrichment.js";
 import type { AgentAdapter, AgentHandle, SessionResult } from "../src/adapter.js";
 import type { AutopilotLogger } from "../src/lib/logger.js";
-import type { SessionEventEmitter } from "../src/session-runner.js";
+import { SessionEventEmitter } from "../src/session-runner.js";
 
 function makeSilentLogger(): AutopilotLogger {
   const pino = require("pino");
@@ -315,11 +315,8 @@ describe("enrichPlanForFastModel retry logic", () => {
   it("emits events at outer boundary (one pair per overall pass)", async () => {
     const events: Array<{ type: string }> = [];
 
-    const fakeEmitter: SessionEventEmitter = {
-      emitEvent(event) {
-        events.push(event);
-      },
-    };
+    const fakeEmitter = new SessionEventEmitter();
+    fakeEmitter.on("event", (event) => events.push(event));
 
     const fakeAdapter: AgentAdapter = {
       name: "fake",
