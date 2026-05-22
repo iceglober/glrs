@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.0
+
+### Minor Changes
+
+- [#74](https://github.com/iceglober/glrs/pull/74) [`65f9f2c`](https://github.com/iceglober/glrs/commit/65f9f2ce7fc0876aa69fdab1c789caaa927affc4) Thanks [@iceglober](https://github.com/iceglober)! - Make the autopilot workflow fully configurable via `.glrs/autopilot.yaml` so different teams, repos, and plans can customize behavior without code changes.
+
 ## 2.4.1
 
 ### Patch Changes
