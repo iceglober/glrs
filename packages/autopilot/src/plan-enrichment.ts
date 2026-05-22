@@ -530,7 +530,7 @@ async function runEnrichmentPass(
       const phaseTotal = phaseItems.length;
       const phaseEnriched = phaseItems.filter(
         (it) => {
-          const item = it as Record<string, unknown>;
+          const item = it as unknown as Record<string, unknown>;
           return fieldNames.every((field) => item[field]);
         }
       ).length;

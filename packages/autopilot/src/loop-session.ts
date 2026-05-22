@@ -96,11 +96,12 @@ function extractHooksConfig(config: unknown): {
   on_error?: string;
 } {
   const cfgObj = config as Record<string, unknown> | undefined;
+  const hooks = cfgObj?.hooks as Record<string, unknown> | undefined;
   return {
-    pre_phase: cfgObj?.hooks?.pre_phase as string | undefined,
-    post_phase: cfgObj?.hooks?.post_phase as string | undefined,
-    post_run: cfgObj?.hooks?.post_run as string | undefined,
-    on_error: cfgObj?.hooks?.on_error as string | undefined,
+    pre_phase: hooks?.pre_phase as string | undefined,
+    post_phase: hooks?.post_phase as string | undefined,
+    post_run: hooks?.post_run as string | undefined,
+    on_error: hooks?.on_error as string | undefined,
   };
 }
 
@@ -368,9 +369,9 @@ export async function runLoopSession(
       : undefined;
     // Extract stall_timeout from config for this single-file run
     const singleFileStallMs = (singleFileCfgObj?.stall_timeout as number | undefined) ?? STALL_MS_BY_TIER[(opts.fast ? "autopilot-execute" : "deep")];
-    const singleFileAgentOverrides = (
-      (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined
-    )?.opencode?.agents as Record<string, Record<string, unknown>> | undefined;
+    const singleFileAdapters = (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined;
+    const singleFileOcAdapter = singleFileAdapters?.opencode as Record<string, unknown> | undefined;
+    const singleFileAgentOverrides = singleFileOcAdapter?.agents as Record<string, Record<string, unknown>> | undefined;
     return _runRalphLoop({
       prompt,
       cwd: opts.cwd,
@@ -678,7 +679,7 @@ export async function runLoopSession(
         .join(", ");
       const verify = item.verify?.trim() || "(no verify command declared)";
 
-      const enriched = item as Record<string, unknown>;
+      const enriched = item as unknown as Record<string, unknown>;
       let enrichmentBlock = "";
       if (enriched.mirror || enriched.context || enriched.conventions || enriched.proof) {
         const parts: string[] = [];
@@ -939,10 +940,10 @@ export async function runLoopSession(
 
     // Extract agent overrides from phase-specific config (item 4.2).
     // Prefer phase-specific agents, fall back to base config.
-    const phaseAgentOverrides = (
-      (phaseConfig.adapters as Record<string, unknown> | undefined)?.opencode?.agents ??
-      ((opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined)?.opencode?.agents
-    ) as Record<string, Record<string, unknown>> | undefined;
+    const phaseOcAdapter = (phaseConfig.adapters as Record<string, unknown> | undefined)?.opencode as Record<string, unknown> | undefined;
+    const baseAdapters = (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined;
+    const baseOcAdapter = baseAdapters?.opencode as Record<string, unknown> | undefined;
+    const phaseAgentOverrides = (phaseOcAdapter?.agents ?? baseOcAdapter?.agents) as Record<string, Record<string, unknown>> | undefined;
 
     // Per-item execution path (item 4.8). When --fast is set the
     // resolved tier is `autopilot-execute` (mid-tier executor model).
@@ -1586,9 +1587,9 @@ export async function runLoopSession(
       const executionModel = executionSpecifier
         ? resolveModel(executionSpecifier, adapterName ?? "opencode")
         : undefined;
-      const crossCuttingAgentOverrides = (
-        (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined
-      )?.opencode?.agents as Record<string, Record<string, unknown>> | undefined;
+      const crossAdapters = (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined;
+      const crossOcAdapter = crossAdapters?.opencode as Record<string, unknown> | undefined;
+      const crossCuttingAgentOverrides = crossOcAdapter?.agents as Record<string, Record<string, unknown>> | undefined;
       const crossResult = await _runRalphLoop({
         prompt: crossCuttingPrompt,
         cwd: opts.cwd,
@@ -1637,7 +1638,7 @@ export async function runLoopSession(
       const { generateChangeset } = await import("./changeset-generator.js");
       const changesetOpts = {
         packageName: cfgObj?.changeset_package as string | undefined,
-        bumpLevel: cfgObj?.changeset_bump as string | undefined,
+        bumpLevel: cfgObj?.changeset_bump as import("./changeset-generator.js").BumpLevel | undefined,
       };
       const cs = await generateChangeset(opts.planPath, opts.cwd, changesetOpts);
       changesetPath = cs.path;

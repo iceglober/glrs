@@ -42,7 +42,7 @@ export class OpenCodeAdapter implements AgentAdapter {
   readonly name = "opencode";
 
   async start(opts: { cwd: string; agents?: Record<string, unknown> }): Promise<AgentHandle> {
-    const server = await startServer({ cwd: opts.cwd, agentOverrides: opts.agents });
+    const server = await startServer({ cwd: opts.cwd, agentOverrides: opts.agents as Record<string, { model?: string; prompt?: string }> | undefined });
     return new OpenCodeHandle(server, opts.cwd);
   }
 
