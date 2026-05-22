@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "build": "bun run --filter=@glrs-dev/cli --filter=@glrs-dev/assume --filter=@glrs-dev/docs-site --filter=@glrs-dev/infra-gcp build",
-    "test": "bun test",
+    "test": "bun run --filter='*' test",
     "typecheck": "bun run --filter='*' typecheck",
     "lint": "bun run --filter='*' lint",
     "changeset": "changeset",
