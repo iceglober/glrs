@@ -1,0 +1,319 @@
+items:
+  - id: "0.1"
+    intent: |
+      Define AutopilotConfig as a fully-typed TypeScript interface with all fields optional
+      (defaults applied at resolution time). Includes nested types for adapter, models, agents,
+      enrichment, execution, hooks, phases, and a discriminated `adapters` namespace with
+      OpenCode-specific (agents) and claude-code-cli-specific (skip_permissions, allowed_tools)
+      blocks. JSDoc on every field documents its default value.
+    checked: true
+    files:
+      - path: packages/harness-opencode/src/autopilot/autopilot-config.ts
+        isNew: true
+        change: |
+          Export `AutopilotConfig` interface and nested type definitions. Field shape:
+          `adapter?: "opencode" | "claude-code-cli"`,
+          `models?: { enrichment?: string; execution?: string; debrief?: string }`,
+          `agents?`, `enrichment?`, `execution?`, `hooks?`, `phases?`,
+          `adapters?: { opencode?: { agents?: Record<string, AgentOverride> }; claude_code_cli?: { skip_permissions?: boolean; allowed_tools?: string[] } }`.
+          Every field optional; defaults live in item 0.4.
+      - path: packages/harness-opencode/test/autopilot-config.test.ts
+        isNew: true
+        change: |
+          Type-level tests asserting (a) all fields are optional, (b) `adapter` is the
+          string-literal union `"opencode" | "claude-code-cli"`, (c) discriminated `adapters`
+          shape compiles. Use `bun:test` `describe`/`it`/`expect` with compile-time assertions.
+    tests:
+      - packages/harness-opencode/test/autopilot-config.test.ts
+    verify: "bun test test/autopilot-config.test.ts"
+    mirror: packages/autopilot/src/spec-schema.ts
+    context: |
+      // Pattern reference: packages/cli/src/adapter-factory.ts
+      export const ADAPTER_NAMES = ["opencode", "claude-code-cli"] as const;
+      export type AdapterName = (typeof ADAPTER_NAMES)[number];
+      export const DEFAULT_ADAPTER: AdapterName = "opencode";
+
+      // New shape (sketch) — packages/harness-opencode/src/autopilot/autopilot-config.ts
+      export interface AutopilotConfig {
+        /** Adapter that drives the agent. Default: "opencode". */
+        adapter?: "opencode" | "claude-code-cli";
+        /** Model tiers/IDs — interpretation is delegated to the active adapter's resolver. */
+        models?: {
+          /** Default: "deep" (OpenCode tier). */
+          enrichment?: string;
+          /** Default: "autopilot-execute" (OpenCode tier). */
+          execution?: string;
+          /** Default: "deep" (OpenCode tier). */
+          debrief?: string;
+        };
+        agents?: Record<string, AgentOverride>;
+        enrichment?: Record<string, unknown>;
+        execution?: Record<string, unknown>;
+        hooks?: Record<string, string | string[]>;
+        phases?: Record<string, PhaseConfig>;
+        /** Discriminated namespace — only the block matching `adapter` is read at runtime. */
+        adapters?: {
+          opencode?: { agents?: Record<string, AgentOverride> };
+          claude_code_cli?: { skip_permissions?: boolean; allowed_tools?: string[] };
+        };
+      }
+    conventions: |
+      ESM imports with .js suffix on relative paths; named exports only (no default exports);
+      bun:test (`import { describe, it, expect } from "bun:test"`); TypeScript strict mode;
+      JSDoc on every public/exported field documenting default values; `interface` for object
+      shapes, `type` only for unions/aliases; nested types declared in the same file.
+
+  - id: "0.2"
+    intent: |
+      Read `.glrs/autopilot.yaml` from a given repo root. Parse with the `yaml` package
+      (already a workspace dep). Return `Partial<AutopilotConfig>` or `null` when the file
+      doesn't exist. Validate against the schema and reject unknown keys with a clear error
+      listing the bad fields. Never throw on a missing file.
+    checked: true
+    files:
+      - path: packages/harness-opencode/src/autopilot/config-reader.ts
+        isNew: true
+        change: |
+          Export `readConfig(repoRoot: string): Partial<AutopilotConfig> | null`.
+          - `fs.existsSync` check → `null` when missing.
+          - `yaml.parse(fs.readFileSync(...))`.
+          - Validate keys against the schema (top-level + nested); throw with a single
+            error message listing every unknown key.
+      - path: packages/harness-opencode/test/config-reader.test.ts
+        isNew: true
+        change: |
+          Cases: (1) missing file returns null, (2) empty file returns {}, (3) valid file
+          parses, (4) unknown top-level key throws with field name in message,
+          (5) unknown nested key under `adapters.opencode` throws.
+      - path: packages/harness-opencode/package.json
+        isNew: false
+        change: |
+          Add `"yaml": "^2.8.3"` to `dependencies` (already in devDependencies/cli;
+          promote/duplicate to a real runtime dep here).
+    tests:
+      - packages/harness-opencode/test/config-reader.test.ts
+    verify: "bun test test/config-reader.test.ts"
+    mirror: packages/autopilot/src/spec-parser.ts
+    context: |
+      // Mirror pattern from packages/autopilot/src/plan-enrichment.ts:
+      import * as fs from "node:fs";
+      import * as path from "node:path";
+      import { parse as yamlParse, stringify as yamlStringify } from "yaml";
+
+      // Existing package.json dependency block (packages/harness-opencode/package.json):
+      "dependencies": {
+        "@inquirer/prompts": "^8.4.2",
+        "cmd-ts": "^0.15.0",
+        "picomatch": "^4.0.4",
+        "pino": "^10.3.1",
+        "pino-pretty": "^13.1.3",
+        "ulid": "^3.0.2",
+        "yaml": "^2.8.3",
+        "zod": "4.1.8"
+      }
+      // → `yaml` is already present; no package.json change strictly needed, but
+      //   keep the item to confirm during execution.
+
+      // Fixture-based test style (mirror packages/harness-opencode/test/merge-config.test.ts):
+      import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+      import * as fs from "node:fs";
+      import * as path from "node:path";
+      import * as os from "node:os";
+    conventions: |
+      Use `node:fs` / `node:path` imports; `import { parse as yamlParse } from "yaml"`;
+      bun:test with `beforeEach`/`afterEach` creating an `os.tmpdir()` working directory and
+      `fs.rmSync(tmpDir, { recursive: true, force: true })` for cleanup; throw plain `Error`
+      with descriptive multi-line messages; never throw on missing file (return null).
+
+  - id: "0.3"
+    intent: |
+      Plan-specific config resolution. Given a plan path (e.g. `docs/plans/v2_2/`), derive
+      the slug (`v2_2`) and look for `.glrs/plans/<slug>/autopilot.yaml`. Deep-merge it over
+      the project-level config when found. Resolution order: plan-specific > project >
+      DEFAULT_AUTOPILOT_CONFIG. Field-level merge — `phases.wave_0.agents.build.model`
+      overrides just that one field, not the whole `phases` block.
+    checked: true
+    files:
+      - path: packages/harness-opencode/src/autopilot/config-reader.ts
+        isNew: false
+        change: |
+          Add `resolveConfig(repoRoot: string, planPath: string): AutopilotConfig`.
+          Derives the slug from `planPath` (basename of dir, or filename minus `.md`),
+          reads `.glrs/autopilot.yaml` and `.glrs/plans/<slug>/autopilot.yaml`, then deep-merges
+          in order: defaults → project → plan. Returns a fully-populated `AutopilotConfig`.
+      - path: packages/harness-opencode/test/config-resolution.test.ts
+        isNew: true
+        change: |
+          Fixture-based tests: (1) no configs → returns DEFAULT_AUTOPILOT_CONFIG,
+          (2) project only, (3) plan only overrides defaults, (4) plan overrides project
+          field-level (e.g. only `models.execution` set in plan replaces just that field),
+          (5) unknown slug → falls back to project layer.
+    tests:
+      - packages/harness-opencode/test/config-resolution.test.ts
+    verify: "bun test test/config-resolution.test.ts"
+    mirror: packages/harness-opencode/src/cli/merge-config.ts
+    context: |
+      // New surface to add in packages/harness-opencode/src/autopilot/config-reader.ts:
+      export function resolveConfig(
+        repoRoot: string,
+        planPath: string,
+      ): AutopilotConfig {
+        const project = readConfig(repoRoot) ?? {};
+        const slug = derivePlanSlug(planPath);
+        const planConfig = slug
+          ? readConfigAt(path.join(repoRoot, ".glrs", "plans", slug, "autopilot.yaml"))
+          : null;
+        return deepMerge(DEFAULT_AUTOPILOT_CONFIG, project, planConfig ?? {});
+      }
+
+      // Plan slug pattern reference — packages/autopilot/src/plan-paths.ts already
+      // implements similar slug derivation logic.
+    conventions: |
+      Pure function: no I/O side effects beyond reading files; deep-merge is field-level
+      (not array-replace) for objects, last-wins for scalars and arrays; slug derivation
+      matches existing plan-paths helpers; tests use fixture trees under
+      `test/fixtures/config-resolution/<scenario>/`.
+
+  - id: "0.4"
+    intent: |
+      Export `DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig` with every field populated to its
+      default. Key defaults: `adapter: "opencode"`, `models.enrichment: "deep"`,
+      `models.execution: "autopilot-execute"`, `models.debrief: "deep"`. These are OpenCode
+      tier names; when `adapter: "claude-code-cli"`, the adapter factory applies its own
+      model defaults before config resolution (see 0.5). Inline-document each default.
+    checked: true
+    files:
+      - path: packages/harness-opencode/src/autopilot/autopilot-config.ts
+        isNew: false
+        change: |
+          Append `export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = { ... }` with
+          every leaf field populated. Include a header comment block explaining the
+          three-layer merge (defaults → project → plan).
+    tests:
+      - packages/harness-opencode/test/autopilot-config.test.ts
+    verify: "bun test test/autopilot-config.test.ts"
+    mirror: packages/autopilot/src/config.ts
+    context: |
+      // Default values to encode (see plan + adapter-factory.ts):
+      export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
+        adapter: "opencode",
+        models: {
+          enrichment: "deep",
+          execution: "autopilot-execute",
+          debrief: "deep",
+        },
+        agents: {},
+        enrichment: {},
+        execution: {},
+        hooks: {},
+        phases: {},
+        adapters: {
+          opencode: { agents: {} },
+          claude_code_cli: { skip_permissions: true, allowed_tools: [] },
+        },
+      };
+
+      // Cross-reference (packages/cli/src/adapter-factory.ts, current claude-code-cli defaults):
+      //   dangerouslySkipPermissions: true,
+      //   models: { enrich: "claude-opus-4-7", execute: "claude-haiku-4-5-20251001" }
+      // → these are the per-adapter defaults applied BEFORE config resolution in 0.5.
+    conventions: |
+      `as const` not required (interface is the contract); JSDoc on each top-level key
+      restating the default; co-located with the interface in the same file so consumers
+      get both via `import { AutopilotConfig, DEFAULT_AUTOPILOT_CONFIG } from "..."`.
+
+  - id: "0.5"
+    intent: |
+      Wire config resolution into the CLI commands. At the top of each handler (before
+      enrichment, before validation), call `resolveConfig(cwd, planPath)`. Use
+      `config.adapter` to drive `createAdapter(...)` instead of the CLI-flag-only path.
+      Pass the resolved config through to enrichment and loop-session. The adapter factory
+      now accepts the resolved `AutopilotConfig` and reads `config.models` +
+      `config.adapters.<name>` to build the adapter, replacing the hardcoded defaults.
+    checked: true
+    files:
+      - path: packages/cli/src/adapter-factory.ts
+        isNew: false
+        change: |
+          Change `createAdapter(name)` to `createAdapter(name, config?: AutopilotConfig)`.
+          For "opencode": read `config.adapters.opencode` and pass through.
+          For "claude-code-cli": read `config.adapters.claude_code_cli.skip_permissions`
+          (→ `dangerouslySkipPermissions`), `config.adapters.claude_code_cli.allowed_tools`,
+          and `config.models.{enrichment,execution}` (→ `models.{enrich,execute}`).
+          Remove the hardcoded `claude-opus-4-7` / `claude-haiku-4-5-20251001` defaults —
+          they now come from DEFAULT_AUTOPILOT_CONFIG via the resolver.
+      - path: packages/cli/src/commands/autopilot.ts
+        isNew: false
+        change: |
+          After planPath is determined and validated, call
+          `const config = resolveConfig(process.cwd(), planPath)` (imported from
+          `@glrs-dev/harness-plugin-opencode` or wherever the package re-exports it).
+          Replace `createAdapter((adapterName ?? DEFAULT_ADAPTER) ...)` with
+          `createAdapter((adapterName ?? config.adapter ?? DEFAULT_ADAPTER), config)`.
+          Pass `config` into `new SessionRunner({...})` for future waves to consume.
+          Log at debug level only.
+      - path: packages/cli/src/commands/loop.ts
+        isNew: false
+        change: |
+          Same pattern as autopilot.ts: `resolveConfig(cwd, /* no plan */ ".")` (loop has
+          no plan path — resolve against repo root only, i.e. project layer + defaults).
+          Pass `config` into `createAdapter` and `runRalphLoop`.
+      - path: packages/cli/src/commands/autopilot-tui.ts
+        isNew: false
+        change: |
+          After `pickPlan` returns a planPath, call `resolveConfig(cwd, planPath)` and pass
+          the resulting `config` into `createAdapter` and `new SessionRunner({...})`.
+      - path: packages/autopilot/src/plan-enrichment.ts
+        isNew: false
+        change: |
+          Accept an optional `config?: AutopilotConfig` parameter in the public enrichment
+          entry point; unused this wave (subsequent waves read individual fields).
+      - path: packages/autopilot/src/loop-session.ts
+        isNew: false
+        change: |
+          Thread `config?: AutopilotConfig` through `LoopSessionOptions` and into the
+          loop-session orchestrator. Unused this wave — wired for future consumers.
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/cli/src/commands/autopilot.ts
+    context: |
+      // packages/cli/src/adapter-factory.ts — current hardcoded version:
+      export async function createAdapter(name: AdapterName): Promise<AgentAdapter> {
+        switch (name) {
+          case "opencode": {
+            const { OpenCodeAdapter } = await import("@glrs-dev/adapter-opencode");
+            return new OpenCodeAdapter();
+          }
+          case "claude-code-cli": {
+            const { ClaudeCodeCliAdapter } = await import("@glrs-dev/adapter-claude-code");
+            return new ClaudeCodeCliAdapter({
+              dangerouslySkipPermissions: true,
+              models: { enrich: "claude-opus-4-7", execute: "claude-haiku-4-5-20251001" },
+            });
+          }
+        }
+      }
+
+      // packages/cli/src/commands/autopilot.ts (handler, ~line 231):
+      const adapter = await createAdapter((adapterName ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER);
+      const runner = new SessionRunner({
+        planPath: path.resolve(process.cwd(), planPath),
+        cwd: process.cwd(),
+        fast, resume, maxIterationsPerPhase, parallel, ship, adapter,
+      });
+
+      // packages/autopilot/src/loop-session-types.ts — extend LoopSessionOptions:
+      export interface LoopSessionOptions {
+        planPath: string;
+        cwd: string;
+        fast?: boolean;
+        resume?: boolean;
+        maxIterationsPerPhase?: number;
+        maxPhaseRetries?: number;
+        // + config?: AutopilotConfig;   ← add this
+      }
+    conventions: |
+      CLI flag explicitly wins over config (`adapterName ?? config.adapter ?? DEFAULT_ADAPTER`);
+      ESM dynamic imports (`await import(...)`) for adapter packages remain unchanged;
+      pass `config` as a discrete option object property, not positional; debug-level logs
+      via the existing `pino` child logger (don't print to stderr at info level).

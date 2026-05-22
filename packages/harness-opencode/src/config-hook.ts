@@ -29,7 +29,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
-import { createAgents, AGENT_TIERS, getStrictPrompt } from "./agents/index.js";
+import { createAgents, AGENT_TIERS, getStrictPrompt, applyAgentOverrides } from "./agents/index.js";
 import type { AgentConfig } from "@opencode-ai/sdk";
 import { createCommands } from "./commands/index.js";
 import { createMcpConfig } from "./mcp/index.js";
@@ -202,6 +202,32 @@ export function applyConfig(config: Config, pluginOptions?: PluginOptions): void
   // precedence).
   const ourAgents = createAgents();
   resolveHarnessModels(ourAgents, config, pluginOptions);
+
+  // Apply agent overrides from plugin options (model + prompt customization)
+  const agentOverrides = (pluginOptions as any)?.agents as
+    | Record<string, { model?: string; prompt?: string }>
+    | undefined;
+  if (agentOverrides) {
+    applyAgentOverrides(ourAgents, agentOverrides, process.cwd());
+  }
+
+  // Apply agent overrides from environment variable (set by the autopilot
+  // before server startup). Malformed JSON is warned and ignored (best-effort).
+  const envOverrides = process.env["GLRS_AGENT_OVERRIDES"];
+  if (envOverrides) {
+    try {
+      const parsed = JSON.parse(envOverrides) as
+        | Record<string, { model?: string; prompt?: string }>
+        | undefined;
+      if (parsed && typeof parsed === "object") {
+        applyAgentOverrides(ourAgents, parsed, process.cwd());
+      }
+    } catch {
+      // Malformed JSON is best-effort — log a warning and continue
+      console.warn(`Failed to parse GLRS_AGENT_OVERRIDES env var: ignoring`);
+    }
+  }
+
   (config as any).agent = { ...ourAgents, ...((config as any).agent ?? {}) };
 
   // Commands: user-wins

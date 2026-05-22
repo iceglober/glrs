@@ -38,6 +38,7 @@ import {
   STALL_MS,
   STALL_MS_BY_TIER,
   STATUS_INTERVAL_MS,
+  MAX_ITERATIONS_PER_ITEM,
 } from "./config.js";
 import { classifyError } from "./lib/error-classifier.js";
 import { detectProvider } from "./lib/credential-refresh.js";
@@ -159,6 +160,13 @@ export interface RalphLoopOptions {
    */
   notifyUrl?: string;
   /**
+   * Webhook event types to send (optional).
+   * When empty or undefined, all events are sent.
+   * Valid event types: "iteration_complete", "phase_complete", "run_complete", "error", "struggle", "stall".
+   * Events outside this list are silently dropped before any network call.
+   */
+  notifyEvents?: Array<"iteration_complete" | "phase_complete" | "run_complete" | "error" | "struggle" | "stall">;
+  /**
    * When true, the agent adapter is NOT shut down in the finally block.
    * Instead, the adapter + handle are exposed on the LoopResult so the
    * caller can reuse them (e.g., for the debrief). The caller is
@@ -186,6 +194,27 @@ export interface RalphLoopOptions {
    * Optional only when _deps.startServer is provided (legacy test path).
    */
   adapter?: AgentAdapter;
+  /**
+   * Resolved model ID for this loop session. When provided, overrides
+   * the default model resolution based on agentName or adapter config.
+   * This field enables config-driven model routing for workflow stages.
+   */
+  model?: string;
+  /**
+   * Per-call agent overrides (item 4.2). When provided, passed to the
+   * adapter's start() method to apply per-phase agent configuration.
+   * Each phase can have its own agent-to-model mapping.
+   */
+  agentOverrides?: Record<string, unknown>;
+  /**
+   * Optional config object for iteration budget tuning (item 3.2),
+   * commit settings (item 3.5), and other autopilot features.
+   * - config.stall_timeout: per-iteration stall timeout in ms (overrides tier default)
+   * - config.auto_commit: boolean (default true) — whether to commit on SIGINT/SIGTERM
+   * - config.commit_prefix: string (optional) — prepended to commit subjects
+   * When provided, extracted values override tier-based defaults in the loop.
+   */
+  config?: unknown;
 }
 
 /**
@@ -264,6 +293,28 @@ async function getHeadSha(cwd: string): Promise<string> {
 }
 
 /**
+ * Amend the last commit with a prefix if not already present (idempotent).
+ * Returns true if amended, false otherwise.
+ */
+async function amendCommitWithPrefix(
+  cwd: string,
+  prefix: string,
+): Promise<boolean> {
+  try {
+    const { stdout: subject } = await execFile("git", ["log", "-1", "--pretty=%s"], { cwd });
+    const currentSubject = subject.trim();
+    if (!currentSubject || currentSubject.startsWith(prefix)) {
+      return false; // Already has prefix or no subject
+    }
+    const newSubject = `${prefix} ${currentSubject}`;
+    await execFile("git", ["commit", "--amend", "-m", newSubject], { cwd });
+    return true;
+  } catch {
+    return false; // Non-fatal amend failure
+  }
+}
+
+/**
  * Run the Ralph loop: send prompt → wait for idle → inspect response →
  * retry or exit.
  */
@@ -276,12 +327,27 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   const maxIterations = opts.maxIterations ?? MAX_ITERATIONS;
   const timeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
   // Resolve tier early so the stall-timeout default and modelName lookup
-  // share the same tier. CLI override (opts.stallMs) always wins over
-  // the tier default.
+  // share the same tier. Resolution order: opts.stallMs (CLI/caller) >
+  // config.stall_timeout > tier default.
   const tier: keyof typeof STALL_MS_BY_TIER =
     opts.agentName === "autopilot-fast" ? "autopilot-execute" : "deep";
-  const stallMs = opts.stallMs ?? STALL_MS_BY_TIER[tier];
+  const cfgObj = opts.config as Record<string, unknown> | undefined;
+  const cfgStallMs = cfgObj?.stall_timeout as number | undefined;
+  const stallMs = opts.stallMs ?? cfgStallMs ?? STALL_MS_BY_TIER[tier];
   const struggleThreshold = opts.struggleThreshold ?? STRUGGLE_THRESHOLD;
+
+  // Extract commit settings from config (item 3.5)
+  const autoCommit = (cfgObj?.auto_commit as boolean) ?? true;
+  const commitPrefix = (cfgObj?.commit_prefix as string | undefined);
+
+  // Extract notification settings from config (item 3.6)
+  // CLI flags override config settings
+  const cfgNotifyUrl = cfgObj?.notify_url as string | undefined;
+  const cfgNotifyEvents = cfgObj?.notify_events as Array<string> | undefined;
+  const resolvedNotifyUrl = opts.notifyUrl ?? cfgNotifyUrl;
+  const resolvedNotifyEvents = cfgNotifyEvents as Array<"iteration_complete" | "phase_complete" | "run_complete" | "error" | "struggle" | "stall"> | undefined;
+  // Merge CLI events with config events (or use CLI events if both present)
+  const finalNotifyEvents = opts.notifyEvents ?? resolvedNotifyEvents;
 
   if (!opts.adapter) {
     throw new Error("runRalphLoop: adapter is required");
@@ -295,8 +361,8 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   // Fire-and-forget webhook notification helper.
   // Never throws — errors are swallowed by notifyWebhook itself.
   const notify = (event: WebhookEvent) => {
-    if (opts.notifyUrl) {
-      notifyWebhook(opts.notifyUrl, event).catch(() => {});
+    if (resolvedNotifyUrl) {
+      notifyWebhook(resolvedNotifyUrl, event, finalNotifyEvents).catch(() => {});
     }
   };
 
@@ -369,7 +435,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
 
   // Start the agent
   log.info({ cwd: opts.cwd, maxIterations, timeoutMs }, `Starting agent (${adapter.name})`);
-  const handle = await adapter.start({ cwd: opts.cwd });
+  const handle = await adapter.start({ cwd: opts.cwd, agents: opts.agentOverrides });
   log.info({ agentId: handle.id }, "Agent ready");
   const abort = new AbortController();
 
@@ -426,16 +492,17 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
     // autopilot-fast for autopilot-execute tier when --fast is used).
     const agentName = opts.agentName ?? "autopilot-prime";
     const tierLabel = agentName === "autopilot-fast" ? "autopilot-execute tier" : "deep tier";
-    sessionId = await adapter.createSession(handle, { agentName });
+    sessionId = await adapter.createSession(handle, { agentName, model: opts.model });
     log.info({ sessionId, agentName, tier: tierLabel }, `Session created with ${agentName} (${tierLabel})`);
 
     // Create the status heartbeat now that we have a session — the cost
     // poller needs the session ID to call getSessionCost().
+    const statusFileEnabled = (opts.config as Record<string, unknown> | undefined)?.status_file !== false;
     heartbeat = createStatusHeartbeat({
       logger: statusLog,
       intervalMs: STATUS_INTERVAL_MS,
       pollCost: async () => adapter.getSessionCost(handle, sessionId!),
-      statusFilePath: join(opts.cwd, ".agent", "autopilot-status.json"),
+      statusFilePath: statusFileEnabled ? join(opts.cwd, ".agent", "autopilot-status.json") : undefined,
     });
 
     // Start the status heartbeat. First tick fires after STATUS_INTERVAL_MS.
@@ -971,6 +1038,13 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
         } catch {
           // non-fatal
         }
+        // Amend agent-authored commit with prefix if configured (item 3.5)
+        // Fire-and-forget: don't block iteration on amendment
+        if (commitSubject && commitPrefix) {
+          amendCommitWithPrefix(opts.cwd, commitPrefix).catch(() => {
+            // Non-fatal amendment failure
+          });
+        }
         if (commitSubject) {
           log.info(`${lanePrefix}commit: ${commitSubject}`);
         }
@@ -1127,15 +1201,25 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       try {
         const { stdout: porcelain } = await execFile("git", ["status", "--porcelain"], { cwd: opts.cwd });
         if (porcelain.trim().length > 0) {
-          log.info({ signal: interruptedSignal }, "Committing WIP before exit");
-          try {
-            await execFile("git", ["add", "-A"], { cwd: opts.cwd });
-            // No --no-verify: hooks run normally per AGENTS.md hard rule.
-            // If a hook rejects the commit, log the failure and move on
-            // — the user's WIP is still in the index.
-            await execFile("git", ["commit", "-m", "[WIP] autopilot interrupted"], { cwd: opts.cwd });
-          } catch (err) {
-            log.warn({ err: err instanceof Error ? err.message : String(err) }, "WIP commit failed (hooks may have rejected)");
+          if (autoCommit) {
+            log.info({ signal: interruptedSignal }, "Committing WIP before exit");
+            try {
+              await execFile("git", ["add", "-A"], { cwd: opts.cwd });
+              // No --no-verify: hooks run normally per AGENTS.md hard rule.
+              // If a hook rejects the commit, log the failure and move on
+              // — the user's WIP is still in the index.
+              const commitMsg = commitPrefix
+                ? `${commitPrefix} [WIP] autopilot interrupted`
+                : "[WIP] autopilot interrupted";
+              await execFile("git", ["commit", "-m", commitMsg], { cwd: opts.cwd });
+            } catch (err) {
+              log.warn({ err: err instanceof Error ? err.message : String(err) }, "WIP commit failed (hooks may have rejected)");
+            }
+          } else {
+            log.warn(
+              { signal: interruptedSignal },
+              "Pending changes left unstaged (auto_commit: false)",
+            );
           }
         }
       } catch (err) {

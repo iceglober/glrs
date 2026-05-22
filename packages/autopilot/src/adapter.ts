@@ -19,8 +19,8 @@ export interface SessionResult {
 
 export interface AgentAdapter {
   readonly name: string;
-  start(opts: { cwd: string }): Promise<AgentHandle>;
-  createSession(handle: AgentHandle, opts: { agentName?: string }): Promise<string>;
+  start(opts: { cwd: string; agents?: Record<string, unknown> }): Promise<AgentHandle>;
+  createSession(handle: AgentHandle, opts: { agentName?: string; model?: string }): Promise<string>;
   sendAndWait(
     handle: AgentHandle,
     opts: {

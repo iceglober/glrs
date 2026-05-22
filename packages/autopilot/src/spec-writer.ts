@@ -63,6 +63,43 @@ export function markItemChecked(
 }
 
 /**
+ * Uncheck a specific item in a phase YAML file (used when verify fails on a checked item).
+ *
+ * @param planDir - The plan directory (parent of spec/)
+ * @param phaseFile - The phase filename (e.g., "wave_0.yaml")
+ * @param itemId - The item id to uncheck
+ */
+export function markItemUnchecked(
+  planDir: string,
+  phaseFile: string,
+  itemId: string,
+): void {
+  const phasePath = path.join(planDir, "spec", phaseFile);
+  try {
+    const content = fs.readFileSync(phasePath, "utf-8");
+    const raw = yamlParse(content) as unknown;
+    if (typeof raw !== "object" || raw === null) return;
+    const obj = raw as Record<string, unknown>;
+    if (!Array.isArray(obj["items"])) return;
+
+    const items = obj["items"] as Array<Record<string, unknown>>;
+    let found = false;
+    for (const item of items) {
+      if (item["id"] === itemId) {
+        item["checked"] = false;
+        found = true;
+        break;
+      }
+    }
+    if (!found) return;
+
+    atomicWriteFileSync(phasePath, yamlStringify(raw));
+  } catch {
+    // Silent failure — orchestrator continues
+  }
+}
+
+/**
  * Mark a phase as completed in spec/main.yaml.
  *
  * @param planDir - The plan directory (parent of spec/)

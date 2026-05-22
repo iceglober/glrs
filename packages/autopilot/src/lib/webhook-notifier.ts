@@ -61,10 +61,25 @@ function isSlackWebhookUrl(url: string): boolean {
  * - If the URL is a Slack incoming webhook, formats the payload as Slack
  *   Block Kit blocks via `formatSlackMessage`.
  * - Otherwise, posts the raw `WebhookEvent` JSON.
+ * - If allowedEvents is provided and the event type is not in the list,
+ *   silently drops the event before any network call.
  *
  * Never throws. Errors are written to stderr as warnings.
+ *
+ * @param url - Webhook URL to POST to
+ * @param event - The webhook event to send
+ * @param allowedEvents - Optional filter of event types to send; events outside this list are silently dropped
  */
-export async function notifyWebhook(url: string, event: WebhookEvent): Promise<void> {
+export async function notifyWebhook(
+  url: string,
+  event: WebhookEvent,
+  allowedEvents?: WebhookEventType[],
+): Promise<void> {
+  // Drop event if it's filtered out
+  if (allowedEvents && !allowedEvents.includes(event.event)) {
+    return;
+  }
+
   try {
     const body = isSlackWebhookUrl(url)
       ? JSON.stringify(formatSlackMessage(event))

@@ -14,9 +14,12 @@
  * GLRS_AUTOPILOT_DEBRIEF=off.
  */
 
-import { command, option, positional, string as stringType, optional, number as numberType, flag } from "cmd-ts";
-import { runRalphLoop, MAX_ITERATIONS, TIMEOUT_MS } from "@glrs-dev/autopilot";
+import { command, option, positional, string as stringType, optional, number as numberType, flag, oneOf } from "cmd-ts";
+import { runRalphLoop, MAX_ITERATIONS, TIMEOUT_MS, applyCLIOverrides } from "@glrs-dev/autopilot";
 import { runDebrief, shouldRunDebrief } from "./debrief.js";
+import { createAdapter, ADAPTER_NAMES, DEFAULT_ADAPTER } from "../adapter-factory.js";
+import { resolveConfig } from "../autopilot/config-reader.js";
+import type { AutopilotConfig } from "../autopilot/autopilot-config.js";
 
 export const loopCmd = command({
   name: "loop",
@@ -57,8 +60,14 @@ export const loopCmd = command({
       long: "debrief-only",
       description: "Run the debrief against the most recent log file without re-executing the loop. (Not yet implemented — requires log-directory discovery.)",
     }),
+    adapter: option({
+      long: "adapter",
+      short: "a",
+      type: optional(oneOf(ADAPTER_NAMES as unknown as string[])),
+      description: `Agent adapter to use (default: ${DEFAULT_ADAPTER}). Available: ${ADAPTER_NAMES.join(", ")}`,
+    }),
   },
-  handler: async ({ prompt, maxIterations, timeout, stallTimeout, noDebrief, notify, debriefOnly }) => {
+  handler: async ({ prompt, maxIterations, timeout, stallTimeout, noDebrief, notify, debriefOnly, adapter: adapterName }) => {
     const cwd = process.cwd();
 
     // Pre-loop signal hooks: if SIGINT/SIGTERM arrives before runRalphLoop
@@ -91,19 +100,30 @@ export const loopCmd = command({
     // shut it down inside the loop's own finally block.
     const willDebrief = shouldRunDebrief({ noDebrief, env: process.env as Record<string, string | undefined> });
 
-    // Create the OpenCode adapter for this run
-    const { OpenCodeAdapter } = await import("@glrs-dev/adapter-opencode");
-    const adapter = new OpenCodeAdapter();
+    // Resolve config (project-level only, no plan path for loop)
+    const resolvedConfig = resolveConfig(cwd);
+
+    // Apply CLI flag overrides
+    const config = applyCLIOverrides(resolvedConfig, {
+      adapter: adapterName,
+      stallTimeout,
+      notify,
+    }) as AutopilotConfig;
+
+    // Create the adapter for this run
+    const finalAdapterName = (config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER;
+    const adapter = await createAdapter(finalAdapterName, config);
 
     const result = await runRalphLoop({
       prompt,
       cwd,
       maxIterations: maxIterations ?? undefined,
       timeoutMs: timeout ?? undefined,
-      stallMs: stallTimeout ?? undefined,
-      notifyUrl: notify ?? undefined,
+      stallMs: config.stall_timeout ?? undefined,
+      notifyUrl: config.notify_url ?? undefined,
       keepAlive: willDebrief,
       adapter,
+      config,
     });
 
     // Loop has fully exited — remove pre-loop signal hooks so we don't
@@ -133,6 +153,7 @@ export const loopCmd = command({
             loopResult: result,
             prompt,
             cwd,
+            config,
           });
         } catch {
           process.stderr.write("\x1b[33m⚠ Debrief failed (non-fatal)\x1b[0m\n");
@@ -140,7 +161,7 @@ export const loopCmd = command({
           await loopHandle.adapter.shutdown(loopHandle.handle).catch(() => {});
         }
       } else {
-        const debriefAdapter = new OpenCodeAdapter();
+        const debriefAdapter = await createAdapter((config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER, config);
         const debriefHandle = await debriefAdapter.start({ cwd });
         try {
           await runDebrief({
@@ -148,6 +169,7 @@ export const loopCmd = command({
             loopResult: result,
             prompt,
             cwd,
+            config,
           });
         } catch {
           process.stderr.write("\x1b[33m⚠ Debrief agent failed to start (non-fatal)\x1b[0m\n");

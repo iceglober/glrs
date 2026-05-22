@@ -82,11 +82,16 @@ export interface AutopilotLogger {
  * This function is kept for non-autopilot consumers and as a verbose debug
  * channel inside the loop engine. New code should use SessionRunner + EventStreamWriter.
  */
-export function createAutopilotLogger(opts: { cwd: string }): AutopilotLogger {
+export function createAutopilotLogger(opts: { cwd: string; level?: string }): AutopilotLogger {
   const fileSink = buildFileStream(opts.cwd);
 
   const streams: StreamEntry[] = [];
   if (fileSink) streams.push(fileSink.entry);
+
+  // Resolve log level from explicit opts > env var > default
+  const explicitLevel = opts.level;
+  const envLevel = process.env["GLRS_AUTOPILOT_LOG_LEVEL"];
+  const resolvedLevel = explicitLevel || envLevel || "trace";
 
   // If no file sink (disabled via env), create a silent logger that
   // still satisfies the interface but writes nothing.
@@ -99,7 +104,7 @@ export function createAutopilotLogger(opts: { cwd: string }): AutopilotLogger {
 
   const root = pino(
     {
-      level: "trace", // file sink captures everything
+      level: resolvedLevel as pino.Level,
       timestamp: pino.stdTimeFunctions.isoTime,
     },
     ms,

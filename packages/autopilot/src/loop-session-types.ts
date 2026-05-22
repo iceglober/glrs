@@ -84,6 +84,11 @@ export interface LoopSessionOptions {
    */
   adapter?: AgentAdapter;
   /**
+   * Resolved autopilot configuration from `.glrs/autopilot.yaml` (plan-specific > project > defaults).
+   * Unused in this wave — wired for future consumers that need to read individual config fields.
+   */
+  config?: unknown;
+  /**
    * Optional abort signal for graceful shutdown. When the signal fires,
    * the loop writes a checkpoint and returns with exitReason: "aborted"
    * at the next phase boundary. Mid-tool-call iterations are not

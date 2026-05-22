@@ -1,0 +1,79 @@
+items:
+  - id: "3.1"
+    intent: "Create analytics endpoints (overview, top-authors, activity) requiring admin auth, mount in app.ts, write integration tests, and run full regression"
+    checked: true
+    files:
+      - path: src/routes/analytics.ts
+        isNew: true
+        change: "Create new router exporting analyticsRouter with three GET endpoints all guarded by requireAdmin middleware: /overview returns {total_users, total_posts, posts_last_7_days, posts_last_30_days, avg_posts_per_user} via single CTE query; /top-authors?limit=N returns array of {user_id, name, email, post_count, latest_post_at} via JOIN+GROUP BY ordered by post_count DESC (default limit 10); /activity?days=N returns daily breakdown {date, new_users, new_posts} using generate_series to include zero-activity days (default 30 days)"
+      - path: src/app.ts
+        isNew: false
+        change: "Already imports analyticsRouter from ./routes/analytics.js and mounts at /api/analytics — no change needed if file exists"
+      - path: test/analytics.test.ts
+        isNew: true
+        change: "Create integration test file: register admin user (UPDATE role to 'admin'), register 2 regular users, create posts. Test overview returns correct counts, top-authors sorted by post_count DESC, activity has correct daily breakdown with zero-day fill, non-admin gets 403, unauthenticated gets 401"
+      - path: test/users.test.ts
+        isNew: false
+        change: "Fix any test assertions that fail in full regression run"
+      - path: test/posts.test.ts
+        isNew: false
+        change: "Fix any test assertions that fail in full regression run"
+      - path: test/auth.test.ts
+        isNew: false
+        change: "Fix any test assertions that fail in full regression run (file created in wave 0)"
+    tests:
+      - "test/analytics.test.ts"
+      - "test/users.test.ts"
+      - "test/posts.test.ts"
+      - "test/auth.test.ts"
+    verify: "bun test"
+    mirror: "src/routes/posts.ts"
+    context: |
+      // src/app.ts — already mounts analyticsRouter (lines 6, 19)
+      import { analyticsRouter } from "./routes/analytics.js";
+      app.use("/api/analytics", analyticsRouter);
+
+      // src/routes/posts.ts — Router + middleware pattern (lines 1-6)
+      import { Router, type Request, type Response } from "express";
+      import { pool } from "../db.js";
+      import { requireAuth } from "../middleware/auth.js";
+      export const postsRouter = Router();
+
+      // src/routes/users.ts — DELETE handler uses req.user role check (lines 84-89)
+      usersRouter.delete("/:id", requireAuth, async (req: Request, res: Response) => {
+        const targetId = Number(req.params.id);
+        if (req.user!.userId !== targetId && req.user!.role !== "admin") {
+          res.status(403).json({ error: "Forbidden" });
+          return;
+        }
+
+      // test/posts.test.ts — beforeAll migration + server pattern (lines 14-30)
+      beforeAll(async () => {
+        const { readdirSync, readFileSync } = await import("fs");
+        const { join } = await import("path");
+        const migrationsDir = join(import.meta.dir, "..", "migrations");
+        const files = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort();
+        for (const file of files) {
+          const sql = readFileSync(join(migrationsDir, file), "utf-8");
+          await pool.query(sql);
+        }
+        server = app.listen(PORT);
+        await new Promise<void>((resolve) => server.on("listening", resolve));
+      });
+
+      // test/posts.test.ts — auth setup in beforeEach (lines 36-48)
+      beforeEach(async () => {
+        await pool.query("TRUNCATE posts RESTART IDENTITY CASCADE");
+        await pool.query("TRUNCATE users RESTART IDENTITY CASCADE");
+        const res = await fetch(`${AUTH_BASE}/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Alice", email: "alice@example.com", password: "password123" }),
+        });
+        const data = await res.json();
+        authToken = data.token;
+        authUserId = data.user.id;
+      });
+    conventions: "ESM imports with .js extensions, named exports (export const xRouter = Router()), bun:test framework with describe/it/expect/beforeAll/afterAll/beforeEach, pg Pool for DB queries with parameterized $N placeholders, express Router with middleware guards (router.get(path, requireAdmin, handler)), each test file uses a unique PORT, Authorization: Bearer header for auth, migrations run in beforeAll via readdirSync+sort"
+    proof: "The acceptance proof should verify: (1) GET /api/analytics/overview without auth returns 401; (2) GET /api/analytics/overview with non-admin token returns 403; (3) GET /api/analytics/overview with admin token returns correct {total_users, total_posts, posts_last_7_days, posts_last_30_days, avg_posts_per_user} matching seeded data; (4) GET /api/analytics/top-authors returns array sorted by post_count DESC with fields {user_id, name, email, post_count, latest_post_at}; (5) GET /api/analytics/top-authors?limit=1 respects the limit parameter; (6) GET /api/analytics/activity returns array of {date, new_users, new_posts} for default 30 days including zero-activity days filled via generate_series; (7) GET /api/analytics/activity?days=7 limits to 7 days; (8) all existing tests in test/auth.test.ts, test/users.test.ts, test/posts.test.ts still pass (full regression)"
+    proof_type: "test"

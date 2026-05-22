@@ -26,10 +26,9 @@ import {
   type Checkpoint,
 } from "./checkpoint.js";
 import { recordHead, resetSoft } from "./git-safety.js";
-import { MAX_ITERATIONS_PER_PHASE_BY_TIER } from "./config.js";
 import { parseItems } from "./plan-parser.js";
 import { hasSpec, readSpecGoal, readSpecConstraints, detectSpecPhases, filterUncheckedSpecPhases, parseSpecItems } from "./spec-parser.js";
-import { markPhaseCompleted as specMarkPhaseCompleted } from "./spec-writer.js";
+import { markPhaseCompleted as specMarkPhaseCompleted, markItemUnchecked } from "./spec-writer.js";
 import { buildConflictGraph, hasParallelism } from "./conflict-graph.js";
 import { runLanes, type PhaseResult } from "./lane-orchestrator.js";
 import {
@@ -40,8 +39,13 @@ import {
 import {
   runVerifyCommands,
   type VerifyResult,
+  type VerifyStrategy,
 } from "./verify-runner.js";
+import { runHook } from "./hook-runner.js";
 import { validatePlan } from "./plan-validator.js";
+import { resolveModel, type AdapterName } from "./model-resolver.js";
+import { MAX_ITERATIONS_PER_PHASE_BY_TIER, MAX_ITERATIONS_PER_ITEM, STALL_MS_BY_TIER } from "./config.js";
+import { resolvePhaseConfig } from "./phase-config.js";
 
 export type { LoopSessionOptions, LoopResult };
 
@@ -63,6 +67,58 @@ export interface LoopSessionDeps {
    * from `verify-runner.ts`.
    */
   runVerifyCommands?: typeof runVerifyCommands;
+}
+
+/**
+ * Extract verify configuration from the resolved config object.
+ * Defaults: strategy = "after_phase", timeout = 5 min, retry = true.
+ */
+function extractVerifyConfig(config: unknown): {
+  strategy: VerifyStrategy;
+  timeoutMs: number;
+  retryOnFailure: boolean;
+} {
+  const cfgObj = config as Record<string, unknown> | undefined;
+  const strategy = (cfgObj?.verify ?? "after_phase") as VerifyStrategy;
+  const timeoutMs = (cfgObj?.verify_timeout ?? 5 * 60 * 1000) as number;
+  const retryOnFailure = (cfgObj?.verify_retry ?? true) as boolean;
+  return { strategy, timeoutMs, retryOnFailure };
+}
+
+/**
+ * Extract hooks configuration from the resolved config object.
+ * Hooks are optional; when not set, all are undefined (no-op).
+ */
+function extractHooksConfig(config: unknown): {
+  pre_phase?: string;
+  post_phase?: string;
+  post_run?: string;
+  on_error?: string;
+} {
+  const cfgObj = config as Record<string, unknown> | undefined;
+  const hooks = cfgObj?.hooks as Record<string, unknown> | undefined;
+  return {
+    pre_phase: hooks?.pre_phase as string | undefined,
+    post_phase: hooks?.post_phase as string | undefined,
+    post_run: hooks?.post_run as string | undefined,
+    on_error: hooks?.on_error as string | undefined,
+  };
+}
+
+/**
+ * Uncheck items by ID in markdown phase content.
+ * Replaces `- [x] id: <id>` with `- [ ] id: <id>` for matching items.
+ */
+function uncheckItemsInMarkdown(content: string, itemIds: string[]): string {
+  if (itemIds.length === 0) return content;
+  let result = content;
+  for (const itemId of itemIds) {
+    const escaped = itemId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Match `- [x] id: <itemId>` (case-insensitive for x/X) and replace with `- [ ]`
+    const re = new RegExp(`^(- )\\[[xX]\\](\\s+id:\\s+${escaped}\\b)`, "m");
+    result = result.replace(re, "$1[ ]$2");
+  }
+  return result;
 }
 
 /**
@@ -304,7 +360,30 @@ export async function runLoopSession(
       `Work the plan at ${opts.planPath}. ` +
       `Complete all items in ## Acceptance criteria. ` +
       `Mark items done as they complete.`;
-    return _runRalphLoop({ prompt, cwd: opts.cwd, agentName: opts.fast ? "autopilot-fast" : undefined, logger: opts.logger, emitter, adapter: opts.adapter });
+    const adapterName = opts.adapter?.name as AdapterName | undefined;
+    const singleFileCfgObj = opts.config as Record<string, unknown> | undefined;
+    const models = singleFileCfgObj?.models as Record<string, unknown> | undefined;
+    const executionSpecifier = models?.execution as string | undefined;
+    const executionModel = executionSpecifier
+      ? resolveModel(executionSpecifier, adapterName ?? "opencode")
+      : undefined;
+    // Extract stall_timeout from config for this single-file run
+    const singleFileStallMs = (singleFileCfgObj?.stall_timeout as number | undefined) ?? STALL_MS_BY_TIER[(opts.fast ? "autopilot-execute" : "deep")];
+    const singleFileAdapters = (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined;
+    const singleFileOcAdapter = singleFileAdapters?.opencode as Record<string, unknown> | undefined;
+    const singleFileAgentOverrides = singleFileOcAdapter?.agents as Record<string, Record<string, unknown>> | undefined;
+    return _runRalphLoop({
+      prompt,
+      cwd: opts.cwd,
+      agentName: opts.fast ? "autopilot-fast" : undefined,
+      model: executionModel,
+      stallMs: singleFileStallMs,
+      config: opts.config,
+      agentOverrides: singleFileAgentOverrides,
+      logger: opts.logger,
+      emitter,
+      adapter: opts.adapter,
+    });
   }
 
   // Multi-file plan: per-phase session execution
@@ -318,13 +397,22 @@ export async function runLoopSession(
       ).child({ component: "autopilot.orchestrator" });
 
   // Resolve the tier so we can pick a per-phase iteration budget
-  // (item 2.7). The CLI override `opts.maxIterationsPerPhase` always
-  // takes precedence over the tier default.
+  // (item 2.7). Resolution order: CLI override > config.max_iterations_per_phase > tier default.
   const tier: keyof typeof MAX_ITERATIONS_PER_PHASE_BY_TIER = opts.fast
     ? "autopilot-execute"
     : "deep";
+  const cfgObj = opts.config as Record<string, unknown> | undefined;
+  const cfgMaxIterPerPhase = cfgObj?.max_iterations_per_phase as number | undefined;
   const maxIterationsPerPhase =
-    opts.maxIterationsPerPhase ?? MAX_ITERATIONS_PER_PHASE_BY_TIER[tier];
+    opts.maxIterationsPerPhase ?? cfgMaxIterPerPhase ?? MAX_ITERATIONS_PER_PHASE_BY_TIER[tier];
+  // Extract stall_timeout from config for runRalphLoop calls.
+  // Resolution order: config.stall_timeout > tier default.
+  const cfgStallMs = cfgObj?.stall_timeout as number | undefined;
+  const stallMs = cfgStallMs ?? STALL_MS_BY_TIER[tier];
+
+  // Extract hooks configuration (item 3.3)
+  const verifyConfig = extractVerifyConfig(opts.config);
+  const hooksConfig = extractHooksConfig(opts.config);
 
   const mainMdPath = path.join(opts.planPath, "main.md");
 
@@ -485,14 +573,16 @@ export async function runLoopSession(
   };
 
   /**
-   * Default per-item iteration budget for the fast executor (item 4.8).
+   * Per-item iteration budget for the fast executor (item 4.8).
+   * Resolution order: config.max_iterations_per_item > default constant.
    * Each item gets a fresh session with this much rope before we move
    * on. The phase's overall budget (`maxIterationsPerPhase`) divided by
    * item count is also a reasonable upper bound — we use the smaller
    * of the two so a phase with many items doesn't blow past its global
    * budget.
    */
-  const MAX_ITERATIONS_PER_ITEM = 5;
+  const cfgMaxIterPerItem = (opts.config as Record<string, unknown> | undefined)?.max_iterations_per_item as number | undefined;
+  const maxIterationsPerItem = cfgMaxIterPerItem ?? MAX_ITERATIONS_PER_ITEM;
 
   /**
    * Per-item runner for the fast executor (item 4.8). Iterates the
@@ -513,17 +603,25 @@ export async function runLoopSession(
     runCwd: string;
     runRalphLoop: typeof runRalphLoop;
     readFileSync: (p: string) => string;
+    writeFileSync?: (p: string, content: string) => void;
+    planPath?: string;
     useParallel: boolean;
+    stallMs?: number;
     logger?: import("./lib/logger.js").AutopilotLogger;
     emitter?: SessionEventEmitter;
     adapter?: import("./adapter.js").AgentAdapter;
+    config?: unknown;
+    agentOverrides?: Record<string, Record<string, unknown>>;
+    verifyConfig?: ReturnType<typeof extractVerifyConfig>;
   }): Promise<LoopResult> => {
     const { phaseFile, phasePath, laneId, runCwd, useParallel } = args;
     const phaseContent = args.readFileSync(phasePath);
-    const items = (useYamlSpec
-      ? parseSpecItems(phasePath)
-      : parseItems(phaseContent)
-    ).filter((it) => !it.checked);
+    const allItems = useYamlSpec ? parseSpecItems(phasePath) : parseItems(phaseContent);
+    const items = allItems.filter((it) => !it.checked);
+    log.info(
+      { phase: phaseFile, total: allItems.length, unchecked: items.length, checked: allItems.length - items.length },
+      `phase items: ${items.length} unchecked of ${allItems.length} total`,
+    );
 
     if (items.length === 0) {
       // Fall through: no items parsed (legacy plan or pre-fence format).
@@ -534,11 +632,22 @@ export async function runLoopSession(
         `## Constraints\n${constraints}\n\n` +
         `## Your phase (${phaseFile})\n${phaseContent}\n\n` +
         `Do not work on items from other phases. Do not ask questions.`;
+      const adapterName = args.adapter?.name as AdapterName | undefined;
+      const cfgObj = args.config as Record<string, unknown> | undefined;
+      const models = cfgObj?.models as Record<string, unknown> | undefined;
+      const executionSpecifier = models?.execution as string | undefined;
+      const executionModel = executionSpecifier
+        ? resolveModel(executionSpecifier, adapterName ?? "opencode")
+        : undefined;
       return args.runRalphLoop({
         prompt,
         cwd: runCwd,
         agentName: "autopilot-fast",
+        model: executionModel,
         maxIterations: maxIterationsPerPhase,
+        ...(args.stallMs ? { stallMs: args.stallMs } : {}),
+        config: args.config,
+        agentOverrides: args.agentOverrides,
         laneId: useParallel ? laneId : undefined,
         logger: args.logger,
         emitter: args.emitter,
@@ -546,12 +655,12 @@ export async function runLoopSession(
       });
     }
 
-    // Per-item iteration cap: smaller of MAX_ITERATIONS_PER_ITEM and
+    // Per-item iteration cap: smaller of maxIterationsPerItem and
     // the global per-phase budget split across items.
     const perItemCap = Math.max(
       1,
       Math.min(
-        MAX_ITERATIONS_PER_ITEM,
+        maxIterationsPerItem,
         Math.ceil(maxIterationsPerPhase / items.length),
       ),
     );
@@ -570,36 +679,117 @@ export async function runLoopSession(
         .join(", ");
       const verify = item.verify?.trim() || "(no verify command declared)";
 
+      const enriched = item as unknown as Record<string, unknown>;
+      let enrichmentBlock = "";
+      if (enriched.mirror || enriched.context || enriched.conventions || enriched.proof) {
+        const parts: string[] = [];
+        if (typeof enriched.mirror === "string" && enriched.mirror.trim()) {
+          parts.push(`Pattern reference (read this file for the pattern to follow):\n  ${enriched.mirror}`);
+        }
+        if (typeof enriched.context === "string" && enriched.context.trim()) {
+          parts.push(`Code context:\n${enriched.context}`);
+        }
+        if (typeof enriched.conventions === "string" && enriched.conventions.trim()) {
+          parts.push(`Conventions: ${enriched.conventions}`);
+        }
+        if (typeof enriched.proof === "string" && enriched.proof.trim()) {
+          const proofType = typeof enriched.proof_type === "string" ? ` (${enriched.proof_type})` : "";
+          parts.push(`Acceptance proof${proofType}: ${enriched.proof}`);
+        }
+        enrichmentBlock = `\n## Enrichment context\n\n${parts.join("\n\n")}\n\n`;
+      }
+
+      // Extract execution_style from phase config to determine TDD mode.
+      // Resolution order: phase override > global config > default "tdd".
+      // When explicitly set to "direct", use direct mode; otherwise default to TDD.
+      const phaseConfigForItem = resolvePhaseConfig(
+        args.config as Record<string, unknown>,
+        phaseFile.replace(/\.(md|ya?ml)$/, ""),
+      );
+      const executionStyle = (phaseConfigForItem as Record<string, unknown>)?.execution_style as string | undefined;
+      const isTddMode = executionStyle !== "direct";
+
       // Structured handoff for strict executors (per the existing PRIME
       // system prompt). Each per-item prompt frames the work as a tight
       // single-file/single-test-list task.
-      const itemPrompt =
-        `You are executing ONE item of a multi-item phase. Complete only this item, mark its checkbox in ${phaseFile}, commit, and stop. Do not work on other items.\n\n` +
-        `## Overall goal\n${goal}\n\n` +
-        `## Constraints\n${constraints}\n\n` +
-        `## Your item\n` +
-        `- [ ] id: ${item.id}\n` +
-        `  intent: ${item.intent}\n` +
-        `  files: ${filesList || "(none declared)"}\n` +
-        `  verify: ${verify}\n\n` +
-        `## Structured context\n\n` +
-        `Files you may touch (ONLY these):\n` +
-        (item.files.length > 0
-          ? item.files
-              .map((f) => `  - ${f.path} (${f.isNew ? "CREATE" : "EDIT"})`)
-              .join("\n")
-          : "  (none declared — confine edits to the phase's natural scope)") +
-        `\n\nVerify command (must exit 0):\n  - ${verify}\n\n` +
-        `Non-goals:\n` +
-        `  - Do NOT modify files outside the list above.\n` +
-        `  - Do NOT work on items other than ${item.id}.\n\n` +
-        `When done: mark the checkbox for item ${item.id} in ${phaseFile} as [x], commit, and emit the autopilot-done sentinel.`;
+      let itemPrompt: string;
+      if (isTddMode) {
+        // TDD mode: enforce red-green-refactor cycle
+        itemPrompt =
+          `You are executing ONE item of a multi-item phase using TDD (test-driven development). Follow the red-green-refactor cycle strictly:\n\n` +
+          `1. RED: Write a failing test/proof first. Run verify to confirm it fails.\n` +
+          `2. GREEN: Implement the minimal code to make the test pass. Run verify to confirm it passes.\n` +
+          `3. REFACTOR: Clean up the code if needed, re-run verify to ensure it still passes.\n` +
+          `4. MARK: Mark the item checkbox and commit only after the verify command passes.\n\n` +
+          `Complete only this item, mark its checkbox in ${phaseFile}, commit, and stop. Do not work on other items.\n\n` +
+          `## Overall goal\n${goal}\n\n` +
+          `## Constraints\n${constraints}\n\n` +
+          `## Your item\n` +
+          `- [ ] id: ${item.id}\n` +
+          `  intent: ${item.intent}\n` +
+          `  files: ${filesList || "(none declared)"}\n` +
+          `  verify: ${verify}\n\n` +
+          enrichmentBlock +
+          `## Structured context\n\n` +
+          `Files you may touch (ONLY these):\n` +
+          (item.files.length > 0
+            ? item.files
+                .map((f) => `  - ${f.path} (${f.isNew ? "CREATE" : "EDIT"})`)
+                .join("\n")
+            : "  (none declared — confine edits to the phase's natural scope)") +
+          `\n\nVerify command (must exit 0):\n  - ${verify}\n\n` +
+          `TDD workflow:\n` +
+          `  1. Write a test that fails (RED phase)\n` +
+          `  2. Implement to make it pass (GREEN phase)\n` +
+          `  3. Refactor if needed, re-verify (REFACTOR phase)\n` +
+          `  4. Mark checkbox when verify passes\n\n` +
+          `Non-goals:\n` +
+          `  - Do NOT skip the RED phase — always write the test first.\n` +
+          `  - Do NOT modify files outside the list above.\n` +
+          `  - Do NOT work on items other than ${item.id}.\n\n` +
+          `When done: mark the checkbox for item ${item.id} in ${phaseFile} as [x], commit, and emit the autopilot-done sentinel.`;
+      } else {
+        // Standard mode: no TDD constraints
+        itemPrompt =
+          `You are executing ONE item of a multi-item phase. Complete only this item, mark its checkbox in ${phaseFile}, commit, and stop. Do not work on other items.\n\n` +
+          `## Overall goal\n${goal}\n\n` +
+          `## Constraints\n${constraints}\n\n` +
+          `## Your item\n` +
+          `- [ ] id: ${item.id}\n` +
+          `  intent: ${item.intent}\n` +
+          `  files: ${filesList || "(none declared)"}\n` +
+          `  verify: ${verify}\n\n` +
+          enrichmentBlock +
+          `## Structured context\n\n` +
+          `Files you may touch (ONLY these):\n` +
+          (item.files.length > 0
+            ? item.files
+                .map((f) => `  - ${f.path} (${f.isNew ? "CREATE" : "EDIT"})`)
+                .join("\n")
+            : "  (none declared — confine edits to the phase's natural scope)") +
+          `\n\nVerify command (must exit 0):\n  - ${verify}\n\n` +
+          `Non-goals:\n` +
+          `  - Do NOT modify files outside the list above.\n` +
+          `  - Do NOT work on items other than ${item.id}.\n\n` +
+          `When done: mark the checkbox for item ${item.id} in ${phaseFile} as [x], commit, and emit the autopilot-done sentinel.`;
+      }
 
+      const adapterName = args.adapter?.name as AdapterName | undefined;
+      const cfgObj = args.config as Record<string, unknown> | undefined;
+      const models = cfgObj?.models as Record<string, unknown> | undefined;
+      const executionSpecifier = models?.execution as string | undefined;
+      const executionModel = executionSpecifier
+        ? resolveModel(executionSpecifier, adapterName ?? "opencode")
+        : undefined;
       const itemResult = await args.runRalphLoop({
         prompt: itemPrompt,
         cwd: runCwd,
         agentName: "autopilot-fast",
+        model: executionModel,
         maxIterations: perItemCap,
+        ...(args.stallMs ? { stallMs: args.stallMs } : {}),
+        config: args.config,
+        agentOverrides: args.agentOverrides,
         laneId: useParallel ? laneId : undefined,
         logger: args.logger,
         emitter: args.emitter,
@@ -638,6 +828,54 @@ export async function runLoopSession(
           cumulativeCostUsd: cumulativeCost,
           message: `Item ${item.id} failed: ${itemResult.message}`,
         };
+      }
+
+      // Per-item verify gate (after_item strategy, item 3.1).
+      // When verify strategy is "after_item" (fast mode only), run the
+      // item's verify command immediately. On failure, return early so
+      // the phase retry can pick it up again (if verify_retry is enabled).
+      if (args.verifyConfig?.strategy === "after_item" && item.verify?.trim()) {
+        const itemVerifyResult = await _runVerifyCommands([item], runCwd, {
+          timeoutMs: args.verifyConfig.timeoutMs,
+        });
+        if (itemVerifyResult.length > 0 && !itemVerifyResult[0].passed) {
+          const failed = itemVerifyResult[0];
+          log.warn(
+            {
+              phase: phaseFile,
+              itemId: failed.itemId,
+              command: failed.command,
+              stderr: failed.stderr.slice(0, 500),
+            },
+            "per-item verify failed",
+          );
+          // Uncheck item that failed verify (verify-before-check enforcement).
+          if (useYamlSpec && args.planPath) {
+            markItemUnchecked(args.planPath, phaseFile, item.id);
+            args.logger?.root.child({ component: "autopilot.per-item-verify" }).warn(
+              { phase: phaseFile, itemId: item.id },
+              "unchecked item that failed verify — will retry next iteration",
+            );
+          } else if (args.writeFileSync) {
+            const currentPhaseContent = args.readFileSync(phasePath);
+            const uncheckContent = uncheckItemsInMarkdown(currentPhaseContent, [item.id]);
+            if (uncheckContent !== currentPhaseContent) {
+              args.writeFileSync(phasePath, uncheckContent);
+              args.logger?.root.child({ component: "autopilot.per-item-verify" }).warn(
+                { phase: phaseFile, itemId: item.id },
+                "unchecked item that failed verify — will retry next iteration",
+              );
+            }
+          }
+          if (args.verifyConfig.retryOnFailure) {
+            return {
+              exitReason: "sentinel",
+              iterations: cumulativeIterations,
+              cumulativeCostUsd: cumulativeCost,
+              message: `Item ${item.id} verify failed: ${failed.stderr.split("\n")[0]}`,
+            };
+          }
+        }
       }
     }
 
@@ -691,6 +929,22 @@ export async function runLoopSession(
       total: uncheckedPhases.length,
     });
 
+    // Resolve phase-specific config (item 4.1) by deep-merging phase
+    // overrides from config.phases.<phaseName> over the base config.
+    // phaseName is the phase filename without extension.
+    const phaseName = phaseFile.replace(/\.(md|ya?ml)$/, "");
+    const phaseConfig = resolvePhaseConfig(
+      opts.config as Record<string, unknown>,
+      phaseName,
+    );
+
+    // Extract agent overrides from phase-specific config (item 4.2).
+    // Prefer phase-specific agents, fall back to base config.
+    const phaseOcAdapter = (phaseConfig.adapters as Record<string, unknown> | undefined)?.opencode as Record<string, unknown> | undefined;
+    const baseAdapters = (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined;
+    const baseOcAdapter = baseAdapters?.opencode as Record<string, unknown> | undefined;
+    const phaseAgentOverrides = (phaseOcAdapter?.agents ?? baseOcAdapter?.agents) as Record<string, Record<string, unknown>> | undefined;
+
     // Per-item execution path (item 4.8). When --fast is set the
     // resolved tier is `autopilot-execute` (mid-tier executor model).
     // Strict executors do better with one item at a time: send a
@@ -699,6 +953,7 @@ export async function runLoopSession(
     // path — they handle multi-item phases fine and the per-item
     // overhead would be wasted spawn cost.
     let result: LoopResult;
+    const phaseVerifyConfig = extractVerifyConfig(phaseConfig);
     if (opts.fast) {
       result = await runItemsForPhase({
         phaseFile,
@@ -707,10 +962,16 @@ export async function runLoopSession(
         runCwd,
         runRalphLoop: _runRalphLoop,
         readFileSync: _readFileSync,
+        writeFileSync: _writeFileSync,
+        planPath: opts.planPath,
         useParallel,
+        stallMs,
         logger: opts.logger,
         emitter,
         adapter: opts.adapter,
+        config: opts.config,
+        agentOverrides: phaseAgentOverrides,
+        verifyConfig: phaseVerifyConfig,
       });
     } else {
       const retrySection = retryContext
@@ -724,11 +985,22 @@ export async function runLoopSession(
         retrySection +
         `\nDo not work on items from other phases. Do not ask questions — pick sensible defaults and note decisions in ## Open questions.`;
 
+      const adapterName = opts.adapter?.name as AdapterName | undefined;
+      const cfgObj = opts.config as Record<string, unknown> | undefined;
+      const models = cfgObj?.models as Record<string, unknown> | undefined;
+      const executionSpecifier = models?.execution as string | undefined;
+      const executionModel = executionSpecifier
+        ? resolveModel(executionSpecifier, adapterName ?? "opencode")
+        : undefined;
       result = await _runRalphLoop({
         prompt,
         cwd: runCwd,
         agentName: undefined,
+        model: executionModel,
         maxIterations: maxIterationsPerPhase,
+        stallMs,
+        config: opts.config,
+        agentOverrides: phaseAgentOverrides,
         laneId: useParallel ? laneId : undefined,
         logger: opts.logger,
         emitter,
@@ -750,18 +1022,28 @@ export async function runLoopSession(
     let phaseComplete = useYamlSpec
       ? (() => {
           const yamlItems = parseSpecItems(phasePath);
+          const checkedCount = yamlItems.filter((i) => i.checked).length;
+          log.info(
+            { phase: phaseFile, total: yamlItems.length, checked: checkedCount },
+            `phase completion check: ${checkedCount}/${yamlItems.length} items checked`,
+          );
           return yamlItems.length > 0 && yamlItems.every((i) => i.checked);
         })()
       : isPhaseComplete(updatedPhaseContent);
 
-    // Post-phase test gate (item 4.1). If the agent reports the phase
-    // is done (every checkbox checked), run each item's `verify:`
-    // command. Any failure downgrades `phaseComplete` to false so the
-    // checkbox in main.md is NOT marked — the failure surfaces in the
+    // Post-phase test gate (item 4.1). When verify strategy is "skip",
+    // bypass this entirely. When "after_item" in fast mode, verify
+    // already ran per-item. When "after_phase" (default), run each item's
+    // `verify:` command now. Any failure downgrades `phaseComplete` to false
+    // so the checkbox in main.md is NOT marked — the failure surfaces in the
     // debrief and (for fast-tier soft-failure mode) the next iteration
     // can pick the phase up again. Items without a `verify:` field are
     // simply skipped.
-    if (phaseComplete) {
+    const verifyConfig = extractVerifyConfig(opts.config);
+    const shouldSkipVerify = verifyConfig.strategy === "skip";
+    const isAfterItemMode = verifyConfig.strategy === "after_item" && opts.fast;
+
+    if (phaseComplete && !shouldSkipVerify && !isAfterItemMode) {
       const items = useYamlSpec
         ? parseSpecItems(phasePath)
         : parseItems(updatedPhaseContent);
@@ -778,7 +1060,9 @@ export async function runLoopSession(
           phase: phaseFile,
           itemCount: itemsWithVerify.length,
         });
-        const phaseVerify = await _runVerifyCommands(itemsWithVerify, runCwd);
+        const phaseVerify = await _runVerifyCommands(itemsWithVerify, runCwd, {
+          timeoutMs: verifyConfig.timeoutMs,
+        });
         verifyResults.push({ phaseFile, results: phaseVerify });
         const failed = phaseVerify.filter((r) => !r.passed);
         // Emit typed verify:result events
@@ -794,6 +1078,7 @@ export async function runLoopSession(
           });
         }
         if (failed.length > 0) {
+          const failedItemIds = failed.map((f) => f.itemId);
           for (const f of failed) {
             log.warn(
               {
@@ -804,6 +1089,23 @@ export async function runLoopSession(
               },
               "verify command failed",
             );
+          }
+          // Uncheck items that failed verify (verify-before-check enforcement).
+          // The agent marked them checked, but if verify fails, reset them so
+          // the next iteration retries.
+          for (const itemId of failedItemIds) {
+            if (useYamlSpec) {
+              markItemUnchecked(opts.planPath, phaseFile, itemId);
+            } else {
+              const uncheckContent = uncheckItemsInMarkdown(updatedPhaseContent, [itemId]);
+              if (uncheckContent !== updatedPhaseContent) {
+                _writeFileSync(phasePath, uncheckContent);
+                log.warn(
+                  { phase: phaseFile, itemId },
+                  "unchecked item that failed verify — will retry next iteration",
+                );
+              }
+            }
           }
           phaseComplete = false;
           // Build a summary of failures for retry context
@@ -829,13 +1131,16 @@ export async function runLoopSession(
 
     if (!phaseComplete && !SUCCESS_REASONS.has(result.exitReason)) {
       log.warn({ phase: phaseFile, exitReason: result.exitReason }, "phase failed");
-      if (opts.fast && preHeadSha && preHeadSha !== "HEAD") {
+      const rollbackConfig = (cfgObj?.rollback_on_failure as string | undefined) ?? "soft";
+      if (rollbackConfig !== "off" && opts.fast && preHeadSha && preHeadSha !== "HEAD") {
         const ok = await resetSoft(runCwd, preHeadSha, {
           onWarn: (m) => log.warn(m),
         });
         if (ok) {
           log.info({ ref: preHeadSha.slice(0, 8) }, "soft-reset to pre-phase state");
         }
+      } else if (rollbackConfig === "off" && opts.fast && preHeadSha && preHeadSha !== "HEAD") {
+        log.info({ ref: preHeadSha.slice(0, 8) }, "rollback disabled by config — keeping phase changes");
       }
       // Emit typed phase:done event (failed)
       emitter?.emitEvent({
@@ -847,6 +1152,13 @@ export async function runLoopSession(
         iterations: result.iterations,
         costUsd: costThisPhase,
       });
+      // Run on_error hook (item 3.3, 4.3) — phase-level hook overrides plan-level.
+      // Fire-and-forget (errors swallowed).
+      const phaseHooksConfig = extractHooksConfig(phaseConfig);
+      const effectiveOnErrorHook = phaseHooksConfig.on_error ?? hooksConfig.on_error;
+      if (effectiveOnErrorHook) {
+        runHook(effectiveOnErrorHook, runCwd, verifyConfig.timeoutMs).catch(() => {});
+      }
       return {
         phaseFile,
         laneId,
@@ -864,13 +1176,16 @@ export async function runLoopSession(
         { phase: phaseFile, max: maxIterationsPerPhase },
         "phase budget exhausted — moving on",
       );
-      writeCheckpoint(opts.cwd, {
-        planPath: opts.planPath,
-        completedPhases: [...completedPhasesAcc],
-        totalCostUsd,
-        totalIterations,
-        timestamp: new Date().toISOString(),
-      });
+      const checkpointEnabled = cfgObj?.checkpoint !== false;
+      if (checkpointEnabled) {
+        writeCheckpoint(opts.cwd, {
+          planPath: opts.planPath,
+          completedPhases: [...completedPhasesAcc],
+          totalCostUsd,
+          totalIterations,
+          timestamp: new Date().toISOString(),
+        });
+      }
     }
 
     // Emit typed phase:done event (success or soft-failure)
@@ -901,8 +1216,15 @@ export async function runLoopSession(
    * Mark a phase as completed: bump counters, push to the accumulator,
    * update main.md's checkbox, and persist a checkpoint. Used by both
    * paths after a phase reports `phaseComplete === true`.
+   *
+   * Accepts optional phaseHooksConfig for per-phase hook overrides (item 4.3).
+   * When provided, phase-level hooks override plan-level hooks.
    */
-  const recordPhaseCompletion = (phaseFile: string, result: LoopResult) => {
+  const recordPhaseCompletion = async (
+    phaseFile: string,
+    result: LoopResult,
+    phaseHooksConfig?: ReturnType<typeof extractHooksConfig>,
+  ) => {
     phasesCompleted++;
     completedPhasesAcc.push(phaseFile);
     if (useYamlSpec) {
@@ -913,13 +1235,16 @@ export async function runLoopSession(
       const updatedMain = markPhaseChecked(_readFileSync(mainMdPath), phaseFile);
       _writeFileSync(mainMdPath, updatedMain);
     }
-    writeCheckpoint(opts.cwd, {
-      planPath: opts.planPath,
-      completedPhases: [...completedPhasesAcc],
-      totalCostUsd,
-      totalIterations,
-      timestamp: new Date().toISOString(),
-    });
+    const checkpointEnabled = cfgObj?.checkpoint !== false;
+    if (checkpointEnabled) {
+      writeCheckpoint(opts.cwd, {
+        planPath: opts.planPath,
+        completedPhases: [...completedPhasesAcc],
+        totalCostUsd,
+        totalIterations,
+        timestamp: new Date().toISOString(),
+      });
+    }
     log.info(
       {
         phase: phaseFile,
@@ -930,6 +1255,15 @@ export async function runLoopSession(
       },
       "phase complete",
     );
+    // Run post_phase hook (item 3.3, 4.3) — phase-level hook overrides plan-level.
+    // On failure, log warn but don't mark phase incomplete.
+    const effectivePostPhaseHook = phaseHooksConfig?.post_phase ?? hooksConfig.post_phase;
+    if (effectivePostPhaseHook) {
+      const hookResult = await runHook(effectivePostPhaseHook, opts.cwd, verifyConfig.timeoutMs);
+      if (!hookResult.ok) {
+        log.warn({ phase: phaseFile, output: hookResult.output }, "post_phase hook failed");
+      }
+    }
   };
 
   // ---------------------------------------------------------------------
@@ -942,13 +1276,16 @@ export async function runLoopSession(
       // Check abort signal at phase boundaries (graceful shutdown via TUI Ctrl+C)
       if (opts.signal?.aborted) {
         log.info({ completed: phasesCompleted, remaining: uncheckedPhases.length }, "abort signal received — writing checkpoint and stopping");
-        writeCheckpoint(opts.cwd, {
-          planPath: opts.planPath,
-          completedPhases: [...completedPhasesAcc],
-          totalCostUsd,
-          totalIterations,
-          timestamp: new Date().toISOString(),
-        });
+        const checkpointEnabled = cfgObj?.checkpoint !== false;
+        if (checkpointEnabled) {
+          writeCheckpoint(opts.cwd, {
+            planPath: opts.planPath,
+            completedPhases: [...completedPhasesAcc],
+            totalCostUsd,
+            totalIterations,
+            timestamp: new Date().toISOString(),
+          });
+        }
         return {
           exitReason: "aborted",
           iterations: totalIterations,
@@ -957,17 +1294,30 @@ export async function runLoopSession(
         };
       }
 
-      // Retry loop: re-run the phase when verify fails (up to N attempts).
+      // Resolve phase config once, before retry loop (item 4.1, 4.3).
+      // Phase-level hooks are extracted from this config and used at all hook call sites.
+      const phaseName = phaseFile.replace(/\.(md|ya?ml)$/, "");
+      const phaseConfig = resolvePhaseConfig(
+        opts.config as Record<string, unknown>,
+        phaseName,
+      );
+      const phaseHooksConfig = extractHooksConfig(phaseConfig);
+
+      // Retry loop: re-run the phase when verify fails (up to N attempts, configurable).
       // Default 3 retries in production; 1 (no retry) when test deps are injected.
       // On the final retry, escalate to the deep model (Opus) for self-healing.
-      const MAX_PHASE_RETRIES = opts.maxPhaseRetries ?? (opts._deps ? 1 : 3);
+      // When config.verify_retry is false, disable retries entirely (single attempt).
+      const verifyRetryConfig = extractVerifyConfig(opts.config);
+      const effectiveMaxRetries = verifyRetryConfig.retryOnFailure
+        ? (opts.maxPhaseRetries ?? (opts._deps ? 1 : 3))
+        : 1;
       let attempt = 0;
       let phaseSuccess = false;
       let lastVerifyFailures: string | undefined;
 
-      while (attempt < MAX_PHASE_RETRIES && !phaseSuccess) {
+      while (attempt < effectiveMaxRetries && !phaseSuccess) {
         attempt++;
-        const isEscalation = attempt === MAX_PHASE_RETRIES && attempt > 1 && opts.fast;
+        const isEscalation = attempt === effectiveMaxRetries && attempt > 1 && opts.fast;
 
         if (attempt > 1) {
           log.info(
@@ -991,6 +1341,21 @@ export async function runLoopSession(
           (opts as any).fast = false;
         }
 
+        // Run pre_phase hook (item 3.3, 4.3) — phase-level hooks override plan-level hooks.
+        const effectivePrePhaseHook = phaseHooksConfig.pre_phase ?? hooksConfig.pre_phase;
+        if (effectivePrePhaseHook) {
+          const hookResult = await runHook(effectivePrePhaseHook, opts.cwd, verifyConfig.timeoutMs);
+          if (!hookResult.ok) {
+            log.warn({ phase: phaseFile, output: hookResult.output }, "pre_phase hook failed — skipping phase");
+            if (isEscalation) {
+              (opts as any).fast = originalFast;
+            }
+            // Skip this phase and move to the next
+            phaseSuccess = false;
+            continue;
+          }
+        }
+
         const r = await runPhaseInner(phaseFile, "lane-1", opts.cwd, lastVerifyFailures);
 
         if (isEscalation) {
@@ -1001,7 +1366,7 @@ export async function runLoopSession(
         lastVerifyFailures = r.verifyFailures;
 
         if (r.phaseComplete) {
-          recordPhaseCompletion(phaseFile, r.phaseLoopResult);
+          await recordPhaseCompletion(phaseFile, r.phaseLoopResult, phaseHooksConfig);
           phaseSuccess = true;
           break;
         }
@@ -1016,7 +1381,7 @@ export async function runLoopSession(
         }
 
         // Phase didn't complete (verify failed) — retry unless exhausted
-        if (attempt >= MAX_PHASE_RETRIES) {
+        if (attempt >= effectiveMaxRetries) {
           log.warn({ phase: phaseFile, attempts: attempt }, "phase exhausted retries — moving on");
         }
       }
@@ -1089,6 +1454,36 @@ export async function runLoopSession(
           }
 
           const runCwd = handle?.path ?? opts.cwd;
+          // Run pre_phase hook (item 3.3, 4.3) — resolve phase config and use
+          // phase-level hooks which override plan-level hooks.
+          const phaseName = phaseFile.replace(/\.(md|ya?ml)$/, "");
+          const phaseConfig = resolvePhaseConfig(
+            opts.config as Record<string, unknown>,
+            phaseName,
+          );
+          const phaseHooksConfig = extractHooksConfig(phaseConfig);
+          const effectivePrePhaseHook = phaseHooksConfig.pre_phase ?? hooksConfig.pre_phase;
+          if (effectivePrePhaseHook) {
+            const hookResult = await runHook(effectivePrePhaseHook, runCwd, verifyConfig.timeoutMs);
+            if (!hookResult.ok) {
+              log.warn({ phase: phaseFile, output: hookResult.output }, "pre_phase hook failed — skipping phase");
+              // Return a skipped-phase result so runLanes can move on
+              return {
+                phaseFile,
+                laneId,
+                ok: false,
+                fatal: false,
+                iterations: 0,
+                costUsd: 0,
+                phaseLoopResult: {
+                  exitReason: "error" as const,
+                  iterations: 0,
+                  message: "pre_phase hook failed",
+                },
+                phaseComplete: false,
+              };
+            }
+          }
           const result = await runPhaseInner(phaseFile, laneId, runCwd);
 
           if (handle) {
@@ -1122,12 +1517,19 @@ export async function runLoopSession(
           // recordPhaseCompletion needs the LoopResult — but the
           // PhaseResult only carries cost/iterations summaries. Synthesize
           // a minimal LoopResult so the log line shape is consistent.
-          recordPhaseCompletion(r.phaseFile, {
+          // Resolve phase-specific hooks for per-phase post_phase hook override (item 4.3).
+          const phaseName = r.phaseFile.replace(/\.(md|ya?ml)$/, "");
+          const phaseConfig = resolvePhaseConfig(
+            opts.config as Record<string, unknown>,
+            phaseName,
+          );
+          const phaseHooksConfig = extractHooksConfig(phaseConfig);
+          await recordPhaseCompletion(r.phaseFile, {
             exitReason: "sentinel",
             iterations: r.iterations,
             message: "completed via parallel lane",
             cumulativeCostUsd: r.costUsd,
-          });
+          }, phaseHooksConfig);
         }
       }
 
@@ -1178,7 +1580,28 @@ export async function runLoopSession(
         `## main.md\n${finalMainContent}\n\n` +
         `Only work on the unchecked items in main.md's acceptance criteria. Phase items are already done. Do not ask questions.`;
 
-      const crossResult = await _runRalphLoop({ prompt: crossCuttingPrompt, cwd: opts.cwd, agentName: opts.fast ? "autopilot-fast" : undefined, logger: opts.logger, emitter, adapter: opts.adapter });
+      const adapterName = opts.adapter?.name as AdapterName | undefined;
+      const cfgObj = opts.config as Record<string, unknown> | undefined;
+      const models = cfgObj?.models as Record<string, unknown> | undefined;
+      const executionSpecifier = models?.execution as string | undefined;
+      const executionModel = executionSpecifier
+        ? resolveModel(executionSpecifier, adapterName ?? "opencode")
+        : undefined;
+      const crossAdapters = (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined;
+      const crossOcAdapter = crossAdapters?.opencode as Record<string, unknown> | undefined;
+      const crossCuttingAgentOverrides = crossOcAdapter?.agents as Record<string, Record<string, unknown>> | undefined;
+      const crossResult = await _runRalphLoop({
+        prompt: crossCuttingPrompt,
+        cwd: opts.cwd,
+        agentName: opts.fast ? "autopilot-fast" : undefined,
+        model: executionModel,
+        stallMs,
+        config: opts.config,
+        agentOverrides: crossCuttingAgentOverrides,
+        logger: opts.logger,
+        emitter,
+        adapter: opts.adapter,
+      });
       totalIterations += crossResult.iterations;
       totalCostUsd += crossResult.cumulativeCostUsd ?? 0;
       lastResult = crossResult;
@@ -1187,22 +1610,37 @@ export async function runLoopSession(
 
   log.info({ completed: phasesCompleted, total: uncheckedPhases.length, iterations: totalIterations, cost: totalCostUsd.toFixed(2) }, "all phases done");
 
+  // Run post_run hook (item 3.3) — on failure, log warn but don't block
+  if (hooksConfig.post_run) {
+    const hookResult = await runHook(hooksConfig.post_run, opts.cwd, verifyConfig.timeoutMs);
+    if (!hookResult.ok) {
+      log.warn({ output: hookResult.output }, "post_run hook failed");
+    }
+  }
+
   // Run completed successfully — delete the checkpoint so the next
   // invocation against this plan starts clean.
   deleteCheckpoint(opts.cwd);
 
-  // Automatic changeset generation (item 4.6). Skipped when running
-  // under test deps (in-memory paths can't host a .changeset/ dir).
-  // Best-effort — failures emit a warning but don't poison the run.
+  // Automatic changeset generation (item 3.4). Skipped when running
+  // under test deps (in-memory paths can't host a .changeset/ dir) or
+  // when config.changeset is explicitly false. Best-effort — failures
+  // emit a warning but don't poison the run.
   let changesetPath: string | undefined;
+  const changesetEnabled = cfgObj?.changeset !== false;
   if (
+    changesetEnabled &&
     !opts._deps &&
     phasesCompleted === uncheckedPhases.length &&
     uncheckedPhases.length > 0
   ) {
     try {
       const { generateChangeset } = await import("./changeset-generator.js");
-      const cs = await generateChangeset(opts.planPath, opts.cwd);
+      const changesetOpts = {
+        packageName: cfgObj?.changeset_package as string | undefined,
+        bumpLevel: cfgObj?.changeset_bump as import("./changeset-generator.js").BumpLevel | undefined,
+      };
+      const cs = await generateChangeset(opts.planPath, opts.cwd, changesetOpts);
       changesetPath = cs.path;
       log.info(
         { path: cs.path, bumpLevel: cs.bumpLevel },

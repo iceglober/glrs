@@ -11,12 +11,15 @@
  * This is a thin wrapper: parse args → create SessionRunner → attach CLI renderer → run.
  */
 
-import { command, flag, option, optional, string as stringType, number as numberType } from "cmd-ts";
+import { command, flag, option, optional, string as stringType, number as numberType, oneOf } from "cmd-ts";
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { formatElapsed, formatCost, EventStreamReader, deriveState } from "@glrs-dev/autopilot";
+import { formatElapsed, formatCost, EventStreamReader, deriveState, applyCLIOverrides } from "@glrs-dev/autopilot";
 import { SessionRunner } from "@glrs-dev/autopilot";
 import { createCliRenderer } from "../cli-renderer.js";
+import { createAdapter, ADAPTER_NAMES, DEFAULT_ADAPTER } from "../adapter-factory.js";
+import { resolveConfig } from "../autopilot/config-reader.js";
+import type { AutopilotConfig } from "../autopilot/autopilot-config.js";
 
 export const autopilotInteractiveCmd = command({
   name: "autopilot",
@@ -63,8 +66,14 @@ export const autopilotInteractiveCmd = command({
       description:
         "Read and pretty-print the current autopilot status from .agent/autopilot-status.json. Exits 0 if found, 1 if not running.",
     }),
+    adapter: option({
+      long: "adapter",
+      short: "a",
+      type: optional(oneOf(ADAPTER_NAMES as unknown as string[])),
+      description: `Agent adapter to use (default: ${DEFAULT_ADAPTER}). Available: ${ADAPTER_NAMES.join(", ")}`,
+    }),
   },
-  handler: async ({ plan, fast, resume, maxIterationsPerPhase, parallel, ship, status }) => {
+  handler: async ({ plan, fast, resume, maxIterationsPerPhase, parallel, ship, status, adapter: adapterName }) => {
     const cwd = process.cwd();
 
     // --status: short-circuit — read and pretty-print the current session state
@@ -192,6 +201,19 @@ export const autopilotInteractiveCmd = command({
       planPath = picked;
     }
 
+    // Resolve config (project + plan merge)
+    const resolvedConfig = resolveConfig(cwd, planPath);
+
+    // Apply CLI flag overrides (after merge, before validation and execution)
+    const config = applyCLIOverrides(resolvedConfig, {
+      adapter: adapterName,
+      fast,
+      resume,
+      maxIterationsPerPhase,
+      parallel,
+      ship,
+    }) as AutopilotConfig;
+
     // Plan structure validation (item 4.5). Fail fast on missing
     // main.md or referenced-but-absent phase files. Errors abort the
     // command immediately; warnings are surfaced so the user can fix
@@ -220,37 +242,64 @@ export const autopilotInteractiveCmd = command({
       process.stderr.write("  Adding mirror refs, code pointers, and conventions...\n");
     }
 
-    // Create SessionRunner — thin wrapper around enrichment + execution
-    const runner = new SessionRunner({
-      planPath: path.resolve(process.cwd(), planPath),
-      cwd: process.cwd(),
-      fast,
-      resume,
-      maxIterationsPerPhase,
-      parallel,
-      ship,
-    });
-
-    // Attach CLI renderer — subscribes to events and writes formatted text to stderr
-    const renderer = createCliRenderer(runner.events);
-
-    const result = await runner.run();
-    renderer.unsubscribe();
-
-    // Print enrichment completion line (after enrichment events have been rendered)
-    if (fast && planPath) {
-      process.stderr.write("  ✓ Plan enriched — executing with fast model (mid-execute tier)\n\n");
+    // Set GLRS_AGENT_OVERRIDES env var if the adapter is opencode and has agent overrides.
+    // The plugin's config-hook reads this at server startup. Save the prior value so we
+    // can restore it after the run (though the adapter's shutdown() also handles restoration
+    // to keep the parent process clean).
+    const priorAgentOverridesEnv = process.env["GLRS_AGENT_OVERRIDES"];
+    const finalAdapterName = (config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER;
+    if (finalAdapterName === "opencode") {
+      const agentOverrides = config.adapters?.opencode?.agents;
+      if (agentOverrides && Object.keys(agentOverrides).length > 0) {
+        process.env["GLRS_AGENT_OVERRIDES"] = JSON.stringify(agentOverrides);
+      }
     }
 
-    // Show completion summary
-    const costStr = result.loopResult.cumulativeCostUsd
-      ? ` · $${result.loopResult.cumulativeCostUsd.toFixed(2)}`
-      : "";
-    process.stdout.write(
-      `\n\x1b[1m✓ Autopilot complete\x1b[0m\n` +
-        `  Plan:   ${result.planPath}\n` +
-        `  Result: ${result.loopResult.exitReason} after ${result.loopResult.iterations} iteration(s)${costStr}\n` +
-        `\n`,
-    );
+    try {
+      // Create SessionRunner — thin wrapper around enrichment + execution
+      const adapter = await createAdapter(finalAdapterName, config);
+      const runner = new SessionRunner({
+        planPath: path.resolve(process.cwd(), planPath),
+        cwd: process.cwd(),
+        fast,
+        resume,
+        maxIterationsPerPhase,
+        parallel,
+        ship,
+        adapter,
+        enrichmentConfig: config.enrichment,
+        config,
+      });
+
+      // Attach CLI renderer — subscribes to events and writes formatted text to stderr
+      const renderer = createCliRenderer(runner.events);
+
+      const result = await runner.run();
+      renderer.unsubscribe();
+
+      // Print enrichment completion line (after enrichment events have been rendered)
+      if (fast && planPath) {
+        process.stderr.write("  ✓ Plan enriched — executing with fast model (mid-execute tier)\n\n");
+      }
+
+      // Show completion summary
+      const costStr = result.loopResult.cumulativeCostUsd
+        ? ` · $${result.loopResult.cumulativeCostUsd.toFixed(2)}`
+        : "";
+      process.stdout.write(
+        `\n\x1b[1m✓ Autopilot complete\x1b[0m\n` +
+          `  Plan:   ${result.planPath}\n` +
+          `  Result: ${result.loopResult.exitReason} after ${result.loopResult.iterations} iteration(s)${costStr}\n` +
+          `\n`,
+      );
+    } finally {
+      // Restore the prior GLRS_AGENT_OVERRIDES env var value to keep the parent process clean.
+      // The adapter's shutdown() also handles restoration, but we restore here for safety.
+      if (priorAgentOverridesEnv === undefined) {
+        delete process.env["GLRS_AGENT_OVERRIDES"];
+      } else {
+        process.env["GLRS_AGENT_OVERRIDES"] = priorAgentOverridesEnv;
+      }
+    }
   },
 });

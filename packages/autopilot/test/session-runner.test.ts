@@ -72,7 +72,7 @@ describe("SessionRunner", () => {
         eventStreamPath,
         _deps: {
           createLogger: makeSilentLogger,
-          enrichPlan: async () => {},
+          enrichPlan: async (_cwd: string, planPath: string) => planPath,
           runLoopSession: async () => makeSuccessLoopResult(),
         },
       });
@@ -147,7 +147,7 @@ describe("SessionRunner", () => {
         eventStreamPath,
         _deps: {
           createLogger: makeSilentLogger,
-          enrichPlan: async () => {},
+          enrichPlan: async (_cwd: string, planPath: string) => planPath,
           runLoopSession: async () => makeSuccessLoopResult(),
         },
       });

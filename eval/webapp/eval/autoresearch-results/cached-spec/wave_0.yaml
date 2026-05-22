@@ -1,0 +1,47 @@
+items:
+  - id: "0.1"
+    intent: "Implement auth foundation: migration adding password_hash/role to users and sessions table, token utilities (hash, verify, generate, validate), and register/login endpoints mounted at /api/auth"
+    checked: true
+    files:
+      - path: migrations/003_auth.sql
+        isNew: true
+        change: "Create migration that ALTERs users table to add password_hash TEXT and role TEXT DEFAULT 'user' CHECK(role IN ('user','admin')), and creates sessions table with id, user_id (FK), token (UNIQUE), expires_at, created_at"
+      - path: src/auth.ts
+        isNew: true
+        change: "Create module exporting hashPassword (crypto.scrypt + random salt, returns salt:hash), verifyPassword (splits stored and verifies), generateToken (HMAC-SHA256 signed JSON payload with userId+exp, base64url encoded payload.signature), verifyToken (validates signature and expiration, returns {userId} or null)"
+      - path: src/routes/auth.ts
+        isNew: true
+        change: "Create router with POST /register (validates name/email/password>=8, hashes pw, inserts user, returns 201 {user,token}, 409 on dup email, 400 on short pw) and POST /login (verifies credentials, inserts session, returns {user,token}, 401 on bad creds). Export as authRouter."
+      - path: src/app.ts
+        isNew: false
+        change: "Already imports authRouter and mounts at /api/auth — no changes needed if the route file exports correctly"
+    tests:
+      - "test/auth.test.ts"
+    verify: "bun run src/migrate.ts && bun test test/auth.test.ts"
+    mirror: "src/routes/users.ts"
+    context: |
+      // src/app.ts — already mounts auth
+      import { authRouter } from "./routes/auth.js";
+      app.use("/api/auth", authRouter);
+
+      // src/routes/users.ts — pattern for route files
+      import { Router, type Request, type Response } from "express";
+      import { pool } from "../db.js";
+      import { requireAuth } from "../middleware/auth.js";
+      export const usersRouter = Router();
+
+      // migrations/001_create_users.sql — existing users schema
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      // test/users.test.ts — test pattern (already uses auth endpoints)
+      import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+      import { pool } from "../src/db.js";
+      import { app } from "../src/app.js";
+    conventions: "ESM imports with .js extensions, named exports (export const xRouter = Router()), bun:test framework with describe/it/expect, pg Pool for DB queries, migrations are plain numbered SQL files, express Router pattern, base64url encoding for tokens"
+    proof: "The acceptance proof should: (1) call POST /api/auth/register with valid {name, email, password} and assert 201 + response has {user: {id, name, email, role:'user'}, token}; (2) call register with duplicate email and assert 409; (3) call register with password < 8 chars and assert 400; (4) call POST /api/auth/login with correct credentials and assert 200 + response has {user, token}; (5) call login with wrong password and assert 401; (6) verify the returned token can be decoded/validated (use it in an Authorization header on a protected endpoint); (7) unit-test hashPassword/verifyPassword round-trip and generateToken/verifyToken round-trip"
+    proof_type: "test"

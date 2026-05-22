@@ -1,0 +1,144 @@
+{
+  "iteration": 2,
+  "score": 0.8,
+  "accuracy": 1,
+  "checks_passed": 32,
+  "checks_total": 32,
+  "cost_usd": 0,
+  "duration_s": 1352.074,
+  "cost_score": 1,
+  "speed_score": 0,
+  "failed_checks": [],
+  "changes_made": "variant: aggressive",
+  "timestamp": "2026-05-19T22:57:07.316Z",
+  "checks": [
+    {
+      "name": "auth_migration_exists",
+      "passed": true
+    },
+    {
+      "name": "search_migration_exists",
+      "passed": true
+    },
+    {
+      "name": "auth_module_exists",
+      "passed": true
+    },
+    {
+      "name": "auth_routes_exist",
+      "passed": true
+    },
+    {
+      "name": "auth_middleware_exists",
+      "passed": true
+    },
+    {
+      "name": "analytics_routes_exist",
+      "passed": true
+    },
+    {
+      "name": "users_has_password_hash",
+      "passed": true
+    },
+    {
+      "name": "users_has_role",
+      "passed": true
+    },
+    {
+      "name": "sessions_table_exists",
+      "passed": true
+    },
+    {
+      "name": "search_vector_column",
+      "passed": true
+    },
+    {
+      "name": "register_returns_201",
+      "passed": true
+    },
+    {
+      "name": "register_returns_token",
+      "passed": true
+    },
+    {
+      "name": "register_rejects_duplicate_email",
+      "passed": true
+    },
+    {
+      "name": "register_rejects_short_password",
+      "passed": true
+    },
+    {
+      "name": "login_returns_200",
+      "passed": true
+    },
+    {
+      "name": "login_rejects_wrong_password",
+      "passed": true
+    },
+    {
+      "name": "post_create_requires_auth",
+      "passed": true
+    },
+    {
+      "name": "post_create_with_auth",
+      "passed": true
+    },
+    {
+      "name": "get_posts_no_auth",
+      "passed": true
+    },
+    {
+      "name": "search_returns_results",
+      "passed": true
+    },
+    {
+      "name": "search_requires_q_param",
+      "passed": true
+    },
+    {
+      "name": "search_empty_for_no_match",
+      "passed": true
+    },
+    {
+      "name": "pagination_envelope_format",
+      "passed": true
+    },
+    {
+      "name": "pagination_respects_limit",
+      "passed": true
+    },
+    {
+      "name": "pagination_has_cursor",
+      "passed": true
+    },
+    {
+      "name": "pagination_cursor_works",
+      "passed": true
+    },
+    {
+      "name": "analytics_overview",
+      "passed": true
+    },
+    {
+      "name": "analytics_top_authors",
+      "passed": true
+    },
+    {
+      "name": "analytics_activity",
+      "passed": true
+    },
+    {
+      "name": "analytics_admin_only",
+      "passed": true
+    },
+    {
+      "name": "analytics_requires_auth",
+      "passed": true
+    },
+    {
+      "name": "all_tests_pass",
+      "passed": true
+    }
+  ]
+}

@@ -9,10 +9,13 @@
  *
  * Each command runs via `/bin/sh -c` so users can write shell features
  * (pipes, redirects, env vars) into a `verify:` field. Per-command
- * timeout = 5 minutes; on timeout we synthesize a stderr message and
- * return `passed: false` rather than throwing — `runVerifyCommands`
- * always returns a `VerifyResult[]` so callers can build a result table
- * without wrapping every call in try/catch.
+ * timeout is determined by the item's proof_type:
+ * - unit_test: 30s, api_check: 10s, structural/typecheck: 60s, e2e: 120s
+ * - unknown/custom: uses config.verify_timeout (default 5 minutes).
+ * On timeout we synthesize a stderr message and return `passed: false`
+ * rather than throwing — `runVerifyCommands` always returns a
+ * `VerifyResult[]` so callers can build a result table without wrapping
+ * every call in try/catch.
  */
 
 import { execFile as execFileCb } from "node:child_process";
@@ -47,7 +50,45 @@ export interface RunVerifyCommandsOptions {
   };
 }
 
+/**
+ * Verify strategy configuration (read from config.verify).
+ * - `after_phase`: run verify after the entire phase completes (default).
+ * - `after_item`: run verify after each item in fast mode (deep mode falls back to after_phase).
+ * - `skip`: bypass verify entirely, mark phase complete regardless.
+ */
+export type VerifyStrategy = "after_phase" | "after_item" | "skip";
+
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Get the timeout (in ms) for a verify command based on its proof type.
+ * Different proof types need different timeouts:
+ * - unit_test: 30s
+ * - api_check: 10s
+ * - structural, typecheck: 60s
+ * - e2e: 120s
+ * - unknown/custom: uses customTimeoutMs
+ */
+function getTimeoutForProofType(
+  proofType: string | undefined,
+  customTimeoutMs: number,
+): number {
+  if (!proofType) return customTimeoutMs;
+
+  switch (proofType) {
+    case "unit_test":
+      return 30 * 1000;
+    case "api_check":
+      return 10 * 1000;
+    case "structural":
+    case "typecheck":
+      return 60 * 1000;
+    case "e2e":
+      return 120 * 1000;
+    default:
+      return customTimeoutMs;
+  }
+}
 
 /**
  * Run each item's `verify:` command in `cwd` and return the results.
@@ -70,11 +111,12 @@ export async function runVerifyCommands(
     const command = item.verify?.trim();
     if (!command) continue;
 
+    const itemTimeoutMs = getTimeoutForProofType(item.proof_type, timeoutMs);
     const start = Date.now();
     try {
       const { stdout, stderr } = await execFile("/bin/sh", ["-c", command], {
         cwd,
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(itemTimeoutMs),
         // Capture as much output as the command produces — verify
         // commands are typically test runs; truncating their output
         // would hide the failure detail we want in the next prompt.
@@ -116,7 +158,7 @@ export async function runVerifyCommands(
       if (isTimeout) {
         stderr =
           (stderr ? stderr + "\n" : "") +
-          `[verify-runner] command timed out after ${Math.round(timeoutMs / 1000)}s`;
+          `[verify-runner] command timed out after ${Math.round(itemTimeoutMs / 1000)}s`;
       } else if (!stderr && e.message) {
         stderr = e.message;
       }

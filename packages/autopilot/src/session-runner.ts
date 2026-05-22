@@ -45,6 +45,21 @@ export interface SessionRunnerOptions {
    */
   eventStreamPath?: string;
   /**
+   * Enrichment configuration (strategy, retry, timeouts).
+   * Passed through to enrichPlanForFastModel when --fast is used.
+   */
+  enrichmentConfig?: {
+    strategy?: string;
+    retry?: boolean;
+    max_retries?: number;
+    stall_timeout?: number;
+  };
+  /**
+   * Resolved autopilot configuration from `.glrs/autopilot.yaml`.
+   * Passed through to enrichment, loop execution, and debrief for model resolution.
+   */
+  config?: unknown;
+  /**
    * Injectable dependencies for testing.
    * @internal
    */
@@ -62,7 +77,7 @@ export interface SessionResult {
  */
 export interface SessionRunnerDeps {
   /** Override enrichPlanForFastModel for testing. */
-  enrichPlan?: (cwd: string, planPath: string, logger?: AutopilotLogger) => Promise<void>;
+  enrichPlan?: (cwd: string, planPath: string, logger?: AutopilotLogger) => Promise<string>;
   /** Override runLoopSession for testing. */
   runLoopSession?: (opts: LoopSessionOptions & { _deps?: unknown }) => Promise<LoopResult>;
   /** Override createAutopilotLogger for testing. */
@@ -275,39 +290,57 @@ export class SessionRunner {
       logger = _createLogger({ cwd });
     } else {
       const { createAutopilotLogger } = await import("./lib/logger.js");
-      logger = createAutopilotLogger({ cwd });
+      const logLevel = (this.opts.config as Record<string, unknown> | undefined)?.log_level as string | undefined;
+      logger = createAutopilotLogger({ cwd, level: logLevel });
     }
 
-    // Resolve model names from opencode config for display
+    // Resolve model names for display — adapter-aware
+    const adapterName = this.opts.adapter?.name ?? "unknown";
     let enrichModel = "unknown";
     let executeModel = "unknown";
-    try {
-      const { join } = await import("node:path");
-      const { readFileSync } = await import("node:fs");
-      const configHome = process.env["XDG_CONFIG_HOME"] ?? join(process.env["HOME"] ?? "", ".config");
-      const configPath = join(configHome, "opencode", "opencode.json");
-      const raw = readFileSync(configPath, "utf8");
-      const config = JSON.parse(raw);
-      const plugins: unknown[] = Array.isArray(config.plugin) ? config.plugin : [];
-      for (const entry of plugins) {
-        if (Array.isArray(entry) && entry.length >= 2) {
-          const opts2 = entry[1] as Record<string, unknown>;
-          const models = opts2?.models as Record<string, string[]> | undefined;
-          if (models) {
-            const deepArr = models["deep"] ?? models["prime"];
-            if (Array.isArray(deepArr) && deepArr[0]) enrichModel = deepArr[0];
-            const execArr = models["autopilot-execute"] ?? models["mid-execute"] ?? models["mid"];
-            if (Array.isArray(execArr) && execArr[0]) executeModel = execArr[0];
+
+    const cfgObj = this.opts.config as Record<string, unknown> | undefined;
+    const cfgModels = cfgObj?.models as Record<string, string> | undefined;
+
+    if (adapterName === "claude-code-cli") {
+      enrichModel = cfgModels?.enrichment ?? "claude-opus-4-7";
+      executeModel = cfgModels?.execution ?? "claude-haiku-4-5-20251001";
+    } else {
+      // OpenCode: read from opencode.json tier config
+      try {
+        const { join } = await import("node:path");
+        const { readFileSync } = await import("node:fs");
+        const configHome = process.env["XDG_CONFIG_HOME"] ?? join(process.env["HOME"] ?? "", ".config");
+        const configPath = join(configHome, "opencode", "opencode.json");
+        const raw = readFileSync(configPath, "utf8");
+        const config = JSON.parse(raw);
+        const plugins: unknown[] = Array.isArray(config.plugin) ? config.plugin : [];
+        for (const entry of plugins) {
+          if (Array.isArray(entry) && entry.length >= 2) {
+            const opts2 = entry[1] as Record<string, unknown>;
+            const models = opts2?.models as Record<string, string[]> | undefined;
+            if (models) {
+              const deepArr = models["deep"] ?? models["prime"];
+              if (Array.isArray(deepArr) && deepArr[0]) enrichModel = deepArr[0];
+              const execArr = models["autopilot-execute"] ?? models["mid-execute"] ?? models["mid"];
+              if (Array.isArray(execArr) && execArr[0]) executeModel = execArr[0];
+            }
           }
         }
+        if (typeof config.model === "string" && enrichModel === "unknown") {
+          enrichModel = config.model;
+        }
+      } catch {
+        // Config read failure — use "unknown"
       }
-      // Also check top-level model field
-      if (typeof config.model === "string" && enrichModel === "unknown") {
-        enrichModel = config.model;
-      }
-    } catch {
-      // Config read failure — use "unknown"
     }
+
+    // Resolve git branch
+    let branch = "unknown";
+    try {
+      const { execFileSync } = await import("node:child_process");
+      branch = execFileSync("git", ["branch", "--show-current"], { cwd, encoding: "utf8" }).trim() || "detached";
+    } catch { /* not a git repo */ }
 
     // Emit session:start
     emitEvent({
@@ -319,9 +352,12 @@ export class SessionRunner {
       resume: resume ?? false,
       enrichModel,
       executeModel,
+      adapter: adapterName,
+      branch,
     });
 
     let loopResult: LoopResult;
+    let effectivePlanPath = planPath;
 
     try {
       // Enrichment phase (only when --fast)
@@ -335,7 +371,7 @@ export class SessionRunner {
 
         try {
           if (_enrichPlan) {
-            await _enrichPlan(cwd, planPath, logger);
+            effectivePlanPath = await _enrichPlan(cwd, planPath, logger);
             // Test-injected enrichPlan doesn't emit events — emit done here.
             emitEvent({
               type: "enrich:done",
@@ -344,7 +380,7 @@ export class SessionRunner {
             });
           } else {
             const { enrichPlanForFastModel } = await import("./plan-enrichment.js");
-            await enrichPlanForFastModel(cwd, planPath, logger, this.events, this.opts.adapter);
+            effectivePlanPath = await enrichPlanForFastModel(cwd, planPath, logger, this.events, this.opts.adapter, this.opts.enrichmentConfig, this.opts.config);
             // Note: enrichPlanForFastModel emits its own enrich:done event
             // internally — do NOT emit a duplicate here.
           }
@@ -359,9 +395,10 @@ export class SessionRunner {
         }
       }
 
-      // Execution phase
+      // Execution phase — use effectivePlanPath (may differ from planPath
+      // when freeform decomposition created a plan directory)
       const loopOpts: LoopSessionOptions = {
-        planPath,
+        planPath: effectivePlanPath,
         cwd,
         fast,
         resume,
@@ -371,6 +408,7 @@ export class SessionRunner {
         logger,
         emitter: this.events,
         adapter: this.opts.adapter,
+        config: this.opts.config,
         signal: this._abortController?.signal,
       };
 

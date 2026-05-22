@@ -47,6 +47,9 @@
     "test:publish-shape": "bun test test/publish-shape.test.ts test/pack-install-smoke.test.ts"
   },
   "dependencies": {
+    "@glrs-dev/autopilot": "workspace:*",
+    "@glrs-dev/adapter-claude-code": "workspace:*",
+    "@glrs-dev/adapter-opencode": "workspace:*",
     "@inkjs/ui": "^2.0.0",
     "@inquirer/prompts": "^8.4.2",
     "@opencode-ai/plugin": "^1.15",

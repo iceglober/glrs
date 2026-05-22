@@ -60,7 +60,7 @@ The `proof` field gives the model enough detail to write a meaningful failing te
 
 ## Items
 
-- [ ] 5.1 **Add `proof` and `proof_type` to spec schema.** Update `spec-schema.ts` to accept optional `proof: string` and `proof_type: string` fields on `SpecItem`. Update `specItemToPlanItem` to pass them through. Backward compatible — existing specs without these fields still work.
+- [x] 5.1 **Add `proof` and `proof_type` to spec schema.** Update `spec-schema.ts` to accept optional `proof: string` and `proof_type: string` fields on `SpecItem`. Update `specItemToPlanItem` to pass them through. Backward compatible — existing specs without these fields still work.
 
   - files (MODIFIED):
     - `packages/autopilot/src/spec-schema.ts` — add fields to SpecItem
@@ -68,13 +68,13 @@ The `proof` field gives the model enough detail to write a meaningful failing te
     - `packages/autopilot/src/plan-parser.ts` — add to PlanItem type
   - verify: `cd packages/autopilot && bun test`
 
-- [ ] 5.2 **Update enrichment prompt to generate `proof` field.** The enrichment prompt for wave files should instruct the LLM to generate a `proof` field for each item — a natural-language description of what the acceptance proof should assert, specific enough for a code-generation model to write it. Also generate `proof_type` based on the verify command pattern.
+- [x] 5.2 **Update enrichment prompt to generate `proof` field.** The enrichment prompt for wave files should instruct the LLM to generate a `proof` field for each item — a natural-language description of what the acceptance proof should assert, specific enough for a code-generation model to write it. Also generate `proof_type` based on the verify command pattern.
 
   - files (MODIFIED):
     - `packages/autopilot/src/plan-enrichment.ts` — update `buildSpecGenerationPrompt` for phase files
   - verify: `cd packages/autopilot && bun test`
 
-- [ ] 5.3 **TDD execution prompt.** Rewrite the per-item execution prompt to enforce red-green-refactor:
+- [x] 5.3 **TDD execution prompt.** Rewrite the per-item execution prompt to enforce red-green-refactor:
   
   ```
   You are implementing ONE item using test-driven development.
@@ -99,21 +99,21 @@ The `proof` field gives the model enough detail to write a meaningful failing te
     - `packages/autopilot/src/loop-session.ts` — update per-item prompt in `runItemsForPhase`
   - verify: `cd packages/autopilot && bun test`
 
-- [ ] 5.4 **Verify-before-check enforcement.** Update the post-iteration check: if an item is marked `checked: true` but its verify command fails, UNCHECK it (set back to `checked: false`). This prevents the model from lying about completion. Log a warning when this happens.
+- [x] 5.4 **Verify-before-check enforcement.** Update the post-iteration check: if an item is marked `checked: true` but its verify command fails, UNCHECK it (set back to `checked: false`). This prevents the model from lying about completion. Log a warning when this happens.
 
   - files (MODIFIED):
     - `packages/autopilot/src/loop-session.ts` — after verify gate, uncheck items whose verify failed
     - `packages/autopilot/src/spec-writer.ts` — add `markItemUnchecked(planDir, phaseFile, itemId)`
   - verify: `cd packages/autopilot && bun test`
 
-- [ ] 5.5 **Config: `execution_style` setting.** Add `execution_style: "tdd" | "direct"` to the autopilot config schema. Default: `"tdd"`. When `"direct"`, use the current prompt (no red-green enforcement). When `"tdd"`, use the new prompt from 5.3. This allows repos that don't want TDD to opt out.
+- [x] 5.5 **Config: `execution_style` setting.** Add `execution_style: "tdd" | "direct"` to the autopilot config schema. Default: `"tdd"`. When `"direct"`, use the current prompt (no red-green enforcement). When `"tdd"`, use the new prompt from 5.3. This allows repos that don't want TDD to opt out.
 
   - files (MODIFIED):
     - `packages/autopilot/src/loop-session-types.ts` — add `executionStyle?: "tdd" | "direct"`
     - `packages/autopilot/src/loop-session.ts` — branch on execution style for prompt selection
   - verify: `cd packages/autopilot && bun test`
 
-- [ ] 5.6 **Proof-type-aware verify timeout.** Different proof types need different timeouts:
+- [x] 5.6 **Proof-type-aware verify timeout.** Different proof types need different timeouts:
   - `unit_test`: 30s (fast, in-process)
   - `api_check`: 10s (network call)
   - `structural` / `typecheck`: 60s (may compile)

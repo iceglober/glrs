@@ -1,0 +1,21 @@
+title: Auth + Search + Analytics
+goal: Add authentication (JWT + bcrypt), full-text search (Postgres tsvector),
+  cursor-based pagination, and an analytics/reporting API to the existing
+  Express + PostgreSQL app that already has users and posts CRUD.
+constraints: "No new npm dependencies beyond what's already installed (express,
+  pg). Use Node.js built-in `crypto` for JWT-like tokens (HMAC-SHA256 signed
+  JSON) and password hashing (scrypt). Do NOT use jsonwebtoken or bcrypt
+  packages. All new endpoints must have integration tests. Existing 13 tests
+  (users + posts) must continue to pass. Postgres features only — no external
+  search services. Cursor-based pagination uses opaque base64-encoded cursors,
+  not page numbers. Auth tokens are passed via `Authorization: Bearer <token>`
+  header. The analytics endpoints must use raw SQL with CTEs — no ORM."
+phases:
+  - file: wave_0.yaml
+    completed: true
+  - file: wave_1.yaml
+    completed: true
+  - file: wave_2.yaml
+    completed: true
+  - file: wave_3.yaml
+    completed: true

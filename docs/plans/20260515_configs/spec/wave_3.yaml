@@ -1,0 +1,541 @@
+items:
+  - id: "3.1"
+    intent: |
+      Verify strategy from config. `config.verify` selects one of
+      `after_phase` (current behavior) | `after_item` (run verify after
+      each per-item loop iteration in fast mode; deep mode falls back to
+      `after_phase`) | `skip` (bypass `runVerifyCommands` entirely).
+      `config.verify_timeout` overrides the hardcoded 5-minute timeout in
+      `verify-runner.ts`. `config.verify_retry` controls whether a failed
+      verify triggers a phase retry (today: always retries up to
+      `MAX_PHASE_RETRIES`).
+    checked: true
+    files:
+      - path: packages/autopilot/src/loop-session.ts
+        isNew: false
+        change: |
+          Branch the post-phase verify block (loop-session.ts:769-828) on
+          `config.verify`. When `"skip"`, do not call `_runVerifyCommands`
+          and do not emit verify:start/result/done events. When
+          `"after_item"` AND in fast/per-item mode, push the verify call
+          into `runItemsForPhase` (after each item's session completes)
+          and skip the post-phase invocation; for deep mode, transparently
+          fall back to `"after_phase"`. When `"after_phase"` (default),
+          keep current behavior. Thread `config.verify_timeout` into the
+          `runVerifyCommands` opts as `timeoutMs`. Gate the retry loop
+          (`MAX_PHASE_RETRIES`) on `config.verify_retry`: when false,
+          treat verify failure as a soft pass-through and do not retry.
+      - path: packages/autopilot/src/verify-runner.ts
+        isNew: false
+        change: |
+          `RunVerifyCommandsOptions.timeoutMs` already exists — just wire
+          it from `config.verify_timeout` at the call site. No type
+          changes required. Update the JSDoc that calls out the
+          5-minute default to note that callers commonly override it.
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/autopilot/src/loop-session.ts
+    context: |
+      // packages/autopilot/src/loop-session.ts:781 — current post-phase
+      // verify call site to branch on config.verify:
+      const phaseVerify = await _runVerifyCommands(itemsWithVerify, runCwd);
+      verifyResults.push({ phaseFile, results: phaseVerify });
+      const failed = phaseVerify.filter((r) => !r.passed);
+      // ... emits verify:start / verify:result / verify:done
+
+      // packages/autopilot/src/verify-runner.ts:50 — DEFAULT_TIMEOUT_MS:
+      const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+      export interface RunVerifyCommandsOptions {
+        timeoutMs?: number; // already wired — needs threading from config
+        _deps?: { execFile?: typeof execFileDefault };
+      }
+
+      // packages/autopilot/src/loop-session.ts:963 — retry loop guarded
+      // today by MAX_PHASE_RETRIES; gate on config.verify_retry:
+      const MAX_PHASE_RETRIES = opts.maxPhaseRetries ?? (opts._deps ? 1 : 3);
+    conventions: |
+      ESM imports with `.js` suffix on relative paths; named exports only;
+      bun:test; config field names are snake_case in YAML (`verify`,
+      `verify_timeout`, `verify_retry`) and camelCase in TS opts when
+      bridging through existing option shapes; defaults applied at the
+      config-reader boundary (wave 0), not in loop-session — loop-session
+      reads finalized values. Verify events on the typed emitter
+      (`verify:start`, `verify:result`, `verify:done`) stay unchanged in
+      shape; skip mode simply omits all three.
+
+  - id: "3.2"
+    intent: |
+      Iteration budgets from config. `config.max_iterations_per_phase`
+      replaces the tier-keyed `MAX_ITERATIONS_PER_PHASE_BY_TIER` lookup.
+      `config.max_iterations_per_item` replaces the hardcoded
+      `MAX_ITERATIONS_PER_ITEM = 5` in the per-item runner.
+      `config.stall_timeout` replaces the tier-keyed `STALL_MS_BY_TIER`
+      lookup in `runRalphLoop`. The tier-based constants in `config.ts`
+      stay as fallbacks (used when the config value is undefined).
+    checked: true
+    files:
+      - path: packages/autopilot/src/loop-session.ts
+        isNew: false
+        change: |
+          Replace the tier-derived budget at loop-session.ts:323-327 with
+          `config.max_iterations_per_phase ?? opts.maxIterationsPerPhase
+          ?? MAX_ITERATIONS_PER_PHASE_BY_TIER[tier]`. Replace the
+          hardcoded `const MAX_ITERATIONS_PER_ITEM = 5;` at
+          loop-session.ts:495 with `config.max_iterations_per_item ?? 5`.
+          Preserve the CLI `--max-iterations-per-phase` precedence
+          (opts.maxIterationsPerPhase wins when explicit).
+      - path: packages/autopilot/src/loop.ts
+        isNew: false
+        change: |
+          At loop.ts:281-283 (`const stallMs = opts.stallMs ??
+          STALL_MS_BY_TIER[tier];`), prefer `config.stall_timeout` when
+          present: `opts.stallMs ?? config.stall_timeout ??
+          STALL_MS_BY_TIER[tier]`. Thread `config` through the
+          `RalphLoopOptions` (already receives `opts` from the orchestrator
+          — add the field rather than positional). CLI `--stall-timeout`
+          still overrides.
+      - path: packages/autopilot/src/config.ts
+        isNew: false
+        change: |
+          Keep `MAX_ITERATIONS_PER_PHASE_BY_TIER`,
+          `MAX_ITERATIONS_PER_ITEM` (introduce as an exported const if
+          not already present — currently inlined), and `STALL_MS_BY_TIER`
+          as exported fallbacks. Update the JSDoc on each to note that
+          these are fallbacks; the canonical source is the resolved
+          `AutopilotConfig`.
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/autopilot/src/loop-session.ts
+    context: |
+      // packages/autopilot/src/config.ts:30-48 — tier-keyed constants
+      // that become fallbacks:
+      export const STALL_MS_BY_TIER = {
+        deep: 30 * 60 * 1000,
+        mid: 15 * 60 * 1000,
+        "mid-execute": 10 * 60 * 1000,
+        "autopilot-execute": 10 * 60 * 1000,
+        fast: 5 * 60 * 1000,
+      } as const;
+      export const MAX_ITERATIONS_PER_PHASE_BY_TIER = {
+        deep: 5, mid: 8, "mid-execute": 10,
+        "autopilot-execute": 10, fast: 10,
+      } as const;
+
+      // packages/autopilot/src/loop-session.ts:323-327 — tier resolution
+      // for the per-phase budget:
+      const tier: keyof typeof MAX_ITERATIONS_PER_PHASE_BY_TIER = opts.fast
+        ? "autopilot-execute"
+        : "deep";
+      const maxIterationsPerPhase =
+        opts.maxIterationsPerPhase ?? MAX_ITERATIONS_PER_PHASE_BY_TIER[tier];
+
+      // packages/autopilot/src/loop-session.ts:495 — per-item cap:
+      const MAX_ITERATIONS_PER_ITEM = 5;
+
+      // packages/autopilot/src/loop.ts:281-283 — stall timeout resolution:
+      const tier: keyof typeof STALL_MS_BY_TIER =
+        opts.agentName === "autopilot-fast" ? "autopilot-execute" : "deep";
+      const stallMs = opts.stallMs ?? STALL_MS_BY_TIER[tier];
+    conventions: |
+      Precedence order: explicit CLI flag > config value > tier-keyed
+      fallback constant. Constants in `config.ts` stay exported (don't
+      rip them out — tests import them directly). Config field names
+      snake_case in YAML, camelCase in TS opts; bridging at the config
+      reader boundary.
+
+  - id: "3.3"
+    intent: |
+      Lifecycle hooks. Run user-supplied shell commands at four points:
+      `pre_phase` (before each phase session starts), `post_phase`
+      (after a phase reports complete), `post_run` (after all phases),
+      `on_error` (when a phase fails fatally). Each hook runs via
+      `execFile("/bin/sh", ["-c", cmd])` from the repo root with
+      `config.verify_timeout` as the timeout. Non-zero exit = hook
+      failure. `pre_phase` failure SKIPS the phase (logs and moves on).
+      `post_phase` failure logs a warning but does NOT mark the phase
+      incomplete. `post_run` failure logs a warning. `on_error` is
+      fire-and-forget — errors swallowed.
+    checked: true
+    files:
+      - path: packages/autopilot/src/hook-runner.ts
+        isNew: true
+        change: |
+          Export `runHook(cmd: string, cwd: string, timeoutMs: number,
+          _deps?: { execFile?: typeof execFileDefault }):
+          Promise<{ ok: boolean; output: string }>`. Mirror
+          `verify-runner.ts`'s execFile-with-AbortSignal-timeout pattern;
+          capture combined stdout+stderr into `output` (cap at 10MB
+          maxBuffer); never throw — return `{ ok: false, output: <stderr
+          or err.message> }` on any failure (non-zero exit, timeout,
+          spawn error). Empty/whitespace-only `cmd` returns
+          `{ ok: true, output: "" }` (no-op).
+      - path: packages/autopilot/test/hook-runner.test.ts
+        isNew: true
+        change: |
+          bun:test cases: (1) successful command → `ok: true`, output
+          captured; (2) non-zero exit → `ok: false`, stderr in output;
+          (3) timeout via injected execFile (AbortError) → `ok: false`,
+          timeout marker appended to output; (4) empty/whitespace cmd
+          → `ok: true`, no execFile call; (5) spawn failure (ENOENT) →
+          `ok: false`, error message in output.
+      - path: packages/autopilot/src/loop-session.ts
+        isNew: false
+        change: |
+          Read `config.hooks` (Record<"pre_phase" | "post_phase" |
+          "post_run" | "on_error", string | undefined>). Call
+          `runHook(config.hooks?.pre_phase, opts.cwd, verifyTimeoutMs)`
+          immediately before each phase's `runPhase(...)` invocation;
+          when `ok === false`, log warn and continue to the next phase
+          (do not bump `phasesCompleted`). Call `runHook(post_phase)`
+          inside `recordPhaseCompletion` (loop-session.ts:905); on
+          failure, `log.warn` only — do not mutate `phaseComplete`. Call
+          `runHook(post_run)` after the "all phases done" log line at
+          loop-session.ts:1188. Call `runHook(on_error)` in the fatal
+          phase-failed branch (loop-session.ts:830-859) — fire-and-forget
+          (await with `.catch(() => {})` semantics; do not block the
+          error path).
+    tests:
+      - packages/autopilot/test/hook-runner.test.ts
+    verify: "bun test test/hook-runner.test.ts"
+    mirror: packages/autopilot/src/verify-runner.ts
+    context: |
+      // packages/autopilot/src/verify-runner.ts:59-135 — pattern to
+      // mirror for hook-runner.ts (execFile + AbortSignal.timeout +
+      // never-throw + structured result):
+      const execFile = opts._deps?.execFile ?? execFileDefault;
+      const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+      try {
+        const { stdout, stderr } = await execFile("/bin/sh", ["-c", command], {
+          cwd, signal: AbortSignal.timeout(timeoutMs),
+          maxBuffer: 10 * 1024 * 1024,
+        });
+        // passed: true
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException & { stdout?: string|Buffer; stderr?: string|Buffer };
+        const isTimeout = e.name === "AbortError" || e.code === "ABORT_ERR";
+        // build stderr, append timeout marker, passed: false
+      }
+
+      // New surface — packages/autopilot/src/hook-runner.ts:
+      export async function runHook(
+        cmd: string | undefined,
+        cwd: string,
+        timeoutMs: number,
+        _deps?: { execFile?: typeof execFileDefault },
+      ): Promise<{ ok: boolean; output: string }>;
+
+      // loop-session.ts hook insertion points:
+      //  - pre_phase: before runPhase() in both sequential and parallel paths
+      //  - post_phase: inside recordPhaseCompletion (loop-session.ts:905)
+      //  - post_run: after the "all phases done" log at line 1188
+      //  - on_error: inside the fatal phase-failed branch at lines 830-859
+    conventions: |
+      `runHook` mirrors `runVerifyCommands` in never-throw discipline —
+      every failure mode returns a structured `{ ok, output }`. Use
+      `/bin/sh -c` so users can write pipes and env-vars in hook commands.
+      Whitespace-only or undefined `cmd` is a no-op (don't spawn a shell
+      for nothing). The `post_run` and `on_error` hooks must not block
+      the main exit path — wrap in `.catch(() => {})` at the call site.
+      Tests use injected `_deps.execFile` to simulate exit codes,
+      timeouts (AbortError), and spawn failures without spawning real
+      processes (mirrors verify-runner.test.ts).
+
+  - id: "3.4"
+    intent: |
+      Changeset settings from config. `config.changeset` (boolean,
+      default true) gates the entire `generateChangeset` block. When
+      false, no changeset file is written. `config.changeset_bump`
+      (`"patch" | "minor" | "major"`) overrides the title-keyword
+      inference in `inferBumpLevel`. `config.changeset_package` overrides
+      the hardcoded `@glrs-dev/harness-plugin-opencode` package name.
+    checked: true
+    files:
+      - path: packages/autopilot/src/loop-session.ts
+        isNew: false
+        change: |
+          At loop-session.ts:1197-1215, gate the entire
+          `generateChangeset` block on `config.changeset !== false`
+          (default-on). When invoking `generateChangeset(...)`, forward
+          `{ packageName: config.changeset_package, bumpLevel:
+          config.changeset_bump }` via a new options-object shape (see
+          changeset-generator change below).
+      - path: packages/autopilot/src/changeset-generator.ts
+        isNew: false
+        change: |
+          Extend `GenerateChangesetOptions` with `bumpLevel?: BumpLevel`.
+          Inside `generateChangeset`, prefer `opts.bumpLevel` over
+          `inferBumpLevel(title)` when provided. Keep `packageName?:
+          string` as-is (already supported via opts.packageName); the
+          default `TARGET_PACKAGE` constant stays untouched. No removal
+          of `inferBumpLevel` — it remains the fallback when config does
+          not specify.
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/autopilot/src/changeset-generator.ts
+    context: |
+      // packages/autopilot/src/loop-session.ts:1197-1215 — current
+      // unconditional changeset block to gate on config.changeset:
+      let changesetPath: string | undefined;
+      if (
+        !opts._deps &&
+        phasesCompleted === uncheckedPhases.length &&
+        uncheckedPhases.length > 0
+      ) {
+        try {
+          const { generateChangeset } = await import("./changeset-generator.js");
+          const cs = await generateChangeset(opts.planPath, opts.cwd);
+          changesetPath = cs.path;
+          log.info({ path: cs.path, bumpLevel: cs.bumpLevel }, "changeset generated");
+        } catch (err) {
+          log.warn({ err: msg }, "changeset generation failed");
+        }
+      }
+
+      // packages/autopilot/src/changeset-generator.ts:43-51 — current opts:
+      export interface GenerateChangesetOptions {
+        packageName?: string;          // already supported
+        _randomSuffix?: () => string;  // test-only
+        // ADD: bumpLevel?: BumpLevel;
+      }
+
+      // packages/autopilot/src/changeset-generator.ts:161-191 — body:
+      const packageName = opts.packageName ?? TARGET_PACKAGE;
+      const bumpLevel = inferBumpLevel(title);  // <- replace with opts.bumpLevel ?? inferBumpLevel(title)
+    conventions: |
+      Default-on for `config.changeset` (existing behavior). YAML
+      snake_case (`changeset`, `changeset_bump`, `changeset_package`);
+      TS interface keeps camelCase (`bumpLevel`, `packageName`) —
+      translation at the loop-session boundary. `inferBumpLevel` stays
+      exported and unchanged — used as fallback. Tests live in
+      `packages/autopilot/test/changeset-generator.test.ts`; add cases
+      that pass `bumpLevel` explicitly and assert the override path
+      bypasses the title-keyword scan.
+
+  - id: "3.5"
+    intent: |
+      Commit settings from config. `config.auto_commit` (boolean,
+      default true) controls whether the loop creates a commit after
+      each phase / iteration completes. When false, the loop leaves
+      changes unstaged (skips `git add` and `git commit`) for the user
+      to review. `config.commit_prefix` (string, optional) prepends to
+      every commit subject (e.g., `"feat(auth):"` becomes
+      `"feat(auth): <agent's subject>"`). The WIP commit on
+      SIGINT/SIGTERM also picks up the prefix.
+    checked: true
+    files:
+      - path: packages/autopilot/src/loop.ts
+        isNew: false
+        change: |
+          Thread `config.auto_commit` and `config.commit_prefix` through
+          `RalphLoopOptions` (read from the orchestrator-supplied
+          config). At the per-iteration commit site (loop.ts ~948-970,
+          where `git log -1` reads back the agent's commit subject) and
+          at the WIP commit site (loop.ts:1125-1130), respect
+          `auto_commit === false` by skipping the commit entirely. When
+          `commit_prefix` is set and the loop is doing the committing
+          itself (WIP path), prepend the prefix. For agent-authored
+          commits already on disk, amend the subject by reading current
+          subject and rewriting via `git commit --amend -m "<prefix>
+          <subject>"` only when the prefix is not already present —
+          idempotent.
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/autopilot/src/loop.ts
+    context: |
+      // packages/autopilot/src/loop.ts:948-970 — agent-authored commit
+      // read-back (the loop doesn't author the commit, the agent does;
+      // commit_prefix amends the subject after the fact):
+      let commitSubject = "";
+      try {
+        const { stdout: logOut } = await execFile("git", ["log", "-1", "--pretty=%h %s"], { cwd: opts.cwd });
+        commitSubject = logOut.trim().replace(/^[0-9a-f]+ /, "");
+      } catch { /* no commit yet */ }
+      if (commitSubject) {
+        log.info(`${lanePrefix}commit: ${commitSubject}`);
+      }
+
+      // packages/autopilot/src/loop.ts:1114-1131 — WIP commit on signal:
+      // (this is where the loop itself authors a commit; gate on auto_commit
+      // and prepend commit_prefix when set)
+      log.warn({ signal }, `Signal ${signal} received — graceful shutdown`);
+      try {
+        await execFile("git", ["add", "-A"], { cwd: opts.cwd });
+        // No --no-verify: hooks run normally per AGENTS.md hard rule.
+        await execFile("git", ["commit", "-m", "[WIP] autopilot interrupted"], { cwd: opts.cwd });
+      } catch (err) {
+        log.warn({ err: ... }, "WIP commit failed (hooks may have rejected)");
+      }
+    conventions: |
+      Default `auto_commit: true` preserves existing behavior. Never use
+      `--no-verify` or `--no-gpg-sign` — AGENTS.md hard rule. Prefix
+      check is idempotent (don't double-prepend on retries). When
+      `auto_commit: false`, the SIGINT path leaves the index dirty —
+      log a clear warning so the user knows. YAML snake_case
+      (`auto_commit`, `commit_prefix`); TS opts camelCase
+      (`autoCommit`, `commitPrefix`).
+
+  - id: "3.6"
+    intent: |
+      Notification settings from config. `config.notify_url` (string)
+      and `config.notify_events` (string[], filter by `WebhookEventType`)
+      replace the CLI-only `--notify` flag. CLI flag still wins when
+      both are set. The webhook notifier gains an event-filter argument
+      so events outside `notify_events` are silently dropped before any
+      network call.
+    checked: true
+    files:
+      - path: packages/autopilot/src/loop.ts
+        isNew: false
+        change: |
+          At loop.ts:297-301 (the `notify` closure), source
+          `opts.notifyUrl ?? config.notify_url`. Pass
+          `config.notify_events` (or undefined → "all") into the
+          notifier. When the resolved URL is undefined, the closure is
+          a no-op (existing behavior). When the event filter is set,
+          skip events whose `event` field is not in the list before
+          calling `notifyWebhook`.
+      - path: packages/autopilot/src/lib/webhook-notifier.ts
+        isNew: false
+        change: |
+          Add an optional `events?: WebhookEventType[]` parameter to
+          `notifyWebhook(url, event, opts?)`. When `opts.events` is set
+          and `event.event` is not in it, return immediately without
+          POSTing. Keep the swallow-all-errors discipline. Update
+          `WebhookEventType` union if `notify_events` introduces names
+          not already enumerated.
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/autopilot/src/lib/webhook-notifier.ts
+    context: |
+      // packages/autopilot/src/loop.ts:160 — current CLI-only field:
+      notifyUrl?: string;
+
+      // packages/autopilot/src/loop.ts:297-301 — current notify closure:
+      const notify = (event: WebhookEvent) => {
+        if (opts.notifyUrl) {
+          notifyWebhook(opts.notifyUrl, event).catch(() => {});
+        }
+      };
+
+      // packages/autopilot/src/lib/webhook-notifier.ts:17-23 — current
+      // event types (notify_events filters against this union):
+      export type WebhookEventType =
+        | "iteration_complete"
+        | "phase_complete"
+        | "run_complete"
+        | "error"
+        | "struggle"
+        | "stall";
+
+      // packages/autopilot/src/lib/webhook-notifier.ts:67 — current sig:
+      export async function notifyWebhook(url: string, event: WebhookEvent): Promise<void>;
+      // becomes:
+      export async function notifyWebhook(
+        url: string,
+        event: WebhookEvent,
+        opts?: { events?: WebhookEventType[] },
+      ): Promise<void>;
+    conventions: |
+      CLI flag (`--notify <url>`) precedence over `config.notify_url`
+      mirrors the precedence convention used elsewhere (CLI wins).
+      `notify_events: undefined` means "all events" (current behavior).
+      Event filter is enforced inside `notifyWebhook` so all call sites
+      benefit — single choke point. Error-swallowing discipline stays
+      (`fire-and-forget`). YAML snake_case (`notify_url`,
+      `notify_events`); TS opts camelCase (`notifyUrl`, `notifyEvents`).
+
+  - id: "3.7"
+    intent: |
+      Rollback, checkpoint, status-file, and log-level settings from
+      config. `config.rollback_on_failure` (`"soft" | "off"`, default
+      `"soft"`) controls the post-phase-failure reset behavior in
+      `git-safety.ts` — `"off"` skips `resetSoft` entirely.
+      `config.checkpoint` (boolean, default true) gates the three
+      `writeCheckpoint` call sites in loop-session.ts. `config.status_file`
+      (boolean, default true) gates the periodic `writeStatusFile`
+      calls in status.ts. `config.log_level` (`"trace"|"debug"|"info"|
+      "warn"|"error"|"fatal"|"silent"`, default `"info"`) sets the
+      pino root log level, taking precedence over the
+      `GLRS_AUTOPILOT_LOG_LEVEL` env var.
+    checked: true
+    files:
+      - path: packages/autopilot/src/loop-session.ts
+        isNew: false
+        change: |
+          Gate the three `writeCheckpoint(...)` call sites
+          (loop-session.ts:867, 916, 945) on
+          `config.checkpoint !== false`. Gate the `resetSoft(...)` call
+          at loop-session.ts:833 on
+          `config.rollback_on_failure !== "off"` (current default is
+          `"soft"`). Update the surrounding log lines so users see why
+          rollback was skipped when the config disables it.
+      - path: packages/autopilot/src/git-safety.ts
+        isNew: false
+        change: |
+          `resetSoft` already accepts an `onWarn` callback — no signature
+          change. The skip decision lives in the caller (loop-session.ts),
+          NOT inside `resetSoft`. Update the module-level JSDoc to note
+          that callers may gate the call on `config.rollback_on_failure`.
+          Do NOT add a `"hard"` option — AGENTS.md prohibits hard resets.
+      - path: packages/autopilot/src/lib/logger.ts
+        isNew: false
+        change: |
+          Extend `createAutopilotLogger` opts with `level?: pino.Level`.
+          When provided, set the root logger's `level` to that value
+          (overriding the trace-everywhere default for the file sink).
+          Order of precedence: explicit `opts.level` (from
+          `config.log_level`) > `GLRS_AUTOPILOT_LOG_LEVEL` env var (add
+          this read if not already present) > existing default
+          (`"trace"`).
+    tests: []
+    verify: "bun run build && bun test"
+    mirror: packages/autopilot/src/git-safety.ts
+    context: |
+      // packages/autopilot/src/git-safety.ts:61-81 — resetSoft (caller
+      // gates the invocation; this function stays as-is):
+      export async function resetSoft(
+        cwd: string,
+        sha: string,
+        opts?: GitSafetyDeps & { onWarn?: (msg: string) => void },
+      ): Promise<boolean> {
+        // ... await exec(["reset", "--soft", sha], cwd); ...
+      }
+
+      // packages/autopilot/src/loop-session.ts:832-839 — rollback call site:
+      if (opts.fast && preHeadSha && preHeadSha !== "HEAD") {
+        const ok = await resetSoft(runCwd, preHeadSha, {
+          onWarn: (m) => log.warn(m),
+        });
+        // <-- gate on config.rollback_on_failure !== "off"
+      }
+
+      // packages/autopilot/src/loop-session.ts:867, 916, 945 — three
+      // writeCheckpoint call sites; all gate on config.checkpoint:
+      writeCheckpoint(opts.cwd, {
+        planPath: opts.planPath,
+        completedPhases: [...completedPhasesAcc],
+        totalCostUsd, totalIterations,
+        timestamp: new Date().toISOString(),
+      });
+
+      // packages/autopilot/src/status.ts:229 — writeStatusFile call site:
+      writeStatusFile(opts.statusFilePath, state, now()).catch(() => { ... });
+      // gate on config.status_file !== false (or just don't set statusFilePath)
+
+      // packages/autopilot/src/lib/logger.ts:100-106 — pino level:
+      const root = pino(
+        { level: "trace", timestamp: pino.stdTimeFunctions.isoTime },
+        ms,
+      );
+      // <-- replace "trace" with opts.level ?? process.env["GLRS_AUTOPILOT_LOG_LEVEL"] ?? "trace"
+    conventions: |
+      Defaults preserve current behavior: `rollback_on_failure: "soft"`,
+      `checkpoint: true`, `status_file: true`, `log_level: "info"` at
+      the user-visible boundary (file sink still captures trace when
+      disk space permits). NEVER add a `"hard"` option to
+      `rollback_on_failure` — AGENTS.md prohibits hard resets and the
+      git-safety module's docstring spells it out. All four boolean
+      gates short-circuit at the call site (no in-function checks) so
+      `git-safety.ts`, `checkpoint.ts`, `status.ts`, and `lib/logger.ts`
+      stay free of config coupling — the orchestrator owns the wiring.
+      YAML snake_case across the board.

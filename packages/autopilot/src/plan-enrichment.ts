@@ -28,36 +28,295 @@ import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { hasSpec, detectSpecPhases, parseSpecItems } from "./spec-parser.js";
 import type { AutopilotLogger } from "./lib/logger.js";
 import { childLogger } from "./lib/logger.js";
-import type { AgentAdapter } from "./adapter.js";
+import type { AgentAdapter, AgentHandle } from "./adapter.js";
 import type { SessionEventEmitter } from "./session-runner.js";
+import { loadStrategy, extractFieldNames } from "./enrich-strategy.js";
+import { resolveModel, type AdapterName } from "./model-resolver.js";
+
+export interface EnrichmentRunConfig {
+  retry?: boolean;
+  max_retries?: number;
+  stall_timeout?: number;
+  strategy?: string;
+}
 
 /**
- * The fraction of items that must declare all three enrichment fields
- * (mirror/context/conventions) for a plan to be considered "already
- * enriched" — the idempotency check skips enrichment entirely above
- * this threshold. Item 4.3.
+ * The fraction of items that must declare all enrichment fields
+ * (mirror/context/conventions/proof/proof_type) for a plan to be considered
+ * "already enriched" — the idempotency check skips enrichment entirely above
+ * this threshold. Item 4.3 and 5.2.
  */
 /**
- * Spec enrichment requires 100% — every item must have mirror/context/conventions.
+ * Spec enrichment requires 100% — every item must have all enrichment fields.
  * The old 0.8 threshold was a hedge for fuzzy markdown field detection.
  * With YAML, enrichment is binary: the field exists or it doesn't.
  */
 export const ENRICHMENT_RATIO_THRESHOLD = 1.0;
 
+// ---------------------------------------------------------------------------
+// Freeform input decomposition
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when a file has no structured plan items — no checkboxes
+ * (`- [ ]`) and no numbered headings (`### N.N`). Such files need
+ * decomposition before the enrichment loop can process them.
+ */
+export function isFreeformFile(resolvedPath: string): boolean {
+  try {
+    if (fs.statSync(resolvedPath).isDirectory()) return false;
+  } catch {
+    return false;
+  }
+  let content: string;
+  try {
+    content = fs.readFileSync(resolvedPath, "utf-8");
+  } catch {
+    return false;
+  }
+  const checkboxItems = (content.match(/^- \[[ xX]\]/gm) ?? []).length;
+  const headingItems = (content.match(/^###\s+\d+\.\d+\s/gm) ?? []).length;
+  return Math.max(checkboxItems, headingItems) === 0;
+}
+
+function buildDecompositionPrompt(
+  cwd: string,
+  planDir: string,
+  sourceFile: string,
+  content: string,
+): string {
+  return `You are decomposing a freeform document into a structured multi-file plan for automated execution.
+
+Read the freeform content below and explore the codebase at ${cwd} to understand the project structure. Then write a structured plan as multiple files in the directory: ${planDir}
+
+## Required output files
+
+### 1. main.md
+Write \`${planDir}/main.md\` with this structure:
+
+\`\`\`markdown
+# <Title derived from the document>
+
+## Goal
+<1-3 sentence summary of what this work accomplishes>
+
+## Constraints
+<Technical constraints, conventions to follow, or boundaries on the work>
+
+## Phases
+- [ ] wave_0.md - <phase description>
+- [ ] wave_1.md - <phase description>
+(add more phases as needed)
+\`\`\`
+
+### 2. Phase files (wave_0.md, wave_1.md, etc.)
+For each phase, write \`${planDir}/wave_N.md\` with numbered items:
+
+\`\`\`markdown
+# Wave N: <Phase title>
+
+### N.1 <Item title>
+- intent: <What this item accomplishes>
+- files:
+    - <path/to/file.ts>
+      Change: <What changes in this file>
+- tests:
+    - <path/to/test.ts>
+- verify: <command to verify this item, e.g., "bun test path/to/test.ts">
+
+### N.2 <Item title>
+...
+\`\`\`
+
+## Guidelines for decomposition
+
+1. **Explore the codebase first.** Use file listing and reading tools to find:
+   - The project's test framework and test patterns
+   - Existing file naming conventions
+   - Related modules that items will modify or reference
+   - The package manager (bun/npm/pnpm/yarn) for verify commands
+
+2. **Group items into phases by dependency.** Items in wave_0 should have no dependencies on later waves. Items within a wave should be independent or naturally sequential.
+
+3. **Each item must be concrete and actionable.** Every item needs:
+   - A clear \`intent:\` describing the change
+   - Specific \`files:\` with real paths from the codebase
+   - At least one test file in \`tests:\`
+   - A runnable \`verify:\` command
+
+4. **Keep items small.** Each item should be completable in a single focused session (1-3 files modified). Split large changes across multiple items.
+
+5. **The heading format matters.** Use \`### N.M\` (e.g., \`### 0.1\`, \`### 0.2\`, \`### 1.1\`) — this is the format the enrichment pipeline recognizes.
+
+## Source document
+
+File: ${sourceFile}
+
+\`\`\`markdown
+${content}
+\`\`\`
+
+Write all the plan files using the write/edit tool, then respond with "DECOMPOSITION_COMPLETE" when done.`;
+}
+
+/**
+ * Decompose a freeform file into a structured plan directory that the
+ * standard enrichment pipeline can process. Spawns one LLM session.
+ *
+ * Returns the plan directory path on success, null on failure.
+ * Idempotent: if `<stem>/main.md` already exists, returns immediately.
+ */
+async function decomposeFreeformPlan(
+  cwd: string,
+  resolvedPath: string,
+  log: ReturnType<typeof childLogger> | undefined,
+  emitter: SessionEventEmitter | undefined,
+  adapter: AgentAdapter,
+  stallMs: number,
+  config?: unknown,
+): Promise<string | null> {
+  const parsed = path.parse(resolvedPath);
+  const planDir = path.join(parsed.dir, parsed.name);
+  const mainMdPath = path.join(planDir, "main.md");
+
+  if (fs.existsSync(mainMdPath)) {
+    log?.info({ planDir }, "Decomposed plan directory already exists — skipping");
+    emitter?.emitEvent({
+      type: "enrich:file:skip",
+      timestamp: new Date().toISOString(),
+      file: path.relative(cwd, resolvedPath),
+      reason: "decomposed directory already exists",
+    });
+    return planDir;
+  }
+
+  let content: string;
+  try {
+    content = fs.readFileSync(resolvedPath, "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log?.warn({ err: msg }, "Failed to read freeform file");
+    return null;
+  }
+
+  fs.mkdirSync(planDir, { recursive: true });
+
+  emitter?.emitEvent({
+    type: "enrich:file:start",
+    timestamp: new Date().toISOString(),
+    file: path.relative(cwd, resolvedPath),
+  });
+
+  const handle = await adapter.start({ cwd });
+  let sessionId: string;
+  try {
+    const adapterName = adapter.name as AdapterName | undefined;
+    const cfgObj = config as Record<string, unknown> | undefined;
+    const models = cfgObj?.models as Record<string, unknown> | undefined;
+    const enrichmentSpecifier = models?.enrichment as string | undefined;
+    const resolvedModel = enrichmentSpecifier
+      ? resolveModel(enrichmentSpecifier, adapterName ?? "opencode")
+      : undefined;
+    sessionId = await adapter.createSession(handle, {
+      agentName: "prime",
+      model: resolvedModel,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log?.warn({ err: msg }, "createSession failed for decomposition");
+    await adapter.shutdown(handle);
+    return null;
+  }
+
+  const prompt = buildDecompositionPrompt(cwd, planDir, resolvedPath, content);
+
+  try {
+    const result = await adapter.sendAndWait(handle, {
+      sessionId,
+      message: prompt,
+      stallMs,
+      onToolCall: (toolName) => {
+        log?.debug({ toolName }, "Decomposition tool call");
+      },
+      onTextDelta: () => {},
+      onCostUpdate: (cost, tokens) => {
+        emitter?.emitEvent({
+          type: "cost:update",
+          timestamp: new Date().toISOString(),
+          cumulativeCostUsd: cost,
+          isEstimated: false,
+          iteration: 0,
+          tokensIn: tokens.input,
+          tokensOut: tokens.output,
+        });
+      },
+    });
+
+    if (result.kind === "error" || result.kind === "stall") {
+      const errMsg = result.kind === "error"
+        ? ("message" in result ? (result as { message: string }).message : "session error")
+        : "session stalled";
+      log?.error({ err: errMsg }, "Decomposition session failed");
+      emitter?.emitEvent({
+        type: "enrich:file:error",
+        timestamp: new Date().toISOString(),
+        file: path.relative(cwd, resolvedPath),
+        error: `decomposition failed: ${errMsg}`,
+      });
+      return null;
+    }
+
+    const response = await adapter.getLastResponse(handle, sessionId);
+
+    if (!fs.existsSync(mainMdPath)) {
+      log?.warn("Decomposition completed but main.md was not written");
+      emitter?.emitEvent({
+        type: "enrich:file:error",
+        timestamp: new Date().toISOString(),
+        file: path.relative(cwd, resolvedPath),
+        error: "decomposition completed but main.md was not written",
+      });
+      return null;
+    }
+
+    if (!response.includes("DECOMPOSITION_COMPLETE")) {
+      log?.warn("Decomposition session did not emit completion sentinel");
+    }
+
+    log?.info({ planDir }, "Freeform file decomposed into structured plan");
+    emitter?.emitEvent({
+      type: "enrich:file:done",
+      timestamp: new Date().toISOString(),
+      file: path.relative(cwd, resolvedPath),
+      toolCalls: 0,
+    });
+
+    return planDir;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log?.error({ err: msg }, "Decomposition failed");
+    return null;
+  } finally {
+    await adapter.shutdown(handle);
+  }
+}
+
 /**
  * Compute the fraction of plan items across `planFiles` that already
- * have mirror/context/conventions fields. Pure synchronous I/O — no
- * server spawn — so this is cheap to call before the enrichment pass.
+ * have enrichment fields. Pure synchronous I/O — no server spawn — so
+ * this is cheap to call before the enrichment pass.
  *
  * Heuristic: count items as "enriched" by taking the minimum across
- * the three field-marker counts in the file. This is conservative
- * (an item with mirror+conventions but no context counts as 0) and
- * forgiving on parse errors (unreadable file → contributes 0 to both
- * sides, not infinity).
+ * all field-marker counts in the file. This is conservative
+ * (an item missing any required field counts as 0) and forgiving on
+ * parse errors (unreadable file → contributes 0 to both sides).
  *
  * Returns 0 if no items found across all files (avoids NaN division).
  */
-export function computeEnrichmentRatio(planFiles: string[]): number {
+export function computeEnrichmentRatio(
+  planFiles: string[],
+  fieldNames: string[] = ["mirror", "context", "conventions", "proof", "proof_type"],
+): number {
   let total = 0;
   let enriched = 0;
   for (const f of planFiles) {
@@ -77,36 +336,50 @@ export function computeEnrichmentRatio(planFiles: string[]): number {
     const checkboxItems = (content.match(/^- \[[ xX]\]/gm) ?? []).length;
     const headingItems = (content.match(/^###\s+\d+\.\d+\s/gm) ?? []).length;
     total += headingItems > 0 ? headingItems : checkboxItems;
-    // Field markers — count occurrences of each type, then take the
-    // min as a proxy for "items with all three fields".
-    const hasMirror = (content.match(/^\s*-?\s*mirror:/gm) ?? []).length;
-    const hasContext = (content.match(/^\s*-?\s*context/gm) ?? []).length;
-    const hasConventions = (content.match(/^\s*-?\s*conventions:/gm) ?? [])
-      .length;
-    enriched += Math.min(hasMirror, hasContext, hasConventions);
+    // Field markers — count occurrences of each field, then take the
+    // min as a proxy for "items with all fields".
+    const fieldCounts = fieldNames.map((field) => {
+      const regex = new RegExp(`^\\s*-?\\s*${field}:`, "gm");
+      return (content.match(regex) ?? []).length;
+    });
+    enriched += Math.min(...fieldCounts);
   }
   return total > 0 ? enriched / total : 0;
 }
 
 /**
  * Compute the enrichment ratio for a YAML spec plan directory.
- * Counts items with all three enrichment fields (mirror/context/conventions)
- * across all phase files referenced in spec/main.yaml.
+ * Counts items with all enrichment fields across all phase files
+ * referenced in spec/main.yaml. Strategy-aware: checks for the
+ * specified fieldNames instead of hardcoded mirror/context/conventions.
  *
  * Returns 0 if no items found (avoids NaN division).
  */
-export function computeSpecEnrichmentRatio(planDir: string): number {
+export function computeSpecEnrichmentRatio(
+  planDir: string,
+  fieldNames: string[] = ["mirror", "context", "conventions", "proof", "proof_type"],
+): number {
   if (!hasSpec(planDir)) return 0;
   const phaseFiles = detectSpecPhases(planDir);
   let total = 0;
   let enriched = 0;
   for (const phaseFile of phaseFiles) {
     const phasePath = path.join(planDir, "spec", phaseFile);
-    const items = parseSpecItems(phasePath);
+    let content: string;
+    try {
+      content = fs.readFileSync(phasePath, "utf-8");
+    } catch {
+      // Unreadable file → contribute 0 to both sides
+      continue;
+    }
+    const raw = yamlParse(content) as unknown;
+    const items = Array.isArray((raw as Record<string, unknown>)?.items)
+      ? ((raw as Record<string, unknown>).items as Record<string, unknown>[])
+      : [];
     total += items.length;
     for (const item of items) {
-      const it = item as typeof item & { mirror?: string; context?: string; conventions?: string };
-      if (it.mirror && it.context && it.conventions) {
+      const hasAllFields = fieldNames.every((field) => item[field]);
+      if (hasAllFields) {
         enriched++;
       }
     }
@@ -116,9 +389,11 @@ export function computeSpecEnrichmentRatio(planDir: string): number {
 
 /** Build the spec generation prompt for a plan file. */
 function buildSpecGenerationPrompt(
+  cwd: string,
   planDir: string,
   phaseFile: string,
   content: string,
+  strategyName?: string,
 ): string {
   const isMain = phaseFile === "main.md";
   const specFileName = isMain
@@ -153,6 +428,8 @@ items:
     context: |
       // relevant code from the file being modified
     conventions: "ESM imports, named exports, bun:test"
+    proof: "The acceptance proof should verify that the new function accepts valid inputs and rejects invalid ones"
+    proof_type: "test"
 \`\`\``;
 
   const mainInstructions = `You are generating a YAML spec file from a markdown plan.
@@ -178,37 +455,300 @@ ${content}
 
 Write the file \`${planDir}/${specPath}\` using the write/edit tool, then respond with "SPEC_COMPLETE" when done.`;
 
-  const phaseInstructions = `You are generating a YAML spec file from a markdown plan phase, enriched with codebase context.
+  if (isMain) {
+    return mainInstructions;
+  }
 
-Read the markdown plan content below and write \`${specPath}\` (relative to the plan directory: ${planDir}) using the write/edit tool.
+  const phaseTemplate = loadStrategy(cwd, strategyName ?? "default");
+  const phaseInstructions = phaseTemplate
+    .replaceAll("{{specPath}}", specPath)
+    .replaceAll("{{planDir}}", planDir)
+    .replaceAll("{{specFileName}}", specFileName)
+    .replaceAll("{{phaseFile}}", phaseFile)
+    .replaceAll("{{content}}", content);
 
-The output file should follow this schema:
+  return phaseInstructions;
+}
 
-${schemaExample}
+/**
+ * Run a single enrichment pass, returning true if a stall occurred.
+ * This is called from the retry loop in enrichPlanForFastModel.
+ */
+async function runEnrichmentPass(
+  cwd: string,
+  resolvedPath: string,
+  planFiles: string[],
+  isDir: boolean,
+  fieldNames: string[],
+  log: ReturnType<typeof childLogger> | undefined,
+  emitter: SessionEventEmitter | undefined,
+  adapter: AgentAdapter,
+  handle: AgentHandle,
+  stallMs: number,
+  strategyName?: string,
+  config?: unknown,
+): Promise<boolean> {
+  let stallOccurred = false;
 
-For each acceptance-criteria item in the plan:
-1. Extract \`id\`, \`intent\`, \`files\`, \`tests\`, \`verify\` from the markdown.
-2. Set \`checked: false\` for all items.
-3. Add enrichment fields by reading the actual codebase:
-   - **mirror**: Find the most similar existing file in the codebase and set \`mirror: <path>\`. This is the pattern-match target the executor will follow.
-   - **context**: For each file being MODIFIED (not NEW), read the relevant function/section and add 10-20 lines of the current code. For NEW files, add the key function signatures the file should export.
-   - **conventions**: List project-specific patterns: import style (named vs default), export pattern, test framework (vitest/jest/bun:test), naming conventions, error handling pattern.
+  for (const f of planFiles) {
+    const rel = path.relative(cwd, f);
+    const phaseFile = path.basename(f);
 
-Rules:
-- Read actual files from the codebase to get accurate code pointers. Do not hallucinate file contents.
-- Be concise — 10-20 lines of context per file, not the whole file.
-- Only add enrichment fields you can verify from the codebase.
+    // Determine the expected spec YAML path for this plan file
+    const specFileName = phaseFile === "main.md"
+      ? "main.yaml"
+      : phaseFile.replace(/\.md$/, ".yaml");
+    const specPath = isDir ? path.join(resolvedPath, "spec", specFileName) : null;
 
-Here is the plan file to convert:
+    // Per-file idempotency: skip if spec already exists and is enriched.
+    // For phase files: skip if spec exists AND all items are fully enriched.
+    // For main.md: skip if spec/main.yaml already exists.
+    if (specPath && fs.existsSync(specPath)) {
+      if (phaseFile === "main.md") {
+        log?.info({ file: rel }, "Spec already exists — skipping");
+        emitter?.emitEvent({
+          type: "enrich:file:skip",
+          timestamp: new Date().toISOString(),
+          file: rel,
+          reason: "spec already exists",
+        });
+        continue;
+      }
+      // Phase file: skip if any item has checked:true — enrichment must
+      // not overwrite in-progress work on resume.
+      const phaseItems = parseSpecItems(specPath);
+      if (phaseItems.some((it) => it.checked)) {
+        log?.info({ file: rel }, "Phase has checked items — skipping re-enrichment");
+        emitter?.emitEvent({
+          type: "enrich:file:skip",
+          timestamp: new Date().toISOString(),
+          file: rel,
+          reason: "phase has checked items (in-progress)",
+        });
+        continue;
+      }
+      const phaseTotal = phaseItems.length;
+      const phaseEnriched = phaseItems.filter(
+        (it) => {
+          const item = it as unknown as Record<string, unknown>;
+          return fieldNames.every((field) => item[field]);
+        }
+      ).length;
+      const phaseRatio = phaseTotal > 0 ? phaseEnriched / phaseTotal : 0;
+      if (phaseRatio >= ENRICHMENT_RATIO_THRESHOLD) {
+        log?.info({ file: rel, ratio: phaseRatio }, "Phase spec already enriched — skipping");
+        emitter?.emitEvent({
+          type: "enrich:file:skip",
+          timestamp: new Date().toISOString(),
+          file: rel,
+          reason: `already enriched (${Math.round(phaseRatio * 100)}%)`,
+        });
+        continue;
+      }
+    }
 
-### ${phaseFile}
-\`\`\`markdown
-${content}
-\`\`\`
+    // Read the markdown content
+    let content: string;
+    try {
+      content = fs.readFileSync(f, "utf-8");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log?.warn({ file: rel, err: msg }, "File read failed — skipping");
+      emitter?.emitEvent({
+        type: "enrich:file:error",
+        timestamp: new Date().toISOString(),
+        file: rel,
+        error: `read failed: ${msg}`,
+      });
+      continue;
+    }
 
-Write the file \`${planDir}/${specPath}\` using the write/edit tool, then respond with "SPEC_COMPLETE" when done.`;
+    // Skip files with zero enrichable items (e.g., main.md with only
+    // a table-of-contents). For main.md we always generate spec/main.yaml
+    // regardless of item count — it captures title/goal/phases.
+    if (phaseFile !== "main.md") {
+      const checkboxItems = (content.match(/^- \[[ xX]\]/gm) ?? []).length;
+      const headingItems = (content.match(/^###\s+\d+\.\d+\s/gm) ?? []).length;
+      const itemCount = Math.max(checkboxItems, headingItems);
+      if (itemCount === 0) {
+        log?.info({ file: rel }, "No enrichable items — skipping");
+        emitter?.emitEvent({
+          type: "enrich:file:skip",
+          timestamp: new Date().toISOString(),
+          file: rel,
+          reason: "no enrichable items",
+        });
+        continue;
+      }
+    }
 
-  return isMain ? mainInstructions : phaseInstructions;
+    // Emit enrich:file:start event
+    emitter?.emitEvent({
+      type: "enrich:file:start",
+      timestamp: new Date().toISOString(),
+      file: rel,
+    });
+
+    // Each per-file session uses a fresh session ID so context stays
+    // scoped to one file. Per-file stall timeout drops from 10 min
+    // (single-pass legacy) to 5 min — smaller scope, smaller budget.
+    let sessionId: string;
+    try {
+      const adapterName = adapter?.name as AdapterName | undefined;
+      const cfgObj = config as Record<string, unknown> | undefined;
+      const models = cfgObj?.models as Record<string, unknown> | undefined;
+      const enrichmentSpecifier = models?.enrichment as string | undefined;
+      const resolvedModel = enrichmentSpecifier
+        ? resolveModel(enrichmentSpecifier, adapterName ?? "opencode")
+        : undefined;
+      sessionId = await adapter.createSession(handle, {
+        agentName: "prime",
+        model: resolvedModel,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log?.warn({ file: rel, err: msg }, "createSession failed — skipping");
+      emitter?.emitEvent({
+        type: "enrich:file:error",
+        timestamp: new Date().toISOString(),
+        file: rel,
+        error: `createSession failed: ${msg}`,
+      });
+      continue;
+    }
+
+    const prompt = buildSpecGenerationPrompt(cwd, resolvedPath, phaseFile, content, strategyName);
+
+    let toolCalls = 0;
+    let fileCost = 0;
+    try {
+      log?.info({ file: rel }, "Starting spec generation session");
+      const sessionResult = await adapter.sendAndWait(handle, {
+        sessionId,
+        message: prompt,
+        stallMs,
+        onToolCall: (toolName, firstArg) => {
+          toolCalls++;
+          log?.debug({ file: rel, toolName, firstArg, toolCalls }, "Spec generation tool call");
+          emitter?.emitEvent({
+            type: "tool:call",
+            timestamp: new Date().toISOString(),
+            toolName,
+            ...(firstArg ? { firstArg } : {}),
+            iteration: 0,
+          });
+        },
+        onTextDelta: () => {},
+        onCostUpdate: (cost, tokens) => {
+          fileCost = cost;
+          emitter?.emitEvent({
+            type: "cost:update",
+            timestamp: new Date().toISOString(),
+            cumulativeCostUsd: cost,
+            isEstimated: false,
+            iteration: 0,
+            tokensIn: tokens.input,
+            tokensOut: tokens.output,
+          });
+        },
+      });
+
+      // Check if the session errored before inspecting the response.
+      // OpenCode's SSE event often carries only "session error" — we
+      // scrape the server log for the real message (credential failure,
+      // model not found, etc.)
+      if (sessionResult.kind === "error") {
+        const rawMsg = "message" in sessionResult ? (sessionResult as { message: string }).message : "unknown error";
+        const errMsg = adapter.enhanceError ? await adapter.enhanceError(rawMsg) : rawMsg;
+        log?.error({ file: rel, err: errMsg }, "Session errored");
+        emitter?.emitEvent({
+          type: "enrich:file:error",
+          timestamp: new Date().toISOString(),
+          file: rel,
+          error: errMsg,
+        });
+        continue;
+      }
+      if (sessionResult.kind === "stall") {
+        log?.error({ file: rel }, "Session stalled");
+        stallOccurred = true;
+        emitter?.emitEvent({
+          type: "enrich:file:error",
+          timestamp: new Date().toISOString(),
+          file: rel,
+          error: "session stalled",
+        });
+        continue;
+      }
+
+      const response = await adapter.getLastResponse(handle, sessionId);
+      log?.debug({ file: rel, toolCalls, responseLength: response.length }, "Session response received");
+
+      // Fetch cost + tokens after each enrichment file completes.
+      // The SSE-based onCostUpdate often doesn't fire (message.updated
+      // events arrive after session.idle settles the promise), so this
+      // post-completion fetch is the reliable path for cost visibility.
+      if (adapter.getSessionStats) {
+        try {
+          const stats = await adapter.getSessionStats(handle, sessionId);
+          // Note: cost accumulation happens in outer function
+          if (stats.tokensIn > 0 || stats.tokensOut > 0) {
+            emitter?.emitEvent({
+              type: "cost:update",
+              timestamp: new Date().toISOString(),
+              cumulativeCostUsd: stats.cost,
+              isEstimated: false,
+              iteration: 0,
+              tokensIn: stats.tokensIn,
+              tokensOut: stats.tokensOut,
+            });
+          }
+        } catch {
+          // Non-fatal — cost visibility is best-effort
+        }
+      }
+      if (!response.includes("SPEC_COMPLETE")) {
+        log?.warn({ file: rel, toolCalls }, "Spec generation session did not complete cleanly");
+        emitter?.emitEvent({
+          type: "enrich:file:error",
+          timestamp: new Date().toISOString(),
+          file: rel,
+          error: "spec generation session did not complete cleanly",
+        });
+      } else if (specPath && !fs.existsSync(specPath)) {
+        log?.warn({ file: rel, toolCalls }, "Spec generation session did not complete cleanly");
+        emitter?.emitEvent({
+          type: "enrich:file:error",
+          timestamp: new Date().toISOString(),
+          file: rel,
+          error: `SPEC_COMPLETE received but spec/${specFileName} was not written`,
+        });
+      } else {
+        log?.info({ file: rel, toolCalls }, "Spec generated successfully");
+        emitter?.emitEvent({
+          type: "enrich:file:done",
+          timestamp: new Date().toISOString(),
+          file: rel,
+          toolCalls,
+          ...(specPath ? { specFile: `spec/${specFileName}` } : {}),
+        });
+      }
+    } catch (err) {
+      // Per-file failure is non-fatal — log and move to the next file.
+      // Partial spec generation is fine: completed files retain their
+      // additions, the executor still benefits from those.
+      const msg = err instanceof Error ? err.message : String(err);
+      log?.error({ file: rel, err: msg, toolCalls }, "Spec generation failed — continuing");
+      emitter?.emitEvent({
+        type: "enrich:file:error",
+        timestamp: new Date().toISOString(),
+        file: rel,
+        error: `spec generation failed: ${msg}`,
+      });
+    }
+  }
+
+  return stallOccurred;
 }
 
 /**
@@ -222,6 +762,11 @@ Write the file \`${planDir}/${specPath}\` using the write/edit tool, then respon
  * Idempotency: if spec/ already exists with all items fully enriched,
  * enriched, the entire pass is skipped. Per-file: if a spec YAML already
  * exists and is sufficiently enriched, that file is skipped.
+ *
+ * Retry: when enrichment stalls or errors, kills the server and retries the
+ * entire pass. The per-file idempotency check skips already-enriched files,
+ * so retries only pay for failures. Controlled by enrichmentConfig.retry
+ * (default true) and enrichmentConfig.max_retries (default 3).
  */
 export async function enrichPlanForFastModel(
   cwd: string,
@@ -229,10 +774,46 @@ export async function enrichPlanForFastModel(
   logger?: AutopilotLogger,
   emitter?: SessionEventEmitter,
   adapter?: AgentAdapter,
-): Promise<void> {
+  enrichmentConfig?: EnrichmentRunConfig,
+  config?: unknown,
+): Promise<string> {
   const log = logger ? childLogger(logger.root, "autopilot.enrichment") : undefined;
   const resolvedPath = path.resolve(cwd, planPath);
   const isDir = fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory();
+
+  // Freeform input: decompose into a structured plan directory, then enrich that.
+  if (!isDir && isFreeformFile(resolvedPath)) {
+    if (!adapter) {
+      throw new Error("enrichPlanForFastModel: adapter is required for freeform decomposition");
+    }
+    log?.info({ file: resolvedPath }, "Freeform file detected — decomposing into structured plan");
+
+    const stallMs = enrichmentConfig?.stall_timeout ?? (5 * 60 * 1000);
+    const decomposedDir = await decomposeFreeformPlan(
+      cwd,
+      resolvedPath,
+      log,
+      emitter,
+      adapter,
+      stallMs,
+      config,
+    );
+
+    if (decomposedDir) {
+      log?.info({ planDir: decomposedDir }, "Decomposition complete — enriching structured plan");
+      return enrichPlanForFastModel(
+        cwd,
+        decomposedDir,
+        logger,
+        emitter,
+        adapter,
+        enrichmentConfig,
+        config,
+      );
+    }
+
+    log?.warn("Freeform decomposition failed — falling through to single-file enrichment");
+  }
 
   // Collect the plan files to enrich
   let planFiles: string[];
@@ -261,14 +842,24 @@ export async function enrichPlanForFastModel(
     fileCount: planFiles.length,
   });
 
+  // Load strategy and extract field names for idempotency check.
+  // Tries to load the strategy; falls back to defaults if not found.
+  let fieldNames = ["mirror", "context", "conventions", "proof", "proof_type"];
+  try {
+    const strategy = loadStrategy(cwd, "default");
+    fieldNames = extractFieldNames(strategy);
+  } catch (err) {
+    log?.warn({ err }, "Failed to load strategy — using defaults");
+  }
+
   // Whole-plan idempotency check (item 4.3). Run BEFORE the server
   // spawn so an already-enriched plan costs nothing extra.
   // For YAML spec plans, use computeSpecEnrichmentRatio which reads
   // spec/main.yaml and the phase YAML files directly.
   const isYamlSpec = isDir && hasSpec(resolvedPath);
   const wholePlanRatio = isYamlSpec
-    ? computeSpecEnrichmentRatio(resolvedPath)
-    : computeEnrichmentRatio(planFiles);
+    ? computeSpecEnrichmentRatio(resolvedPath, fieldNames)
+    : computeEnrichmentRatio(planFiles, fieldNames);
   if (wholePlanRatio >= ENRICHMENT_RATIO_THRESHOLD) {
     log?.info({ ratio: wholePlanRatio }, "Plan already enriched — skipping");
     emitter?.emitEvent({
@@ -276,7 +867,7 @@ export async function enrichPlanForFastModel(
       timestamp: new Date().toISOString(),
       filesProcessed: 0,
     });
-    return;
+    return resolvedPath;
   }
 
   // Ensure spec/ directory exists for YAML spec generation
@@ -307,270 +898,100 @@ export async function enrichPlanForFastModel(
     // Can't read existing main.yaml — no states to preserve
   }
 
-  // Start a server for the enrichment session
-  log?.info({ planPath: resolvedPath, fileCount: planFiles.length }, "Starting enrichment");
-  log?.info("Starting OpenCode server for enrichment...");
+  // Resolve enrichment config with defaults
+  const enableRetry = enrichmentConfig?.retry !== false;
+  const maxRetries = enrichmentConfig?.max_retries ?? 3;
+  const stallMs = enrichmentConfig?.stall_timeout ?? (5 * 60 * 1000);
+  const strategyName = enrichmentConfig?.strategy;
+
   if (!adapter) {
     throw new Error("enrichPlanForFastModel: adapter is required");
   }
-  const handle = await adapter.start({ cwd });
-  log?.info({ agentId: handle.id }, "Agent ready for enrichment");
 
-  // Track cumulative cost across all enrichment sessions (each file gets
-  // its own session, so per-session costs must be summed).
+  log?.info({ planPath: resolvedPath, fileCount: planFiles.length, enableRetry, maxRetries }, "Starting enrichment");
+
+  // Track cumulative cost across all enrichment sessions and attempts
   let enrichmentCumulativeCost = 0;
 
-  try {
-    for (const f of planFiles) {
-      const rel = path.relative(cwd, f);
-      const phaseFile = path.basename(f);
+  // Retry loop: wraps the entire enrichment pass
+  if (!enableRetry) {
+    // Single attempt (legacy behavior when retry is disabled)
+    log?.info("Enrichment retry disabled — single attempt only");
+    const handle = await adapter.start({ cwd });
+    log?.info({ agentId: handle.id }, "Agent ready for enrichment");
+    try {
+      const stallOccurred = await runEnrichmentPass(
+        cwd,
+        resolvedPath,
+        planFiles,
+        isDir,
+        fieldNames,
+        log,
+        emitter,
+        adapter,
+        handle,
+        stallMs,
+        strategyName,
+        config,
+      );
+      if (stallOccurred) {
+        log?.warn("Enrichment stalled but retry is disabled");
+      }
+    } finally {
+      await adapter.shutdown(handle);
+    }
+  } else {
+    // Retry loop (default behavior)
+    let passSucceeded = false;
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        log?.info({ attempt, maxRetries }, "Starting enrichment attempt");
+        const handle = await adapter.start({ cwd });
+        log?.info({ agentId: handle.id, attempt }, "Agent ready for enrichment");
 
-      // Determine the expected spec YAML path for this plan file
-      const specFileName = phaseFile === "main.md"
-        ? "main.yaml"
-        : phaseFile.replace(/\.md$/, ".yaml");
-      const specPath = isDir ? path.join(resolvedPath, "spec", specFileName) : null;
+        try {
+          const stallOccurred = await runEnrichmentPass(
+            cwd,
+            resolvedPath,
+            planFiles,
+            isDir,
+            fieldNames,
+            log,
+            emitter,
+            adapter,
+            handle,
+            stallMs,
+            strategyName,
+            config,
+          );
 
-      // Per-file idempotency: skip if spec already exists and is enriched.
-      // For phase files: skip if spec exists AND all items are fully enriched.
-      // For main.md: skip if spec/main.yaml already exists.
-      if (specPath && fs.existsSync(specPath)) {
-        if (phaseFile === "main.md") {
-          log?.info({ file: rel }, "Spec already exists — skipping");
-          emitter?.emitEvent({
-            type: "enrich:file:skip",
-            timestamp: new Date().toISOString(),
-            file: rel,
-            reason: "spec already exists",
-          });
-          continue;
-        }
-        // Phase file: skip if any item has checked:true — enrichment must
-        // not overwrite in-progress work on resume.
-        const phaseItems = parseSpecItems(specPath);
-        if (phaseItems.some((it) => it.checked)) {
-          log?.info({ file: rel }, "Phase has checked items — skipping re-enrichment");
-          emitter?.emitEvent({
-            type: "enrich:file:skip",
-            timestamp: new Date().toISOString(),
-            file: rel,
-            reason: "phase has checked items (in-progress)",
-          });
-          continue;
-        }
-        const phaseTotal = phaseItems.length;
-        const phaseEnriched = phaseItems.filter(
-          (it) => {
-            const item = it as typeof it & { mirror?: string; context?: string; conventions?: string };
-            return item.mirror && item.context && item.conventions;
+          if (!stallOccurred) {
+            log?.info({ attempt }, "Enrichment pass completed without stalling");
+            passSucceeded = true;
+            break;
           }
-        ).length;
-        const phaseRatio = phaseTotal > 0 ? phaseEnriched / phaseTotal : 0;
-        if (phaseRatio >= ENRICHMENT_RATIO_THRESHOLD) {
-          log?.info({ file: rel, ratio: phaseRatio }, "Phase spec already enriched — skipping");
-          emitter?.emitEvent({
-            type: "enrich:file:skip",
-            timestamp: new Date().toISOString(),
-            file: rel,
-            reason: `already enriched (${Math.round(phaseRatio * 100)}%)`,
-          });
-          continue;
-        }
-      }
 
-      // Read the markdown content
-      let content: string;
-      try {
-        content = fs.readFileSync(f, "utf-8");
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        log?.warn({ file: rel, err: msg }, "File read failed — skipping");
-        emitter?.emitEvent({
-          type: "enrich:file:error",
-          timestamp: new Date().toISOString(),
-          file: rel,
-          error: `read failed: ${msg}`,
-        });
-        continue;
-      }
-
-      // Skip files with zero enrichable items (e.g., main.md with only
-      // a table-of-contents). For main.md we always generate spec/main.yaml
-      // regardless of item count — it captures title/goal/phases.
-      if (phaseFile !== "main.md") {
-        const checkboxItems = (content.match(/^- \[[ xX]\]/gm) ?? []).length;
-        const headingItems = (content.match(/^###\s+\d+\.\d+\s/gm) ?? []).length;
-        const itemCount = Math.max(checkboxItems, headingItems);
-        if (itemCount === 0) {
-          log?.info({ file: rel }, "No enrichable items — skipping");
-          emitter?.emitEvent({
-            type: "enrich:file:skip",
-            timestamp: new Date().toISOString(),
-            file: rel,
-            reason: "no enrichable items",
-          });
-          continue;
-        }
-      }
-
-      // Emit enrich:file:start event
-      emitter?.emitEvent({
-        type: "enrich:file:start",
-        timestamp: new Date().toISOString(),
-        file: rel,
-      });
-
-      // Each per-file session uses a fresh session ID so context stays
-      // scoped to one file. Per-file stall timeout drops from 10 min
-      // (single-pass legacy) to 5 min — smaller scope, smaller budget.
-      let sessionId: string;
-      try {
-        sessionId = await adapter.createSession(handle, {
-          agentName: "prime",
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        log?.warn({ file: rel, err: msg }, "createSession failed — skipping");
-        emitter?.emitEvent({
-          type: "enrich:file:error",
-          timestamp: new Date().toISOString(),
-          file: rel,
-          error: `createSession failed: ${msg}`,
-        });
-        continue;
-      }
-
-      const prompt = buildSpecGenerationPrompt(resolvedPath, phaseFile, content);
-
-      let toolCalls = 0;
-      let fileCost = 0;
-      try {
-        log?.info({ file: rel }, "Starting spec generation session");
-        const sessionResult = await adapter.sendAndWait(handle, {
-          sessionId,
-          message: prompt,
-          stallMs: 5 * 60 * 1000, // 5 min stall — per-file scope is smaller
-          onToolCall: (toolName, firstArg) => {
-            toolCalls++;
-            log?.debug({ file: rel, toolName, firstArg, toolCalls }, "Spec generation tool call");
-            emitter?.emitEvent({
-              type: "tool:call",
-              timestamp: new Date().toISOString(),
-              toolName,
-              ...(firstArg ? { firstArg } : {}),
-              iteration: 0,
-            });
-          },
-          onTextDelta: () => {},
-          onCostUpdate: (cost, tokens) => {
-            fileCost = cost;
-            emitter?.emitEvent({
-              type: "cost:update",
-              timestamp: new Date().toISOString(),
-              cumulativeCostUsd: cost,
-              isEstimated: false,
-              iteration: 0,
-              tokensIn: tokens.input,
-              tokensOut: tokens.output,
-            });
-          },
-        });
-
-        // Check if the session errored before inspecting the response.
-        // OpenCode's SSE event often carries only "session error" — we
-        // scrape the server log for the real message (credential failure,
-        // model not found, etc.)
-        if (sessionResult.kind === "error") {
-          const rawMsg = "message" in sessionResult ? (sessionResult as { message: string }).message : "unknown error";
-          const errMsg = adapter.enhanceError ? await adapter.enhanceError(rawMsg) : rawMsg;
-          log?.error({ file: rel, err: errMsg }, "Session errored");
-          emitter?.emitEvent({
-            type: "enrich:file:error",
-            timestamp: new Date().toISOString(),
-            file: rel,
-            error: errMsg,
-          });
-          continue;
-        }
-        if (sessionResult.kind === "stall") {
-          log?.error({ file: rel }, "Session stalled");
-          emitter?.emitEvent({
-            type: "enrich:file:error",
-            timestamp: new Date().toISOString(),
-            file: rel,
-            error: "session stalled",
-          });
-          continue;
-        }
-
-        const response = await adapter.getLastResponse(handle, sessionId);
-        log?.debug({ file: rel, toolCalls, responseLength: response.length }, "Session response received");
-
-        // Fetch cost + tokens after each enrichment file completes.
-        // The SSE-based onCostUpdate often doesn't fire (message.updated
-        // events arrive after session.idle settles the promise), so this
-        // post-completion fetch is the reliable path for cost visibility.
-        if (adapter.getSessionStats) {
-          try {
-            const stats = await adapter.getSessionStats(handle, sessionId);
-            enrichmentCumulativeCost += stats.cost;
-            if (enrichmentCumulativeCost > 0 || stats.tokensIn > 0 || stats.tokensOut > 0) {
-              emitter?.emitEvent({
-                type: "cost:update",
-                timestamp: new Date().toISOString(),
-                cumulativeCostUsd: enrichmentCumulativeCost,
-                isEstimated: false,
-                iteration: 0,
-                tokensIn: stats.tokensIn,
-                tokensOut: stats.tokensOut,
-              });
-            }
-          } catch {
-            // Non-fatal — cost visibility is best-effort
-          }
-        }
-        if (!response.includes("SPEC_COMPLETE")) {
-          log?.warn({ file: rel, toolCalls }, "Spec generation session did not complete cleanly");
-          emitter?.emitEvent({
-            type: "enrich:file:error",
-            timestamp: new Date().toISOString(),
-            file: rel,
-            error: "spec generation session did not complete cleanly",
-          });
-        } else if (specPath && !fs.existsSync(specPath)) {
-          log?.warn({ file: rel, toolCalls }, "Spec generation session did not complete cleanly");
-          emitter?.emitEvent({
-            type: "enrich:file:error",
-            timestamp: new Date().toISOString(),
-            file: rel,
-            error: `SPEC_COMPLETE received but spec/${specFileName} was not written`,
-          });
-        } else {
-          log?.info({ file: rel, toolCalls }, "Spec generated successfully");
-          emitter?.emitEvent({
-            type: "enrich:file:done",
-            timestamp: new Date().toISOString(),
-            file: rel,
-            toolCalls,
-            ...(specPath ? { specFile: `spec/${specFileName}` } : {}),
-          });
+          log?.warn({ attempt }, "Enrichment pass stalled, will retry");
+        } finally {
+          await adapter.shutdown(handle);
         }
       } catch (err) {
-        // Per-file failure is non-fatal — log and move to the next file.
-        // Partial spec generation is fine: completed files retain their
-        // additions, the executor still benefits from those.
-        const msg = err instanceof Error ? err.message : String(err);
-        log?.error({ file: rel, err: msg, toolCalls }, "Spec generation failed — continuing");
-        emitter?.emitEvent({
-          type: "enrich:file:error",
-          timestamp: new Date().toISOString(),
-          file: rel,
-          error: `spec generation failed: ${msg}`,
-        });
+        lastError = err instanceof Error ? err : new Error(String(err));
+        const msg = lastError.message;
+        log?.warn({ attempt, err: msg }, "Enrichment attempt failed");
+
+        if (attempt === maxRetries) {
+          throw new Error(`Enrichment exhausted ${maxRetries} retries: ${msg}`);
+        }
       }
     }
-  } finally {
-    await adapter.shutdown(handle);
+
+    // If we exhausted all retries without success
+    if (!passSucceeded) {
+      const msg = lastError?.message ?? "unknown error";
+      throw new Error(`Enrichment exhausted ${maxRetries} retries: ${msg}`);
+    }
   }
 
   // Restore phase completion states that were saved before enrichment.
@@ -607,4 +1028,6 @@ export async function enrichPlanForFastModel(
     timestamp: new Date().toISOString(),
     filesProcessed: planFiles.length,
   });
+
+  return resolvedPath;
 }

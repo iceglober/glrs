@@ -25,7 +25,9 @@ export const TIMEOUT_MS = 4 * 60 * 60 * 1000;
  * call than a productive think. Fast models are the most responsive
  * and warrant the shortest window.
  *
- * The CLI accepts `--stall-timeout <ms>` to override the tier-default.
+ * Fallback defaults when config.stall_timeout is not set.
+ * The CLI accepts `--stall-timeout <ms>` to override the tier-default,
+ * and config.stall_timeout overrides both the CLI default and tier lookup.
  */
 export const STALL_MS_BY_TIER = {
   deep: 30 * 60 * 1000,
@@ -38,7 +40,10 @@ export const STALL_MS_BY_TIER = {
 /** Backwards-compatible default (used when no tier is resolved). */
 export const STALL_MS = STALL_MS_BY_TIER.deep;
 
-/** Phase-level iteration budgets, keyed by model tier (item 2.7). */
+/**
+ * Phase-level iteration budgets, keyed by model tier (item 2.7).
+ * Fallback defaults when config.max_iterations_per_phase is not set.
+ */
 export const MAX_ITERATIONS_PER_PHASE_BY_TIER = {
   deep: 5,
   mid: 8,
@@ -46,6 +51,13 @@ export const MAX_ITERATIONS_PER_PHASE_BY_TIER = {
   "autopilot-execute": 10,
   fast: 10,
 } as const;
+
+/**
+ * Per-item iteration budget for the fast executor (item 4.8).
+ * Fallback default when config.max_iterations_per_item is not set.
+ * Each item gets a fresh session with this much rope before moving to the next item.
+ */
+export const MAX_ITERATIONS_PER_ITEM = 5;
 
 /**
  * Kill-switch file path (relative to cwd). If this file exists at the

@@ -52,8 +52,12 @@ export type { LoopSessionDeps } from "./loop-session.js";
 export { parsePlanState, parseItems } from "./plan-parser.js";
 export type { PlanState, PlanItem } from "./plan-parser.js";
 
+// Model resolver
+export { resolveModel } from "./model-resolver.js";
+export type { AdapterName } from "./model-resolver.js";
+
 // Plan enrichment
-export { enrichPlanForFastModel } from "./plan-enrichment.js";
+export { enrichPlanForFastModel, isFreeformFile } from "./plan-enrichment.js";
 
 // Spec schema/parser/writer
 export { validateMainSpec, validatePhaseSpec } from "./spec-schema.js";
@@ -78,6 +82,10 @@ export {
   STATUS_INTERVAL_MS,
   MAX_ITERATIONS_PER_PHASE_BY_TIER,
 } from "./config.js";
+
+// CLI flag overrides
+export { applyCLIOverrides } from "./config-reader.js";
+export type { CLIFlags } from "./config-reader.js";
 
 // Status
 export { createStatusHeartbeat, formatElapsed, formatCost } from "./status.js";

@@ -41,6 +41,8 @@ export interface PlanItem {
   tests: string[];
   verify: string;
   checked: boolean;
+  proof?: string;
+  proof_type?: string;
 }
 
 const DEGRADED: PlanState = {

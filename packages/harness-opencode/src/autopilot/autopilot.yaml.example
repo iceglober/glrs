@@ -1,0 +1,159 @@
+# ========== Adapter ==========
+# Select which adapter drives the autopilot agent.
+# adapter: opencode  # opencode | claude-code-cli (default: opencode)
+
+
+# ========== Models ==========
+# Model tiers or full model IDs for each phase.
+# Interpretation depends on the active adapter:
+#   - OpenCode: tier names (deep, mid, autopilot-execute, fast)
+#   - Claude Code CLI: full model IDs (e.g., claude-opus-4-7)
+# Full model IDs containing "/" pass through unchanged for both adapters.
+#
+# models:
+#   enrichment: deep              # default: deep (OpenCode) or claude-opus-4-7 (CLI)
+#   execution:  autopilot-execute # default: autopilot-execute (OpenCode) or claude-haiku-4-5-20251001 (CLI)
+#   debrief:    deep              # default: deep (OpenCode) or claude-opus-4-7 (CLI)
+
+
+# ========== Execution ==========
+# Execution order and parallelism settings.
+#
+# execution_order: sequential  # sequential | parallel (default: sequential)
+# parallel_lanes: 1            # Number of parallel lanes when execution_order: parallel (default: 1)
+
+
+# ========== Iteration Budgets ==========
+# Per-phase and per-item iteration limits.
+#
+# max_iterations_per_phase: 5   # default: varies by tier (5 for deep, 8 for mid, 10 for mid-execute/autopilot-execute/fast)
+# max_iterations_per_item: 5    # default: 5
+
+
+# ========== Stall Detection ==========
+# Per-iteration stall timeout in milliseconds.
+# If an iteration produces no idle signal within this window, autopilot exits.
+# Varies by model tier; set here to override tier defaults.
+#
+# stall_timeout: 600000  # 10 minutes (default: varies by tier)
+
+
+# ========== Verify ==========
+# Control when and how plan verification runs.
+#
+# verify: after_phase  # after_phase | after_item | skip (default: after_phase)
+# verify_timeout: 300000  # 5 minutes in milliseconds (default: 300000)
+
+
+# ========== Hooks ==========
+# Shell commands that run at specific points in the autopilot lifecycle.
+# Each hook is a string (single command) or array of strings (multiple commands).
+# Runs in the repo root with the user's shell; non-zero exit = hook failure.
+# Timeout = verify_timeout.
+#
+# hooks:
+#   pre_phase: "echo 'Starting phase'"        # Before phase execution
+#   post_phase: "cargo test"                  # After phase completes
+#   post_run: "npm run build"                 # After all phases complete
+#   on_error: "slack-notify error"            # On fatal phase failure
+
+
+# ========== Agents ==========
+# Per-agent configuration overrides (global scope, not adapter-specific).
+# Maps agent names to their override configurations.
+# Content varies by adapter; see adapter-specific blocks below.
+#
+# agents:
+#   @plan:
+#     some_setting: value
+
+
+# ========== Rollback & Checkpoints ==========
+# Failure recovery and resumption settings.
+#
+# rollback_on_failure: soft  # soft | off (default: soft)
+#   # soft:  attempt rollback on failure; if it fails, exit cleanly
+#   # off:   do not roll back; fail fast
+#
+# checkpoint: false  # Enable resumption from checkpoints (default: false)
+#   # When true, autopilot can resume from a previous checkpoint via --resume flag
+
+
+# ========== Logging ==========
+# Control autopilot logging verbosity.
+#
+# log_level: info  # trace | debug | info | warn | error | fatal (default: info)
+
+
+# ========== Notifications ==========
+# Send lifecycle events to a webhook (Slack, Discord, custom endpoint).
+#
+# notify_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"  # default: undefined
+# notify_events:  # default: undefined (send all events)
+#   - iteration_complete
+#   - phase_complete
+#   - run_complete
+#   - error
+#   - struggle
+#   - stall
+
+
+# ========== Changeset ==========
+# Version bump strategy for changesets.
+#
+# changeset_bump: patch  # patch | minor | major (default: patch)
+
+
+# ========== Auto-ship ==========
+# Automatically ship the PR after autopilot completes.
+#
+# auto_ship: false  # default: false
+
+
+# ========== Phases (Per-phase Configuration) ==========
+# Override base config for specific phases.
+# Each phase key is the phase filename without the extension (e.g., wave_0, wave_1).
+# Phase-specific settings override base settings using deep merge.
+#
+# phases:
+#   wave_0:
+#     # Override models for this phase only
+#     models:
+#       execution: deep  # Use deep model instead of the default for wave_0
+#
+#     # Override hooks for this phase only
+#     hooks:
+#       post_phase: "cargo test"  # phase-specific hook (replaces plan-level post_phase for wave_0)
+#
+#     # Override agents for this phase only (adapter-specific)
+#     agents:
+#       "@plan":
+#         custom_setting: true
+#
+#     # Override iteration budget for this phase
+#     max_iterations_per_phase: 3
+#
+#     # Override stall timeout for this phase
+#     stall_timeout: 900000  # 15 minutes
+
+
+# ========== Adapters (Adapter-specific Configuration) ==========
+# Adapter-specific settings. Only the block matching the active adapter
+# (set by the `adapter:` field) is read at runtime.
+# Unknown adapter keys are silently ignored.
+#
+# adapters:
+#   # OpenCode adapter configuration (read only when adapter: opencode)
+#   opencode:
+#     agents:
+#       # Per-agent overrides for OpenCode
+#       "@plan":
+#         some_opencode_setting: value
+#       "@build":
+#         tier: deep
+#
+#   # Claude Code CLI adapter configuration (read only when adapter: claude-code-cli)
+#   claude_code_cli:
+#     skip_permissions: true    # Skip permission prompts (default: true)
+#     allowed_tools: []         # Allowlist of tools (empty = all allowed) (default: [])
+#     max_turns: 100            # Maximum turns per session (default: undefined, no limit)
