@@ -95,20 +95,16 @@ if (sub === "wt" || sub === "worktree") {
   process.exit(0);
 }
 
-// Handle autopilot subcommand natively (TUI plan picker)
-if (sub === "autopilot" || sub === "dashboard") {
-  // Extract -a / --adapter from remaining args
-  const subArgs = args.slice(1);
-  let adapterArg: string | undefined;
-  for (let i = 0; i < subArgs.length; i++) {
-    if ((subArgs[i] === "-a" || subArgs[i] === "--adapter") && subArgs[i + 1]) {
-      adapterArg = subArgs[i + 1];
-      break;
-    }
-  }
-  const { ADAPTER_NAMES } = await import("./adapter-factory.js");
-  const adapterName = adapterArg && (ADAPTER_NAMES as readonly string[]).includes(adapterArg) ? adapterArg as (typeof ADAPTER_NAMES)[number] : undefined;
-  await runAutopilot(adapterName);
+// Handle autopilot subcommand — delegate to cmd-ts for full flag parsing
+if (sub === "autopilot") {
+  const { autopilotInteractiveCmd } = await import("./commands/autopilot.js");
+  await run(autopilotInteractiveCmd, args.slice(1));
+  process.exit(0);
+}
+
+// Handle dashboard subcommand (TUI picker, no flags)
+if (sub === "dashboard") {
+  await runAutopilot();
   process.exit(0);
 }
 
