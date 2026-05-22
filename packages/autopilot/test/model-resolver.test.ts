@@ -52,9 +52,9 @@ describe("resolveModel", () => {
       expect(result).toBe("claude-sonnet-4-6");
     });
 
-    it("maps autopilot-execute to claude-sonnet-4-6", () => {
+    it("maps autopilot-execute to claude-haiku-4-5-20251001", () => {
       const result = resolveModel("autopilot-execute", "claude-code-cli");
-      expect(result).toBe("claude-sonnet-4-6");
+      expect(result).toBe("claude-haiku-4-5-20251001");
     });
 
     it("maps fast to claude-haiku-4-5-20251001", () => {
