@@ -219,18 +219,19 @@ export interface RalphLoopOptions {
 
 /**
  * Read the autopilot prompt template and prepend it to the user's prompt.
- * The template is co-located with this loop at autopilot/prompt-template.md
- * (both in src/ for dev and dist/ for the built package).
+ * The template lives at prompt-template.md next to this file:
+ * - dist/prompt-template.md (built artifact, copied by tsup onSuccess)
+ * - src/prompt-template.md (dev/test, resolved via fallback candidate)
  */
 function buildFullPrompt(userPrompt: string): string {
   // Locate prompt-template.md relative to this file's location.
-  // In dist/, this file is at dist/autopilot/loop.js and the template is
-  // at dist/autopilot/prompt-template.md.
-  // In src/ (tests), this file is at src/autopilot/loop.ts and the template
-  // is at src/autopilot/prompt-template.md.
+  // In dist/, this file is at dist/index.js and the template is
+  // at dist/prompt-template.md (copied by tsup onSuccess).
+  // In src/ (tests), this file is at src/loop.ts and the template
+  // is at src/prompt-template.md.
   const candidates = [
     join(import.meta.dir, "prompt-template.md"),
-    join(import.meta.dir, "..", "..", "src", "autopilot", "prompt-template.md"),
+    join(import.meta.dir, "..", "..", "src", "prompt-template.md"),
   ];
 
   let template = "";
