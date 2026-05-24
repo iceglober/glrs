@@ -16,7 +16,6 @@ const ts = (offset = 0) =>
 function sessionStart(overrides: Partial<{
   planPath: string;
   cwd: string;
-  fast: boolean;
   resume: boolean;
 }> = {}): SessionEvent {
   return {
@@ -24,7 +23,6 @@ function sessionStart(overrides: Partial<{
     timestamp: ts(0),
     planPath: "/plans/main.md",
     cwd: "/repo",
-    fast: false,
     resume: false,
     ...overrides,
   };
@@ -107,7 +105,6 @@ describe("deriveState", () => {
     expect(handle).not.toBeNull();
     expect(handle!.planPath).toBe("/plans/foo.md");
     expect(handle!.cwd).toBe("/myrepo");
-    expect(handle!.fast).toBe(false);
     expect(handle!.resume).toBe(false);
     expect(handle!.status).toBe("running");
     expect(handle!.startedAt).toBe(ts(0));
@@ -121,9 +118,8 @@ describe("deriveState", () => {
     expect(h1!.id).not.toBe(h3!.id);
   });
 
-  it("fast and resume flags are preserved", () => {
-    const handle = deriveState([sessionStart({ fast: true, resume: true })]);
-    expect(handle!.fast).toBe(true);
+  it("resume flag is preserved", () => {
+    const handle = deriveState([sessionStart({ resume: true })]);
     expect(handle!.resume).toBe(true);
   });
 

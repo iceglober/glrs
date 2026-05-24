@@ -25,8 +25,6 @@ export interface SessionHandle {
   id: string;
   planPath: string;
   cwd: string;
-  /** fast-model flag from session:start */
-  fast: boolean;
   /** resume flag from session:start */
   resume: boolean;
   status: SessionStatus;
@@ -205,7 +203,6 @@ export function deriveState(events: SessionEvent[]): SessionHandle | null {
     id,
     planPath: startEvent.planPath,
     cwd: startEvent.cwd,
-    fast: startEvent.fast,
     resume: startEvent.resume,
     status,
     currentPhase,

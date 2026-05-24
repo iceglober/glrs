@@ -36,7 +36,6 @@ describe("session-events type guards", () => {
       timestamp: ts,
       planPath: "/plans/foo",
       cwd: "/repo",
-      fast: false,
       resume: false,
     };
     it("isSessionStart returns true for session:start", () => {
@@ -375,7 +374,6 @@ describe("session-events type guards", () => {
       timestamp: ts,
       planPath: "/plans/foo",
       cwd: "/repo",
-      fast: false,
       resume: false,
     };
 

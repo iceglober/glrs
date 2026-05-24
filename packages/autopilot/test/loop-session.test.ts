@@ -288,7 +288,7 @@ describe("per-phase session execution", () => {
     }
   });
 
-  it("per-phase prompt includes full phase file contents", async () => {
+  it("per-item prompt includes item intent and verify from phase file", async () => {
     const capturedPrompts: string[] = [];
 
     const fileState: Record<string, string> = {
@@ -308,7 +308,7 @@ describe("per-phase session execution", () => {
         },
         runRalphLoop: async (opts) => {
           capturedPrompts.push(opts.prompt);
-          if (opts.prompt.includes("Phase 1")) {
+          if (opts.prompt.includes("id: a1")) {
             fileState["/plans/feat/phase_1.md"] = PHASE_1_CONTENT_DONE;
           } else {
             fileState["/plans/feat/phase_2.md"] = PHASE_2_CONTENT_DONE;
@@ -318,8 +318,10 @@ describe("per-phase session execution", () => {
       },
     });
 
-    expect(capturedPrompts[0]).toContain("Phase 1: Core");
-    expect(capturedPrompts[1]).toContain("Phase 2: Tests");
+    expect(capturedPrompts[0]).toContain("id: a1");
+    expect(capturedPrompts[0]).toContain("Create the widget");
+    expect(capturedPrompts[1]).toContain("id: b1");
+    expect(capturedPrompts[1]).toContain("Write integration tests");
   });
 
   it("phases already checked are skipped", async () => {
@@ -349,9 +351,9 @@ describe("per-phase session execution", () => {
       },
     });
 
-    // Only one call — phase_1 was already checked
+    // Only one call — phase_1 was already checked, phase_2 has one item (b1)
     expect(loopCalls).toHaveLength(1);
-    expect(loopCalls[0]).toContain("Phase 2");
+    expect(loopCalls[0]).toContain("id: b1");
   });
 
   it("falls back to single-session when plan lacks phase files", async () => {
@@ -398,17 +400,13 @@ describe("per-phase session execution", () => {
           }
         },
         runRalphLoop: async (opts) => {
-          if (opts.prompt.includes("Phase 1")) {
+          if (opts.prompt.includes("id: a1")) {
             fileState["/plans/feat/phase_1.md"] = PHASE_1_CONTENT_DONE;
           } else {
             fileState["/plans/feat/phase_2.md"] = PHASE_2_CONTENT_DONE;
           }
           return { exitReason: "sentinel", iterations: 1, message: "Done" };
         },
-        // Stub the verify runner — fixtures declare `verify: bun test ...`
-        // commands, but we don't actually want to spawn shells in unit
-        // tests. Returning all-passed exercises the post-phase test gate
-        // in its happy-path shape (item 4.1).
         runVerifyCommands: async (items) =>
           items.map((it) => ({
             itemId: it.id,

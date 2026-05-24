@@ -62,12 +62,11 @@ describe("SessionRunner", () => {
       expect(emitted[emitted.length - 1].type).toBe("session:done");
     });
 
-    it("session:start carries planPath, cwd, fast, resume", async () => {
+    it("session:start carries planPath, cwd, resume", async () => {
       const emitted: SessionEvent[] = [];
       const runner = new SessionRunner({
         planPath,
         cwd: tmpDir,
-        fast: true,
         resume: false,
         eventStreamPath,
         _deps: {
@@ -85,7 +84,6 @@ describe("SessionRunner", () => {
       if (start?.type === "session:start") {
         expect(start.planPath).toBe(planPath);
         expect(start.cwd).toBe(tmpDir);
-        expect(start.fast).toBe(true);
         expect(start.resume).toBe(false);
       }
     });
@@ -137,13 +135,12 @@ describe("SessionRunner", () => {
     });
   });
 
-  describe("enrichment events (--fast)", () => {
-    it("emits enrich:start and enrich:done when fast=true", async () => {
+  describe("enrichment events", () => {
+    it("emits enrich:start and enrich:done", async () => {
       const emitted: SessionEvent[] = [];
       const runner = new SessionRunner({
         planPath,
         cwd: tmpDir,
-        fast: true,
         eventStreamPath,
         _deps: {
           createLogger: makeSilentLogger,
@@ -159,32 +156,11 @@ describe("SessionRunner", () => {
       expect(emitted.some((e) => e.type === "enrich:done")).toBe(true);
     });
 
-    it("does NOT emit enrich:* events when fast=false", async () => {
-      const emitted: SessionEvent[] = [];
-      const runner = new SessionRunner({
-        planPath,
-        cwd: tmpDir,
-        fast: false,
-        eventStreamPath,
-        _deps: {
-          createLogger: makeSilentLogger,
-          runLoopSession: async () => makeSuccessLoopResult(),
-        },
-      });
-
-      runner.events.on("event", (e: SessionEvent) => emitted.push(e));
-      await runner.run();
-
-      expect(emitted.some((e) => e.type === "enrich:start")).toBe(false);
-      expect(emitted.some((e) => e.type === "enrich:done")).toBe(false);
-    });
-
     it("emits error event when enrichment throws, but continues to execution", async () => {
       const emitted: SessionEvent[] = [];
       const runner = new SessionRunner({
         planPath,
         cwd: tmpDir,
-        fast: true,
         eventStreamPath,
         _deps: {
           createLogger: makeSilentLogger,
@@ -235,6 +211,7 @@ describe("SessionRunner", () => {
         eventStreamPath,
         _deps: {
           createLogger: makeSilentLogger,
+          enrichPlan: async (_cwd: string, p: string) => p,
           runLoopSession: async () => makeSuccessLoopResult(),
         },
       });

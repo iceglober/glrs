@@ -121,7 +121,6 @@ Use bun:test
     await runLoopSession({
       planPath: planDir,
       cwd: tmpDir,
-      fast: false,
       _deps: {
         runRalphLoop: mockLoop,
         isDirectory: () => true,
@@ -206,9 +205,9 @@ Do the thing
 
     const phasesRun: string[] = [];
     const mockLoop = async (opts: { prompt: string }): Promise<LoopResult> => {
-      // Extract phase file from prompt
-      const match = /Your phase \(([^)]+)\)/.exec(opts.prompt);
-      if (match) phasesRun.push(match[1]);
+      // Per-item prompt contains "mark its checkbox in <phaseFile>"
+      const match = /checkbox in ([\w_.]+\.yaml)/.exec(opts.prompt);
+      if (match && !phasesRun.includes(match[1])) phasesRun.push(match[1]);
       return {
         exitReason: "sentinel",
         iterations: 1,
@@ -220,13 +219,21 @@ Do the thing
     await runLoopSession({
       planPath: planDir,
       cwd: tmpDir,
-      fast: false,
       _deps: {
         runRalphLoop: mockLoop,
         isDirectory: () => true,
         readFileSync: (p: string) => fs.readFileSync(p, "utf-8"),
         writeFileSync: (p: string, c: string) =>
           fs.writeFileSync(p, c, "utf-8"),
+        runVerifyCommands: async (items) =>
+          items.map((it) => ({
+            itemId: it.id,
+            command: it.verify,
+            passed: true,
+            stdout: "",
+            stderr: "",
+            durationMs: 1,
+          })),
       },
     });
 
@@ -288,7 +295,6 @@ phases:
     await runLoopSession({
       planPath: planDir,
       cwd: tmpDir,
-      fast: false,
       _deps: {
         runRalphLoop: mockLoop,
         isDirectory: () => true,
@@ -365,8 +371,8 @@ phases:
 
     const phasesRun: string[] = [];
     const mockLoop = async (opts: { prompt: string }): Promise<LoopResult> => {
-      const match = /Your phase \(([^)]+)\)/.exec(opts.prompt);
-      if (match) phasesRun.push(match[1]);
+      const match = /checkbox in ([\w_.]+\.yaml)/.exec(opts.prompt);
+      if (match && !phasesRun.includes(match[1])) phasesRun.push(match[1]);
       return {
         exitReason: "sentinel",
         iterations: 1,
@@ -378,13 +384,21 @@ phases:
     await runLoopSession({
       planPath: planDir,
       cwd: tmpDir,
-      fast: false,
       _deps: {
         runRalphLoop: mockLoop,
         isDirectory: () => true,
         readFileSync: (p: string) => fs.readFileSync(p, "utf-8"),
         writeFileSync: (p: string, c: string) =>
           fs.writeFileSync(p, c, "utf-8"),
+        runVerifyCommands: async (items) =>
+          items.map((it) => ({
+            itemId: it.id,
+            command: it.verify,
+            passed: true,
+            stdout: "",
+            stderr: "",
+            durationMs: 1,
+          })),
       },
     });
 
@@ -446,7 +460,6 @@ phases:
     await runLoopSession({
       planPath: planDir,
       cwd: tmpDir,
-      fast: false,
       _deps: {
         runRalphLoop: mockLoop,
         isDirectory: () => true,
@@ -516,7 +529,6 @@ phases:
     await runLoopSession({
       planPath: planDir,
       cwd: tmpDir,
-      fast: false,
       _deps: {
         runRalphLoop: mockLoop,
         isDirectory: () => true,
@@ -598,7 +610,6 @@ phases:
     await runLoopSession({
       planPath: planDir,
       cwd: tmpDir,
-      fast: false,
       _deps: {
         runRalphLoop: mockLoop,
         isDirectory: () => true,

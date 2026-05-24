@@ -45,7 +45,7 @@ export const loopCmd = command({
       long: "stall-timeout",
       type: optional(numberType),
       description:
-        "Per-iteration stall timeout in milliseconds. Overrides the tier-based default (deep=30m, mid=15m, mid-execute/autopilot-execute=10m, fast=5m).",
+        "Per-iteration stall timeout in milliseconds (default: 5 minutes).",
     }),
     noDebrief: flag({
       long: "no-debrief",

@@ -40,7 +40,6 @@ export async function runAutopilot(adapterName?: AdapterName): Promise<void> {
   const runner = new SessionRunner({
     planPath,
     cwd,
-    fast: true,
     adapter,
   });
 

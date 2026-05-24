@@ -2,11 +2,13 @@
  * `glrs autopilot` — Interactive three-phase autopilot orchestrator.
  *
  * --plan / -p <path>: use an existing plan at this path.
- * --fast / -f: enrich plan for fast-model execution, then run with mid-execute tier.
- * --status: read and pretty-print the current autopilot status from .agent/autopilot-status.json.
+ * --status: read and pretty-print the current autopilot status from .agent/autopilot-events.jsonl.
  *
  * When no --plan is given, opens an interactive file picker.
  * When a plan is provided and has checkboxes, skips scoping/planning and executes directly.
+ *
+ * Plans are always enriched before execution (idempotent — already-enriched plans skip).
+ * Execution is always per-item with the mid-execute tier, escalating to deep on retry exhaustion.
  *
  * This is a thin wrapper: parse args → create SessionRunner → attach CLI renderer → run.
  */
@@ -24,7 +26,7 @@ import type { AutopilotConfig } from "../autopilot/autopilot-config.js";
 export const autopilotInteractiveCmd = command({
   name: "autopilot",
   description:
-    "Run the autopilot. Use -p <path> to provide a plan, or omit to pick one interactively. Use -f for fast-model execution. Use --status to check the current run status.",
+    "Run the autopilot. Use -p <path> to provide a plan, or omit to pick one interactively. Use --status to check the current run status.",
   args: {
     plan: option({
       long: "plan",
@@ -32,12 +34,6 @@ export const autopilotInteractiveCmd = command({
       type: optional(stringType),
       description:
         "Path to an existing plan file or directory. If omitted, opens an interactive file picker.",
-    }),
-    fast: flag({
-      long: "fast",
-      short: "f",
-      description:
-        "Use the fast executor model (mid-execute tier). Enriches the plan first so cheaper models can execute reliably.",
     }),
     resume: flag({
       long: "resume",
@@ -48,7 +44,7 @@ export const autopilotInteractiveCmd = command({
       long: "max-iterations-per-phase",
       type: optional(numberType),
       description:
-        "Per-phase iteration budget. Override the tier default (deep=5, mid-execute/autopilot-execute=10, fast=10). A phase that hits this budget without completing is treated as a soft failure: a checkpoint is written, a warning is logged, and the run continues to the next phase.",
+        "Per-phase iteration budget (default: 25). A phase that hits this budget without completing is treated as a soft failure: a checkpoint is written, a warning is logged, and the run continues to the next phase.",
     }),
     parallel: option({
       long: "parallel",
@@ -73,7 +69,7 @@ export const autopilotInteractiveCmd = command({
       description: `Agent adapter to use (default: ${DEFAULT_ADAPTER}). Available: ${ADAPTER_NAMES.join(", ")}`,
     }),
   },
-  handler: async ({ plan, fast, resume, maxIterationsPerPhase, parallel, ship, status, adapter: adapterName }) => {
+  handler: async ({ plan, resume, maxIterationsPerPhase, parallel, ship, status, adapter: adapterName }) => {
     const cwd = process.cwd();
 
     // --status: short-circuit — read and pretty-print the current session state
@@ -207,7 +203,6 @@ export const autopilotInteractiveCmd = command({
     // Apply CLI flag overrides (after merge, before validation and execution)
     const config = applyCLIOverrides(resolvedConfig, {
       adapter: adapterName,
-      fast,
       resume,
       maxIterationsPerPhase,
       parallel,
@@ -236,11 +231,9 @@ export const autopilotInteractiveCmd = command({
       process.exit(1);
     }
 
-    // Print enrichment banner before starting (the CLI renderer handles per-file progress)
-    if (fast && planPath) {
-      process.stderr.write("\n\x1b[1m→ Enriching plan for fast execution\x1b[0m (deep model reads codebase, adds context)\n");
-      process.stderr.write("  Adding mirror refs, code pointers, and conventions...\n");
-    }
+    // Print enrichment banner (the CLI renderer handles per-file progress)
+    process.stderr.write("\n\x1b[1m→ Enriching plan\x1b[0m (deep model reads codebase, adds context)\n");
+    process.stderr.write("  Adding mirror refs, code pointers, and conventions...\n");
 
     // Set GLRS_AGENT_OVERRIDES env var if the adapter is opencode and has agent overrides.
     // The plugin's config-hook reads this at server startup. Save the prior value so we
@@ -261,7 +254,6 @@ export const autopilotInteractiveCmd = command({
       const runner = new SessionRunner({
         planPath: path.resolve(process.cwd(), planPath),
         cwd: process.cwd(),
-        fast,
         resume,
         maxIterationsPerPhase,
         parallel,
@@ -278,9 +270,7 @@ export const autopilotInteractiveCmd = command({
       renderer.unsubscribe();
 
       // Print enrichment completion line (after enrichment events have been rendered)
-      if (fast && planPath) {
-        process.stderr.write("  ✓ Plan enriched — executing with fast model (mid-execute tier)\n\n");
-      }
+      process.stderr.write("  ✓ Plan enriched — executing\n\n");
 
       // Show completion summary
       const costStr = result.loopResult.cumulativeCostUsd

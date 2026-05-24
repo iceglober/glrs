@@ -76,7 +76,6 @@ function resolveCliArgs(): { bin: string; preArgs: string[] } {
 export interface LaunchOptions {
   planPath: string;
   cwd: string;
-  fast?: boolean;
   adapter?: string;
 }
 
@@ -85,8 +84,6 @@ export interface LaunchWithWorktreeOptions {
   repoName: string;
   /** Absolute path to the plan file. */
   planPath: string;
-  /** Use --fast mode. */
-  fast?: boolean;
 }
 
 export class SessionManager {
@@ -143,11 +140,10 @@ export class SessionManager {
    * The handle will be updated on the next poll once the event file appears.
    */
   launchSession(opts: LaunchOptions): SessionHandle {
-    const { planPath, cwd, fast = false } = opts;
+    const { planPath, cwd } = opts;
 
     const { bin, preArgs } = resolveCliArgs();
     const args = [...preArgs, "oc", "autopilot", "--plan", planPath];
-    if (fast) args.push("--fast");
 
     const child = spawn(bin, args, {
       cwd,
@@ -164,7 +160,6 @@ export class SessionManager {
       id: `provisional-${pid ?? Date.now()}`,
       planPath,
       cwd,
-      fast,
       resume: false,
       status: "running",
       totalIterations: 0,
@@ -199,7 +194,7 @@ export class SessionManager {
    * or passed as an absolute path if it's external (e.g. ~/.glrs/).
    */
   launchSessionWithWorktree(opts: LaunchWithWorktreeOptions): SessionHandle {
-    const { repoName, planPath, fast = false } = opts;
+    const { repoName, planPath } = opts;
 
     // createWorktree with just a repo name uses the same resolution as
     // `glrs wt new <repo>`: registry → index → filesystem scan.
@@ -223,7 +218,6 @@ export class SessionManager {
     return this.launchSession({
       planPath: resolvedPlanPath,
       cwd: wtPath,
-      fast,
     });
   }
 
@@ -296,11 +290,10 @@ export class SessionManager {
     const tracked = this.sessions.get(id);
     if (!tracked) return;
 
-    const { planPath, cwd, fast } = tracked.handle;
+    const { planPath, cwd } = tracked.handle;
 
     const { bin, preArgs } = resolveCliArgs();
     const args = [...preArgs, "oc", "autopilot", "--plan", planPath, "--resume"];
-    if (fast) args.push("--fast");
 
     const child = spawn(bin, args, {
       cwd,

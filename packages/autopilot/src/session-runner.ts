@@ -5,7 +5,7 @@
  * Channel 1: EventEmitter (in-process, consumed by CLI renderer)
  * Channel 2: EventStreamWriter → .agent/autopilot-events.jsonl
  *
- * The runner wraps the existing `runLoopSession` and `enrichPlanForFastModel`
+ * The runner wraps the existing `runLoopSession` and `enrichPlan`
  * functions — it does NOT rewrite them. Events are emitted at the session
  * boundaries (start/done) and at enrichment boundaries. Items 0.5 will add
  * finer-grained events inside loop.ts and loop-session.ts.
@@ -28,7 +28,6 @@ import type { StatusState } from "./status.js";
 export interface SessionRunnerOptions {
   planPath: string;
   cwd: string;
-  fast?: boolean;
   resume?: boolean;
   parallel?: number;
   ship?: boolean;
@@ -46,7 +45,7 @@ export interface SessionRunnerOptions {
   eventStreamPath?: string;
   /**
    * Enrichment configuration (strategy, retry, timeouts).
-   * Passed through to enrichPlanForFastModel when --fast is used.
+   * Passed through to enrichPlan when enrichment runs.
    */
   enrichmentConfig?: {
     strategy?: string;
@@ -76,7 +75,7 @@ export interface SessionResult {
  * @internal
  */
 export interface SessionRunnerDeps {
-  /** Override enrichPlanForFastModel for testing. */
+  /** Override enrichPlan for testing. */
   enrichPlan?: (cwd: string, planPath: string, logger?: AutopilotLogger) => Promise<string>;
   /** Override runLoopSession for testing. */
   runLoopSession?: (opts: LoopSessionOptions & { _deps?: unknown }) => Promise<LoopResult>;
@@ -251,7 +250,7 @@ export class SessionRunner {
   /**
    * Run the autopilot session:
    * 1. Emit session:start
-   * 2. If --fast, run enrichment (emitting enrich:* events)
+   * 2. Run enrichment (emitting enrich:* events; idempotent — skips already-enriched plans)
    * 3. Run the loop session (emitting phase:* events via loop-session.ts)
    * 4. Emit session:done
    *
@@ -262,7 +261,7 @@ export class SessionRunner {
     this._abortController = new AbortController();
     this._abortCount = 0;
 
-    const { planPath, cwd, fast, resume, parallel, ship, maxIterationsPerPhase } = this.opts;
+    const { planPath, cwd, resume, parallel, ship, maxIterationsPerPhase } = this.opts;
     const eventStreamPath =
       this.opts.eventStreamPath ?? path.join(cwd, ".agent", "autopilot-events.jsonl");
 
@@ -348,7 +347,6 @@ export class SessionRunner {
       timestamp: new Date().toISOString(),
       planPath,
       cwd,
-      fast: fast ?? false,
       resume: resume ?? false,
       enrichModel,
       executeModel,
@@ -360,13 +358,14 @@ export class SessionRunner {
     let effectivePlanPath = planPath;
 
     try {
-      // Enrichment phase (only when --fast)
-      if (fast && planPath) {
+      // Enrichment phase (always runs when planPath is provided;
+      // idempotency check inside enrichPlan skips already-enriched plans)
+      if (planPath) {
         emitEvent({
           type: "enrich:start",
           timestamp: new Date().toISOString(),
           planPath,
-          fileCount: 0, // file count is determined inside enrichPlanForFastModel
+          fileCount: 0, // file count is determined inside enrichPlan
         });
 
         try {
@@ -379,9 +378,9 @@ export class SessionRunner {
               filesProcessed: 0,
             });
           } else {
-            const { enrichPlanForFastModel } = await import("./plan-enrichment.js");
-            effectivePlanPath = await enrichPlanForFastModel(cwd, planPath, logger, this.events, this.opts.adapter, this.opts.enrichmentConfig, this.opts.config);
-            // Note: enrichPlanForFastModel emits its own enrich:done event
+            const { enrichPlan } = await import("./plan-enrichment.js");
+            effectivePlanPath = await enrichPlan(cwd, planPath, logger, this.events, this.opts.adapter, this.opts.enrichmentConfig, this.opts.config);
+            // Note: enrichPlan emits its own enrich:done event
             // internally — do NOT emit a duplicate here.
           }
         } catch (err) {
@@ -400,7 +399,6 @@ export class SessionRunner {
       const loopOpts: LoopSessionOptions = {
         planPath: effectivePlanPath,
         cwd,
-        fast,
         resume,
         parallel,
         ship,

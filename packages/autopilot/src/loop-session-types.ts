@@ -21,8 +21,6 @@ export interface PlanSessionResult {
 export interface LoopSessionOptions {
   planPath: string;
   cwd: string;
-  /** When true, use the fast executor agent (mid-execute tier). */
-  fast?: boolean;
   /**
    * When true, read `<cwd>/.agent/autopilot-checkpoint.json` and skip
    * phases already listed in `completedPhases` (provided the checkpoint's
@@ -31,11 +29,8 @@ export interface LoopSessionOptions {
    */
   resume?: boolean;
   /**
-   * Per-phase iteration budget override. When unset, defaults are
-   * picked by tier (see MAX_ITERATIONS_PER_PHASE_BY_TIER):
-   *   - deep: 5
-   *   - mid-execute / autopilot-execute: 10
-   *   - fast: 10
+   * Per-phase iteration budget override. When unset, defaults to 25
+   * (see MAX_ITERATIONS_PER_PHASE in config.ts).
    * A phase that hits `max-iterations` is treated as a soft failure:
    * checkpoint is written, a warning is logged, and the run continues
    * to the next phase rather than terminating.
