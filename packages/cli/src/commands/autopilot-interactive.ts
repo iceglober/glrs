@@ -171,7 +171,7 @@ function extractGoalFromPlan(content: string, filePath: string): string {
 }
 
 /**
- * CLI entry point for `glrs oc autopilot`.
+ * CLI entry point for `glrs autopilot`.
  *
  * When planPath is provided: read the file, extract goal, pass content to scoper.
  * When omitted: prompt for goal interactively, then scope → plan → loop.

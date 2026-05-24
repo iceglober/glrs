@@ -50,6 +50,7 @@
     "@glrs-dev/autopilot": "workspace:*",
     "@glrs-dev/adapter-claude-code": "workspace:*",
     "@glrs-dev/adapter-opencode": "workspace:*",
+    "@glrs-dev/harness-plugin-opencode": "workspace:*",
     "@inkjs/ui": "^2.0.0",
     "@inquirer/prompts": "^8.4.2",
     "@opencode-ai/plugin": "^1.15",
@@ -67,7 +68,6 @@
   "devDependencies": {
     "@glrs-dev/autopilot": "workspace:*",
     "@glrs-dev/adapter-opencode": "workspace:*",
-    "@glrs-dev/harness-plugin-opencode": "workspace:*",
     "@types/bun": "latest",
     "@types/node": "^22",
     "@types/react": "^18.3.0",

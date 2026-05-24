@@ -161,7 +161,7 @@ export function createCliRenderer(emitter: SessionEventEmitter): { unsubscribe: 
       case "credential:expired":
         process.stderr.write(
           `\n\x1b[31m✗ Credentials expired (${event.provider}).\x1b[0m\n` +
-            `  Run \`gs-assume\` and then \`glrs oc autopilot --resume\`.\n`,
+            `  Run \`gs-assume\` and then \`glrs autopilot --resume\`.\n`,
         );
         break;
 

@@ -7,8 +7,7 @@
  *   2. Build @glrs-dev/autopilot (private package we vendor into dist/node_modules/).
  *   3. Build @glrs-dev/adapter-opencode (private package we vendor into dist/node_modules/).
  *   4. Build cli itself (tsup bundle + DTS).
- *   5. Vendor all three packages into cli/dist/ (harness → dist/vendor/,
- *      autopilot + adapter-opencode → dist/node_modules/@glrs-dev/).
+ *   5. Vendor all three packages into dist/node_modules/@glrs-dev/.
  *
  * We do this in one script rather than spreading across npm scripts
  * because Bun's `--filter` at the top level runs packages in parallel,
@@ -73,7 +72,7 @@ async function main(): Promise<void> {
     // tsup --clean wipes dist/, so remove manually first for predictability
     if (existsSync(CLI_DIST)) rmSync(CLI_DIST, { recursive: true });
     const result =
-      await $`bunx tsup src/index.ts src/cli.ts src/lib/*.ts src/commands/*.ts --format esm --dts --clean --external cmd-ts --external @glrs-dev/autopilot --external @glrs-dev/adapter-opencode`
+      await $`bunx tsup src/index.ts src/cli.ts src/lib/*.ts src/commands/*.ts --format esm --dts --clean --external cmd-ts --external @glrs-dev/autopilot --external @glrs-dev/adapter-opencode --external @glrs-dev/harness-plugin-opencode`
         .cwd(CLI_ROOT)
         .nothrow();
     if (result.exitCode !== 0) {

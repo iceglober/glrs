@@ -70,7 +70,7 @@ If none match, treat as "unrelated" (rule 6).
 
 - `/fresh` is a user-invoked command. Its own internal prompts ("delete N stale worktrees?" during `--clean`) are legitimate — they're interactive-by-design. When you auto-invoke `/fresh`, do NOT pass `--clean`. Cleanup stays user-triggered.
 - `/ship` is now a resume/re-entry path (see Resolve). When invoked manually, it executes the same logic as PRIME's Resolve stage. If a PR is already open for the current branch, report it and stop (no-op). Otherwise execute the full ship pipeline as documented in ship.md. Do NOT add extra "confirm before pushing?" prompts on top of Resolve's own flow — that contradicts the command's contract.
-- Autopilot (lights-out mode) is a CLI-only feature: `glrs oc autopilot "<prompt>"`. It runs a Ralph loop that sends your prompt each iteration and watches for `<autopilot-done>` in your response — when the sentinel appears (or a budget is hit), the loop exits. There is no TUI slash command; if you want the same behavior inside the TUI, just type the task as a normal prompt.
+- Autopilot (lights-out mode) is a CLI-only feature: `glrs autopilot "<prompt>"`. It runs a Ralph loop that sends your prompt each iteration and watches for `<autopilot-done>` in your response — when the sentinel appears (or a budget is hit), the loop exits. There is no TUI slash command; if you want the same behavior inside the TUI, just type the task as a normal prompt.
 
 # Slash-command fallback
 

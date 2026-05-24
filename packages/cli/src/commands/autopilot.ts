@@ -1,5 +1,5 @@
 /**
- * `glrs oc autopilot` — Interactive three-phase autopilot orchestrator.
+ * `glrs autopilot` — Interactive three-phase autopilot orchestrator.
  *
  * --plan / -p <path>: use an existing plan at this path.
  * --fast / -f: enrich plan for fast-model execution, then run with mid-execute tier.

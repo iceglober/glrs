@@ -28,7 +28,7 @@ function copyDir(
 export default defineConfig({
   entry: {
     index: "src/index.ts",
-    cli: "src/cli.ts",
+    "cli-exports": "src/cli-exports.ts",
   },
   format: ["esm"],
   dts: true,

@@ -281,9 +281,8 @@ const CORE_BASH_ALLOW_LIST = {
   "eslint *": "allow",
   "prettier *": "allow",
   "biome *": "allow",
-  // Our own CLI (install, doctor, autopilot, etc.) — reviewer/build invocations.
-  "bunx @glrs-dev/harness-plugin-opencode *": "allow",
-  "glrs-oc *": "allow",
+  // Our own CLI (harness, autopilot, loop, etc.) — reviewer/build invocations.
+  "glrs *": "allow",
   // GitHub CLI — read-only gh calls are fine; destructive `gh pr merge`
   // is gated at the PRIME level by human intent (user runs /ship).
   "gh pr view *": "allow",

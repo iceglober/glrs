@@ -2,29 +2,22 @@
 /**
  * Vendor step for @glrs-dev/cli.
  *
- * Three vendor passes in strict order:
+ * Three vendor passes — all placed under dist/node_modules/@glrs-dev/
+ * so Bun's module resolver finds them at runtime:
  *
- *   1. harness-opencode → dist/vendor/harness-opencode/
- *      The cli dispatcher resolves the subprocess bin from there (not from
- *      node_modules). This is a flat copy — the cli shells out to the bin,
- *      it does NOT import harness-opencode as an ESM module.
+ *   1. harness-plugin-opencode → dist/node_modules/@glrs-dev/harness-plugin-opencode/
+ *      The cli imports harness CLI handlers (install, configure, etc.) as ESM.
  *
  *   2. autopilot → dist/node_modules/@glrs-dev/autopilot/
- *      The cli imports autopilot as an ESM module at runtime. Placing it
- *      under dist/node_modules/ triggers Node's nested-module resolution:
- *      when dist/cli.js does `import "@glrs-dev/autopilot"`, Node walks up
- *      from dist/ and finds dist/node_modules/@glrs-dev/autopilot/ before
- *      falling through to the global install root.
+ *      The cli imports the Ralph loop runner, model resolver, etc.
  *
  *   3. adapter-opencode → dist/node_modules/@glrs-dev/adapter-opencode/
- *      Same mechanism as autopilot. The sibling autopilot vendor dir is
- *      what Node's resolver finds when adapter-opencode's bundle does
- *      `import "@glrs-dev/autopilot"`.
+ *      Agent adapter for OpenCode sessions.
  *
  * The stripped package.json written for each vendored module contains only
- * name, version, type, main, module, types — no dependencies. This prevents
- * Node from looking for nested deps inside the vendored dirs (they resolve
- * against the cli's top-level dependencies at install time).
+ * name, version, type, main/module/types, and exports — no dependencies.
+ * This prevents the runtime from looking for nested deps inside the vendored
+ * dirs (they resolve against the cli's top-level dependencies at install time).
  */
 
 import {
@@ -45,7 +38,7 @@ const ADAPTER_PKG_ROOT = resolve(CLI_PKG_ROOT, "..", "adapter-opencode");
 
 const HARNESS_DIST = join(HARNESS_PKG_ROOT, "dist");
 const HARNESS_PKG_JSON = join(HARNESS_PKG_ROOT, "package.json");
-const VENDOR_HARNESS_DIR = join(CLI_PKG_ROOT, "dist", "vendor", "harness-opencode");
+const VENDOR_HARNESS_DIR = join(CLI_PKG_ROOT, "dist", "node_modules", "@glrs-dev", "harness-plugin-opencode");
 
 const AUTOPILOT_DIST = join(AUTOPILOT_PKG_ROOT, "dist");
 const AUTOPILOT_PKG_JSON = join(AUTOPILOT_PKG_ROOT, "package.json");
@@ -60,7 +53,7 @@ function fail(msg: string): never {
   process.exit(1);
 }
 
-// ─── Pass 1: harness-opencode ────────────────────────────────────────────────
+// ─── Pass 1: harness-plugin-opencode ────────────────────────────────────────
 
 if (!existsSync(HARNESS_DIST)) {
   fail(
@@ -80,9 +73,19 @@ const vendoredHarness: Record<string, unknown> = {
   name: harnessPkg.name,
   version: harnessPkg.version,
   type: harnessPkg.type,
-  main: harnessPkg.main,
-  module: harnessPkg.module,
-  bin: harnessPkg.bin,
+  main: "./dist/index.js",
+  module: "./dist/index.js",
+  types: "./dist/index.d.ts",
+  exports: {
+    ".": {
+      import: "./dist/index.js",
+      types: "./dist/index.d.ts",
+    },
+    "./cli": {
+      import: "./dist/cli-exports.js",
+      types: "./dist/cli-exports.d.ts",
+    },
+  },
 };
 writeFileSync(
   join(VENDOR_HARNESS_DIR, "package.json"),
@@ -92,7 +95,7 @@ writeFileSync(
 const harnessFiles = listFiles(VENDOR_HARNESS_DIR);
 const harnessBytes = harnessFiles.reduce((sum, f) => sum + statSync(f).size, 0);
 console.log(
-  `[vendor] harness-opencode: ${harnessFiles.length} files (${formatBytes(harnessBytes)}) → dist/vendor/harness-opencode/`,
+  `[vendor] harness-plugin-opencode: ${harnessFiles.length} files (${formatBytes(harnessBytes)}) → dist/node_modules/@glrs-dev/harness-plugin-opencode/`,
 );
 
 // ─── Pass 2: autopilot ───────────────────────────────────────────────────────
