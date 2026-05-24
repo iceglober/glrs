@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.0
+
+### Minor Changes
+
+- [#85](https://github.com/iceglober/glrs/pull/85) [`e008596`](https://github.com/iceglober/glrs/commit/e008596aba81fa0942c9299f74c35be922e85a80) Thanks [@iceglober](https://github.com/iceglober)! - Add `glrs upgrade` command (bypasses bun's stale cache). PRIME now dispatches parallel @build subagents for multi-phase plans with disjoint file sets.
+
 ## 2.8.0
 
 ## 2.7.0
