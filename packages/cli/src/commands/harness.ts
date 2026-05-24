@@ -57,6 +57,10 @@ const installCmd = command({
         await install({ dryRun, pin });
         break;
       }
+      default: {
+        const _: never = resolved;
+        throw new Error(`Unimplemented target: ${_ as string}`);
+      }
     }
   },
 });
@@ -76,6 +80,10 @@ const configureCmd = command({
         const { run } = await import("cmd-ts");
         await run(mod.configureCmd, []);
         break;
+      }
+      default: {
+        const _: never = resolved;
+        throw new Error(`Unimplemented target: ${_ as string}`);
       }
     }
   },
@@ -100,6 +108,10 @@ const uninstallCmd = command({
         uninstall({ dryRun });
         break;
       }
+      default: {
+        const _: never = resolved;
+        throw new Error(`Unimplemented target: ${_ as string}`);
+      }
     }
   },
 });
@@ -118,6 +130,10 @@ const doctorCmd = command({
         const { doctor } = await import("@glrs-dev/harness-plugin-opencode/cli");
         doctor();
         break;
+      }
+      default: {
+        const _: never = resolved;
+        throw new Error(`Unimplemented target: ${_ as string}`);
       }
     }
   },

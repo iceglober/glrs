@@ -69,6 +69,23 @@ jobs:
         working-directory: packages/assume
         run: cargo test --release
 
+  # Gate job for branch protection — always succeeds whether rust ran or was skipped.
+  rust-gate:
+    name: Rust gate
+    runs-on: ubuntu-22.04
+    needs: [rust-changes, rust]
+    if: always()
+    steps:
+      - run: |
+          if [[ "${{ needs.rust-changes.outputs.changed }}" != "true" ]]; then
+            echo "Rust not changed — skipping"
+            exit 0
+          fi
+          if [[ "${{ needs.rust.result }}" != "success" ]]; then
+            echo "Rust job failed"
+            exit 1
+          fi
+
   verdaccio-smoke:
     name: Verdaccio e2e smoke test
     runs-on: ubuntu-22.04

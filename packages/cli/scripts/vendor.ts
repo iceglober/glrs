@@ -35,6 +35,7 @@ const CLI_PKG_ROOT = resolve(import.meta.dir, "..");
 const HARNESS_PKG_ROOT = resolve(CLI_PKG_ROOT, "..", "harness-opencode");
 const AUTOPILOT_PKG_ROOT = resolve(CLI_PKG_ROOT, "..", "autopilot");
 const ADAPTER_PKG_ROOT = resolve(CLI_PKG_ROOT, "..", "adapter-opencode");
+const ADAPTER_CC_PKG_ROOT = resolve(CLI_PKG_ROOT, "..", "adapter-claude-code");
 
 const HARNESS_DIST = join(HARNESS_PKG_ROOT, "dist");
 const HARNESS_PKG_JSON = join(HARNESS_PKG_ROOT, "package.json");
@@ -47,6 +48,10 @@ const VENDOR_AUTOPILOT_DIR = join(CLI_PKG_ROOT, "dist", "node_modules", "@glrs-d
 const ADAPTER_DIST = join(ADAPTER_PKG_ROOT, "dist");
 const ADAPTER_PKG_JSON = join(ADAPTER_PKG_ROOT, "package.json");
 const VENDOR_ADAPTER_DIR = join(CLI_PKG_ROOT, "dist", "node_modules", "@glrs-dev", "adapter-opencode");
+
+const ADAPTER_CC_DIST = join(ADAPTER_CC_PKG_ROOT, "dist");
+const ADAPTER_CC_PKG_JSON = join(ADAPTER_CC_PKG_ROOT, "package.json");
+const VENDOR_ADAPTER_CC_DIR = join(CLI_PKG_ROOT, "dist", "node_modules", "@glrs-dev", "adapter-claude-code");
 
 function fail(msg: string): never {
   console.error(`[vendor] ${msg}`);
@@ -166,6 +171,41 @@ const adapterFiles = listFiles(VENDOR_ADAPTER_DIR);
 const adapterBytes = adapterFiles.reduce((sum, f) => sum + statSync(f).size, 0);
 console.log(
   `[vendor] adapter-opencode: ${adapterFiles.length} files (${formatBytes(adapterBytes)}) → dist/node_modules/@glrs-dev/adapter-opencode/`,
+);
+
+// ─── Pass 4: adapter-claude-code ─────────────────────────────────────────────
+
+if (!existsSync(ADAPTER_CC_DIST)) {
+  fail(
+    `adapter-claude-code dist/ missing at ${ADAPTER_CC_DIST}. ` +
+      `Run 'bun run --cwd packages/adapter-claude-code build' first.`,
+  );
+}
+if (!existsSync(ADAPTER_CC_PKG_JSON)) {
+  fail(`adapter-claude-code package.json missing at ${ADAPTER_CC_PKG_JSON}.`);
+}
+
+mkdirSync(VENDOR_ADAPTER_CC_DIR, { recursive: true });
+cpSync(ADAPTER_CC_DIST, join(VENDOR_ADAPTER_CC_DIR, "dist"), { recursive: true });
+
+const adapterCcPkg = JSON.parse(readFileSync(ADAPTER_CC_PKG_JSON, "utf8")) as Record<string, unknown>;
+const vendoredAdapterCc: Record<string, unknown> = {
+  name: adapterCcPkg.name,
+  version: adapterCcPkg.version,
+  type: adapterCcPkg.type,
+  main: "dist/index.js",
+  module: "dist/index.js",
+  types: "dist/index.d.ts",
+};
+writeFileSync(
+  join(VENDOR_ADAPTER_CC_DIR, "package.json"),
+  JSON.stringify(vendoredAdapterCc, null, 2) + "\n",
+);
+
+const adapterCcFiles = listFiles(VENDOR_ADAPTER_CC_DIR);
+const adapterCcBytes = adapterCcFiles.reduce((sum, f) => sum + statSync(f).size, 0);
+console.log(
+  `[vendor] adapter-claude-code: ${adapterCcFiles.length} files (${formatBytes(adapterCcBytes)}) → dist/node_modules/@glrs-dev/adapter-claude-code/`,
 );
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

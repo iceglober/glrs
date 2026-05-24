@@ -43,6 +43,7 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "tsup": "^8",
         "typescript": "^5.8.3",
       },
     },
@@ -133,6 +134,7 @@
         "@glrs-dev/adapter-claude-code": "workspace:*",
         "@glrs-dev/adapter-opencode": "workspace:*",
         "@glrs-dev/autopilot": "workspace:*",
+        "@glrs-dev/harness-plugin-opencode": "workspace:*",
         "@inkjs/ui": "^2.0.0",
         "@inquirer/prompts": "^8.4.2",
         "@opencode-ai/plugin": "^1.15",
@@ -150,7 +152,6 @@
       "devDependencies": {
         "@glrs-dev/adapter-opencode": "workspace:*",
         "@glrs-dev/autopilot": "workspace:*",
-        "@glrs-dev/harness-plugin-opencode": "workspace:*",
         "@types/bun": "latest",
         "@types/node": "^22",
         "@types/react": "^18.3.0",
@@ -161,10 +162,6 @@
     "packages/harness-opencode": {
       "name": "@glrs-dev/harness-plugin-opencode",
       "version": "2.6.0",
-      "bin": {
-        "glrs-oc": "dist/cli.js",
-        "harness-opencode": "dist/cli.js",
-      },
       "dependencies": {
         "@inquirer/prompts": "^8.4.2",
         "cmd-ts": "^0.15.0",
