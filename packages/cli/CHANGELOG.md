@@ -1,5 +1,19 @@
 # @glrs-dev/cli
 
+## 2.8.0
+
+### Minor Changes
+
+- [#83](https://github.com/iceglober/glrs/pull/83) [`407e0a5`](https://github.com/iceglober/glrs/commit/407e0a5b20c96474c556a88e45ae9e0dcde8cc36) Thanks [@iceglober](https://github.com/iceglober)! - Remove `--fast` flag. Enrichment now runs unconditionally (idempotent skip when specs already enriched). Per-item execution is the sole strategy with 25-iteration budget and 5-min stall timeout.
+
+### Patch Changes
+
+- Updated dependencies [[`407e0a5`](https://github.com/iceglober/glrs/commit/407e0a5b20c96474c556a88e45ae9e0dcde8cc36)]:
+  - @glrs-dev/autopilot@0.2.0
+  - @glrs-dev/adapter-claude-code@0.1.2
+  - @glrs-dev/adapter-opencode@0.1.2
+  - @glrs-dev/harness-plugin-opencode@2.8.0
+
 ## 2.7.0
 
 ### Minor Changes
