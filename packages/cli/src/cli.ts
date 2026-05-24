@@ -103,6 +103,13 @@ if (sub === "harness") {
   process.exit(0);
 }
 
+// Handle upgrade subcommand
+if (sub === "upgrade") {
+  const { upgradeCmd } = await import("./commands/upgrade.js");
+  await run(upgradeCmd, args.slice(1));
+  process.exit(0);
+}
+
 // Handle dashboard subcommand
 if (sub === "dashboard") {
   await runAutopilot();

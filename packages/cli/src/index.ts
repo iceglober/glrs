@@ -23,6 +23,7 @@ SUBCOMMANDS
   autopilot  Run the autopilot orchestrator (scope → plan → execute)
   loop       Run the Ralph loop with a raw prompt
   dashboard  Live TUI dashboard for all running autopilot sessions
+  upgrade    Upgrade glrs to the latest published version
 
 Run 'glrs <subcommand> --help' for per-command help.
 

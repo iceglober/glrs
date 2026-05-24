@@ -61,6 +61,8 @@ For substantial work, delegate to `@plan` via the task tool. Pass:
 
 Delegate to `@build` via the task tool. Pass the absolute plan path.
 
+**Default: parallel dispatch.** When the plan has multiple phases or items with disjoint file sets, dispatch multiple `@build` subagents in one message so they run concurrently (see PRIME's Execute supplements for the conflict-graph and grouping rules). Fall back to sequential only when items share files or have ordering dependencies.
+
 ### Structured handoff for strict executors
 
 When `@build` is on the `mid-execute` tier, supplement the delegation prompt with:

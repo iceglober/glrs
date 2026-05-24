@@ -65,6 +65,12 @@ Otherwise, produce a **single-file plan** (the default).
 - `main.md` — top-level plan with `## Phases` checklist + cross-cutting acceptance criteria
 - `phase_1.md` through `phase_N.md` — each with full plan structure (Goal, Acceptance criteria, File-level changes, Out of scope, Open questions)
 
+**Parallelism-friendly phase decomposition.** PRIME dispatches phases to parallel `@build` subagents when their file sets don't overlap. Structure phases so independent work lands in separate phases:
+- Group items by file ownership — items touching the same files go in the same phase
+- Separate concerns into their own phases when they touch disjoint directories (e.g., "backend API" and "frontend components" are separate phases)
+- Prefer 2–4 phases of 2–5 items over 1 mega-phase of 10+ items
+- If all items share files, a single phase is correct — don't force-split for parallelism's sake
+
 Multi-file plan template:
 
 ```markdown
