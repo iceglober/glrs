@@ -156,7 +156,56 @@ For reference, the plan structure (written by `@plan`, not by you):
 
 Before dispatching `@build`, re-read your Execute prompt against the plan file and any subsequent prompts you've drafted. If any instruction contradicts another, fix the contradiction BEFORE dispatching. Contradictions caught pre-dispatch cost a re-read; caught post-dispatch they cost a commit and a reconciliation session.
 
-### How to delegate
+### Parallel build dispatch (default for multi-phase plans)
+
+When the plan has multiple phases (or multiple items with disjoint file sets), dispatch parallel `@build` subagents to maximize throughput. This is the default execution strategy — sequential is the exception.
+
+**Parallelism decision:**
+
+1. Read the plan's phases/items and their `## File-level changes`.
+2. Build a conflict graph: two work units conflict if they touch the same file.
+3. Group non-conflicting work units into parallel lanes (max 3–4 concurrent).
+4. Dispatch all lanes in a SINGLE message via multiple task tool calls.
+
+**When to parallelize:**
+- Multi-phase plans where phases touch disjoint files → one `@build` per phase, all in one message
+- Single-phase plans with 4+ items where items touch disjoint files → split into 2–3 groups, dispatch each group as a separate `@build` with a scoped item list
+- Any plan where you can identify 2+ independent work units with no file overlap
+
+**When to stay sequential:**
+- All items touch the same files (conflict graph is fully connected)
+- Items have explicit ordering dependencies (item B reads what item A writes)
+- Single-item plan or trivial work
+
+**Dispatch format for parallel builds:**
+
+Each parallel `@build` dispatch gets:
+- The plan path
+- An explicit scope restriction: which items/phases this build owns
+- The structured context block (files, verify commands, non-goals) scoped to its items only
+
+Example (3 parallel builds):
+```
+[Task 1 - @build] Execute phase wave_0.yaml (items a1, a2, a3). Plan: /path/to/plan.
+Structured context: [only wave_0 files and verify commands]
+
+[Task 2 - @build] Execute phase wave_1.yaml (items b1, b2). Plan: /path/to/plan.
+Structured context: [only wave_1 files and verify commands]
+
+[Task 3 - @build] Execute phase wave_2.yaml (items c1, c2). Plan: /path/to/plan.
+Structured context: [only wave_2 files and verify commands]
+```
+
+All three dispatched in ONE message so they run concurrently.
+
+**After parallel builds return:**
+
+1. Collect all return payloads. If any returned BLOCKED/NEEDS_CONTEXT, handle that lane first.
+2. Validate that file sets are still disjoint (no unexpected overlap in `git diff --stat`).
+3. If any lane's commits conflict with another: resolve sequentially (rebase the later lane onto the earlier).
+4. Proceed to Assess once all lanes complete successfully.
+
+### How to delegate (single build)
 
 Delegate to `@build` via the task tool. Pass a single `prompt` containing the absolute plan path. Request return with: (a) plan path, (b) commit SHAs, (c) plan mutations, (d) unusual conditions, (e) any guidance deviations. Any failing test/lint/typecheck is a STOP condition, not a successful return.
 
@@ -189,6 +238,10 @@ For trivial work (no plan): PRIME edits the file directly, runs lint/tests, proc
 ## Assess supplements
 
 Do NOT run the full test suite, lint, or typecheck directly in the PRIME — delegate to reviewers. Exception: `tsc_check` on a single file is fine.
+
+### Parallel Assess after parallel Execute
+
+When Execute dispatched multiple `@build` lanes, you can parallelize the first Assess pass: dispatch `@spec-reviewer` for each lane's scope in a single message. Only after all pass spec-review do you dispatch `@code-reviewer` (which reviews the combined diff). This gives early feedback on scope/spec compliance without waiting for a single serial reviewer pass.
 
 ### MECE rubric (five dimensions — every one must pass)
 
