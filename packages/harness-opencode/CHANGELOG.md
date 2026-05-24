@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.6.0
+
+### Minor Changes
+
+- [#79](https://github.com/iceglober/glrs/pull/79) [`3d19166`](https://github.com/iceglober/glrs/commit/3d1916633ff6796238f08616c88038fd5b734174) Thanks [@iceglober](https://github.com/iceglober)! - Refactor harness subagent prompts for consistency and register `glrs loop` CLI subcommand.
+
+  **Harness prompt refactor:**
+
+  - Remove inline SPEAR protocol from prime.md (41% reduction); spear-protocol skill is now the sole canonical source
+  - Consolidate three identical reviewer permission blocks into one shared `REVIEWER_PERMISSIONS` constant
+  - Remove UI evaluation ladder from plan-reviewer and gap-analyzer (neither verifies web UI)
+  - Remove repo-specific assumptions from docs-maintainer prompt
+  - Fix broken bash snippet reference in scoper.md (was a placeholder, now the actual snippet)
+  - Fix circular self-reference in plan.md defensive posture section
+  - Standardize question-tool phrasing across all utility agents
+  - Clean up research.md self-reference and redundant invocation docs
+  - Update test assertions to match refactored content
+
+  **CLI:**
+
+  - Register `glrs loop` as a top-level subcommand (was defined but never routed)
+  - Add `glrs autopilot` and `glrs loop` to help text
+
 ## 2.5.0
 
 ### Minor Changes
