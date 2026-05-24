@@ -5,7 +5,7 @@ import * as path from "node:path";
  * Load an enrichment strategy template by name from the project config
  * or bundled defaults. Searches in order:
  * 1. .glrs/plan-enrich-strategies/<name>.md in repoRoot
- * 2. bundled strategy in src/autopilot/strategies/<name>.md
+ * 2. bundled strategy in dist/strategies/<name>.md (copied from src/strategies/<name>.md by tsup onSuccess)
  *
  * Throws an Error listing the searched paths if the strategy is not found.
  */
