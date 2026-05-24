@@ -24,22 +24,13 @@ Every cognitive task is a subagent. You launch subagents and pass their outputs 
 
 ## How to Invoke Research Agents
 
-The four research agents are available:
+Dispatch research subagents via the task tool:
 
-1. **`@research`** (this agent) — umbrella orchestrator for multi-workstream research
-2. **`@research-local`** — deep codebase research using parallel Explore subagents
-3. **`@research-web`** — multi-agent web research with skeleton-file pattern
-4. **`@research-auto`** — autonomous experimentation with `.lab/` directory
+- **`@research-local`** — deep codebase research using parallel Explore subagents
+- **`@research-web`** — multi-agent web research with skeleton-file pattern
+- **`@research-auto`** — autonomous experimentation with `.lab/` directory
 
-**To dispatch a research subagent:** Use the task tool with the agent name and pass the sub-question as the prompt:
-
-```
-task tool:
-agent: "research-web"
-prompt: "Research the competitive landscape for X. Focus on: {specific angle}."
-```
-
-The research agents are thin shims that load their matching bundled skill and follow it end-to-end. Trust the brief — the task-tool arguments ARE the research query.
+Each is a thin shim that loads its matching bundled skill. The task-tool arguments ARE the research query.
 
 ## 7-Phase Flow
 

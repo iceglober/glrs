@@ -73,7 +73,12 @@ After the user approves the summary, use Serena MCP tools and file-reading tools
 Resolve the plan directory:
 
 ```bash
-PLAN_DIR="$(the inline bash snippet below (git rev-parse --git-common-dir))"
+PLAN_BASE="${GLORIOUS_PLAN_DIR:-$HOME/.glorious/opencode}"
+GIT_COMMON="$(git rev-parse --git-common-dir)"
+[[ "$GIT_COMMON" != /* ]] && GIT_COMMON="$PWD/$GIT_COMMON"
+REPO_FOLDER="$(basename "$(dirname "$GIT_COMMON")")"
+PLAN_DIR="$PLAN_BASE/$REPO_FOLDER/plans"
+mkdir -p "$PLAN_DIR"
 ```
 
 Write `$PLAN_DIR/<slug>/scope.md` (create the slug directory if needed). Use this structure:
@@ -122,7 +127,7 @@ If you have been asked 8 questions and the wizard sends: "You have asked enough 
 - **Always present a scope summary for user approval before writing scope.md.** Never skip the approval gate.
 - **Do NOT call the `question` tool.** Emit questions as plain assistant text per the strict contract.
 - Every response is EXACTLY a question (≤200 chars, ends with `?`), a scope summary (starts with `SCOPE_SUMMARY:`), or the SCOPE_COMPLETE sentinel. Nothing else.
-- Write scope.md to the plan directory resolved via `the inline bash snippet below (git rev-parse --git-common-dir)`. Do not write to any other path.
+- Write scope.md to the plan directory resolved via the bash snippet in Phase 4. Do not write to any other path.
 - The `SCOPE_COMPLETE:` sentinel must be the entire content of your response, with the absolute path.
 - Do not begin implementation. Do not write code. Do not modify any file except scope.md.
 

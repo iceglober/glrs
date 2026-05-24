@@ -98,14 +98,6 @@ Before making changes:
    - Ensure logical organization
    - Confirm no broken references
 
-## Special Considerations for This Repo
-
-- **Monorepo Structure**: Organize docs by layer (apps, packages, infra) when relevant
-- **TypeScript Focus**: Include type examples and patterns
-- **Functional Programming**: Emphasize FP patterns per coding standards
-- **HIPAA/SOC2**: Note security-relevant patterns when applicable
-- **Turborepo**: Document workspace-specific patterns
-
 ## Output Format
 
 For each documentation update:

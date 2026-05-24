@@ -458,52 +458,10 @@ const BUILD_PERMISSIONS = {
 // actually reach AgentConfig — the flat YAML parser silently dropped
 // the nested `permission:` maps, and `agentFromPrompt` never read them.
 
-// spec-reviewer and code-reviewer have identical permission shapes to assessor —
-// both are read-only adversarial reviewers that need bash access for git log
-// scope-creep verification and running lint/test/typecheck.
-const SPEC_REVIEWER_PERMISSIONS = {
-  edit: "deny" as const,
-  bash: {
-    "*": "allow",
-    ...CORE_BASH_ALLOW_LIST,
-    ...CORE_DESTRUCTIVE_BASH_DENIES,
-  },
-  webfetch: "deny" as const,
-  ast_grep: "allow",
-  tsc_check: "allow",
-  eslint_check: "allow",
-  todo_scan: "allow",
-  comment_check: "allow",
-  question: "allow",
-  serena: "allow",
-  memory: "deny",
-  git: "allow",
-  playwright: "allow",
-  linear: "deny",
-};
-
-const CODE_REVIEWER_PERMISSIONS = {
-  edit: "deny" as const,
-  bash: {
-    "*": "allow",
-    ...CORE_BASH_ALLOW_LIST,
-    ...CORE_DESTRUCTIVE_BASH_DENIES,
-  },
-  webfetch: "deny" as const,
-  ast_grep: "allow",
-  tsc_check: "allow",
-  eslint_check: "allow",
-  todo_scan: "allow",
-  comment_check: "allow",
-  question: "allow",
-  serena: "allow",
-  memory: "deny",
-  git: "allow",
-  playwright: "allow",
-  linear: "deny",
-};
-
-const CODE_REVIEWER_THOROUGH_PERMISSIONS = {
+// All three reviewer agents (spec-reviewer, code-reviewer, code-reviewer-thorough)
+// share identical permissions: read-only adversarial reviewers that need bash for
+// git log scope-creep verification and running lint/test/typecheck.
+const REVIEWER_PERMISSIONS = {
   edit: "deny" as const,
   bash: {
     "*": "allow",
@@ -799,13 +757,13 @@ export function createAgents(): Record<string, AgentConfig> {
     // via overrides (see permission blocks above). docs-maintainer has no
     // frontmatter permission declaration and keeps that behavior.
     "spec-reviewer": agentFromPrompt(specReviewerPrompt, {
-      permission: SPEC_REVIEWER_PERMISSIONS as AgentConfig["permission"],
+      permission: REVIEWER_PERMISSIONS as AgentConfig["permission"],
     }),
     "code-reviewer": agentFromPrompt(codeReviewerPrompt, {
-      permission: CODE_REVIEWER_PERMISSIONS as AgentConfig["permission"],
+      permission: REVIEWER_PERMISSIONS as AgentConfig["permission"],
     }),
     "code-reviewer-thorough": agentFromPrompt(codeReviewerThoroughPrompt, {
-      permission: CODE_REVIEWER_THOROUGH_PERMISSIONS as AgentConfig["permission"],
+      permission: REVIEWER_PERMISSIONS as AgentConfig["permission"],
     }),
     "plan-reviewer": agentFromPrompt(planReviewerPrompt, {
       permission: PLAN_REVIEWER_PERMISSIONS as AgentConfig["permission"],
