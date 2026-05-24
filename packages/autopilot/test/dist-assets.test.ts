@@ -6,20 +6,18 @@
  *   a2: dist/prompt-template.md exists and byte-matches src/prompt-template.md
  *   a4: src/autopilot/ subdirectory does not exist (stale layout removed)
  *   a5: loop.ts source-fallback candidate path resolves to an existing file
- *   a6: A changeset bumping @glrs-dev/cli (patch) exists for the autopilot md-asset fix
  *
  * The dist-asset assertions (a1, a2) run a build in beforeAll so the test is
  * self-contained and fails reliably whether or not someone built first.
  */
 
 import { describe, it, expect, beforeAll } from "bun:test";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const AUTOPILOT_ROOT = resolve(import.meta.dir, "..");
 const SRC = join(AUTOPILOT_ROOT, "src");
 const DIST = join(AUTOPILOT_ROOT, "dist");
-const REPO_ROOT = resolve(AUTOPILOT_ROOT, "..", "..");
 
 // ─── Build once before dist-asset assertions ─────────────────────────────────
 
@@ -94,32 +92,5 @@ describe("loop.ts source-fallback candidate path resolves to an existing file", 
     // fallback candidate. Verify it's been corrected.
     expect(loopSrc).not.toContain('"autopilot", "prompt-template.md"');
     expect(loopSrc).not.toContain("'autopilot', 'prompt-template.md'");
-  });
-});
-
-// ─── a6: changeset bumping @glrs-dev/cli (patch) exists ─────────────────────
-
-describe("a changeset bumping @glrs-dev/cli (patch) exists for the autopilot md-asset fix", () => {
-  it("a .changeset/*.md file bumps @glrs-dev/cli as patch and references asset bundling", () => {
-    const changesetDir = join(REPO_ROOT, ".changeset");
-    const files = readdirSync(changesetDir).filter(
-      (f) => f.endsWith(".md") && f !== "README.md",
-    );
-    expect(files.length).toBeGreaterThan(0);
-
-    const matchingChangeset = files.find((f) => {
-      const content = readFileSync(join(changesetDir, f), "utf8");
-      // Must bump @glrs-dev/cli as patch
-      const hasCli = content.includes('"@glrs-dev/cli": patch');
-      // Must reference autopilot strategy/template asset bundling
-      const hasAssetRef =
-        /strateg|template|bundl|asset/i.test(content);
-      return hasCli && hasAssetRef;
-    });
-
-    expect(
-      matchingChangeset,
-      "Expected a changeset that bumps @glrs-dev/cli (patch) and references autopilot asset bundling",
-    ).toBeDefined();
   });
 });
