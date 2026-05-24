@@ -1,5 +1,14 @@
 # @glrs-dev/cli
 
+## 2.9.1
+
+### Patch Changes
+
+- [#87](https://github.com/iceglober/glrs/pull/87) [`bf6bfe4`](https://github.com/iceglober/glrs/commit/bf6bfe49b631fa86711d7d6259c6826d574406c4) Thanks [@iceglober](https://github.com/iceglober)! - Fix `glrs autopilot --plan …` failing with `Unknown enrichment strategy "default"` on clean installs. The autopilot package's tsup build now correctly bundles `strategies/default.md` and `prompt-template.md` into `dist/`, so the vendored CLI artifact ships with the runtime markdown assets it needs.
+
+- Updated dependencies []:
+  - @glrs-dev/harness-plugin-opencode@2.9.1
+
 ## 2.9.0
 
 ### Minor Changes
