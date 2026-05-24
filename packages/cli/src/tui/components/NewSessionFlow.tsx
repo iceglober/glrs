@@ -100,7 +100,6 @@ export function NewSessionFlow({ manager, onDone, onCancel }: NewSessionFlowProp
             manager.launchSessionWithWorktree({
               repoName: step.repo.name,
               planPath: step.planPath,
-              fast: true,
             });
             onDone();
           } catch (err) {

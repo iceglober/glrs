@@ -17,7 +17,6 @@ export interface SessionStartEvent {
   timestamp: string;
   planPath: string;
   cwd: string;
-  fast: boolean;
   resume: boolean;
   enrichModel?: string;
   executeModel?: string;

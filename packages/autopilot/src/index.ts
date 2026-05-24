@@ -57,7 +57,7 @@ export { resolveModel } from "./model-resolver.js";
 export type { AdapterName } from "./model-resolver.js";
 
 // Plan enrichment
-export { enrichPlanForFastModel, isFreeformFile } from "./plan-enrichment.js";
+export { enrichPlan, enrichPlanForFastModel, isFreeformFile } from "./plan-enrichment.js";
 
 // Spec schema/parser/writer
 export { validateMainSpec, validatePhaseSpec } from "./spec-schema.js";
@@ -78,8 +78,10 @@ export {
   STRUGGLE_THRESHOLD,
   TIMEOUT_MS,
   STALL_MS,
+  STALL_MS_DEFAULT,
   STALL_MS_BY_TIER,
   STATUS_INTERVAL_MS,
+  MAX_ITERATIONS_PER_PHASE,
   MAX_ITERATIONS_PER_PHASE_BY_TIER,
 } from "./config.js";
 

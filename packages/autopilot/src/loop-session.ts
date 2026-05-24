@@ -44,7 +44,7 @@ import {
 import { runHook } from "./hook-runner.js";
 import { validatePlan } from "./plan-validator.js";
 import { resolveModel, type AdapterName } from "./model-resolver.js";
-import { MAX_ITERATIONS_PER_PHASE_BY_TIER, MAX_ITERATIONS_PER_ITEM, STALL_MS_BY_TIER } from "./config.js";
+import { MAX_ITERATIONS_PER_PHASE, MAX_ITERATIONS_PER_ITEM, STALL_MS_DEFAULT } from "./config.js";
 import { resolvePhaseConfig } from "./phase-config.js";
 
 export type { LoopSessionOptions, LoopResult };
@@ -368,14 +368,14 @@ export async function runLoopSession(
       ? resolveModel(executionSpecifier, adapterName ?? "opencode")
       : undefined;
     // Extract stall_timeout from config for this single-file run
-    const singleFileStallMs = (singleFileCfgObj?.stall_timeout as number | undefined) ?? STALL_MS_BY_TIER[(opts.fast ? "autopilot-execute" : "deep")];
+    const singleFileStallMs = (singleFileCfgObj?.stall_timeout as number | undefined) ?? STALL_MS_DEFAULT;
     const singleFileAdapters = (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined;
     const singleFileOcAdapter = singleFileAdapters?.opencode as Record<string, unknown> | undefined;
     const singleFileAgentOverrides = singleFileOcAdapter?.agents as Record<string, Record<string, unknown>> | undefined;
     return _runRalphLoop({
       prompt,
       cwd: opts.cwd,
-      agentName: opts.fast ? "autopilot-fast" : undefined,
+      agentName: "autopilot-fast",
       model: executionModel,
       stallMs: singleFileStallMs,
       config: opts.config,
@@ -396,19 +396,16 @@ export async function runLoopSession(
         pino.destination({ fd: 2, sync: false }),
       ).child({ component: "autopilot.orchestrator" });
 
-  // Resolve the tier so we can pick a per-phase iteration budget
-  // (item 2.7). Resolution order: CLI override > config.max_iterations_per_phase > tier default.
-  const tier: keyof typeof MAX_ITERATIONS_PER_PHASE_BY_TIER = opts.fast
-    ? "autopilot-execute"
-    : "deep";
+  // Resolve per-phase iteration budget (item 2.7).
+  // Resolution order: CLI override > config.max_iterations_per_phase > default (25).
   const cfgObj = opts.config as Record<string, unknown> | undefined;
   const cfgMaxIterPerPhase = cfgObj?.max_iterations_per_phase as number | undefined;
   const maxIterationsPerPhase =
-    opts.maxIterationsPerPhase ?? cfgMaxIterPerPhase ?? MAX_ITERATIONS_PER_PHASE_BY_TIER[tier];
+    opts.maxIterationsPerPhase ?? cfgMaxIterPerPhase ?? MAX_ITERATIONS_PER_PHASE;
   // Extract stall_timeout from config for runRalphLoop calls.
-  // Resolution order: config.stall_timeout > tier default.
+  // Resolution order: config.stall_timeout > default (5 min).
   const cfgStallMs = cfgObj?.stall_timeout as number | undefined;
-  const stallMs = cfgStallMs ?? STALL_MS_BY_TIER[tier];
+  const stallMs = cfgStallMs ?? STALL_MS_DEFAULT;
 
   // Extract hooks configuration (item 3.3)
   const verifyConfig = extractVerifyConfig(opts.config);
@@ -573,7 +570,7 @@ export async function runLoopSession(
   };
 
   /**
-   * Per-item iteration budget for the fast executor (item 4.8).
+   * Per-item iteration budget (item 4.8).
    * Resolution order: config.max_iterations_per_item > default constant.
    * Each item gets a fresh session with this much rope before we move
    * on. The phase's overall budget (`maxIterationsPerPhase`) divided by
@@ -585,11 +582,11 @@ export async function runLoopSession(
   const maxIterationsPerItem = cfgMaxIterPerItem ?? MAX_ITERATIONS_PER_ITEM;
 
   /**
-   * Per-item runner for the fast executor (item 4.8). Iterates the
-   * phase's unchecked items in order, dispatching a fresh _runRalphLoop
-   * session per item with a tightly-scoped prompt. Returns the LAST
-   * item's LoopResult — the caller treats it as the phase result for
-   * cost/iteration accounting (totals are summed inside this helper).
+   * Per-item runner (item 4.8). Iterates the phase's unchecked items
+   * in order, dispatching a fresh _runRalphLoop session per item with a
+   * tightly-scoped prompt. Returns the LAST item's LoopResult — the
+   * caller treats it as the phase result for cost/iteration accounting
+   * (totals are summed inside this helper).
    *
    * If any item fails (non-success exit reason), we stop early and
    * return that result — letting the caller's error path handle it.
@@ -613,6 +610,8 @@ export async function runLoopSession(
     config?: unknown;
     agentOverrides?: Record<string, Record<string, unknown>>;
     verifyConfig?: ReturnType<typeof extractVerifyConfig>;
+    /** When true, use deep agent (agentName: undefined) instead of autopilot-fast. */
+    escalateToDeep?: boolean;
   }): Promise<LoopResult> => {
     const { phaseFile, phasePath, laneId, runCwd, useParallel } = args;
     const phaseContent = args.readFileSync(phasePath);
@@ -642,7 +641,7 @@ export async function runLoopSession(
       return args.runRalphLoop({
         prompt,
         cwd: runCwd,
-        agentName: "autopilot-fast",
+        agentName: args.escalateToDeep ? undefined : "autopilot-fast",
         model: executionModel,
         maxIterations: maxIterationsPerPhase,
         ...(args.stallMs ? { stallMs: args.stallMs } : {}),
@@ -784,7 +783,7 @@ export async function runLoopSession(
       const itemResult = await args.runRalphLoop({
         prompt: itemPrompt,
         cwd: runCwd,
-        agentName: "autopilot-fast",
+        agentName: args.escalateToDeep ? undefined : "autopilot-fast",
         model: executionModel,
         maxIterations: perItemCap,
         ...(args.stallMs ? { stallMs: args.stallMs } : {}),
@@ -831,9 +830,9 @@ export async function runLoopSession(
       }
 
       // Per-item verify gate (after_item strategy, item 3.1).
-      // When verify strategy is "after_item" (fast mode only), run the
-      // item's verify command immediately. On failure, return early so
-      // the phase retry can pick it up again (if verify_retry is enabled).
+      // When verify strategy is "after_item", run the item's verify
+      // command immediately. On failure, return early so the phase retry
+      // can pick it up again (if verify_retry is enabled).
       if (args.verifyConfig?.strategy === "after_item" && item.verify?.trim()) {
         const itemVerifyResult = await _runVerifyCommands([item], runCwd, {
           timeoutMs: args.verifyConfig.timeoutMs,
@@ -902,6 +901,7 @@ export async function runLoopSession(
     laneId: string,
     runCwd: string,
     retryContext?: string,
+    escalateToDeep?: boolean,
   ): Promise<PhaseResult & { phaseLoopResult: LoopResult; phaseComplete: boolean; verifyFailures?: string }> => {
     let verifyFailureSummary: string | undefined;
     const phasePath = useYamlSpec
@@ -945,68 +945,32 @@ export async function runLoopSession(
     const baseOcAdapter = baseAdapters?.opencode as Record<string, unknown> | undefined;
     const phaseAgentOverrides = (phaseOcAdapter?.agents ?? baseOcAdapter?.agents) as Record<string, Record<string, unknown>> | undefined;
 
-    // Per-item execution path (item 4.8). When --fast is set the
-    // resolved tier is `autopilot-execute` (mid-tier executor model).
-    // Strict executors do better with one item at a time: send a
-    // tightly-scoped prompt for each unchecked item, mark its checkbox
-    // when done, move to the next. Deep models stay on the per-phase
-    // path — they handle multi-item phases fine and the per-item
-    // overhead would be wasted spawn cost.
+    // Per-item execution path (item 4.8). Always run items individually:
+    // send a tightly-scoped prompt for each unchecked item, mark its
+    // checkbox when done, move to the next. On escalation (retry exhaustion),
+    // runPhaseInner is called with escalateToDeep=true which uses the deep
+    // agent for a single retry attempt.
     let result: LoopResult;
     const phaseVerifyConfig = extractVerifyConfig(phaseConfig);
-    if (opts.fast) {
-      result = await runItemsForPhase({
-        phaseFile,
-        phasePath,
-        laneId,
-        runCwd,
-        runRalphLoop: _runRalphLoop,
-        readFileSync: _readFileSync,
-        writeFileSync: _writeFileSync,
-        planPath: opts.planPath,
-        useParallel,
-        stallMs,
-        logger: opts.logger,
-        emitter,
-        adapter: opts.adapter,
-        config: opts.config,
-        agentOverrides: phaseAgentOverrides,
-        verifyConfig: phaseVerifyConfig,
-      });
-    } else {
-      const retrySection = retryContext
-        ? `\n\n## Previous attempt failed\nThe previous attempt at this phase failed verification. Here's what went wrong:\n${retryContext}\n\nFix these failures before marking items as complete.\n`
-        : "";
-      const prompt =
-        `You are executing one phase of a multi-file plan. Work through every unchecked item in order. Check each box as you complete it. Commit when the phase is done.\n\n` +
-        `## Overall goal\n${goal}\n\n` +
-        `## Constraints\n${constraints}\n\n` +
-        `## Your phase (${phaseFile})\n${phaseContent}\n` +
-        retrySection +
-        `\nDo not work on items from other phases. Do not ask questions — pick sensible defaults and note decisions in ## Open questions.`;
-
-      const adapterName = opts.adapter?.name as AdapterName | undefined;
-      const cfgObj = opts.config as Record<string, unknown> | undefined;
-      const models = cfgObj?.models as Record<string, unknown> | undefined;
-      const executionSpecifier = models?.execution as string | undefined;
-      const executionModel = executionSpecifier
-        ? resolveModel(executionSpecifier, adapterName ?? "opencode")
-        : undefined;
-      result = await _runRalphLoop({
-        prompt,
-        cwd: runCwd,
-        agentName: undefined,
-        model: executionModel,
-        maxIterations: maxIterationsPerPhase,
-        stallMs,
-        config: opts.config,
-        agentOverrides: phaseAgentOverrides,
-        laneId: useParallel ? laneId : undefined,
-        logger: opts.logger,
-        emitter,
-        adapter: opts.adapter,
-      });
-    }
+    result = await runItemsForPhase({
+      phaseFile,
+      phasePath,
+      laneId,
+      runCwd,
+      runRalphLoop: _runRalphLoop,
+      readFileSync: _readFileSync,
+      writeFileSync: _writeFileSync,
+      planPath: opts.planPath,
+      useParallel,
+      stallMs,
+      logger: opts.logger,
+      emitter,
+      adapter: opts.adapter,
+      config: opts.config,
+      agentOverrides: phaseAgentOverrides,
+      verifyConfig: phaseVerifyConfig,
+      escalateToDeep,
+    });
     totalIterations += result.iterations;
     const costThisPhase = result.cumulativeCostUsd ?? 0;
     totalCostUsd += costThisPhase;
@@ -1032,16 +996,15 @@ export async function runLoopSession(
       : isPhaseComplete(updatedPhaseContent);
 
     // Post-phase test gate (item 4.1). When verify strategy is "skip",
-    // bypass this entirely. When "after_item" in fast mode, verify
-    // already ran per-item. When "after_phase" (default), run each item's
-    // `verify:` command now. Any failure downgrades `phaseComplete` to false
-    // so the checkbox in main.md is NOT marked — the failure surfaces in the
-    // debrief and (for fast-tier soft-failure mode) the next iteration
-    // can pick the phase up again. Items without a `verify:` field are
-    // simply skipped.
+    // bypass this entirely. When "after_item", verify already ran per-item
+    // inside runItemsForPhase. When "after_phase" (default), run each
+    // item's `verify:` command now. Any failure downgrades `phaseComplete`
+    // to false so the checkbox in main.md is NOT marked — the failure
+    // surfaces in the debrief and the next iteration can pick the phase
+    // up again. Items without a `verify:` field are simply skipped.
     const verifyConfig = extractVerifyConfig(opts.config);
     const shouldSkipVerify = verifyConfig.strategy === "skip";
-    const isAfterItemMode = verifyConfig.strategy === "after_item" && opts.fast;
+    const isAfterItemMode = verifyConfig.strategy === "after_item";
 
     if (phaseComplete && !shouldSkipVerify && !isAfterItemMode) {
       const items = useYamlSpec
@@ -1132,14 +1095,14 @@ export async function runLoopSession(
     if (!phaseComplete && !SUCCESS_REASONS.has(result.exitReason)) {
       log.warn({ phase: phaseFile, exitReason: result.exitReason }, "phase failed");
       const rollbackConfig = (cfgObj?.rollback_on_failure as string | undefined) ?? "soft";
-      if (rollbackConfig !== "off" && opts.fast && preHeadSha && preHeadSha !== "HEAD") {
+      if (rollbackConfig !== "off" && preHeadSha && preHeadSha !== "HEAD") {
         const ok = await resetSoft(runCwd, preHeadSha, {
           onWarn: (m) => log.warn(m),
         });
         if (ok) {
           log.info({ ref: preHeadSha.slice(0, 8) }, "soft-reset to pre-phase state");
         }
-      } else if (rollbackConfig === "off" && opts.fast && preHeadSha && preHeadSha !== "HEAD") {
+      } else if (rollbackConfig === "off" && preHeadSha && preHeadSha !== "HEAD") {
         log.info({ ref: preHeadSha.slice(0, 8) }, "rollback disabled by config — keeping phase changes");
       }
       // Emit typed phase:done event (failed)
@@ -1317,7 +1280,7 @@ export async function runLoopSession(
 
       while (attempt < effectiveMaxRetries && !phaseSuccess) {
         attempt++;
-        const isEscalation = attempt === effectiveMaxRetries && attempt > 1 && opts.fast;
+        const isEscalation = attempt === effectiveMaxRetries && attempt > 1;
 
         if (attempt > 1) {
           log.info(
@@ -1334,33 +1297,21 @@ export async function runLoopSession(
           });
         }
 
-        // On escalation, temporarily override opts.fast so runPhaseInner
-        // uses the deep agent (Opus) instead of the fast executor (GLM-5).
-        const originalFast = opts.fast;
-        if (isEscalation) {
-          (opts as any).fast = false;
-        }
-
         // Run pre_phase hook (item 3.3, 4.3) — phase-level hooks override plan-level hooks.
         const effectivePrePhaseHook = phaseHooksConfig.pre_phase ?? hooksConfig.pre_phase;
         if (effectivePrePhaseHook) {
           const hookResult = await runHook(effectivePrePhaseHook, opts.cwd, verifyConfig.timeoutMs);
           if (!hookResult.ok) {
             log.warn({ phase: phaseFile, output: hookResult.output }, "pre_phase hook failed — skipping phase");
-            if (isEscalation) {
-              (opts as any).fast = originalFast;
-            }
             // Skip this phase and move to the next
             phaseSuccess = false;
             continue;
           }
         }
 
-        const r = await runPhaseInner(phaseFile, "lane-1", opts.cwd, lastVerifyFailures);
-
-        if (isEscalation) {
-          (opts as any).fast = originalFast;
-        }
+        // On escalation, pass escalateToDeep so runPhaseInner uses the
+        // deep agent (Opus) instead of autopilot-fast for this attempt.
+        const r = await runPhaseInner(phaseFile, "lane-1", opts.cwd, lastVerifyFailures, isEscalation);
 
         // Capture verify failures for next retry's context
         lastVerifyFailures = r.verifyFailures;
@@ -1593,7 +1544,7 @@ export async function runLoopSession(
       const crossResult = await _runRalphLoop({
         prompt: crossCuttingPrompt,
         cwd: opts.cwd,
-        agentName: opts.fast ? "autopilot-fast" : undefined,
+        agentName: "autopilot-fast",
         model: executionModel,
         stallMs,
         config: opts.config,

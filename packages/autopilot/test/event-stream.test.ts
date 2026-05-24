@@ -13,7 +13,6 @@ function makeSessionStart(planPath = "/plans/foo"): SessionEvent {
     timestamp: ts,
     planPath,
     cwd: "/repo",
-    fast: false,
     resume: false,
   };
 }

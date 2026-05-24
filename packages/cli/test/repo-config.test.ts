@@ -45,7 +45,7 @@ function makeAutopilotActive(dir: string): void {
   fs.mkdirSync(agentDir, { recursive: true });
   fs.writeFileSync(
     path.join(agentDir, "autopilot-events.jsonl"),
-    JSON.stringify({ type: "session:start", timestamp: new Date().toISOString(), planPath: "/plans/main.md", cwd: dir, fast: false, resume: false }) + "\n",
+    JSON.stringify({ type: "session:start", timestamp: new Date().toISOString(), planPath: "/plans/main.md", cwd: dir, resume: false }) + "\n",
   );
 }
 

@@ -9,8 +9,6 @@
 export interface CLIFlags {
   /** Adapter name override (--adapter / -a) */
   adapter?: string;
-  /** Use fast executor model (--fast / -f) */
-  fast?: boolean;
   /** Resume from checkpoint (--resume) */
   resume?: boolean;
   /** Per-phase iteration budget override (--max-iterations-per-phase) */
@@ -56,7 +54,6 @@ function deepClone(obj: unknown): unknown {
  *
  * Maps each CLI flag to its config field equivalent:
  * - `--adapter` → `adapter` (highest precedence)
- * - `--fast` → `models.execution` (resolved by adapter)
  * - `--parallel N` → `execution_order: "parallel"` + `parallel_lanes: N`
  * - `--ship` → `auto_ship: true`
  * - `--resume` → `checkpoint: true` (implicit)
@@ -65,7 +62,6 @@ function deepClone(obj: unknown): unknown {
  * - `--notify URL` → `notify_url: URL`
  *
  * Undefined flags are skipped (no override applied).
- * `--fast` resolves to the active adapter's execution tier.
  *
  * @param config The resolved autopilot configuration
  * @param flags CLI flags to apply
@@ -84,14 +80,6 @@ export function applyCLIOverrides(config: unknown, flags: CLIFlags): unknown {
   // --adapter: highest precedence
   if (flags.adapter !== undefined) {
     result.adapter = flags.adapter;
-  }
-
-  // --fast: set models.execution to the appropriate tier
-  if (flags.fast) {
-    const activeAdapter = (flags.adapter ?? result.adapter) as string | undefined;
-    models.execution = activeAdapter === "claude-code-cli"
-      ? "claude-haiku-4-5-20251001"
-      : "autopilot-execute";
   }
 
   // --parallel N: set both execution_order and parallel_lanes

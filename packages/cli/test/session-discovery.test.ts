@@ -27,7 +27,6 @@ function makeSessionStart(planPath = "/plans/main.md", timestamp?: string) {
     timestamp: timestamp ?? new Date().toISOString(),
     planPath,
     cwd: "/repo",
-    fast: false,
     resume: false,
   };
 }

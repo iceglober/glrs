@@ -180,7 +180,7 @@ export async function runInteractiveAutopilot(
   cwd: string,
   planPath?: string,
   _deps?: InteractiveAutopilotDeps,
-  options?: { fast?: boolean; resume?: boolean; maxIterationsPerPhase?: number; parallel?: number; ship?: boolean; logger?: AutopilotLogger },
+  options?: { resume?: boolean; maxIterationsPerPhase?: number; parallel?: number; ship?: boolean; logger?: AutopilotLogger },
 ): Promise<AutopilotOrchestrationResult> {
   // Resolve plan directory early
   const _getPlanDir = _deps?.getPlanDir ?? getPlanDir;
@@ -241,7 +241,7 @@ export async function runInteractiveAutopilot(
 
         const { runLoopSession } = await import("@glrs-dev/autopilot");
         const _runLoop = _deps?.runLoop ?? runLoopSession;
-        const loopResult = await _runLoop({ planPath: resolvedPath, cwd, fast: options?.fast, resume: options?.resume, maxIterationsPerPhase: options?.maxIterationsPerPhase, parallel: options?.parallel, ship: options?.ship, logger: options?.logger });
+        const loopResult = await _runLoop({ planPath: resolvedPath, cwd, resume: options?.resume, maxIterationsPerPhase: options?.maxIterationsPerPhase, parallel: options?.parallel, ship: options?.ship, logger: options?.logger });
 
         return {
           scopePath: "",
@@ -258,7 +258,7 @@ export async function runInteractiveAutopilot(
 
         const { runLoopSession } = await import("@glrs-dev/autopilot");
         const _runLoop = _deps?.runLoop ?? runLoopSession;
-        const loopResult = await _runLoop({ planPath: resolvedPath, cwd, fast: options?.fast, resume: options?.resume, maxIterationsPerPhase: options?.maxIterationsPerPhase, parallel: options?.parallel, ship: options?.ship, logger: options?.logger });
+        const loopResult = await _runLoop({ planPath: resolvedPath, cwd, resume: options?.resume, maxIterationsPerPhase: options?.maxIterationsPerPhase, parallel: options?.parallel, ship: options?.ship, logger: options?.logger });
 
         return {
           scopePath: "",

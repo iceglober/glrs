@@ -20,7 +20,6 @@ function makeSessionStart(planPath = "/plans/main.md"): SessionEvent {
     timestamp: new Date().toISOString(),
     planPath,
     cwd: "/repo",
-    fast: false,
     resume: false,
   };
 }
@@ -347,7 +346,7 @@ describe("SessionManager", () => {
     fs.writeFileSync(
       filePath,
       [
-        JSON.stringify({ type: "session:start", timestamp: oldTs, planPath: "/plans/foo.md", cwd: "/repo", fast: false, resume: false }),
+        JSON.stringify({ type: "session:start", timestamp: oldTs, planPath: "/plans/foo.md", cwd: "/repo", resume: false }),
         JSON.stringify({ type: "iteration:done", timestamp: oldTs, iteration: 1, durationMs: 1000, madeProgress: true }),
       ].join("\n") + "\n",
     );

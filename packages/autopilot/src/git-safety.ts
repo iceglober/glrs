@@ -3,8 +3,8 @@
  *
  * Used by the multi-phase loop runner (loop-session.ts) to capture
  * HEAD before each phase. If a phase fails (struggle / stall / error)
- * and the user requested it (or running in --fast mode where there's
- * no human to ask), `resetSoft` rolls the worktree back to that SHA,
+ * and the rollback_on_failure config allows it, `resetSoft` rolls
+ * the worktree back to that SHA,
  * preserving any changes in the index so nothing is lost.
  *
  * Safety invariants (per AGENTS.md and Wave 2 plan):

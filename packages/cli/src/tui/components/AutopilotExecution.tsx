@@ -61,7 +61,7 @@ interface ExecutionState {
   // (e.g., enrichment → execution), the cumulative resets to 0. We track
   // the last reported value to detect resets and accumulate correctly.
   _lastReportedCost: number;
-  executionMode: "fast" | "deep" | "unknown";
+  executionMode: "execute" | "unknown";
   // Token counts — accumulated across messages. Per-message tokens grow
   // monotonically then reset on the next message; _lastMsg* tracks the
   // current message's latest value so we can detect the reset.
@@ -389,7 +389,7 @@ export function AutopilotExecution({ emitter }: AutopilotExecutionProps) {
           {statusIcon}
           <Text bold> {name || "autopilot"}</Text>
           {executionMode !== "unknown" && (
-            <Text dimColor> {executionMode === "fast" ? "fast" : "deep"}</Text>
+            <Text dimColor> per-item</Text>
           )}
         </Box>
         <Text>{elapsed}</Text>
@@ -537,7 +537,7 @@ function applyEvent(prev: ExecutionState, event: SessionEvent): ExecutionState {
         ...prev,
         planPath: event.planPath,
         startedAt: Date.now(),
-        executionMode: event.fast ? "fast" : "deep",
+        executionMode: "execute",
         logEntries: logs2,
       };
     }

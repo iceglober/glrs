@@ -40,6 +40,9 @@ export const STALL_MS_BY_TIER = {
 /** Backwards-compatible default (used when no tier is resolved). */
 export const STALL_MS = STALL_MS_BY_TIER.deep;
 
+/** Default stall timeout: 5 minutes. Used for per-item execution. */
+export const STALL_MS_DEFAULT = 5 * 60 * 1000;
+
 /**
  * Phase-level iteration budgets, keyed by model tier (item 2.7).
  * Fallback defaults when config.max_iterations_per_phase is not set.
@@ -52,8 +55,11 @@ export const MAX_ITERATIONS_PER_PHASE_BY_TIER = {
   fast: 10,
 } as const;
 
+/** Default per-phase iteration budget: 25. Used for per-item execution. */
+export const MAX_ITERATIONS_PER_PHASE = 25;
+
 /**
- * Per-item iteration budget for the fast executor (item 4.8).
+ * Per-item iteration budget (item 4.8).
  * Fallback default when config.max_iterations_per_item is not set.
  * Each item gets a fresh session with this much rope before moving to the next item.
  */

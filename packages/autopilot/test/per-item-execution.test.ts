@@ -1,8 +1,7 @@
 /**
- * Tests for the per-item execution path used by the fast executor
- * (item 4.8). Verifies that --fast dispatches one runRalphLoop call
- * per item (in order, with item-scoped prompts) instead of one call
- * per phase.
+ * Tests for the per-item execution path (item 4.8).
+ * Verifies that each item gets its own runRalphLoop call with a
+ * scoped prompt.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -60,7 +59,7 @@ const PHASE_WITH_TWO_ITEMS_DONE = PHASE_WITH_TWO_ITEMS.replace(
 ).replace(/- \[ \] 1\.2/g, "- [x] 1.2");
 
 describe("per-item execution (item 4.8)", () => {
-  it("fast mode dispatches one runRalphLoop call per item", async () => {
+  it("dispatches one runRalphLoop call per item", async () => {
     const fileState: Record<string, string> = {
       "/plans/feat/main.md": MAIN_MD,
       "/plans/feat/phase_1.md": PHASE_WITH_TWO_ITEMS,
@@ -71,7 +70,6 @@ describe("per-item execution (item 4.8)", () => {
     await runLoopSession({
       planPath: "/plans/feat",
       cwd: "/repo",
-      fast: true,
       _deps: {
         isDirectory: () => true,
         readFileSync: (p: string) => fileState[p] ?? "",
@@ -119,50 +117,6 @@ describe("per-item execution (item 4.8)", () => {
     expect(dispatchedPrompts[1]).toContain("src/b.ts");
   });
 
-  it("deep mode (no --fast) keeps the single per-phase prompt", async () => {
-    const fileState: Record<string, string> = {
-      "/plans/feat/main.md": MAIN_MD,
-      "/plans/feat/phase_1.md": PHASE_WITH_TWO_ITEMS,
-    };
-
-    const dispatchedPrompts: string[] = [];
-
-    await runLoopSession({
-      planPath: "/plans/feat",
-      cwd: "/repo",
-      // fast: false — default
-      _deps: {
-        isDirectory: () => true,
-        readFileSync: (p: string) => fileState[p] ?? "",
-        writeFileSync: (p: string, content: string) => {
-          fileState[p] = content;
-        },
-        runRalphLoop: async (opts) => {
-          dispatchedPrompts.push(opts.prompt);
-          fileState["/plans/feat/phase_1.md"] = PHASE_WITH_TWO_ITEMS_DONE;
-          return {
-            exitReason: "sentinel",
-            iterations: 1,
-            message: "phase done",
-          };
-        },
-        runVerifyCommands: async (items) =>
-          items.map((it) => ({
-            itemId: it.id,
-            command: it.verify,
-            passed: true,
-            stdout: "",
-            stderr: "",
-            durationMs: 1,
-          })),
-      },
-    });
-
-    // One phase → one dispatch. Prompt is the per-phase shape.
-    expect(dispatchedPrompts).toHaveLength(1);
-    expect(dispatchedPrompts[0]).toContain("Your phase");
-    expect(dispatchedPrompts[0]).toContain("Work through every unchecked item");
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -229,7 +183,6 @@ phases:
     await runLoopSession({
       planPath: planDir,
       cwd: yamlTmpDir,
-      fast: true,
       _deps: {
         isDirectory: () => true,
         readFileSync: (p: string) => fs.readFileSync(p, "utf-8"),
@@ -284,7 +237,6 @@ phases:
     await runLoopSession({
       planPath: planDir,
       cwd: yamlTmpDir,
-      fast: true,
       _deps: {
         isDirectory: () => true,
         readFileSync: (p: string) => fs.readFileSync(p, "utf-8"),

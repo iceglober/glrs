@@ -1,10 +1,10 @@
 /**
- * Plan enrichment for fast-model execution.
+ * Plan enrichment for execution.
  *
- * When --fast is used, this module reads the markdown plan files and
- * generates `spec/*.yaml` files from them. The spec IS the enriched
- * artifact — one LLM pass per file that reads the markdown + codebase
- * and produces structured YAML with enrichment context included:
+ * This module reads the markdown plan files and generates `spec/*.yaml`
+ * files from them. The spec IS the enriched artifact — one LLM pass per
+ * file that reads the markdown + codebase and produces structured YAML
+ * with enrichment context included:
  *   - mirror: references to similar existing files (pattern-match targets)
  *   - context: key function signatures, 10-20 lines of code for modified files
  *   - conventions: import style, export pattern, test framework, naming
@@ -18,8 +18,8 @@
  *
  * Idempotency (item 4.3): before opening any session, check whether
  * spec/ already exists with all items enriched (100% threshold). If so,
- * skip the entire pass. This saves an Opus call on re-runs of `--fast`
- * against an already-enriched plan.
+ * skip the entire pass. This saves an Opus call on re-runs against an
+ * already-enriched plan.
  */
 
 import * as fs from "node:fs";
@@ -752,7 +752,7 @@ async function runEnrichmentPass(
 }
 
 /**
- * Enrich a plan for fast-model execution by generating spec/*.yaml files.
+ * Enrich a plan for execution by generating spec/*.yaml files.
  *
  * For multi-file plans (directory with main.md), generates a spec YAML file
  * for each markdown plan file in its own session. For single-file plans,
@@ -768,7 +768,7 @@ async function runEnrichmentPass(
  * so retries only pay for failures. Controlled by enrichmentConfig.retry
  * (default true) and enrichmentConfig.max_retries (default 3).
  */
-export async function enrichPlanForFastModel(
+export async function enrichPlan(
   cwd: string,
   planPath: string,
   logger?: AutopilotLogger,
@@ -1031,3 +1031,6 @@ export async function enrichPlanForFastModel(
 
   return resolvedPath;
 }
+
+/** @deprecated Use `enrichPlan` instead. Kept for backward compatibility. */
+export const enrichPlanForFastModel = enrichPlan;

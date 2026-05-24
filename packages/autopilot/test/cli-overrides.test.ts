@@ -95,34 +95,6 @@ describe("applyCLIOverrides", () => {
     expect(result.adapter).toBe("claude-code-cli");
   });
 
-  it("--fast with OpenCode adapter sets models.execution to autopilot-execute", () => {
-    const result = applyCLIOverrides(baseConfig, {
-      fast: true,
-    }) as Record<string, unknown>;
-    const models = result.models as Record<string, unknown>;
-    expect(models.execution).toBe("autopilot-execute");
-  });
-
-  it("--fast with Claude Code CLI adapter sets models.execution to claude-haiku-4-5-20251001", () => {
-    const ccliConfig = {
-      ...baseConfig,
-      adapter: "claude-code-cli",
-    };
-    const result = applyCLIOverrides(ccliConfig, {
-      fast: true,
-    }) as Record<string, unknown>;
-    const models = result.models as Record<string, unknown>;
-    expect(models.execution).toBe("claude-haiku-4-5-20251001");
-  });
-
-  it("--fast with --adapter flag uses the flag's adapter for model resolution", () => {
-    const result = applyCLIOverrides(baseConfig, {
-      adapter: "claude-code-cli",
-      fast: true,
-    }) as Record<string, unknown>;
-    const models = result.models as Record<string, unknown>;
-    expect(models.execution).toBe("claude-haiku-4-5-20251001");
-  });
 
   it("--parallel N sets execution_order and parallel_lanes", () => {
     const result = applyCLIOverrides(baseConfig, {
@@ -171,7 +143,6 @@ describe("applyCLIOverrides", () => {
     const cloned = deepClone(baseConfig);
     const flags: CLIFlags = {
       adapter: "claude-code-cli",
-      fast: true,
       parallel: 2,
       ship: true,
       notify: "https://example.com/webhook",
@@ -183,7 +154,6 @@ describe("applyCLIOverrides", () => {
   it("applies multiple flags correctly", () => {
     const result = applyCLIOverrides(baseConfig, {
       adapter: "claude-code-cli",
-      fast: true,
       parallel: 3,
       ship: true,
       maxIterationsPerPhase: 5,
@@ -192,33 +162,12 @@ describe("applyCLIOverrides", () => {
     }) as Record<string, unknown>;
 
     expect(result.adapter).toBe("claude-code-cli");
-    const models = result.models as Record<string, unknown>;
-    expect(models.execution).toBe("claude-haiku-4-5-20251001");
     expect(result.execution_order).toBe("parallel");
     expect(result.parallel_lanes).toBe(3);
     expect(result.auto_ship).toBe(true);
     expect(result.max_iterations_per_phase).toBe(5);
     expect(result.stall_timeout).toBe(300000);
     expect(result.notify_url).toBe("https://example.com/webhook");
-  });
-
-  it("--adapter has highest precedence for --fast model resolution", () => {
-    const result = applyCLIOverrides(baseConfig, {
-      adapter: "claude-code-cli",
-      fast: true,
-    }) as Record<string, unknown>;
-    const models = result.models as Record<string, unknown>;
-    // Should use claude-code-cli's model because --adapter takes precedence
-    expect(models.execution).toBe("claude-haiku-4-5-20251001");
-  });
-
-  it("handles config with missing models block", () => {
-    const configWithoutModels = { adapter: "opencode" };
-    const result = applyCLIOverrides(configWithoutModels, {
-      fast: true,
-    }) as Record<string, unknown>;
-    const models = result.models as Record<string, unknown>;
-    expect(models.execution).toBe("autopilot-execute");
   });
 
   it("preserves config fields not affected by flags", () => {
@@ -229,7 +178,7 @@ describe("applyCLIOverrides", () => {
       custom_field: "custom_value",
     };
     const result = applyCLIOverrides(configWithExtra, {
-      fast: true,
+      parallel: 2,
     }) as Record<string, unknown>;
     expect((result as Record<string, unknown>).verify).toBe("after_phase");
     expect((result as Record<string, unknown>).verify_timeout).toBe(120000);
