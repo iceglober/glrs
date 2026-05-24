@@ -3,93 +3,14 @@
  *
  * Provides a single `glrs` binary with subcommands:
  *
- *   glrs oc <args>       → harness-opencode (vendored)
- *   glrs wt <args>       → worktree management commands
+ *   glrs harness <cmd>  → harness plugin management (install, configure, etc.)
+ *   glrs wt <args>      → worktree management commands
+ *   glrs autopilot      → three-phase orchestrator (scope → plan → execute)
+ *   glrs loop           → raw Ralph loop runner
+ *   glrs dashboard      → live TUI for autopilot sessions
  *
- * The harness-opencode code is VENDORED into this package's
- * dist/vendor/harness-opencode/ at build time — users install one
- * package (@glrs-dev/cli) and get both surfaces.
- *
- * Runtime: Bun. The CLI spawns harness-opencode with `bun` explicitly rather
- * than `process.execPath`, because harness-opencode uses bun-native APIs
- * (`bun:sqlite`) that Node cannot load. If `bun` isn't on PATH, dispatch
- * fails with a friendly install hint.
+ * Runtime: Bun >= 1.2.0.
  */
-
-import { readFileSync } from "node:fs";
-import { dirname, resolve as pathResolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-export type Subcommand = "oc" | "wt";
-
-export interface ResolvedBin {
-  /** The executable to invoke. For Bun-based bins, this is always "bun". */
-  executable: string;
-  /** Arguments to prepend before user-supplied argv (e.g. the JS file path). */
-  preArgs: string[];
-}
-
-/**
- * Locate the vendored harness-opencode bin.
- *
- * At build time, packages/cli/scripts/vendor-harness.ts copies
- * packages/harness-opencode/dist/ into
- * packages/cli/dist/vendor/harness-opencode/dist/ and drops a stripped
- * package.json alongside. Dev mode (source not built yet) falls back to
- * resolving from the workspace.
- */
-function resolveVendoredHarness(binKey: string): ResolvedBin {
-  // This file lives at dist/index.js or dist/chunk-*.js at runtime.
-  // Go up one level to find dist/, then into vendor/harness-opencode/.
-  const here = dirname(fileURLToPath(import.meta.url));
-  const vendorPkgJson = pathResolve(here, "vendor", "harness-opencode", "package.json");
-
-  let pkgJsonPath: string;
-  try {
-    readFileSync(vendorPkgJson, "utf8");
-    pkgJsonPath = vendorPkgJson;
-  } catch {
-    throw new Error(
-      `[@glrs-dev/cli] Vendored harness-opencode not found at ${vendorPkgJson}.\n` +
-        `  This means the cli package was built incorrectly or the tarball is incomplete.\n` +
-        `  Report at https://github.com/iceglober/glrs/issues.`,
-    );
-  }
-
-  const pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as {
-    bin?: string | Record<string, string>;
-  };
-  const bin = pkgJson.bin;
-  let relative: string;
-  if (typeof bin === "string") {
-    relative = bin;
-  } else if (bin && typeof bin === "object" && typeof bin[binKey] === "string") {
-    relative = bin[binKey];
-  } else {
-    throw new Error(
-      `[@glrs-dev/cli] Vendored harness-opencode has no bin entry for '${binKey}'. ` +
-        `This shouldn't happen — report at https://github.com/iceglober/glrs/issues.`,
-    );
-  }
-  const binPath = pathResolve(dirname(pkgJsonPath), relative);
-  return { executable: "bun", preArgs: [binPath] };
-}
-
-export function resolveSubcommand(sub: Subcommand): ResolvedBin {
-  switch (sub) {
-    case "oc":
-      return resolveVendoredHarness("harness-opencode");
-    case "wt":
-      // Worktree commands are handled natively, not dispatched
-      throw new Error("Worktree commands should be handled natively");
-    default: {
-      const exhaustive: never = sub;
-      throw new Error(`Unknown subcommand: ${exhaustive as string}`);
-    }
-  }
-}
-
-export const SUBCOMMANDS: Subcommand[] = ["oc", "wt"];
 
 export const HELP_TEXT = `glrs — unified CLI for the @glrs-dev ecosystem
 
@@ -97,7 +18,7 @@ USAGE
   glrs <subcommand> [args...]
 
 SUBCOMMANDS
-  oc         OpenCode agent harness (install, pilot, etc.)
+  harness    Harness plugin management (install, configure, uninstall, doctor)
   wt         Worktree management (create, list, switch, delete, cleanup)
   autopilot  Run the autopilot orchestrator (scope → plan → execute)
   loop       Run the Ralph loop with a raw prompt
@@ -106,10 +27,10 @@ SUBCOMMANDS
 Run 'glrs <subcommand> --help' for per-command help.
 
 EXAMPLES
-  glrs oc install
+  glrs harness install
+  glrs harness configure
   glrs wt new
   glrs wt list
-  glrs wt switch
   glrs autopilot --plan docs/plans/my-plan/
   glrs loop "implement the auth middleware"
   glrs dashboard
@@ -121,7 +42,6 @@ DOCS  https://glrs.dev
 ISSUES https://github.com/iceglober/glrs/issues
 `;
 
-// Worktree help text
 export const WORKTREE_HELP_TEXT = `glrs wt — worktree management
 
 USAGE

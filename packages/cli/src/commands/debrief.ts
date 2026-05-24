@@ -9,8 +9,8 @@
  * result is the source of truth for exit code.
  */
 
-import type { LoopResult, AgentAdapter, AgentHandle } from "@glrs-dev/autopilot";
-import { resolveModel, type AdapterName } from "@glrs-dev/autopilot/src/model-resolver.js";
+import type { LoopResult, AgentAdapter, AgentHandle, AdapterName } from "@glrs-dev/autopilot";
+import { resolveModel } from "@glrs-dev/autopilot";
 
 // ---------------------------------------------------------------------------
 // Types

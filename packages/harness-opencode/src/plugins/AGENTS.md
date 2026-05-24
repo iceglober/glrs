@@ -12,7 +12,7 @@ OpenCode's plugin model allows multiple plugin objects. We ship one user-facing 
 | `telemetry.ts` | `tool.execute.before`, `tool.execute.after`, `event` | Opt-in anonymous usage telemetry. No-op when `DISABLED` (set by `src/telemetry.ts` from env). |
 | `tool-hooks.ts` | `tool.execute.after` | Post-edit verification loop: after a TS/JS edit, runs `tsc --noEmit` and surfaces NEW errors only. Also caps output for `eslint_check`/`tsc_check`/`comment_check`/`todo_scan`. |
 
-> **Note:** The autopilot idle-nudge loop (`autopilot.ts`) was removed. Autopilot is now a CLI driver at `src/autopilot/` — see `src/autopilot/loop.ts` for the Ralph loop engine and `src/autopilot/cli.ts` for the `glrs oc autopilot` subcommand.
+> **Note:** The autopilot idle-nudge loop (`autopilot.ts`) was removed. Autopilot is now a CLI driver at `src/autopilot/` — see `src/autopilot/loop.ts` for the Ralph loop engine and `src/autopilot/cli.ts` for the `glrs autopilot` subcommand.
 
 ## Convention
 

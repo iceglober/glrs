@@ -1,5 +1,5 @@
 /**
- * `glrs oc loop` — Ralph loop CLI driver.
+ * `glrs loop` — Ralph loop CLI driver.
  *
  * Starts an OpenCode server, creates a session with PRIME, sends the
  * user's prompt each iteration, and exits when the agent emits

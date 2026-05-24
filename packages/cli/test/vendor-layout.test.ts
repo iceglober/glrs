@@ -2,9 +2,10 @@
  * vendor-layout.test.ts — assert that `bun run build` in packages/cli
  * produces the expected vendor layout:
  *
- *   dist/node_modules/@glrs-dev/autopilot/   (a1)
- *   dist/node_modules/@glrs-dev/adapter-opencode/  (a2)
- *   dist/vendor/harness-opencode/            (a3)
+ *   dist/node_modules/@glrs-dev/autopilot/              (a1)
+ *   dist/node_modules/@glrs-dev/adapter-opencode/       (a2)
+ *   dist/node_modules/@glrs-dev/harness-plugin-opencode/ (a3)
+ *   dist/node_modules/@glrs-dev/adapter-claude-code/    (a4)
  *
  * Requires the build to have run. beforeAll invokes the build and bails
  * if it fails.
@@ -109,24 +110,50 @@ describe("vendors @glrs-dev/adapter-opencode under dist/node_modules", () => {
   });
 });
 
-// ─── a3: harness-opencode (existing layout must be preserved) ────────────────
+// ─── a3: @glrs-dev/harness-plugin-opencode ──────────────────────────────────
 
-describe("preserves existing harness-opencode vendor layout", () => {
-  const VENDOR_DIR = join(DIST, "vendor", "harness-opencode");
+describe("vendors @glrs-dev/harness-plugin-opencode under dist/node_modules", () => {
+  const VENDOR_DIR = join(DIST, "node_modules", "@glrs-dev", "harness-plugin-opencode");
 
-  it("directory exists at dist/vendor/harness-opencode/", () => {
+  it("directory exists", () => {
     expect(existsSync(VENDOR_DIR)).toBe(true);
   });
 
-  it("package.json exists with name and bin fields", () => {
+  it("package.json has correct name and exports", () => {
     const pkgPath = join(VENDOR_DIR, "package.json");
     expect(existsSync(pkgPath)).toBe(true);
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as Record<string, unknown>;
     expect(pkg.name).toBe("@glrs-dev/harness-plugin-opencode");
-    expect(pkg.bin).toBeDefined();
+    expect(pkg.exports).toBeDefined();
   });
 
-  it("dist/ subtree exists inside vendor dir", () => {
-    expect(existsSync(join(VENDOR_DIR, "dist"))).toBe(true);
+  it("dist/index.js exists", () => {
+    expect(existsSync(join(VENDOR_DIR, "dist", "index.js"))).toBe(true);
+  });
+
+  it("dist/cli-exports.js exists", () => {
+    expect(existsSync(join(VENDOR_DIR, "dist", "cli-exports.js"))).toBe(true);
+  });
+});
+
+// ─── a4: @glrs-dev/adapter-claude-code ──────────────────────────────────────
+
+describe("vendors @glrs-dev/adapter-claude-code under dist/node_modules", () => {
+  const VENDOR_DIR = join(DIST, "node_modules", "@glrs-dev", "adapter-claude-code");
+
+  it("directory exists", () => {
+    expect(existsSync(VENDOR_DIR)).toBe(true);
+  });
+
+  it("package.json has correct name and main", () => {
+    const pkgPath = join(VENDOR_DIR, "package.json");
+    expect(existsSync(pkgPath)).toBe(true);
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as Record<string, unknown>;
+    expect(pkg.name).toBe("@glrs-dev/adapter-claude-code");
+    expect(pkg.main).toBe("dist/index.js");
+  });
+
+  it("dist/index.js exists", () => {
+    expect(existsSync(join(VENDOR_DIR, "dist", "index.js"))).toBe(true);
   });
 });

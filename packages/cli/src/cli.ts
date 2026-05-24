@@ -2,16 +2,14 @@
 /**
  * glrs — unified CLI entry point.
  *
- * Parses the first positional arg as the subcommand, dispatches to the
- * underlying tool's binary via the resolver in ./index.ts.
- *
+ * Parses the first positional arg as the subcommand and dispatches.
  * Auto-updates on every invocation (rate-limited to once per hour).
  */
 
 import { spawn } from "node:child_process";
 import * as path from "node:path";
 import { subcommands, run } from "cmd-ts";
-import { HELP_TEXT, SUBCOMMANDS, resolveSubcommand, WORKTREE_HELP_TEXT } from "./index.js";
+import { HELP_TEXT, WORKTREE_HELP_TEXT } from "./index.js";
 import { create } from "./commands/create.js";
 import { list } from "./commands/list.js";
 import { del } from "./commands/delete.js";
@@ -22,23 +20,18 @@ import { autoUpdate } from "./lib/auto-update.js";
 import { runAutopilot } from "./commands/autopilot-tui.js";
 
 // ── Auto-update ─────────────────────────────────────────────────────────────
-// Check for updates before doing anything else. If an update is installed,
-// re-exec the same command with the new binary.
 const updated = await autoUpdate();
 if (updated) {
-  // Re-exec: the new version is now installed globally.
-  // Spawn the same command again — it will pick up the new binary.
   const child = spawn("glrs", process.argv.slice(2), {
     stdio: "inherit",
-    env: { ...process.env, GLRS_UPDATING: "1" }, // prevent infinite loop
+    env: { ...process.env, GLRS_UPDATING: "1" },
   });
   child.on("exit", (code, signal) => {
     if (signal) { process.kill(process.pid, signal); return; }
     process.exit(code ?? 0);
   });
   child.on("error", () => process.exit(1));
-  // Don't continue — wait for the re-exec'd child
-  await new Promise(() => {}); // hang until child exits
+  await new Promise(() => {});
 }
 
 const args = process.argv.slice(2);
@@ -50,7 +43,6 @@ if (args.length === 0 || args[0] === "--help" || args[0] === "-h" || args[0] ===
 }
 
 if (args[0] === "--version" || args[0] === "-V") {
-  // Use Bun.file for reading package.json
   const __dirname = path.dirname(import.meta.url.replace("file://", ""));
   const pkgPath = path.join(__dirname, "..", "package.json");
   // @ts-ignore - Bun types
@@ -64,10 +56,8 @@ const sub = args[0];
 // Handle worktree subcommands natively
 if (sub === "wt" || sub === "worktree") {
   const wtArgs = args.slice(1);
-  
-  // Bare `glrs wt` → interactive worktree picker
+
   if (wtArgs.length === 0 || wtArgs[0] === "--help" || wtArgs[0] === "-h") {
-    // Check if this is a bare `glrs wt` with no subcommand - go interactive
     if (wtArgs.length === 0 && process.stdin.isTTY) {
       await go();
       process.exit(0);
@@ -76,7 +66,6 @@ if (sub === "wt" || sub === "worktree") {
     process.exit(0);
   }
 
-  // Define worktree subcommands using cmd-ts
   const wt = subcommands({
     name: "wt",
     description: "Worktree management — create, list, and clean up git worktrees",
@@ -89,75 +78,50 @@ if (sub === "wt" || sub === "worktree") {
     },
   });
 
-  // Run the worktree command — pass subcommand args directly to cmd-ts
-  // (binary() adds an argv[0] stripping layer that breaks dispatch)
   await run(wt, wtArgs);
   process.exit(0);
 }
 
-// Handle loop subcommand — delegate to cmd-ts for full flag parsing
+// Handle loop subcommand
 if (sub === "loop") {
   const { loopCmd } = await import("./commands/loop.js");
   await run(loopCmd, args.slice(1));
   process.exit(0);
 }
 
-// Handle autopilot subcommand — delegate to cmd-ts for full flag parsing
+// Handle autopilot subcommand
 if (sub === "autopilot") {
   const { autopilotInteractiveCmd } = await import("./commands/autopilot.js");
   await run(autopilotInteractiveCmd, args.slice(1));
   process.exit(0);
 }
 
-// Handle dashboard subcommand (TUI picker, no flags)
+// Handle harness subcommand
+if (sub === "harness") {
+  const { harnessCmd } = await import("./commands/harness.js");
+  await run(harnessCmd, args.slice(1));
+  process.exit(0);
+}
+
+// Handle dashboard subcommand
 if (sub === "dashboard") {
   await runAutopilot();
   process.exit(0);
 }
 
-// Dispatch to other subcommands (oc)
-if (!SUBCOMMANDS.includes(sub as "oc" | "wt")) {
-  process.stderr.write(
-    `[glrs] Unknown subcommand '${sub}'. Run 'glrs --help' for usage.\n`,
-  );
-  process.exit(2);
-}
-
+// Legacy alias: `glrs oc` → `glrs harness`
 if (sub === "oc") {
-  let resolved;
-  try {
-    resolved = resolveSubcommand(sub as "oc");
-  } catch (err) {
-    process.stderr.write(`${(err as Error).message}\n`);
-    process.exit(1);
-  }
-
-  const forward = args.slice(1);
-  const spawnArgs = [...resolved.preArgs, ...forward];
-
-  // Set GLRS_CLI_DISPATCHED=1 so the spawned bin skips its standalone-redirect guard.
-  const spawnEnv = { ...process.env, GLRS_CLI_DISPATCHED: "1" };
-
-  const child = spawn(resolved.executable, spawnArgs, {
-    stdio: "inherit",
-    windowsHide: false,
-    env: spawnEnv,
-  });
-
-  child.on("error", (err) => {
-    process.stderr.write(`[glrs] Failed to spawn '${sub}': ${err.message}\n`);
-    process.exit(127);
-  });
-
-  child.on("exit", (code, signal) => {
-    if (signal) {
-      process.kill(process.pid, signal);
-      return;
-    }
-    process.exit(code ?? 0);
-  });
-} else {
-  // Should not reach here
-  process.stderr.write(`[glrs] Internal error: unhandled subcommand '${sub}'\n`);
-  process.exit(1);
+  process.stderr.write(
+    `[glrs] 'glrs oc' is deprecated. Use 'glrs harness' instead.\n` +
+    `[glrs] Redirecting...\n\n`,
+  );
+  const { harnessCmd } = await import("./commands/harness.js");
+  await run(harnessCmd, args.slice(1));
+  process.exit(0);
 }
+
+// Unknown subcommand
+process.stderr.write(
+  `[glrs] Unknown subcommand '${sub}'. Run 'glrs --help' for usage.\n`,
+);
+process.exit(2);

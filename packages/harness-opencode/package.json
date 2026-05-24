@@ -1,14 +1,20 @@
 {
   "name": "@glrs-dev/harness-plugin-opencode",
   "version": "2.6.0",
-  "description": "Opinionated OpenCode agent harness — PRIME, plan, build, QA, skills, MCP wiring, hashline editing.",
+  "description": "Opinionated OpenCode agent harness \u2014 PRIME, plan, build, QA, skills, MCP wiring, hashline editing.",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "glrs-oc": "dist/cli.js",
-    "harness-opencode": "dist/cli.js"
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./cli": {
+      "import": "./dist/cli-exports.js",
+      "types": "./dist/cli-exports.d.ts"
+    }
   },
   "files": [
     "dist",
@@ -24,8 +30,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "lint": "echo 'no linter configured yet'",
-    "dev": "bun run build && bash -c 'PKG_DIR=\"$PWD\"; cd \"${INIT_CWD:-$PWD}\" && GLRS_CLI_DISPATCHED=1 exec bun \"$PKG_DIR/dist/cli.js\" \"$@\"' --",
-    "dev:nobuild": "bash -c 'PKG_DIR=\"$PWD\"; cd \"${INIT_CWD:-$PWD}\" && GLRS_CLI_DISPATCHED=1 exec bun \"$PKG_DIR/dist/cli.js\" \"$@\"' --"
+    "dev": "tsup --watch"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": "^1.15",

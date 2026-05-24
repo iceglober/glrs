@@ -258,7 +258,7 @@ export const configureCmd = command({
     const config = readConfig(configPath);
 
     if (!config) {
-      console.log(`No config found at ${configPath}. Run ${c.green}glrs oc install${c.reset} first.`);
+      console.log(`No config found at ${configPath}. Run ${c.green}glrs harness install${c.reset} first.`);
       process.exit(1);
     }
 

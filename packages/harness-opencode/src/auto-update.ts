@@ -30,7 +30,7 @@
  *     version (e.g. `^0.6.0`) — the user is managing pins themselves.
  *   - Cross-check package name in cache dir matches ours before writing.
  *   - Best-effort `npm install` in the cache dir after rewriting; if it
- *     fails, next `glrs-oc install-plugin` will fix it.
+ *     fails, next `glrs harness install` will fix it.
  *   - `HARNESS_OPENCODE_AUTO_UPDATE=0` disables ONLY the cache rewrite
  *     (update check still runs and toasts).
  *   - `HARNESS_OPENCODE_UPDATE_CHECK=0` disables both check and rewrite.
@@ -305,7 +305,7 @@ export async function refreshPluginCache(
         });
       } catch {
         // If npm install fails, the pin rewrite still happened. Next
-        // manual `glrs-oc install-plugin` will fix it.
+        // manual `glrs harness install` will fix it.
       }
     }
 

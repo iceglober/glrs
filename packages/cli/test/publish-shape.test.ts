@@ -360,4 +360,18 @@ describe("packed tarball contains vendored deps and no workspace: refs", () => {
     );
     expect(existsSync(p)).toBe(true);
   });
+
+  it("extracted package contains dist/node_modules/@glrs-dev/harness-plugin-opencode/dist/cli-exports.js", () => {
+    const p = join(
+      extractDir,
+      "package",
+      "dist",
+      "node_modules",
+      "@glrs-dev",
+      "harness-plugin-opencode",
+      "dist",
+      "cli-exports.js",
+    );
+    expect(existsSync(p)).toBe(true);
+  });
 });
