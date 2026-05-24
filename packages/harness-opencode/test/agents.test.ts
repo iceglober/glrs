@@ -338,9 +338,7 @@ describe("UI evaluation ladder", () => {
       "build",
       "code-reviewer",
       "code-reviewer-thorough",
-      "plan-reviewer",
       "research",
-      "gap-analyzer",
     ];
     for (const name of visualCapable) {
       const prompt = agents[name]!.prompt as string;

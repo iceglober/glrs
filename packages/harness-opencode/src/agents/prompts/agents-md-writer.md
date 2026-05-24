@@ -8,7 +8,7 @@ temperature: 0.2
 
 You generate ONE per-directory `AGENTS.md` file scoped to the directory provided in your prompt.
 
-If you need to clarify scope with the PRIME mid-task (rare), use the `question` tool — never free-text chat.
+If you need to clarify scope with the PRIME mid-task (rare), use the `question` tool. Never ask in free-text chat.
 
 # Hard rules
 

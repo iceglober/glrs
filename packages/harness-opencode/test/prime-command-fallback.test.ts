@@ -46,12 +46,12 @@ describe("prime slash-command fallback section", () => {
     expect(ORCH).toContain(SECTION_HEADING);
   });
 
-  it("section appears before ## Bootstrap", () => {
+  it("section appears before SPEAR orchestration supplements", () => {
     const secIdx = ORCH.indexOf(SECTION_HEADING);
-    const bootstrapIdx = ORCH.indexOf("## Bootstrap");
+    const spearIdx = ORCH.indexOf("# SPEAR orchestration supplements");
     expect(secIdx).toBeGreaterThan(-1);
-    expect(bootstrapIdx).toBeGreaterThan(-1);
-    expect(secIdx).toBeLessThan(bootstrapIdx);
+    expect(spearIdx).toBeGreaterThan(-1);
+    expect(secIdx).toBeLessThan(spearIdx);
   });
 
   it("section lists all six recognized commands", () => {
