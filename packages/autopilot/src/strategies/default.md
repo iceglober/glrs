@@ -27,10 +27,14 @@ items:
 
 ## Process
 
-For each acceptance-criteria item in the plan:
-1. Extract `id`, `intent`, `files`, `tests`, `verify` from the markdown.
-2. Set `checked: false` for all items.
-3. Add enrichment fields. For each item, read the files it references to gather real codebase context. **Warning: file paths in the plan may be outdated (files moved or renamed). Always verify a path exists before using it. If a path doesn't exist, search for the file by name using `find` or `ls` to locate the current path.**
+The input markdown may be structured (numbered headings like `### N.M` or checkboxes) or freeform prose. Handle both:
+
+- **Structured input**: Extract each existing item's `id`, `intent`, `files`, `tests`, `verify` from the markdown.
+- **Freeform input**: Decompose the prose into concrete, actionable items. Each item should modify 1–3 files. Assign sequential ids (e.g., `0.1`, `0.2`, …). Infer `intent`, `files`, `tests`, and `verify` from the content and your codebase exploration.
+
+For every item (extracted or decomposed):
+1. Set `checked: false`.
+2. Add enrichment fields. For each item, read the files it references to gather real codebase context. **Warning: file paths in the plan may be outdated (files moved or renamed). Always verify a path exists before using it. If a path doesn't exist, search for the file by name using `find` or `ls` to locate the current path.**
    - **mirror**: Path to an existing file that follows the same pattern this item will follow. **Do not copy paths verbatim from the plan — verify each mirror path exists by reading or listing it.** Prefer files you've already opened for other items.
    - **context**: 10–20 lines of the most relevant code from the files being modified: function signatures, type definitions, or the section being changed.
    - **conventions**: Patterns observed in the files you read: import style, export pattern, test framework, naming conventions.
