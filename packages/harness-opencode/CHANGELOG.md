@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.10.1
+
+### Patch Changes
+
+- [#96](https://github.com/iceglober/glrs/pull/96) [`07b0f45`](https://github.com/iceglober/glrs/commit/07b0f4574dfd87209d4375bcf4ec2a97c46c8749) Thanks [@iceglober](https://github.com/iceglober)! - Enable task tool on PRIME agents so parallel subagent dispatch actually works
+
+  PR [#85](https://github.com/iceglober/glrs/issues/85) added parallel build dispatch instructions to the PRIME prompt but
+  never added `tools: { task: true }` to the agent config. The OpenCode SDK
+  strips the task tool by default — without explicit opt-in, PRIME could not
+  dispatch `@build` subagents at all. Fixed for `prime`, `autopilot-prime`,
+  and `autopilot-fast`.
+
 ## 2.10.0
 
 ## 2.9.2
