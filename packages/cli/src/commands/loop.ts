@@ -15,10 +15,11 @@
  */
 
 import { command, option, positional, string as stringType, optional, number as numberType, flag, oneOf } from "cmd-ts";
-import { runRalphLoop, MAX_ITERATIONS, TIMEOUT_MS, applyCLIOverrides } from "@glrs-dev/autopilot";
+import { runRalphLoop, MAX_ITERATIONS, TIMEOUT_MS, applyCLIOverrides, SessionEventEmitter } from "@glrs-dev/autopilot";
 import { runDebrief, shouldRunDebrief } from "./debrief.js";
 import { createAdapter, ADAPTER_NAMES, DEFAULT_ADAPTER } from "../adapter-factory.js";
 import { resolveConfig } from "../autopilot/config-reader.js";
+import { attachStderrRenderer } from "../autopilot/stderr-renderer.js";
 import type { AutopilotConfig } from "../autopilot/autopilot-config.js";
 
 export const loopCmd = command({
@@ -114,6 +115,10 @@ export const loopCmd = command({
     const finalAdapterName = (config.adapter ?? DEFAULT_ADAPTER) as typeof DEFAULT_ADAPTER;
     const adapter = await createAdapter(finalAdapterName, config);
 
+    // Wire up stderr renderer so the user gets live feedback
+    const emitter = new SessionEventEmitter();
+    const detachRenderer = attachStderrRenderer(emitter);
+
     const result = await runRalphLoop({
       prompt,
       cwd,
@@ -124,10 +129,11 @@ export const loopCmd = command({
       keepAlive: willDebrief,
       adapter,
       config,
+      emitter,
     });
 
-    // Loop has fully exited — remove pre-loop signal hooks so we don't
-    // leak listeners across nested invocations (e.g., debrief).
+    // Loop has fully exited — clean up renderer and pre-loop signal hooks.
+    detachRenderer();
     loopStarted = true; // suppress early-exit if a signal slipped in
     process.removeListener("SIGINT", earlySigint);
     process.removeListener("SIGTERM", earlySigterm);
