@@ -502,17 +502,52 @@ async function runEnrichmentPass(
 
     // Per-file idempotency: skip if spec already exists and is enriched.
     // For phase files: skip if spec exists AND all items are fully enriched.
-    // For main.md: skip if spec/main.yaml already exists.
+    // For main.md: skip if spec/main.yaml already exists — UNLESS the spec
+    // is stale (references phase files that don't exist on disk) AND no
+    // existing phase file has any checked items (safety guard).
     if (specPath && fs.existsSync(specPath)) {
       if (phaseFile === "main.md") {
-        log?.info({ file: rel }, "Spec already exists — skipping");
-        emitter?.emitEvent({
-          type: "enrich:file:skip",
-          timestamp: new Date().toISOString(),
-          file: rel,
-          reason: "spec already exists",
-        });
-        continue;
+        // Stale-spec detection: check whether every phase referenced in
+        // spec/main.yaml actually exists on disk.
+        const referencedPhases = detectSpecPhases(resolvedPath);
+        const missingPhase = referencedPhases.some(
+          (p) => !fs.existsSync(path.join(resolvedPath, "spec", p)),
+        );
+
+        if (missingPhase) {
+          // Safety guard: if any existing phase file has checked items,
+          // leave the spec alone (user has in-progress work).
+          const anyChecked = referencedPhases.some((p) => {
+            const phasePath = path.join(resolvedPath, "spec", p);
+            if (!fs.existsSync(phasePath)) return false;
+            return parseSpecItems(phasePath).some((it) => it.checked);
+          });
+
+          if (anyChecked) {
+            log?.info({ file: rel }, "Stale spec detected but phase has checked items — skipping (safety guard)");
+            emitter?.emitEvent({
+              type: "enrich:file:skip",
+              timestamp: new Date().toISOString(),
+              file: rel,
+              reason: "stale spec but phase has checked items (safety guard)",
+            });
+            continue;
+          }
+
+          // No checked items — safe to re-enrich. Fall through to the
+          // enrichment branch below (do NOT continue).
+          log?.info({ file: rel }, "Stale spec detected — re-enriching main.md");
+        } else {
+          // All phase files present — normal idempotency skip.
+          log?.info({ file: rel }, "Spec already exists — skipping");
+          emitter?.emitEvent({
+            type: "enrich:file:skip",
+            timestamp: new Date().toISOString(),
+            file: rel,
+            reason: "spec already exists",
+          });
+          continue;
+        }
       }
       // Phase file: skip if any item has checked:true — enrichment must
       // not overwrite in-progress work on resume.
