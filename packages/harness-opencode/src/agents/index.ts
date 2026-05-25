@@ -693,6 +693,7 @@ export function createAgents(): Record<string, AgentConfig> {
       mode: "primary",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.2,
+      tools: { task: true },
       permission: PRIME_PERMISSIONS as AgentConfig["permission"],
     }),
     scoper: agentFromPrompt(scoperPrompt, {
@@ -716,7 +717,7 @@ export function createAgents(): Record<string, AgentConfig> {
         },
         question: "deny",
       } as AgentConfig["permission"],
-      tools: AUTOPILOT_PRIME_DISABLED_TOOLS as AgentConfig["tools"],
+      tools: { ...AUTOPILOT_PRIME_DISABLED_TOOLS, task: true } as AgentConfig["tools"],
     }),
     "autopilot-fast": agentFromPrompt(primePrompt, {
       description: "Fast executor for autopilot sessions. Same prompt as autopilot-prime but runs on the mid-execute tier (Kimi 2.5/2.6, GLM-5). Used when --fast is passed. Plans must be enriched with mirror refs and code pointers before using this agent.",
@@ -731,7 +732,7 @@ export function createAgents(): Record<string, AgentConfig> {
         },
         question: "deny",
       } as AgentConfig["permission"],
-      tools: AUTOPILOT_PRIME_DISABLED_TOOLS as AgentConfig["tools"],
+      tools: { ...AUTOPILOT_PRIME_DISABLED_TOOLS, task: true } as AgentConfig["tools"],
     }),
     plan: agentFromPrompt(planPrompt, {
       description: "Interactive planner. Orchestrates gap analysis and adversarial review. Produces a written plan in the repo-shared plan directory (`~/.glorious/opencode/<repo-folder>/plans/`, resolved inline via `git rev-parse --git-common-dir`).",
