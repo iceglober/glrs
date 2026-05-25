@@ -1,5 +1,14 @@
 # @glrs-dev/cli
 
+## 2.10.1
+
+### Patch Changes
+
+- [#95](https://github.com/iceglober/glrs/pull/95) [`d171c97`](https://github.com/iceglober/glrs/commit/d171c97d6126bd415e994e2cb629ca2735be6d8b) Thanks [@iceglober](https://github.com/iceglober)! - Fix two autopilot bugs that surfaced as "Phase file referenced in spec/main.yaml does not exist": pre-flight validation now auto-recovers from stale `spec/` directories, and orphaned phase references in `main.md` are auto-decomposed before enrichment (with a precise actionable error on decomposition failure).
+
+- Updated dependencies [[`07b0f45`](https://github.com/iceglober/glrs/commit/07b0f4574dfd87209d4375bcf4ec2a97c46c8749)]:
+  - @glrs-dev/harness-plugin-opencode@2.10.1
+
 ## 2.10.0
 
 ### Minor Changes
