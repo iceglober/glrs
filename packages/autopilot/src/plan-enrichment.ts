@@ -1076,6 +1076,7 @@ ${fileList}
 
 ## Instructions
 - For "Phase file referenced in spec/main.yaml does not exist" errors: update spec/main.yaml's \`phases\` array so each entry's \`file:\` field matches an actual YAML file in the spec/ directory listed above. Do NOT rename the phase files — update main.yaml to reference the files that exist.
+- For "Phase spec file exists on disk but is not referenced in spec/main.yaml" errors: add the missing file to spec/main.yaml's \`phases\` array with \`completed: false\`.
 - For schema validation errors: fix the referenced spec file to match the expected YAML schema.
 - For other errors: fix the referenced file.
 
