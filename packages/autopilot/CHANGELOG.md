@@ -1,5 +1,21 @@
 # @glrs-dev/autopilot
 
+## 0.2.4
+
+### Patch Changes
+
+- [#106](https://github.com/iceglober/glrs/pull/106) [`bc09feb`](https://github.com/iceglober/glrs/commit/bc09feb97fa1988054400d725c3617267cd4f4a1) Thanks [@iceglober](https://github.com/iceglober)! - fix(autopilot): detect empty phases when plan directory has phase markdown files
+
+  Adds `empty-phases-with-plan-files` validation error when spec/main.yaml has 0 phases but the plan directory contains phase markdown files. The repair prompt now includes the plan's markdown file list so the LLM can generate the missing phase references and spec files.
+
+- [#106](https://github.com/iceglober/glrs/pull/106) [`bc09feb`](https://github.com/iceglober/glrs/commit/bc09feb97fa1988054400d725c3617267cd4f4a1) Thanks [@iceglober](https://github.com/iceglober)! - fix(autopilot): resilient spec enrichment with LLM-based validation+repair loop
+
+  Pass actual phase filenames to the main.yaml generation prompt so the LLM uses correct references instead of inventing simplified names. After enrichment, validate the spec and send any errors back to the LLM for repair, looping until validation passes or the repair budget is exhausted.
+
+- [#106](https://github.com/iceglober/glrs/pull/106) [`bc09feb`](https://github.com/iceglober/glrs/commit/bc09feb97fa1988054400d725c3617267cd4f4a1) Thanks [@iceglober](https://github.com/iceglober)! - fix(autopilot): validate that phase spec files on disk are referenced in main.yaml
+
+  Adds `unreferenced-spec-phase-file` validation error when spec files exist on disk but aren't listed in spec/main.yaml's phases array. Prevents the case where the LLM generates an empty phases array and the executor thinks all work is done.
+
 ## 0.2.3
 
 ### Patch Changes
