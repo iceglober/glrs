@@ -25,6 +25,7 @@
  */
 
 import type { Config, PluginOptions } from "@opencode-ai/plugin";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -39,6 +40,41 @@ import {
   validateModelOverride,
   formatModelOverrideWarning,
 } from "./model-validator.js";
+
+/**
+ * Resolve the plan directory synchronously. Mirrors the logic in
+ * `plan-paths.ts::getPlanDir` but uses `execFileSync` so it can run
+ * inside the synchronous `applyConfig` path.
+ *
+ * Returns null on failure (not inside a git repo, git not available, etc.)
+ * — callers should fall back gracefully.
+ */
+export function resolvePlanDirSync(cwd: string): string | null {
+  try {
+    const gitCommonRaw = execFileSync("git", ["rev-parse", "--git-common-dir"], {
+      cwd,
+      encoding: "utf8",
+      timeout: 5000,
+    }).trim();
+    if (!gitCommonRaw) return null;
+
+    const absCommon = path.isAbsolute(gitCommonRaw)
+      ? gitCommonRaw
+      : path.resolve(cwd, gitCommonRaw);
+    const repoFolder = path.basename(path.dirname(absCommon));
+
+    const override = process.env["GLORIOUS_PLAN_DIR"];
+    const base = override
+      ? (override === "~" ? os.homedir() : override.startsWith("~/") ? path.join(os.homedir(), override.slice(2)) : override)
+      : path.join(os.homedir(), ".glorious", "opencode");
+
+    const planDir = path.join(base, repoFolder, "plans");
+    fs.mkdirSync(planDir, { recursive: true });
+    return planDir;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Diagnostic probe — dumps every agent's final `permission` block to
@@ -201,6 +237,21 @@ export function applyConfig(config: Config, pluginOptions?: PluginOptions): void
   // then user-wins spread (user's opencode.json agent overrides take final
   // precedence).
   const ourAgents = createAgents();
+
+  // Resolve the plan directory at config time and inject it into agent
+  // prompts that need it (plan, scoper). This replaces the bash snippet
+  // those agents previously ran inline — the bash sandbox permissions
+  // block compound commands, so agents couldn't execute the snippet.
+  const planDir = resolvePlanDirSync(process.cwd());
+  if (planDir) {
+    for (const agentName of ["plan", "scoper"]) {
+      const agent = ourAgents[agentName];
+      if (agent?.prompt) {
+        agent.prompt = agent.prompt.replaceAll("{{PLAN_DIR}}", planDir);
+      }
+    }
+  }
+
   resolveHarnessModels(ourAgents, config, pluginOptions);
 
   // Apply agent overrides from plugin options (model + prompt customization)
