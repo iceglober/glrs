@@ -395,22 +395,9 @@ const AUTOPILOT_PRIME_DISABLED_TOOLS = {
 const PLAN_PERMISSIONS = {
   edit: "allow" as const,
   write: "allow" as const,
-  // Plan agent is read-only aside from writing under the plan dir. It
-  // resolves the plan dir inline (see src/agents/prompts/plan.md
-  // `## 4. Write the plan`): `$HOME/.glorious/opencode/<repo-folder>/plans/`,
-  // where `<repo-folder>` comes from
-  // `basename(dirname(git rev-parse --git-common-dir))`. The object-form
-  // denies bash broadly and re-allows only the four commands that snippet
-  // needs. Everything else remains denied, preserving the "plan writes only
-  // plan files" invariant (the write-scope constraint is prompt-enforced,
-  // not permission-enforced).
-  bash: {
-    "*": "deny",
-    "git rev-parse --git-common-dir": "allow",
-    "basename *": "allow",
-    "dirname *": "allow",
-    "mkdir -p *": "allow",
-  },
+  // Plan agent has no bash permissions. The plan directory is resolved
+  // at config time and injected into the prompt — no bash needed.
+  bash: "deny",
   webfetch: "allow" as const,
   ast_grep: "deny",
   tsc_check: "deny",
@@ -735,7 +722,7 @@ export function createAgents(): Record<string, AgentConfig> {
       tools: { ...AUTOPILOT_PRIME_DISABLED_TOOLS, task: true } as AgentConfig["tools"],
     }),
     plan: agentFromPrompt(planPrompt, {
-      description: "Interactive planner. Orchestrates gap analysis and adversarial review. Produces a written plan in the repo-shared plan directory (`~/.glorious/opencode/<repo-folder>/plans/`, resolved inline via `git rev-parse --git-common-dir`).",
+      description: "Interactive planner. Orchestrates gap analysis and adversarial review. Produces a written plan in the repo-shared plan directory (resolved at config time and injected into the prompt).",
       mode: "all",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,

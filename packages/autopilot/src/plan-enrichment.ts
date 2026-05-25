@@ -867,24 +867,9 @@ async function runEnrichmentPass(
       continue;
     }
 
-    // Skip files with zero enrichable items (e.g., main.md with only
-    // a table-of-contents). For main.md we always generate spec/main.yaml
-    // regardless of item count — it captures title/goal/phases.
-    if (phaseFile !== "main.md") {
-      const checkboxItems = (content.match(/^- \[[ xX]\]/gm) ?? []).length;
-      const headingItems = (content.match(/^###\s+\d+\.\d+\s/gm) ?? []).length;
-      const itemCount = Math.max(checkboxItems, headingItems);
-      if (itemCount === 0) {
-        log?.info({ file: rel }, "No enrichable items — skipping");
-        emitter?.emitEvent({
-          type: "enrich:file:skip",
-          timestamp: new Date().toISOString(),
-          file: rel,
-          reason: "no enrichable items",
-        });
-        continue;
-      }
-    }
+    // All plan files go through spec generation, including freeform files
+    // with no pre-existing structure. The LLM decomposes freeform content
+    // into structured items as part of spec generation.
 
     // Emit enrich:file:start event
     emitter?.emitEvent({

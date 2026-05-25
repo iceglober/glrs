@@ -896,16 +896,9 @@ describe("subagent permissions", () => {
     }
   });
 
-  it("plan agent bash rules: deny-all except the plan-dir CLI subcommand", () => {
-    // The plan agent needs to resolve the repo-shared plan dir before
-    // writing plans there. It does that via the harness's own CLI
-    // subcommand. Everything else remains denied, preserving the
-    // "plan writes only plan files" invariant.
+  it("plan agent bash is fully denied (plan dir is injected at config time)", () => {
     const bash = (agents["plan"] as any).permission.bash;
-    expect(typeof bash).toBe("object");
-    expect(bash["*"]).toBe("deny");
-    expect(bash["git rev-parse --git-common-dir"]).toBe("allow");
-    expect(bash["basename *"]).toBe("allow");
+    expect(bash).toBe("deny");
   });
 
   it("plan agent description references the repo-shared plan directory (not .agent/plans)", () => {
@@ -1105,14 +1098,8 @@ describe("prompt content assertions", () => {
 
   const planPrompt = agents["plan"]!.prompt as string;
 
-  it("plan agent prompt body mentions GLORIOUS_PLAN_DIR or bunx harness-opencode plan-dir helper", () => {
-    // The plan agent must know how to resolve the new plan dir. One of
-    // these references must appear so the agent actually invokes the
-    // resolver rather than writing to a hardcoded path.
-    const hasResolver =
-      planPrompt.includes("bunx @glrs-dev/harness-plugin-opencode plan-dir") ||
-      planPrompt.includes("GLORIOUS_PLAN_DIR");
-    expect(hasResolver).toBe(true);
+  it("plan agent prompt body uses {{PLAN_DIR}} placeholder (injected at config time)", () => {
+    expect(planPrompt).toContain("{{PLAN_DIR}}");
   });
 
   it("plan prompt contains no-placeholders rule", () => {
@@ -1127,11 +1114,8 @@ describe("prompt content assertions", () => {
     expect(planPrompt).toContain("Placeholder scan");
   });
 
-  it("prime Bootstrap probe references new plan dir (or a shell snippet that resolves it)", () => {
-    // Bootstrap probe should probe for plans using the inline bash
-    // snippet (git rev-parse --git-common-dir), not the legacy CLI.
-    expect(prime).toContain("git rev-parse --git-common-dir");
-    // Legacy probe must be gone.
+  it("prime references plan directory as pre-resolved (not legacy .agent/plans)", () => {
+    expect(prime).toContain("pre-resolved");
     expect(prime).not.toContain("ls .agent/plans/");
   });
 
