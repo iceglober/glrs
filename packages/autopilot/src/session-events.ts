@@ -78,6 +78,19 @@ export interface EnrichDoneEvent {
   filesProcessed: number;
 }
 
+export interface EnrichRepairStartEvent {
+  type: "enrich:repair:start";
+  timestamp: string;
+  attempt: number;
+  errors: string[];
+}
+
+export interface EnrichRepairDoneEvent {
+  type: "enrich:repair:done";
+  timestamp: string;
+  attempt: number;
+}
+
 // ---------------------------------------------------------------------------
 // Execution events
 // ---------------------------------------------------------------------------
@@ -214,6 +227,8 @@ export type SessionEvent =
   | EnrichFileSkipEvent
   | EnrichFileErrorEvent
   | EnrichDoneEvent
+  | EnrichRepairStartEvent
+  | EnrichRepairDoneEvent
   | PhaseStartEvent
   | PhaseDoneEvent
   | IterationStartEvent
