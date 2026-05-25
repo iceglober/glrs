@@ -171,6 +171,26 @@ export function validatePlan(planPath: string): ValidationReport {
       }
     }
 
+    // Check for phase spec files on disk that main.yaml doesn't reference.
+    // An empty phases array when spec files exist means the LLM dropped them.
+    const specDir = path.join(planPath, "spec");
+    try {
+      const onDisk = fs.readdirSync(specDir)
+        .filter((f) => f.endsWith(".yaml") && f !== "main.yaml");
+      const referencedSet = new Set(phaseFiles);
+      for (const file of onDisk) {
+        if (!referencedSet.has(file)) {
+          errors.push({
+            code: "unreferenced-spec-phase-file",
+            message: `Phase spec file exists on disk but is not referenced in spec/main.yaml: ${file}`,
+            file,
+          });
+        }
+      }
+    } catch {
+      // spec dir unreadable — already handled above
+    }
+
     return { errors, warnings };
   }
 
