@@ -1,5 +1,13 @@
 # @glrs-dev/autopilot
 
+## 0.2.2
+
+### Patch Changes
+
+- [#102](https://github.com/iceglober/glrs/pull/102) [`05c5fa7`](https://github.com/iceglober/glrs/commit/05c5fa76322634bfa1ec08594d7dff0127404c45) Thanks [@iceglober](https://github.com/iceglober)! - fix(autopilot): resilient spec enrichment with LLM-based validation+repair loop
+
+  Pass actual phase filenames to the main.yaml generation prompt so the LLM uses correct references instead of inventing simplified names. After enrichment, validate the spec and send any errors back to the LLM for repair, looping until validation passes or the repair budget is exhausted.
+
 ## 0.2.1
 
 ### Patch Changes
