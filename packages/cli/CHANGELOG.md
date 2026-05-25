@@ -1,5 +1,16 @@
 # @glrs-dev/cli
 
+## 2.10.0
+
+### Minor Changes
+
+- [#93](https://github.com/iceglober/glrs/pull/93) [`8213a53`](https://github.com/iceglober/glrs/commit/8213a531bee0a4cd11ce46fe373e5ecdd485bce6) Thanks [@iceglober](https://github.com/iceglober)! - Add live stderr output to `glrs loop` so users get at-least-once-per-minute feedback (iteration progress, tool calls, cost, thinking indicators) instead of silence until the loop exits.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @glrs-dev/harness-plugin-opencode@2.10.0
+
 ## 2.9.2
 
 ### Patch Changes
