@@ -38,6 +38,8 @@ export interface EnrichmentRunConfig {
   max_retries?: number;
   stall_timeout?: number;
   strategy?: string;
+  /** When true, skip all auto-recovery paths (stale-spec deletion, orphan decomposition). */
+  resume?: boolean;
 }
 
 /**
@@ -77,6 +79,249 @@ export function isFreeformFile(resolvedPath: string): boolean {
   const checkboxItems = (content.match(/^- \[[ xX]\]/gm) ?? []).length;
   const headingItems = (content.match(/^###\s+\d+\.\d+\s/gm) ?? []).length;
   return Math.max(checkboxItems, headingItems) === 0;
+}
+
+// ---------------------------------------------------------------------------
+// Orphaned phase reference detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the list of phase markdown filenames referenced in `<planDir>/main.md`
+ * that do NOT exist on disk. An empty list means the plan is internally consistent.
+ *
+ * Mirrors the two regex patterns used by `detectReferencedPhaseFiles` in
+ * `plan-validator.ts:54-69` so detection is consistent with validation.
+ *
+ * Degrades safely: returns [] if main.md is missing or unreadable.
+ */
+export function findOrphanedPhaseReferences(planDir: string): string[] {
+  const mainMdPath = path.join(planDir, "main.md");
+  let content: string;
+  try {
+    content = fs.readFileSync(mainMdPath, "utf-8");
+  } catch {
+    return [];
+  }
+
+  const found = new Set<string>();
+  // 1. Checkbox lines: `- [ ] file.md` or `- [x] [file.md](...)`
+  const checkboxRe = /^- \[[ xX]\]\s+(?:\[)?([a-zA-Z0-9_-]+\.md)(?:\]\([^)]*\))?/gm;
+  let match: RegExpExecArray | null;
+  while ((match = checkboxRe.exec(content)) !== null) {
+    found.add(match[1]);
+  }
+  // 2. Markdown link references: [file.md](./file.md)
+  const linkRe = /\[([a-zA-Z0-9_-]+\.md)\]\(\.\//g;
+  while ((match = linkRe.exec(content)) !== null) {
+    found.add(match[1]);
+  }
+
+  const orphans: string[] = [];
+  for (const filename of found) {
+    if (!fs.existsSync(path.join(planDir, filename))) {
+      orphans.push(filename);
+    }
+  }
+  return orphans;
+}
+
+// ---------------------------------------------------------------------------
+// Shared safety guard helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true if any of the given phase YAML paths (relative to
+ * `<planDir>/spec/`) has at least one item with `checked: true`.
+ *
+ * This is the canonical safety guard used by BOTH the pre-flight recovery
+ * path (Bug A) and the in-enrichment orphan recovery path (Bug B) to
+ * prevent auto-recovery from clobbering in-progress work.
+ *
+ * Mirrors the exact body of the original inline check at plan-enrichment.ts:520-524:
+ *   const anyChecked = referencedPhases.some((p) => {
+ *     const phasePath = path.join(resolvedPath, "spec", p);
+ *     if (!fs.existsSync(phasePath)) return false;
+ *     return parseSpecItems(phasePath).some((it) => it.checked);
+ *   });
+ * The `if (!fs.existsSync(phasePath)) return false` is critical — it handles
+ * the case where the referenced phase YAML is itself missing.
+ */
+export function anyExistingPhaseHasCheckedItems(
+  planDir: string,
+  referencedPhases: string[],
+): boolean {
+  return referencedPhases.some((p) => {
+    const phasePath = path.join(planDir, "spec", p);
+    if (!fs.existsSync(phasePath)) return false;
+    return parseSpecItems(phasePath).some((it) => it.checked);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Orphan recovery helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the prompt for a one-shot orphan recovery decomposition session.
+ * Unlike `buildDecompositionPrompt`, this variant is told that `main.md`
+ * already exists and must NOT be rewritten — only the missing wave files.
+ */
+function buildOrphanRecoveryPrompt(
+  cwd: string,
+  planDir: string,
+  mainMdContent: string,
+  orphans: string[],
+): string {
+  const orphanList = orphans.map((f) => `- ${planDir}/${f}`).join("\n");
+  return `You are completing a partially-decomposed multi-file plan.
+
+The plan directory already has a \`main.md\` that references phase files which do not yet exist on disk. Your job is to write ONLY the missing phase files — do NOT rewrite or modify \`main.md\`.
+
+## Plan directory
+${planDir}
+
+## Codebase root
+${cwd}
+
+## main.md content (DO NOT MODIFY)
+\`\`\`markdown
+${mainMdContent}
+\`\`\`
+
+## Missing phase files you must write
+${orphanList}
+
+## Instructions
+
+1. Read the \`main.md\` content above to understand the plan structure.
+2. Explore the codebase at ${cwd} to understand the project structure, test patterns, and file conventions.
+3. For each missing phase file listed above, write a structured phase file with numbered items:
+
+\`\`\`markdown
+# Wave N: <Phase title>
+
+### N.1 <Item title>
+- intent: <What this item accomplishes>
+- files:
+    - <path/to/file.ts>
+      Change: <What changes in this file>
+- tests:
+    - <path/to/test.ts>
+- verify: <command to verify this item, e.g., "bun test path/to/test.ts">
+
+### N.2 <Item title>
+...
+\`\`\`
+
+4. Use the heading format \`### N.M\` (e.g., \`### 0.1\`, \`### 1.1\`) — this is the format the enrichment pipeline recognizes.
+5. Keep items small and concrete. Each item should modify 1-3 files.
+6. Write all missing phase files using the write/edit tool, then respond with "DECOMPOSITION_COMPLETE" when done.`;
+}
+
+/**
+ * Attempt to recover orphaned phase references by running a one-shot
+ * decomposition session that writes the missing wave_*.md source files.
+ * Does NOT overwrite main.md.
+ *
+ * Returns true if ALL orphans now exist on disk after the session.
+ * Returns false if the session errors, stalls, or any orphan is still missing.
+ * On partial success (some but not all orphans written), leaves the partial
+ * files in place (they may be useful to the user) and returns false.
+ */
+async function recoverOrphanedPhases(
+  cwd: string,
+  planDir: string,
+  orphans: string[],
+  log: ReturnType<typeof childLogger> | undefined,
+  emitter: SessionEventEmitter | undefined,
+  adapter: AgentAdapter,
+  stallMs: number,
+  config?: unknown,
+): Promise<boolean> {
+  let mainMdContent: string;
+  try {
+    mainMdContent = fs.readFileSync(path.join(planDir, "main.md"), "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log?.warn({ err: msg }, "recoverOrphanedPhases: failed to read main.md");
+    return false;
+  }
+
+  const handle = await adapter.start({ cwd });
+  let sessionId: string;
+  try {
+    const adapterName = adapter.name as AdapterName | undefined;
+    const cfgObj = config as Record<string, unknown> | undefined;
+    const models = cfgObj?.models as Record<string, unknown> | undefined;
+    const enrichmentSpecifier = models?.enrichment as string | undefined;
+    const resolvedModel = enrichmentSpecifier
+      ? resolveModel(enrichmentSpecifier, adapterName ?? "opencode")
+      : undefined;
+    sessionId = await adapter.createSession(handle, {
+      agentName: "prime",
+      model: resolvedModel,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log?.warn({ err: msg }, "recoverOrphanedPhases: createSession failed");
+    await adapter.shutdown(handle);
+    return false;
+  }
+
+  const prompt = buildOrphanRecoveryPrompt(cwd, planDir, mainMdContent, orphans);
+
+  try {
+    const result = await adapter.sendAndWait(handle, {
+      sessionId,
+      message: prompt,
+      stallMs,
+      onToolCall: (toolName) => {
+        log?.debug({ toolName }, "Orphan recovery tool call");
+      },
+      onTextDelta: () => {},
+      onCostUpdate: (cost, tokens) => {
+        emitter?.emitEvent({
+          type: "cost:update",
+          timestamp: new Date().toISOString(),
+          cumulativeCostUsd: cost,
+          isEstimated: false,
+          iteration: 0,
+          tokensIn: tokens.input,
+          tokensOut: tokens.output,
+        });
+      },
+    });
+
+    if (result.kind === "error" || result.kind === "stall") {
+      const errMsg = result.kind === "error"
+        ? ("message" in result ? (result as { message: string }).message : "session error")
+        : "session stalled";
+      log?.error({ err: errMsg }, "Orphan recovery session failed");
+      return false;
+    }
+
+    // Check which orphans now exist on disk
+    const stillMissing = orphans.filter(
+      (f) => !fs.existsSync(path.join(planDir, f)),
+    );
+
+    if (stillMissing.length > 0) {
+      log?.warn(
+        { stillMissing },
+        "Orphan recovery: decomposition ran but some wave files are still missing",
+      );
+      return false;
+    }
+
+    log?.info({ orphans }, "Orphan recovery: all missing wave files written");
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log?.error({ err: msg }, "Orphan recovery failed");
+    return false;
+  } finally {
+    await adapter.shutdown(handle);
+  }
 }
 
 function buildDecompositionPrompt(
@@ -517,11 +762,8 @@ async function runEnrichmentPass(
         if (missingPhase) {
           // Safety guard: if any existing phase file has checked items,
           // leave the spec alone (user has in-progress work).
-          const anyChecked = referencedPhases.some((p) => {
-            const phasePath = path.join(resolvedPath, "spec", p);
-            if (!fs.existsSync(phasePath)) return false;
-            return parseSpecItems(phasePath).some((it) => it.checked);
-          });
+          // Delegates to the shared helper so the guard logic is in one place.
+          const anyChecked = anyExistingPhaseHasCheckedItems(resolvedPath, referencedPhases);
 
           if (anyChecked) {
             log?.info({ file: rel }, "Stale spec detected but phase has checked items — skipping (safety guard)");
@@ -848,6 +1090,83 @@ export async function enrichPlan(
     }
 
     log?.warn("Freeform decomposition failed — falling through to single-file enrichment");
+  }
+
+  // Bug B: Orphaned phase reference detection and auto-recovery.
+  // When main.md references wave_*.md files that don't exist on disk,
+  // enrichment would generate a spec/main.yaml whose phases: entries point
+  // at YAML files nothing will ever write — internal validation then correctly
+  // rejects. Detect this BEFORE the enrichment ratio check so an
+  // already-enriched-but-broken plan still gets repaired.
+  if (isDir) {
+    const orphans = findOrphanedPhaseReferences(resolvedPath);
+    if (orphans.length > 0) {
+      const isResume = enrichmentConfig?.resume === true;
+      if (isResume) {
+        // --resume: never auto-recover; let the user fix the plan manually.
+        log?.info({ orphans }, "Orphaned phase references detected but --resume is set — skipping auto-recovery");
+      } else {
+        // Safety guard: don't auto-recover if any existing phase YAML has checked items.
+        // Use both the orphan list AND any existing wave files as the phase set to check.
+        const allPhaseYamls = orphans.map((f) => f.replace(/\.md$/, ".yaml"));
+        const existingPhaseYamls = fs.existsSync(path.join(resolvedPath, "spec"))
+          ? fs.readdirSync(path.join(resolvedPath, "spec")).filter((f) => f.endsWith(".yaml") && f !== "main.yaml")
+          : [];
+        const allPhasesToCheck = [...new Set([...allPhaseYamls, ...existingPhaseYamls])];
+        const hasChecked = anyExistingPhaseHasCheckedItems(resolvedPath, allPhasesToCheck);
+
+        if (hasChecked) {
+          // In-progress work exists — throw a precise error rather than silently failing.
+          throw new Error(
+            `Plan inconsistency: main.md references phase files that don't exist: ${orphans.join(", ")}. ` +
+            `Existing phase files have checked items — cannot auto-recover. ` +
+            `Either create the missing files yourself, or remove the ## Phases section from main.md.`,
+          );
+        }
+
+        // No checked items — attempt auto-decomposition.
+        log?.info({ orphans }, "Orphaned phase references detected — attempting auto-decomposition");
+        if (!adapter) {
+          throw new Error(
+            `Plan inconsistency: main.md references phase files that don't exist: ${orphans.join(", ")}. ` +
+            `Either create them yourself, or remove the ## Phases section from main.md.`,
+          );
+        }
+
+        const stallMs = enrichmentConfig?.stall_timeout ?? (5 * 60 * 1000);
+        const recovered = await recoverOrphanedPhases(
+          cwd,
+          resolvedPath,
+          orphans,
+          log,
+          emitter,
+          adapter,
+          stallMs,
+          config,
+        );
+
+        if (!recovered) {
+          // Check which orphans are still missing (partial decomposition state)
+          const stillMissing = orphans.filter(
+            (f) => !fs.existsSync(path.join(resolvedPath, f)),
+          );
+          const writtenCount = orphans.length - stillMissing.length;
+          if (writtenCount > 0) {
+            throw new Error(
+              `Plan inconsistency: main.md references phase files that don't exist: ${stillMissing.join(", ")}. ` +
+              `Decomposition wrote ${writtenCount} of ${orphans.length} expected wave files; the others are still missing. ` +
+              `Either complete them yourself, or remove the ## Phases section from main.md.`,
+            );
+          }
+          throw new Error(
+            `Plan inconsistency: main.md references phase files that don't exist: ${orphans.join(", ")}. ` +
+            `Either create them yourself, or remove the ## Phases section from main.md.`,
+          );
+        }
+
+        log?.info({ orphans }, "Orphan auto-decomposition succeeded — continuing with enrichment");
+      }
+    }
   }
 
   // Collect the plan files to enrich

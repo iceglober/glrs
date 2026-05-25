@@ -16,7 +16,7 @@
 import { command, flag, option, optional, string as stringType, number as numberType, oneOf } from "cmd-ts";
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { formatElapsed, formatCost, EventStreamReader, deriveState, applyCLIOverrides, isSuccessExitReason } from "@glrs-dev/autopilot";
+import { formatElapsed, formatCost, EventStreamReader, deriveState, applyCLIOverrides, isSuccessExitReason, validatePlan, detectSpecPhases, parseSpecItems, anyExistingPhaseHasCheckedItems } from "@glrs-dev/autopilot";
 import { SessionRunner } from "@glrs-dev/autopilot";
 import { createCliRenderer } from "../cli-renderer.js";
 import { createAdapter, ADAPTER_NAMES, DEFAULT_ADAPTER } from "../adapter-factory.js";
@@ -73,6 +73,75 @@ export function renderSummary(result: SessionResult): SummaryOutput {
     `\n`;
 
   return { stdout, exitCode: failed ? 1 : 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Pre-flight validation — extracted for unit-testability (Bug A fix)
+// ---------------------------------------------------------------------------
+
+export interface PreflightResult {
+  /** true when stale spec/ was detected and deleted; caller should print the announcement */
+  recovered: boolean;
+  /** non-null when validation failed and is not recoverable; caller should exit with this code */
+  exitCode: number | null;
+  /** validation errors to print when exitCode is non-null */
+  errors: Array<{ message: string; file?: string }>;
+  /** validation warnings to print regardless */
+  warnings: Array<{ message: string; file?: string }>;
+}
+
+/**
+ * Run pre-flight plan validation and attempt auto-recovery from stale spec/.
+ *
+ * Returns:
+ *   - `{ recovered: false, exitCode: null }` → validation passed, continue
+ *   - `{ recovered: true, exitCode: null }` → stale spec/ deleted; caller prints announcement
+ *   - `{ recovered: false, exitCode: 1 }` → validation failed, not recoverable; caller exits 1
+ *
+ * Recovery conditions (all must hold):
+ *   1. `resume` is false (never blow away resume state)
+ *   2. Every error has code `missing-spec-phase-file`
+ *   3. No existing phase YAML has any `checked: true` item (safety guard)
+ *
+ * Mirrors the in-`enrichPlan` stale-spec recovery safety semantics exactly,
+ * using the shared `anyExistingPhaseHasCheckedItems` helper.
+ */
+export function runPreflightValidation(
+  planPath: string,
+  resume: boolean,
+): PreflightResult {
+  const validation = validatePlan(planPath);
+
+  const warnings = validation.warnings.map((w) => ({ message: w.message, file: w.file }));
+
+  if (validation.errors.length === 0) {
+    return { recovered: false, exitCode: null, errors: [], warnings };
+  }
+
+  // Attempt auto-recovery when:
+  //   1. Not resuming
+  //   2. All errors are missing-spec-phase-file
+  //   3. No existing phase YAML has checked items
+  const canAttemptRecovery =
+    !resume &&
+    validation.errors.every((e) => e.code === "missing-spec-phase-file");
+
+  if (canAttemptRecovery) {
+    // Use detectSpecPhases to get the list of phase YAML filenames referenced
+    // in spec/main.yaml, then check for checked items via the shared helper.
+    const referencedPhases = detectSpecPhases(planPath);
+    const hasChecked = anyExistingPhaseHasCheckedItems(planPath, referencedPhases);
+
+    if (!hasChecked) {
+      // Safe to delete stale spec/
+      fs.rmSync(path.join(planPath, "spec"), { recursive: true, force: true });
+      return { recovered: true, exitCode: null, errors: [], warnings };
+    }
+  }
+
+  // Not recoverable — return errors for the caller to print
+  const errors = validation.errors.map((e) => ({ message: e.message, file: e.file }));
+  return { recovered: false, exitCode: 1, errors, warnings };
 }
 
 export const autopilotInteractiveCmd = command({
@@ -266,16 +335,24 @@ export const autopilotInteractiveCmd = command({
     // command immediately; warnings are surfaced so the user can fix
     // the plan before invoking the autopilot. The orchestrator runs
     // the same check internally as a safety net.
-    const { validatePlan } = await import("@glrs-dev/autopilot");
-    const validation = validatePlan(path.resolve(process.cwd(), planPath));
-    for (const w of validation.warnings) {
+    //
+    // Bug A fix: runPreflightValidation auto-recovers from stale spec/
+    // when all errors are missing-spec-phase-file and no phase has checked
+    // items. On recovery, we print a one-line announcement and continue.
+    const resolvedPlanPath = path.resolve(process.cwd(), planPath);
+    const preflight = runPreflightValidation(resolvedPlanPath, resume);
+    for (const w of preflight.warnings) {
       process.stderr.write(`  ⚠ ${w.message}${w.file ? ` (${w.file})` : ""}\n`);
     }
-    if (validation.errors.length > 0) {
+    if (preflight.recovered) {
+      process.stderr.write(
+        `\x1b[33m⟳ Stale spec detected — clearing spec/ and re-enriching\x1b[0m\n`,
+      );
+    } else if (preflight.exitCode !== null) {
       process.stderr.write(
         `\n\x1b[31m✗ Plan validation failed:\x1b[0m\n`,
       );
-      for (const e of validation.errors) {
+      for (const e of preflight.errors) {
         process.stderr.write(
           `  ${e.message}${e.file ? ` (${e.file})` : ""}\n`,
         );
@@ -305,7 +382,7 @@ export const autopilotInteractiveCmd = command({
       // Create SessionRunner — thin wrapper around enrichment + execution
       const adapter = await createAdapter(finalAdapterName, config);
       const runner = new SessionRunner({
-        planPath: path.resolve(process.cwd(), planPath),
+        planPath: resolvedPlanPath,
         cwd: process.cwd(),
         resume,
         maxIterationsPerPhase,
