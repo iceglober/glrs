@@ -639,6 +639,7 @@ function buildSpecGenerationPrompt(
   phaseFile: string,
   content: string,
   strategyName?: string,
+  phaseFilesOnDisk?: string[],
 ): string {
   const isMain = phaseFile === "main.md";
   const specFileName = isMain
@@ -689,7 +690,10 @@ Extract from the markdown:
 - \`title\`: the H1 heading text
 - \`goal\`: the Goal section text
 - \`constraints\`: the Constraints section text (if present)
-- \`phases\`: one entry per phase file referenced (e.g., wave_0.md → wave_0.yaml), all with \`completed: false\`
+- \`phases\`: one entry per phase file that exists on disk (listed below), mapped to .yaml (e.g., wave_0.md → wave_0.yaml), all with \`completed: false\`. Do NOT invent phase references — only include files from this list.
+
+Phase files on disk:
+${phaseFilesOnDisk && phaseFilesOnDisk.length > 0 ? phaseFilesOnDisk.map((f) => `- ${f}`).join("\n") : "- (none — this is a single-phase plan, create one phase file)"}
 
 Here is the plan file to convert:
 
@@ -840,24 +844,9 @@ async function runEnrichmentPass(
       continue;
     }
 
-    // Skip files with zero enrichable items (e.g., main.md with only
-    // a table-of-contents). For main.md we always generate spec/main.yaml
-    // regardless of item count — it captures title/goal/phases.
-    if (phaseFile !== "main.md") {
-      const checkboxItems = (content.match(/^- \[[ xX]\]/gm) ?? []).length;
-      const headingItems = (content.match(/^###\s+\d+\.\d+\s/gm) ?? []).length;
-      const itemCount = Math.max(checkboxItems, headingItems);
-      if (itemCount === 0) {
-        log?.info({ file: rel }, "No enrichable items — skipping");
-        emitter?.emitEvent({
-          type: "enrich:file:skip",
-          timestamp: new Date().toISOString(),
-          file: rel,
-          reason: "no enrichable items",
-        });
-        continue;
-      }
-    }
+    // All plan files go through spec generation, including freeform files
+    // with no pre-existing structure. The LLM decomposes freeform content
+    // into structured items as part of spec generation.
 
     // Emit enrich:file:start event
     emitter?.emitEvent({
@@ -894,7 +883,12 @@ async function runEnrichmentPass(
       continue;
     }
 
-    const prompt = buildSpecGenerationPrompt(cwd, resolvedPath, phaseFile, content, strategyName);
+    const phaseFilesOnDisk = phaseFile === "main.md"
+      ? planFiles
+          .map((f) => path.basename(f))
+          .filter((f) => f !== "main.md")
+      : undefined;
+    const prompt = buildSpecGenerationPrompt(cwd, resolvedPath, phaseFile, content, strategyName, phaseFilesOnDisk);
 
     let toolCalls = 0;
     let fileCost = 0;
