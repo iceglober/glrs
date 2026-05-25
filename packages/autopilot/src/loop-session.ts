@@ -254,7 +254,16 @@ function markPhaseChecked(mainContent: string, phaseFile: string): string {
 }
 
 /** Exit reasons that indicate a successful phase completion. */
-const SUCCESS_REASONS = new Set(["sentinel", "idle", "max-iterations"]);
+export const SUCCESS_REASONS = new Set(["sentinel", "idle", "max-iterations"]);
+
+/**
+ * Returns true when the given exit reason indicates a successful run.
+ * Canonical authority for the success/failure partition — the CLI summary
+ * imports this rather than hand-rolling its own string check.
+ */
+export function isSuccessExitReason(reason: string): boolean {
+  return SUCCESS_REASONS.has(reason);
+}
 
 /**
  * Filter to only unchecked phases using the YAML spec's `completed` field.

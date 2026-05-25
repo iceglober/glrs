@@ -45,7 +45,7 @@ export { runRalphLoop } from "./loop.js";
 export type { LoopResult, LoopExitReason, RalphLoopOptions } from "./loop.js";
 
 // Loop session orchestrator
-export { runLoopSession } from "./loop-session.js";
+export { runLoopSession, isSuccessExitReason } from "./loop-session.js";
 export type { LoopSessionDeps } from "./loop-session.js";
 
 // Plan parser

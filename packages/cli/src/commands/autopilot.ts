@@ -16,12 +16,64 @@
 import { command, flag, option, optional, string as stringType, number as numberType, oneOf } from "cmd-ts";
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { formatElapsed, formatCost, EventStreamReader, deriveState, applyCLIOverrides } from "@glrs-dev/autopilot";
+import { formatElapsed, formatCost, EventStreamReader, deriveState, applyCLIOverrides, isSuccessExitReason } from "@glrs-dev/autopilot";
 import { SessionRunner } from "@glrs-dev/autopilot";
 import { createCliRenderer } from "../cli-renderer.js";
 import { createAdapter, ADAPTER_NAMES, DEFAULT_ADAPTER } from "../adapter-factory.js";
 import { resolveConfig } from "../autopilot/config-reader.js";
 import type { AutopilotConfig } from "../autopilot/autopilot-config.js";
+import type { SessionResult } from "@glrs-dev/autopilot";
+
+// ---------------------------------------------------------------------------
+// Summary renderer — extracted for unit-testability (a3)
+// ---------------------------------------------------------------------------
+
+export interface SummaryOutput {
+  stdout: string;
+  exitCode: number;
+}
+
+/**
+ * Render the autopilot completion summary for a given session result.
+ *
+ * Three buckets:
+ *   - success (sentinel, max-iterations) → ✓ header, exit 0
+ *   - neutral (kill-switch) → ◼ header, exit 0
+ *   - failure (error, struggle, stall, timeout, aborted) → ✗ header, exit 1
+ *
+ * When `loopResult.message` is non-empty, a `Reason: <message>` line is
+ * printed after the `Result:` line. When empty/undefined, it is suppressed.
+ */
+export function renderSummary(result: SessionResult): SummaryOutput {
+  const { exitReason, iterations, message, cumulativeCostUsd } = result.loopResult;
+  const costStr = cumulativeCostUsd ? ` · $${cumulativeCostUsd.toFixed(2)}` : "";
+
+  const success = isSuccessExitReason(exitReason);
+  const killed = exitReason === "kill-switch";
+  const failed = !success && !killed;
+
+  let header: string;
+  if (success) {
+    header = `\x1b[1m✓ Autopilot complete\x1b[0m`;
+  } else if (killed) {
+    header = `\x1b[33m◼ Autopilot stopped (kill switch)\x1b[0m`;
+  } else {
+    header = `\x1b[1;31m✗ Autopilot failed\x1b[0m`;
+  }
+
+  const reasonLine = message && message.trim()
+    ? `  Reason: ${message}\n`
+    : "";
+
+  const stdout =
+    `\n${header}\n` +
+    `  Plan:   ${result.planPath}\n` +
+    `  Result: ${exitReason} after ${iterations} iteration(s)${costStr}\n` +
+    reasonLine +
+    `\n`;
+
+  return { stdout, exitCode: failed ? 1 : 0 };
+}
 
 export const autopilotInteractiveCmd = command({
   name: "autopilot",
@@ -248,6 +300,7 @@ export const autopilotInteractiveCmd = command({
       }
     }
 
+    let exitCode = 0;
     try {
       // Create SessionRunner — thin wrapper around enrichment + execution
       const adapter = await createAdapter(finalAdapterName, config);
@@ -272,16 +325,10 @@ export const autopilotInteractiveCmd = command({
       // Print enrichment completion line (after enrichment events have been rendered)
       process.stderr.write("  ✓ Plan enriched — executing\n\n");
 
-      // Show completion summary
-      const costStr = result.loopResult.cumulativeCostUsd
-        ? ` · $${result.loopResult.cumulativeCostUsd.toFixed(2)}`
-        : "";
-      process.stdout.write(
-        `\n\x1b[1m✓ Autopilot complete\x1b[0m\n` +
-          `  Plan:   ${result.planPath}\n` +
-          `  Result: ${result.loopResult.exitReason} after ${result.loopResult.iterations} iteration(s)${costStr}\n` +
-          `\n`,
-      );
+      // Show completion summary using the canonical renderSummary helper
+      const summary = renderSummary(result);
+      process.stdout.write(summary.stdout);
+      exitCode = summary.exitCode;
     } finally {
       // Restore the prior GLRS_AGENT_OVERRIDES env var value to keep the parent process clean.
       // The adapter's shutdown() also handles restoration, but we restore here for safety.
@@ -291,5 +338,6 @@ export const autopilotInteractiveCmd = command({
         process.env["GLRS_AGENT_OVERRIDES"] = priorAgentOverridesEnv;
       }
     }
+    process.exit(exitCode);
   },
 });
