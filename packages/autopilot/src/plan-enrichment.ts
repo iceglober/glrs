@@ -32,6 +32,7 @@ import type { AgentAdapter, AgentHandle } from "./adapter.js";
 import type { SessionEventEmitter } from "./session-runner.js";
 import { loadStrategy, extractFieldNames } from "./enrich-strategy.js";
 import { resolveModel, type AdapterName } from "./model-resolver.js";
+import { validatePlan } from "./plan-validator.js";
 
 export interface EnrichmentRunConfig {
   retry?: boolean;
@@ -639,13 +640,17 @@ function buildSpecGenerationPrompt(
   phaseFile: string,
   content: string,
   strategyName?: string,
-  phaseFilesOnDisk?: string[],
+  phaseSpecFiles?: string[],
 ): string {
   const isMain = phaseFile === "main.md";
   const specFileName = isMain
     ? "main.yaml"
     : phaseFile.replace(/\.md$/, ".yaml");
   const specPath = `spec/${specFileName}`;
+
+  const phasesExample = phaseSpecFiles && phaseSpecFiles.length > 0
+    ? phaseSpecFiles.map((f) => `  - file: ${f}\n    completed: false`).join("\n")
+    : `  - file: wave_0.yaml\n    completed: false`;
 
   const schemaExample = isMain
     ? `\`\`\`yaml
@@ -654,8 +659,7 @@ title: "Plan title from H1"
 goal: "Goal text"
 constraints: "Constraints text"
 phases:
-  - file: wave_0.yaml
-    completed: false
+${phasesExample}
 \`\`\``
     : `\`\`\`yaml
 # spec/${specFileName}
@@ -678,6 +682,10 @@ items:
     proof_type: "test"
 \`\`\``;
 
+  const phaseFileList = phaseSpecFiles && phaseSpecFiles.length > 0
+    ? `\nThe phase spec files are (use these EXACT filenames in the phases array):\n${phaseSpecFiles.map((f) => `- ${f}`).join("\n")}\n`
+    : "";
+
   const mainInstructions = `You are generating a YAML spec file from a markdown plan.
 
 Read the markdown plan content below and write \`${specPath}\` (relative to the plan directory: ${planDir}) using the write/edit tool.
@@ -690,11 +698,8 @@ Extract from the markdown:
 - \`title\`: the H1 heading text
 - \`goal\`: the Goal section text
 - \`constraints\`: the Constraints section text (if present)
-- \`phases\`: one entry per phase file that exists on disk (listed below), mapped to .yaml (e.g., wave_0.md → wave_0.yaml), all with \`completed: false\`. Do NOT invent phase references — only include files from this list.
-
-Phase files on disk:
-${phaseFilesOnDisk && phaseFilesOnDisk.length > 0 ? phaseFilesOnDisk.map((f) => `- ${f}`).join("\n") : "- (none — this is a single-phase plan, create one phase file)"}
-
+- \`phases\`: one entry per phase spec file, all with \`completed: false\`
+${phaseFileList}
 Here is the plan file to convert:
 
 ### ${phaseFile}
@@ -738,6 +743,24 @@ async function runEnrichmentPass(
   config?: unknown,
 ): Promise<boolean> {
   let stallOccurred = false;
+
+  // Pre-compute spec filenames for phase files that have enrichable items.
+  // Passed to the main.yaml prompt so the LLM uses correct phase references.
+  const enrichablePhaseSpecFiles: string[] = [];
+  for (const pf of planFiles) {
+    const bn = path.basename(pf);
+    if (bn === "main.md") continue;
+    try {
+      const c = fs.readFileSync(pf, "utf-8");
+      const cb = (c.match(/^- \[[ xX]\]/gm) ?? []).length;
+      const hd = (c.match(/^###\s+\d+\.\d+\s/gm) ?? []).length;
+      if (Math.max(cb, hd) > 0) {
+        enrichablePhaseSpecFiles.push(bn.replace(/\.md$/, ".yaml"));
+      }
+    } catch {
+      // skip unreadable files
+    }
+  }
 
   for (const f of planFiles) {
     const rel = path.relative(cwd, f);
@@ -883,12 +906,10 @@ async function runEnrichmentPass(
       continue;
     }
 
-    const phaseFilesOnDisk = phaseFile === "main.md"
-      ? planFiles
-          .map((f) => path.basename(f))
-          .filter((f) => f !== "main.md")
-      : undefined;
-    const prompt = buildSpecGenerationPrompt(cwd, resolvedPath, phaseFile, content, strategyName, phaseFilesOnDisk);
+    const prompt = buildSpecGenerationPrompt(
+      cwd, resolvedPath, phaseFile, content, strategyName,
+      phaseFile === "main.md" ? enrichablePhaseSpecFiles : undefined,
+    );
 
     let toolCalls = 0;
     let fileCost = 0;
@@ -1020,6 +1041,160 @@ async function runEnrichmentPass(
   }
 
   return stallOccurred;
+}
+
+// ---------------------------------------------------------------------------
+// Post-enrichment validation + LLM-based repair loop
+// ---------------------------------------------------------------------------
+
+const MAX_REPAIR_ATTEMPTS = 3;
+
+/**
+ * Build a prompt that tells the LLM what went wrong and asks it to fix the
+ * spec files. Includes the actual spec directory contents so the LLM can
+ * see what files exist.
+ */
+function buildRepairPrompt(
+  planDir: string,
+  errors: Array<{ code: string; message: string; file?: string }>,
+): string {
+  const specDir = path.join(planDir, "spec");
+  const actualFiles = fs.existsSync(specDir)
+    ? fs.readdirSync(specDir).filter((f) => f.endsWith(".yaml")).sort()
+    : [];
+
+  const errorList = errors.map((e) => `- ${e.message}`).join("\n");
+  const fileList = actualFiles.map((f) => `- spec/${f}`).join("\n");
+
+  return `The spec files you generated failed validation. Fix the errors below.
+
+## Validation errors
+${errorList}
+
+## Actual files in spec/ directory
+${fileList}
+
+## Instructions
+- For "Phase file referenced in spec/main.yaml does not exist" errors: update spec/main.yaml's \`phases\` array so each entry's \`file:\` field matches an actual YAML file in the spec/ directory listed above. Do NOT rename the phase files — update main.yaml to reference the files that exist.
+- For schema validation errors: fix the referenced spec file to match the expected YAML schema.
+- For other errors: fix the referenced file.
+
+Use the write/edit tool to make corrections, then respond with "REPAIR_COMPLETE".`;
+}
+
+/**
+ * Run validation, and if it fails, send errors to the LLM for repair.
+ * Loops until validation passes or the repair budget is exhausted.
+ *
+ * Returns the final validation report.
+ */
+async function validateAndRepairSpec(
+  planDir: string,
+  adapter: AgentAdapter,
+  handle: AgentHandle,
+  stallMs: number,
+  log?: ReturnType<typeof childLogger>,
+  emitter?: SessionEventEmitter,
+  config?: unknown,
+): Promise<{ errors: Array<{ code: string; message: string; file?: string }> }> {
+  for (let attempt = 1; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
+    const report = validatePlan(planDir);
+    if (report.errors.length === 0) {
+      log?.info("Post-enrichment validation passed");
+      return report;
+    }
+
+    log?.warn(
+      { attempt, errorCount: report.errors.length, errors: report.errors.map((e) => e.message) },
+      "Post-enrichment validation failed — sending errors to LLM for repair",
+    );
+
+    emitter?.emitEvent({
+      type: "enrich:repair:start",
+      timestamp: new Date().toISOString(),
+      attempt,
+      errors: report.errors.map((e) => e.message),
+    });
+
+    const prompt = buildRepairPrompt(planDir, report.errors);
+
+    let sessionId: string;
+    try {
+      const adapterName = adapter?.name as AdapterName | undefined;
+      const cfgObj = config as Record<string, unknown> | undefined;
+      const models = cfgObj?.models as Record<string, unknown> | undefined;
+      const enrichmentSpecifier = models?.enrichment as string | undefined;
+      const resolvedModel = enrichmentSpecifier
+        ? resolveModel(enrichmentSpecifier, adapterName ?? "opencode")
+        : undefined;
+      sessionId = await adapter.createSession(handle, {
+        agentName: "prime",
+        model: resolvedModel,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log?.warn({ attempt, err: msg }, "Repair session creation failed");
+      continue;
+    }
+
+    try {
+      const result = await adapter.sendAndWait(handle, {
+        sessionId,
+        message: prompt,
+        stallMs,
+        onToolCall: (toolName, firstArg) => {
+          log?.debug({ toolName, firstArg }, "Repair tool call");
+          emitter?.emitEvent({
+            type: "tool:call",
+            timestamp: new Date().toISOString(),
+            toolName,
+            ...(firstArg ? { firstArg } : {}),
+            iteration: 0,
+          });
+        },
+        onTextDelta: () => {},
+        onCostUpdate: (cost, tokens) => {
+          emitter?.emitEvent({
+            type: "cost:update",
+            timestamp: new Date().toISOString(),
+            cumulativeCostUsd: cost,
+            isEstimated: false,
+            iteration: 0,
+            tokensIn: tokens.input,
+            tokensOut: tokens.output,
+          });
+        },
+      });
+
+      if (result.kind === "error") {
+        const rawMsg = "message" in result ? (result as { message: string }).message : "unknown";
+        log?.warn({ attempt, err: rawMsg }, "Repair session errored");
+      } else if (result.kind === "stall") {
+        log?.warn({ attempt }, "Repair session stalled");
+      } else {
+        log?.info({ attempt }, "Repair session completed");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log?.warn({ attempt, err: msg }, "Repair session failed");
+    }
+
+    emitter?.emitEvent({
+      type: "enrich:repair:done",
+      timestamp: new Date().toISOString(),
+      attempt,
+    });
+  }
+
+  // Final validation after all repair attempts
+  const finalReport = validatePlan(planDir);
+  if (finalReport.errors.length > 0) {
+    log?.error(
+      { errors: finalReport.errors.map((e) => e.message) },
+      "Spec validation still failing after repair attempts",
+    );
+  }
+  return finalReport;
 }
 
 /**
@@ -1285,6 +1460,9 @@ export async function enrichPlan(
       if (stallOccurred) {
         log?.warn("Enrichment stalled but retry is disabled");
       }
+      if (isDir && hasSpec(resolvedPath)) {
+        await validateAndRepairSpec(resolvedPath, adapter, handle, stallMs, log, emitter, config);
+      }
     } finally {
       await adapter.shutdown(handle);
     }
@@ -1316,6 +1494,18 @@ export async function enrichPlan(
 
           if (!stallOccurred) {
             log?.info({ attempt }, "Enrichment pass completed without stalling");
+
+            if (isDir && hasSpec(resolvedPath)) {
+              const report = await validateAndRepairSpec(
+                resolvedPath, adapter, handle, stallMs, log, emitter, config,
+              );
+              if (report.errors.length > 0) {
+                log?.warn(
+                  { errorCount: report.errors.length },
+                  "Post-enrichment validation has remaining errors — orchestrator will catch at execution time",
+                );
+              }
+            }
             passSucceeded = true;
             break;
           }
