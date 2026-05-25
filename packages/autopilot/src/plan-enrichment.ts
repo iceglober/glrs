@@ -1063,8 +1063,20 @@ function buildRepairPrompt(
     ? fs.readdirSync(specDir).filter((f) => f.endsWith(".yaml")).sort()
     : [];
 
+  // List markdown plan files so the LLM knows what phases should exist
+  const planMdFiles = fs.readdirSync(planDir)
+    .filter((f) =>
+      f.endsWith(".md") &&
+      f !== "main.md" &&
+      f !== "scope.md" &&
+      f !== "scope-seed.md" &&
+      !f.startsWith("_"),
+    )
+    .sort();
+
   const errorList = errors.map((e) => `- ${e.message}`).join("\n");
   const fileList = actualFiles.map((f) => `- spec/${f}`).join("\n");
+  const mdFileList = planMdFiles.map((f) => `- ${f}`).join("\n");
 
   return `The spec files you generated failed validation. Fix the errors below.
 
@@ -1074,9 +1086,13 @@ ${errorList}
 ## Actual files in spec/ directory
 ${fileList}
 
+## Phase markdown files in plan directory
+${mdFileList || "(none)"}
+
 ## Instructions
 - For "Phase file referenced in spec/main.yaml does not exist" errors: update spec/main.yaml's \`phases\` array so each entry's \`file:\` field matches an actual YAML file in the spec/ directory listed above. Do NOT rename the phase files — update main.yaml to reference the files that exist.
 - For "Phase spec file exists on disk but is not referenced in spec/main.yaml" errors: add the missing file to spec/main.yaml's \`phases\` array with \`completed: false\`.
+- For "spec/main.yaml has 0 phases but the plan directory contains phase markdown files" errors: the phases array is empty but should list one spec file per phase markdown file. Each markdown file \`wave-foo.md\` should have a corresponding spec entry \`file: wave-foo.yaml\`. Add all expected phases to main.yaml with \`completed: false\`, and generate any missing spec/<phase>.yaml files.
 - For schema validation errors: fix the referenced spec file to match the expected YAML schema.
 - For other errors: fix the referenced file.
 

@@ -191,6 +191,28 @@ export function validatePlan(planPath: string): ValidationReport {
       // spec dir unreadable — already handled above
     }
 
+    // Check for phase markdown files in the plan directory that have no
+    // corresponding spec. If the plan dir has enrichable phase .md files
+    // but main.yaml lists 0 phases, the LLM dropped them.
+    try {
+      const planMdFiles = fs.readdirSync(planPath)
+        .filter((f) =>
+          f.endsWith(".md") &&
+          f !== "main.md" &&
+          f !== "scope.md" &&
+          f !== "scope-seed.md" &&
+          !f.startsWith("_"),
+        );
+      if (planMdFiles.length > 0 && phaseFiles.length === 0) {
+        errors.push({
+          code: "empty-phases-with-plan-files",
+          message: `spec/main.yaml has 0 phases but the plan directory contains ${planMdFiles.length} phase markdown file(s): ${planMdFiles.join(", ")}. The phases array must reference each phase's spec file.`,
+        });
+      }
+    } catch {
+      // plan dir unreadable — already handled above
+    }
+
     return { errors, warnings };
   }
 
