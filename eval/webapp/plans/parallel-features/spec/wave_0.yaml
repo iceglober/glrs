@@ -1,39 +1,39 @@
+# spec/wave_0.yaml
 items:
   - id: "0.1"
     intent: >
-      Add a comments system for posts: (a) Create migration 005_create_comments.sql with a comments table
-      (id, post_id FK→posts, user_id FK→users, body, created_at) and index on post_id.
+      Add a comments system for posts: (a) Create migrations/005_create_comments.sql with a comments table
+      (id, post_id FK→posts, user_id FK→users, body TEXT, created_at TIMESTAMPTZ) and index on post_id.
       (b) Create src/routes/comments.ts with GET /api/posts/:postId/comments (join users for author name),
-      POST /api/posts/:postId/comments (requireAuth, returns 201),
-      DELETE /api/posts/:postId/comments/:id (requireAuth, author-or-admin only, 204/403/404).
-      Do NOT mount in app.ts. Export router as default.
-      (c) Create test/comments.test.ts on port 3464 that imports and mounts the comments router directly.
+      POST /api/posts/:postId/comments (requireAuth, returns 201), DELETE /api/posts/:postId/comments/:id
+      (requireAuth, author-or-admin only, 204/403/404). Export router as default. Do NOT mount in app.ts.
+      (c) Create test/comments.test.ts on port 3464 that mounts the comments router directly.
     checked: true
     files:
       - path: migrations/005_create_comments.sql
         isNew: true
         change: >
-          Create comments table with id SERIAL PRIMARY KEY, post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
-          user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, body TEXT NOT NULL,
+          Create comments table with id SERIAL PRIMARY KEY, post_id INTEGER REFERENCES posts(id)
+          ON DELETE CASCADE, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, body TEXT NOT NULL,
           created_at TIMESTAMPTZ DEFAULT NOW(). Add CREATE INDEX on post_id.
       - path: src/routes/comments.ts
         isNew: true
         change: >
-          Create Express Router with three endpoints nested under /api/posts/:postId/comments.
-          GET lists comments with author name via JOIN on users. POST creates comment for authenticated user.
-          DELETE allows only comment author or admin to delete. Export router as default.
+          Create Express Router with three routes: GET /:postId/comments (list with user join),
+          POST /:postId/comments (requireAuth, create comment), DELETE /:postId/comments/:id
+          (requireAuth, author-or-admin check). Export as default.
       - path: test/comments.test.ts
         isNew: true
         change: >
-          Create test suite on port 3464. Import the comments router and mount it directly on an Express app
-          (do not use the main app.ts). Tests: create comment, list comments, delete own comment,
-          reject delete by non-author, reject unauthenticated access.
+          Test file on port 3464 that imports and mounts the comments router directly.
+          Tests: create comment, list comments, delete own comment, reject delete by non-author,
+          reject unauthenticated access.
     tests:
       - test/comments.test.ts
     verify: "bun run src/migrate.ts && bun test test/comments.test.ts"
     mirror: "src/routes/posts.ts"
     context: |
-      // src/routes/posts.ts — CRUD route pattern
+      // src/routes/posts.ts — pattern for CRUD router
       import { Router, type Request, type Response } from "express";
       import { pool } from "../db.js";
       import { requireAuth } from "../middleware/auth.js";
@@ -55,6 +55,9 @@ items:
         res.status(204).send();
       });
 
+      // src/middleware/auth.ts — requireAuth sets req.user = { userId, role }
+      export function requireAuth(req, res, next): void { ... }
+
       // migrations/002_create_posts.sql — migration pattern
       CREATE TABLE IF NOT EXISTS posts (
         id SERIAL PRIMARY KEY,
@@ -64,27 +67,25 @@ items:
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
 
-      // src/middleware/auth.ts — auth types
-      // req.user?: { userId: number; role: string }
-
-      // test/posts.test.ts — test setup pattern (port 3458)
+      // test/posts.test.ts — test pattern (port 3458, bun:test, beforeAll migrations + server)
       import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test";
       import { pool } from "../src/db.js";
       import { app } from "../src/app.js";
-      import type { Server } from "http";
       const PORT = 3458;
       beforeAll(async () => { /* run migrations, start server */ });
       beforeEach(async () => { await pool.query("TRUNCATE posts RESTART IDENTITY CASCADE"); });
     conventions: >
-      ESM imports with .js extensions. Express Router pattern with named exports (e.g. postsRouter).
-      bun:test framework with describe/it/expect. pool.query for all DB access.
-      requireAuth middleware from ../middleware/auth.js. req.user!.userId for authenticated user id.
-      req.user.role for role checks. Migrations use CREATE TABLE IF NOT EXISTS.
-      Tests run on unique ports per suite. beforeEach truncates relevant tables.
-      Auth tokens obtained via POST /api/auth/register in test setup.
+      ESM imports with .js extensions. Named exports for routers (postsRouter, authRouter) but comments
+      should use default export per plan. bun:test framework with describe/it/expect. pool.query for
+      SQL with parameterized $N placeholders. requireAuth middleware from ../middleware/auth.js.
+      req.user!.userId and req.user!.role available after requireAuth. Migrations use
+      CREATE TABLE IF NOT EXISTS. Tests run migrations in beforeAll, truncate in beforeEach,
+      use unique ports per test file. fetch-based HTTP testing (no supertest).
     proof: >
-      The test suite must verify: (1) POST /api/posts/:postId/comments with auth creates a comment and returns 201
-      with the comment body and author info, (2) GET /api/posts/:postId/comments returns all comments for that post
-      with author names, (3) DELETE /api/posts/:postId/comments/:id by the comment author returns 204 and the comment
-      is gone, (4) DELETE by a different non-admin user returns 403, (5) POST and DELETE without auth return 401.
+      The test suite must verify: (1) POST /api/posts/:postId/comments with valid auth creates a comment
+      and returns 201 with the comment object including id, post_id, user_id, body, created_at.
+      (2) GET /api/posts/:postId/comments returns an array of comments for that post, each including
+      the author's name from the users table join. (3) DELETE /api/posts/:postId/comments/:id by the
+      comment author returns 204 and the comment is gone. (4) DELETE by a different non-admin user
+      returns 403. (5) POST and DELETE without auth token return 401.
     proof_type: "test"

@@ -2,45 +2,34 @@ import { Router, type Request, type Response } from "express";
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 
-const router = Router({ mergeParams: true });
+const router = Router();
 
-router.get("/", async (req: Request, res: Response) => {
-  const { postId } = req.params;
+router.get("/:postId/comments", async (req: Request, res: Response) => {
   const { rows } = await pool.query(
     `SELECT c.*, u.name AS author_name
      FROM comments c
      JOIN users u ON c.user_id = u.id
      WHERE c.post_id = $1
      ORDER BY c.created_at ASC`,
-    [postId],
+    [req.params.postId],
   );
   res.json(rows);
 });
 
-router.post("/", requireAuth, async (req: Request, res: Response) => {
-  const { postId } = req.params;
+router.post("/:postId/comments", requireAuth, async (req: Request, res: Response) => {
   const { body } = req.body;
-  if (!body) {
-    res.status(400).json({ error: "body is required" });
-    return;
-  }
   const { rows } = await pool.query(
     "INSERT INTO comments (post_id, user_id, body) VALUES ($1, $2, $3) RETURNING *",
-    [postId, req.user!.userId, body],
+    [req.params.postId, req.user!.userId, body],
   );
-  const { rows: withAuthor } = await pool.query(
-    `SELECT c.*, u.name AS author_name
-     FROM comments c
-     JOIN users u ON c.user_id = u.id
-     WHERE c.id = $1`,
-    [rows[0].id],
-  );
-  res.status(201).json(withAuthor[0]);
+  res.status(201).json(rows[0]);
 });
 
-router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { rows } = await pool.query("SELECT * FROM comments WHERE id = $1", [id]);
+router.delete("/:postId/comments/:id", requireAuth, async (req: Request, res: Response) => {
+  const { rows } = await pool.query(
+    "SELECT * FROM comments WHERE id = $1 AND post_id = $2",
+    [req.params.id, req.params.postId],
+  );
   if (rows.length === 0) {
     res.status(404).json({ error: "Comment not found" });
     return;
@@ -50,7 +39,7 @@ router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
-  await pool.query("DELETE FROM comments WHERE id = $1", [id]);
+  await pool.query("DELETE FROM comments WHERE id = $1", [req.params.id]);
   res.status(204).send();
 });
 
