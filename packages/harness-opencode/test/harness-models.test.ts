@@ -38,9 +38,7 @@ describe("AGENT_TIERS", () => {
       "architecture-advisor",
       "autopilot-prime",
       "code-reviewer-thorough",
-      "gap-analyzer",
       "plan",
-      "plan-reviewer",
       "prime",
       "research",
       "research-auto",
@@ -52,7 +50,9 @@ describe("AGENT_TIERS", () => {
       "agents-md-writer",
       "debriefer",
       "docs-maintainer",
+      "gap-analyzer",
       "lib-reader",
+      "plan-reviewer",
     ]);
     expect(midExecute).toEqual([
       "build",
@@ -98,8 +98,6 @@ describe("resolveHarnessModels", () => {
       "plan",
       "code-reviewer-thorough",
       "architecture-advisor",
-      "plan-reviewer",
-      "gap-analyzer",
       "research",
       "research-web",
       "research-local",
@@ -116,6 +114,8 @@ describe("resolveHarnessModels", () => {
       "docs-maintainer",
       "lib-reader",
       "agents-md-writer",
+      "gap-analyzer",
+      "plan-reviewer",
     ]) {
       expect(agents[name]!.model).toBe("mid-model-1");
     }
