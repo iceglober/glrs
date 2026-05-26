@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.10.7
+
+### Patch Changes
+
+- [#109](https://github.com/iceglober/glrs/pull/109) [`39a16fb`](https://github.com/iceglober/glrs/commit/39a16fb66ffd817ef82436106d8d6fa1b78bc0e9) Thanks [@iceglober](https://github.com/iceglober)! - Restructure PRIME Execute supplements to make parallel subagent dispatch the default path and require explicit justification for sequential. Replace conditional "conflict graph" analysis with a mandatory dispatch-mode gate that biases toward parallel.
+
 ## 2.10.6
 
 ## 2.10.5
