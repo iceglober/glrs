@@ -1078,15 +1078,12 @@ describe("prompt content assertions", () => {
     expect(prime).toContain("Mandatory delegation triggers");
   });
 
-  it("prime prompt delegates full test suites instead of running directly", () => {
-    // Phase 4 should NOT instruct running the full test suite directly
+  it("prime prompt runs pre-Assess verification for session-green timestamps", () => {
     expect(prime).not.toContain(
       "Run the project's test command. It must pass.",
     );
-    // Should instruct delegation to QA reviewer
-    expect(prime).toContain(
-      "Do NOT run the full test suite, lint, or typecheck directly in the PRIME",
-    );
+    expect(prime).toContain("Pre-Assess verification");
+    expect(prime).toContain("session-green");
   });
 
   it("prime prompt uses strengthened delegation threshold (> 10 files, not > 30 hits)", () => {

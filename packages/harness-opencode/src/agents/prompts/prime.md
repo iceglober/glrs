@@ -225,9 +225,21 @@ When `@build` is on the `mid-execute` tier, supplement the delegation prompt wit
 
 For trivial work (no plan): PRIME edits the file directly, runs lint/tests, proceeds to Assess. Do NOT delegate to `@build` without a plan.
 
-## Assess supplements
+## Pre-Assess verification (mandatory between Execute and Assess)
 
-Do NOT run the full test suite, lint, or typecheck directly in the PRIME — delegate to reviewers. Exception: `tsc_check` on a single file is fine.
+After all `@build` lanes return DONE, run the repo's test, lint, and typecheck commands **before** dispatching reviewers. Pipe output to `tail -3` to keep context light — you only need the exit code and final status line.
+
+```bash
+bun test 2>&1 | tail -3          # or npm test, etc.
+bun lint 2>&1 | tail -3          # or eslint, etc.
+bun tsc --noEmit 2>&1 | tail -3  # or tsc_check
+```
+
+Discover the correct commands from `package.json` scripts, `Makefile`, or `AGENTS.md`. Run all three in parallel (single message, three bash calls).
+
+For each command that exits 0, record an ISO-8601 timestamp. These become the session-green summary for `@code-reviewer`. If any command fails, you know before dispatching reviewers — handle as a red-CI condition (re-dispatch to `@build` with the failing command).
+
+## Assess supplements
 
 ### Parallel Assess after parallel Execute
 
@@ -249,15 +261,15 @@ When Execute dispatched multiple `@build` lanes, you can parallelize the first A
 ### Two-stage delegation
 
 1. **`@spec-reviewer` first.** On `[PASS_SPEC]`: proceed. On `[FAIL_SPEC]`: route to `@build` (FIX-INLINE) or Plan (LOOP-TO-PLAN). Do NOT dispatch `@code-reviewer`.
-2. **`@code-reviewer` (or thorough) after `[PASS_SPEC]`.** Include session-green summary if available.
+2. **`@code-reviewer` (or thorough) after `[PASS_SPEC]`.** Include the session-green summary from pre-Assess verification.
 
-**Session-green summary** (for `@code-reviewer` fast variant only):
+**Session-green summary** (always include when delegating to `@code-reviewer`):
 ```
 tests passed at <ISO-8601 timestamp>
 lint passed at <ISO-8601 timestamp>
 typecheck passed at <ISO-8601 timestamp>
 ```
-Omit lines you didn't run green. Do not fabricate.
+Include only lines that actually passed in pre-Assess verification. Do not fabricate.
 
 ### Loop limits
 
