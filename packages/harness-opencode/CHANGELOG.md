@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.10.10
+
+### Patch Changes
+
+- [#116](https://github.com/iceglober/glrs/pull/116) [`6eeda55`](https://github.com/iceglober/glrs/commit/6eeda55873110c7732eacb611b43df08c03e6350) Thanks [@iceglober](https://github.com/iceglober)! - Add Aptabase telemetry to parallel-dispatch hook: emits `subagent.dispatch.serial` or `subagent.dispatch.parallel` with `ops_count` on each Execute batch to track how often PRIME uses parallel subagents in production.
+
 ## 2.10.9
 
 ### Patch Changes
