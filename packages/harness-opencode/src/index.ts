@@ -39,6 +39,7 @@ import notifyPlugin from "./plugins/notify.js";
 import costTrackerPlugin from "./plugins/cost-tracker.js";
 import toolHooksPlugin from "./plugins/tool-hooks.js";
 import telemetryPlugin from "./plugins/telemetry.js";
+import parallelDispatchPlugin from "./plugins/parallel-dispatch.js";
 
 // ---- Update notification ----
 
@@ -132,6 +133,7 @@ const plugin: Plugin = async (input, options) => {
   const costTrackerHooks = await costTrackerPlugin(input);
   const toolHooks = await toolHooksPlugin(input, pluginOptions);
   const telemetryHooks = await telemetryPlugin(input);
+  const parallelDispatchHooks = await parallelDispatchPlugin(input);
 
   // Merge all hooks.
   //
@@ -191,9 +193,11 @@ const plugin: Plugin = async (input, options) => {
   // observes the final output shape.
   const hasToolHooksAfter = toolHooks["tool.execute.after"] !== undefined;
   const hasTelemetryAfter = telemetryHooks["tool.execute.after"] !== undefined;
-  if (hasToolHooksAfter || hasTelemetryAfter) {
+  const hasParallelAfter = parallelDispatchHooks["tool.execute.after"] !== undefined;
+  if (hasToolHooksAfter || hasTelemetryAfter || hasParallelAfter) {
     hooks["tool.execute.after"] = async (input, output) => {
       if (hasToolHooksAfter) await toolHooks["tool.execute.after"]!(input, output);
+      if (hasParallelAfter) await parallelDispatchHooks["tool.execute.after"]!(input, output);
       if (hasTelemetryAfter) await telemetryHooks["tool.execute.after"]!(input, output);
     };
   }

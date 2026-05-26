@@ -2,7 +2,7 @@
 name: plan-reviewer
 description: Adversarial plan validator. Returns [OKAY] or [REJECT] with specific issues.
 mode: subagent
-model: anthropic/claude-opus-4-7
+model: anthropic/claude-sonnet-4-6
 temperature: 0.1
 ---
 
