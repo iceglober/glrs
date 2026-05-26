@@ -2,7 +2,7 @@
 items:
   - id: "2.1"
     intent: "Add a bookmarks system: migration with bookmarks table (user_id, post_id, unique constraint, index), CRUD routes (GET list with joins, POST create with 409/404, DELETE with owner check), and comprehensive tests"
-    checked: false
+    checked: true
     files:
       - path: migrations/007_create_bookmarks.sql
         isNew: true
