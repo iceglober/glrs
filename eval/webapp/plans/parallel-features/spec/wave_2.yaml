@@ -1,0 +1,81 @@
+# spec/wave_2.yaml
+items:
+  - id: "2.1"
+    intent: "Add a bookmarks system: migration with bookmarks table (user_id, post_id, unique constraint, index), CRUD routes (GET list with joins, POST create with 409/404, DELETE with owner check), and comprehensive tests"
+    checked: false
+    files:
+      - path: migrations/007_create_bookmarks.sql
+        isNew: true
+        change: "Create bookmarks table with id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE, created_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(user_id, post_id), and an index on user_id"
+      - path: src/routes/bookmarks.ts
+        isNew: true
+        change: "Create Express router with three endpoints: GET /api/bookmarks (requireAuth, returns authenticated user's bookmarked posts joined with posts and users tables for title and author name, ordered by bookmark created_at DESC), POST /api/bookmarks (requireAuth, accepts {postId}, creates bookmark, returns 201, rejects duplicate with 409, rejects nonexistent post with 404), DELETE /api/bookmarks/:id (requireAuth, owner-only delete returning 204, 403 if not owner, 404 if not found). Export router as default. Do NOT mount in app.ts."
+      - path: test/bookmarks.test.ts
+        isNew: true
+        change: "Create test suite on port 3466 that imports and mounts the bookmarks router directly. Tests: bookmark a post, list bookmarks (verify joined title/author), delete bookmark, reject duplicate bookmark (409), reject bookmark of nonexistent post (404), reject unauthenticated access (401), reject delete by non-owner (403)"
+    tests:
+      - "test/bookmarks.test.ts"
+    verify: "bun run src/migrate.ts && bun test test/bookmarks.test.ts"
+    mirror: "src/routes/posts.ts"
+    context: |
+      // src/routes/posts.ts — route pattern
+      import { Router, type Request, type Response } from "express";
+      import { pool } from "../db.js";
+      import { requireAuth } from "../middleware/auth.js";
+
+      export const postsRouter = Router();
+
+      // POST /api/posts — create (user_id taken from auth token)
+      postsRouter.post("/", requireAuth, async (req: Request, res: Response) => {
+        const { title, body } = req.body;
+        const { rows } = await pool.query(
+          "INSERT INTO posts (title, body, user_id) VALUES ($1, $2, $3) RETURNING *",
+          [title, body, req.user!.userId],
+        );
+        res.status(201).json(rows[0]);
+      });
+
+      // DELETE /api/posts/:id — delete
+      postsRouter.delete("/:id", requireAuth, async (req: Request, res: Response) => {
+        const { rows } = await pool.query(
+          "DELETE FROM posts WHERE id = $1 RETURNING *",
+          [req.params.id],
+        );
+        if (rows.length === 0) {
+          res.status(404).json({ error: "Post not found" });
+          return;
+        }
+        res.status(204).send();
+      });
+
+      // migrations/002_create_posts.sql — migration pattern
+      CREATE TABLE IF NOT EXISTS posts (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      // src/middleware/auth.ts — auth pattern
+      export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+        // sets req.user = { userId: number; role: string }
+      }
+
+      // test/posts.test.ts — test setup pattern (port 3458)
+      import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+      import { pool } from "../src/db.js";
+      import { app } from "../src/app.js";
+      import type { Server } from "http";
+      const PORT = 3458;
+      beforeAll(async () => {
+        // run migrations from fs, start server
+      });
+      beforeEach(async () => {
+        await pool.query("TRUNCATE posts RESTART IDENTITY CASCADE");
+        await pool.query("TRUNCATE users RESTART IDENTITY CASCADE");
+        // re-register user, get authToken
+      });
+    conventions: "ESM imports with .js extensions, named exports for routers (export const xRouter = Router()), pool.query with parameterized $1 placeholders, bun:test framework, fetch API in tests with Bearer token auth, Express Router with typed Request/Response"
+    proof: "Tests must verify: (1) POST /api/bookmarks with valid postId returns 201 and the bookmark object, (2) GET /api/bookmarks returns array of bookmarks with post title and author name fields joined from posts/users, ordered by created_at DESC, (3) DELETE /api/bookmarks/:id by owner returns 204 and bookmark is gone, (4) POST /api/bookmarks with duplicate user_id+post_id returns 409, (5) POST /api/bookmarks with nonexistent postId returns 404, (6) all endpoints without auth token return 401, (7) DELETE /api/bookmarks/:id by non-owner returns 403"
+    proof_type: "test"

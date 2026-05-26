@@ -1,0 +1,77 @@
+items:
+  - id: "1.1"
+    intent: "Add a tagging system for posts: create tags and post_tags tables via migration, implement CRUD routes for tags and post-tag associations, and write integration tests"
+    checked: false
+    files:
+      - path: migrations/006_create_tags.sql
+        isNew: true
+        change: "Create `tags` table (id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW()) and `post_tags` junction table (post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE, tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE, PRIMARY KEY (post_id, tag_id))"
+      - path: src/routes/tags.ts
+        isNew: true
+        change: "Create Express router with five endpoints: GET /api/tags (all tags with post count via LEFT JOIN post_tags GROUP BY), POST /api/tags (create tag, requireAuth, 201, 409 on duplicate), POST /api/posts/:postId/tags (tag a post, requireAuth, 201), DELETE /api/posts/:postId/tags/:tagId (remove tag from post, requireAuth, 204), GET /api/posts/:postId/tags (all tags for a post). Export router as default. Do NOT mount in app.ts."
+      - path: test/tags.test.ts
+        isNew: true
+        change: "Create bun:test integration tests on port 3465. Import and mount tags router directly for testing. Tests: create tag, list tags with counts, tag a post, list tags for post, remove tag from post, reject duplicate tag name (409)."
+    tests:
+      - test/tags.test.ts
+    verify: "bun run src/migrate.ts && bun test test/tags.test.ts"
+    mirror: "src/routes/posts.ts"
+    context: |
+      // src/routes/posts.ts — pattern for route file structure
+      import { Router, type Request, type Response } from "express";
+      import { pool } from "../db.js";
+      import { requireAuth } from "../middleware/auth.js";
+
+      export const postsRouter = Router();
+
+      postsRouter.post("/", requireAuth, async (req: Request, res: Response) => {
+        const { title, body } = req.body;
+        if (!title || !body) {
+          res.status(400).json({ error: "title and body are required" });
+          return;
+        }
+        const { rows } = await pool.query(
+          "INSERT INTO posts (title, body, user_id) VALUES ($1, $2, $3) RETURNING *",
+          [title, body, req.user!.userId],
+        );
+        res.status(201).json(rows[0]);
+      });
+
+      // migrations/002_create_posts.sql — pattern for migration files
+      // CREATE TABLE IF NOT EXISTS posts (
+      //   id SERIAL PRIMARY KEY,
+      //   title TEXT NOT NULL,
+      //   body TEXT NOT NULL,
+      //   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      //   created_at TIMESTAMPTZ DEFAULT NOW()
+      // );
+
+      // test/posts.test.ts — pattern for test setup
+      // import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+      // import { pool } from "../src/db.js";
+      // import { app } from "../src/app.js";
+      // import type { Server } from "http";
+      // const PORT = 3458;
+      // const BASE = `http://localhost:${PORT}/api/posts`;
+      // beforeAll: run migrations from fs, app.listen(PORT)
+      // afterAll: server.close()
+      // beforeEach: TRUNCATE tables, re-register auth user
+
+      // src/db.ts — pool export
+      // import pg from "pg";
+      // const { Pool } = pg;
+      // export const pool = new Pool({ connectionString: DATABASE_URL });
+
+      // src/middleware/auth.ts — requireAuth signature
+      // export function requireAuth(req: Request, res: Response, next: NextFunction): void
+    conventions: "ESM imports with .js extensions, named exports for routers (e.g. postsRouter), default export requested for tags router, bun:test with describe/it/expect, Express Router pattern, pool.query for SQL, requireAuth middleware for protected routes, TRUNCATE + re-register pattern in beforeEach, each test file uses a unique port"
+    proof: |
+      The acceptance proof should verify all six behaviors:
+      1. POST /api/tags with {name} creates a tag and returns 201 with the tag object (id, name, created_at)
+      2. POST /api/tags with a duplicate name returns 409
+      3. GET /api/tags returns all tags, each with a post_count field reflecting the number of associated posts
+      4. POST /api/posts/:postId/tags with {tagId} creates a post-tag association and returns 201
+      5. GET /api/posts/:postId/tags returns all tags for the given post
+      6. DELETE /api/posts/:postId/tags/:tagId removes the association and returns 204
+      All mutating endpoints must require authentication (401 without token). Tests should set up a user, auth token, and at least one post in beforeEach.
+    proof_type: "test"

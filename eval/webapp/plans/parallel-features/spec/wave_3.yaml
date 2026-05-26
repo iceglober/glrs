@@ -1,0 +1,54 @@
+# spec/wave_3.yaml
+items:
+  - id: "3.1"
+    intent: "Import the comments, tags, and bookmarks routers (default exports) and mount them in the Express app alongside existing routes. Comments router at /api/posts, tags router at /api, bookmarks router at /api/bookmarks."
+    checked: false
+    files:
+      - path: src/app.ts
+        isNew: false
+        change: "Add three imports (commentsRouter from ./routes/comments.js, tagsRouter from ./routes/tags.js, bookmarksRouter from ./routes/bookmarks.js) and three app.use() mount calls: commentsRouter at /api/posts, tagsRouter at /api, bookmarksRouter at /api/bookmarks. Place new mounts after existing route mounts and before the error handler."
+    tests:
+      - "test/comments.test.ts"
+      - "test/tags.test.ts"
+      - "test/bookmarks.test.ts"
+    verify: "bun test"
+    mirror: "src/app.ts"
+    context: |
+      // src/app.ts — current router imports and mounts
+      import express from "express";
+      import { join } from "path";
+      import { usersRouter } from "./routes/users.js";
+      import { postsRouter } from "./routes/posts.js";
+      import { authRouter } from "./routes/auth.js";
+      import { analyticsRouter } from "./routes/analytics.js";
+
+      export const app = express();
+
+      app.use(express.json());
+      app.use(express.static(join(import.meta.dir, "..", "public")));
+
+      // Mount routes
+      app.use("/api/users", usersRouter);
+      app.use("/api/posts", postsRouter);
+      app.use("/api/auth", authRouter);
+      app.use("/api/analytics", analyticsRouter);
+
+      // Error handler
+      app.use(
+        (
+          err: Error,
+          _req: express.Request,
+          res: express.Response,
+          _next: express.NextFunction,
+        ) => {
+          console.error(err.stack);
+          res.status(500).json({ error: "Internal server error" });
+        },
+      );
+
+      // wave_0 defines: export default commentsRouter (routes: GET/POST /api/posts/:postId/comments, DELETE /api/posts/:postId/comments/:id)
+      // wave_1 defines: export default tagsRouter (routes: GET/POST /api/tags, GET/POST/DELETE /api/posts/:postId/tags)
+      // wave_2 defines: export default bookmarksRouter (routes: GET/POST /api/bookmarks, DELETE /api/bookmarks/:id)
+    conventions: "ESM imports with .js extensions, named exports for existing routers (export const xRouter), default exports for new routers from waves 0-2, app.use() mounts grouped under '// Mount routes' comment, error handler middleware at the end"
+    proof: "Tests must verify that all existing routes still respond correctly (e.g. GET /api/posts returns 200) AND that newly mounted routes are reachable through the app: (1) POST then GET /api/posts/:postId/comments works end-to-end, (2) POST then GET /api/tags works, POST /api/posts/:postId/tags works, (3) POST then GET /api/bookmarks works, DELETE /api/bookmarks/:id works. All three test suites (test/comments.test.ts, test/tags.test.ts, test/bookmarks.test.ts) must pass with `bun test`."
+    proof_type: "test"
