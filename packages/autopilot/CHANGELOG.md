@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.2.5
+
+### Patch Changes
+
+- [#114](https://github.com/iceglober/glrs/pull/114) [`d987e11`](https://github.com/iceglober/glrs/commit/d987e1197e8ee62cbd40dad8e9f4f3cfc5944c07) Thanks [@iceglober](https://github.com/iceglober)! - Speed up PRIME sessions: downgrade gap-analyzer and plan-reviewer to Sonnet, add pre-Assess session-green timestamps, and add sisyphus-style parallel-dispatch enforcement hook. Fix autopilot conflict graph silently falling back to sequential for enriched YAML specs.
+
 ## 0.2.4
 
 ### Patch Changes
