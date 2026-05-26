@@ -118,17 +118,23 @@ async function runAutopilot(): Promise<{ durationS: number; costUsd: number }> {
   const adapter = await createAdapter();
   const startTime = Date.now();
 
+  const parallel = process.env.EVAL_PARALLEL ? parseInt(process.env.EVAL_PARALLEL, 10) : undefined;
+  if (parallel) {
+    console.error(`[eval] Parallel lanes: ${parallel}`);
+  }
+
   const runner = new SessionRunner({
     planPath: PLAN_DIR,
     cwd: WEBAPP_DIR,
     fast: true,
     maxIterationsPerPhase: 3,
+    parallel,
     adapter,
     config: {
       adapter: "claude-code-cli",
       models: {
         enrichment: "claude-opus-4-7",
-        execution: "claude-sonnet-4-6",
+        execution: process.env.EVAL_EXECUTE_MODEL || "claude-sonnet-4-6",
       },
     },
   });
@@ -169,6 +175,10 @@ async function main() {
   console.error("[eval] Complex webapp eval starting...");
   console.error(`[eval] Plan: ${PLAN_DIR}`);
   console.error(`[eval] Webapp: ${WEBAPP_DIR}`);
+  console.error(`[eval] Adapter: claude-code-cli`);
+  console.error(`[eval] Execute model: ${process.env.EVAL_EXECUTE_MODEL || "claude-sonnet-4-6"}`);
+  console.error(`[eval] Parallel: ${process.env.EVAL_PARALLEL || "off (sequential)"}`);
+
 
   await ensureDocker();
   await resetWebapp();
