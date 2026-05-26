@@ -13,6 +13,7 @@
  */
 
 import type { Plugin } from "@opencode-ai/plugin";
+import { track } from "../telemetry.js";
 
 const PARALLEL_GUIDANCE = [
   "",
@@ -59,8 +60,12 @@ const plugin: Plugin = async () => {
 
       const state = getState(input.sessionID);
       const now = Date.now();
-      // Reset batch counter if >5s since last dispatch (new model response)
       if (now - state.lastDispatchTs > 5000) {
+        if (state.buildCount === 1) {
+          track("subagent.dispatch.serial", { ops_count: 1 });
+        } else if (state.buildCount > 1) {
+          track("subagent.dispatch.parallel", { ops_count: state.buildCount });
+        }
         state.buildCount = 0;
       }
       state.buildCount++;
