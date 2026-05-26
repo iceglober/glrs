@@ -2,7 +2,7 @@
 name: gap-analyzer
 description: Pre-planning gap analyzer. Surfaces hidden requirements and ambiguities. Read-only.
 mode: subagent
-model: anthropic/claude-opus-4-7
+model: anthropic/claude-sonnet-4-6
 temperature: 0.5
 ---
 

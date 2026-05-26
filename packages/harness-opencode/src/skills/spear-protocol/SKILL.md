@@ -135,14 +135,14 @@ Then dispatch in sequence:
    - On `[PASS_SPEC]`: proceed to step 2.
    - On `[FAIL_SPEC: <summary>]`: feed the full report back to `@build` as a FIX-INLINE (if the issues are trivial) or to Plan as a LOOP-TO-PLAN (if structural). Do NOT dispatch `@code-reviewer`.
 
-2. **Dispatch `@code-reviewer` (or `@code-reviewer-thorough`) only after `[PASS_SPEC]`.** Pass the plan path, diff context, and session-green summary (if applicable).
+2. **Dispatch `@code-reviewer` (or `@code-reviewer-thorough`) only after `[PASS_SPEC]`.** Pass the plan path, diff context, and session-green summary from pre-Assess verification.
    - On `[PASS]`: proceed to Resolve.
    - On `[LOOP-TO-PLAN: <summary>]`: feed the full Assess report back to Plan. Plan updates its file-level changes and/or acceptance criteria, then re-enters Execute → Assess.
    - On `[FIX-INLINE: <summary>]`: fix inline and re-delegate to `@spec-reviewer` → `@code-reviewer`. Increment strictness level.
 
-### Session-green summary (for `@code-reviewer` fast variant)
+### Session-green summary
 
-When delegating to `@code-reviewer` (not thorough), include in the delegation prompt:
+Always include when delegating to `@code-reviewer`. Run the repo's test, lint, and typecheck commands between Execute and Assess (see PRIME's pre-Assess verification supplement). Include in the delegation prompt:
 
 ```
 tests passed at <ISO-8601 timestamp>
@@ -150,7 +150,7 @@ lint passed at <ISO-8601 timestamp>
 typecheck passed at <ISO-8601 timestamp>
 ```
 
-Use timestamps from when you actually ran those commands green this session. Omit any line you did NOT run green — do not fabricate.
+Include only lines that actually passed. Do not fabricate.
 
 ### Loop limits
 
