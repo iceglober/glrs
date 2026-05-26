@@ -515,6 +515,9 @@ export async function runLoopSession(
     file: f,
     items: (() => {
       try {
+        if (useYamlSpec) {
+          return parseSpecItems(path.join(opts.planPath, "spec", f));
+        }
         return parseItems(_readFileSync(path.join(opts.planPath, f)));
       } catch {
         return [];
