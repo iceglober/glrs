@@ -2,7 +2,7 @@
 items:
   - id: "3.1"
     intent: "Import the comments, tags, and bookmarks routers (default exports) and mount them in the Express app alongside existing routes. Comments router at /api/posts, tags router at /api, bookmarks router at /api/bookmarks."
-    checked: false
+    checked: true
     files:
       - path: src/app.ts
         isNew: false

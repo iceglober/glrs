@@ -4,6 +4,9 @@ import { usersRouter } from "./routes/users.js";
 import { postsRouter } from "./routes/posts.js";
 import { authRouter } from "./routes/auth.js";
 import { analyticsRouter } from "./routes/analytics.js";
+import commentsRouter from "./routes/comments.js";
+import tagsRouter from "./routes/tags.js";
+import bookmarksRouter from "./routes/bookmarks.js";
 
 export const app = express();
 
@@ -17,6 +20,9 @@ app.use("/api/users", usersRouter);
 app.use("/api/posts", postsRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/analytics", analyticsRouter);
+app.use("/api/posts", commentsRouter);
+app.use("/api", tagsRouter);
+app.use("/api/bookmarks", bookmarksRouter);
 
 // Error handler
 app.use(
