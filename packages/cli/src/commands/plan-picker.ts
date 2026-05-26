@@ -27,8 +27,9 @@ export async function pickPlanFile(rootDir: string): Promise<string | null> {
       return null;
     }
 
+    const PLAN_DOTDIRS = new Set([".glrs", ".agent"]);
     const dirs = entries
-      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .filter((e) => e.isDirectory() && (!e.name.startsWith(".") || PLAN_DOTDIRS.has(e.name)))
       .map((e) => e.name)
       .sort();
     const files = entries
