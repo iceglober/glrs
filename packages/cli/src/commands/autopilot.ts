@@ -189,8 +189,15 @@ export const autopilotInteractiveCmd = command({
       type: optional(oneOf(ADAPTER_NAMES as unknown as string[])),
       description: `Agent adapter to use (default: ${DEFAULT_ADAPTER}). Available: ${ADAPTER_NAMES.join(", ")}`,
     }),
+    target: option({
+      long: "target",
+      short: "t",
+      type: optional(oneOf(ADAPTER_NAMES as unknown as string[])),
+      description: `Alias for --adapter.`,
+    }),
   },
-  handler: async ({ plan, resume, maxIterationsPerPhase, parallel, ship, status, adapter: adapterName }) => {
+  handler: async ({ plan, resume, maxIterationsPerPhase, parallel, ship, status, adapter, target }) => {
+    const adapterName = adapter ?? target;
     const cwd = process.cwd();
 
     // --status: short-circuit — read and pretty-print the current session state
