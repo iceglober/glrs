@@ -1,7 +1,7 @@
 items:
   - id: "1.1"
     intent: "Add a tagging system for posts: create tags and post_tags tables via migration, implement CRUD routes for tags and post-tag associations, and write integration tests"
-    checked: false
+    checked: true
     files:
       - path: migrations/006_create_tags.sql
         isNew: true
