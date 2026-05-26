@@ -1,5 +1,7 @@
 # Changelog
 
+## 2.10.8
+
 ## 2.10.7
 
 ### Patch Changes

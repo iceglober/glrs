@@ -1,5 +1,14 @@
 # @glrs-dev/cli
 
+## 2.10.8
+
+### Patch Changes
+
+- [#111](https://github.com/iceglober/glrs/pull/111) [`d2c6b97`](https://github.com/iceglober/glrs/commit/d2c6b9781e5b77c42a336dad8103b7a059d3e898) Thanks [@iceglober](https://github.com/iceglober)! - Fix autopilot plan picker ignoring `.glrs` directory and add `--target` as alias for `--adapter`.
+
+- Updated dependencies []:
+  - @glrs-dev/harness-plugin-opencode@2.10.8
+
 ## 2.10.7
 
 ### Patch Changes
