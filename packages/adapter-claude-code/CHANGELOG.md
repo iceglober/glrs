@@ -1,5 +1,12 @@
 # @glrs-dev/adapter-claude-code
 
+## 0.1.13
+
+### Patch Changes
+
+- Updated dependencies [[`e74a396`](https://github.com/iceglober/glrs/commit/e74a396925b567ce194345a8248db076dbc44ef0)]:
+  - @glrs-dev/autopilot@0.6.0
+
 ## 0.1.12
 
 ### Patch Changes
