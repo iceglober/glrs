@@ -1,5 +1,15 @@
 # @glrs-dev/cli
 
+## 2.10.11
+
+### Patch Changes
+
+- Updated dependencies [[`d1ce47e`](https://github.com/iceglober/glrs/commit/d1ce47e8e1846587dfe0bc7fef2cf5e486464f38)]:
+  - @glrs-dev/autopilot@0.3.0
+  - @glrs-dev/adapter-claude-code@0.1.8
+  - @glrs-dev/adapter-opencode@0.1.8
+  - @glrs-dev/harness-plugin-opencode@2.10.11
+
 ## 2.10.10
 
 ### Patch Changes
