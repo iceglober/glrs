@@ -1172,7 +1172,35 @@ export async function runLoopSession(
           }
         }
 
-        const r = await runPhaseInner(phaseFile, "lane-1", opts.cwd, lastRetryContext, isEscalation);
+        let r: Awaited<ReturnType<typeof runPhaseInner>>;
+        try {
+          r = await runPhaseInner(phaseFile, "lane-1", opts.cwd, lastRetryContext, isEscalation);
+        } catch (err) {
+          // Uncaught exceptions from the adapter (socket errors, fetch failures)
+          // must be captured so the retry loop can attempt recovery instead of
+          // crashing the entire run.
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ phase: phaseFile, attempt, err: errMsg }, "phase threw an exception");
+          emitter?.emitEvent({
+            type: "error",
+            timestamp: new Date().toISOString(),
+            message: errMsg,
+          });
+          r = {
+            phaseFile,
+            laneId: "lane-1",
+            ok: false,
+            fatal: true,
+            iterations: 0,
+            costUsd: 0,
+            phaseLoopResult: {
+              exitReason: "error",
+              iterations: 0,
+              message: errMsg,
+            },
+            phaseComplete: false,
+          };
+        }
 
         if (r.phaseComplete) {
           await recordPhaseCompletion(phaseFile, r.phaseLoopResult, phaseHooksConfig);
