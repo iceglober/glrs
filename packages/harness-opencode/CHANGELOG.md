@@ -1,5 +1,7 @@
 # Changelog
 
+## 2.10.11
+
 ## 2.10.10
 
 ### Patch Changes

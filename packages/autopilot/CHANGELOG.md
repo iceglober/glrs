@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.3.0
+
+### Minor Changes
+
+- [#118](https://github.com/iceglober/glrs/pull/118) [`d1ce47e`](https://github.com/iceglober/glrs/commit/d1ce47e8e1846587dfe0bc7fef2cf5e486464f38) Thanks [@iceglober](https://github.com/iceglober)! - Eliminate plan shapes — collapse freeform file, markdown directory, and YAML spec directory into a single enrichment path that always produces spec/main.yaml + spec/wave_N.yaml. Remove useYamlSpec branching, markdown parsers, orphan recovery, and decomposition pipeline.
+
 ## 0.2.5
 
 ### Patch Changes
