@@ -26,7 +26,6 @@ import {
   type Checkpoint,
 } from "./checkpoint.js";
 import { recordHead, resetSoft } from "./git-safety.js";
-import { parseItems } from "./plan-parser.js";
 import { hasSpec, readSpecGoal, readSpecConstraints, detectSpecPhases, filterUncheckedSpecPhases, parseSpecItems } from "./spec-parser.js";
 import { markPhaseCompleted as specMarkPhaseCompleted, markItemUnchecked } from "./spec-writer.js";
 import { buildConflictGraph, hasParallelism } from "./conflict-graph.js";
@@ -105,153 +104,6 @@ function extractHooksConfig(config: unknown): {
   };
 }
 
-/**
- * Uncheck items by ID in markdown phase content.
- * Replaces `- [x] id: <id>` with `- [ ] id: <id>` for matching items.
- */
-function uncheckItemsInMarkdown(content: string, itemIds: string[]): string {
-  if (itemIds.length === 0) return content;
-  let result = content;
-  for (const itemId of itemIds) {
-    const escaped = itemId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Match `- [x] id: <itemId>` (case-insensitive for x/X) and replace with `- [ ]`
-    const re = new RegExp(`^(- )\\[[xX]\\](\\s+id:\\s+${escaped}\\b)`, "m");
-    result = result.replace(re, "$1[ ]$2");
-  }
-  return result;
-}
-
-/**
- * Extract a named section from markdown content.
- * Returns the text between `## <name>` and the next `##` heading (or EOF).
- */
-function extractSection(content: string, sectionName: string): string {
-  const re = new RegExp(
-    `^## ${sectionName}\\s*\\n([\\s\\S]*?)(?=^## |$)`,
-    "m",
-  );
-  const match = re.exec(content);
-  return match ? match[1].trim() : "";
-}
-
-/**
- * Parse phase/wave file references from main.md.
- *
- * Tries multiple formats:
- * 1. Checkbox lines: `- [ ] wave_1.md — ...` or `- [ ] [phase_1.md](...)`
- * 2. Markdown table cells: `[wave_1.md](./wave_1.md)`
- * 3. Fallback: scan the directory for any .md files that aren't main/scope
- *
- * Returns ALL phase files found (not just unchecked ones) — the caller
- * decides which to skip based on completion state.
- */
-function detectPhaseFiles(mainContent: string, planDir: string): string[] {
-  const found = new Set<string>();
-
-  // 1. Checkbox lines: `- [ ] file.md` or `- [x] file.md` or `- [ ] [file.md](...)`
-  const checkboxRe = /^- \[[ xX]\]\s+(?:\[)?([a-zA-Z0-9_-]+\.md)(?:\]\([^)]*\))?/gm;
-  let match: RegExpExecArray | null;
-  while ((match = checkboxRe.exec(mainContent)) !== null) {
-    found.add(match[1]);
-  }
-
-  // 2. Markdown link references in tables or prose: [file.md](./file.md)
-  const linkRe = /\[([a-zA-Z0-9_-]+\.md)\]\(\.\//g;
-  while ((match = linkRe.exec(mainContent)) !== null) {
-    found.add(match[1]);
-  }
-
-  // 3. Fallback: scan directory if nothing found
-  if (found.size === 0) {
-    try {
-      const entries = fs.readdirSync(planDir);
-      for (const f of entries) {
-        if (
-          f.endsWith(".md") &&
-          f !== "main.md" &&
-          f !== "scope.md" &&
-          f !== "scope-seed.md"
-        ) {
-          found.add(f);
-        }
-      }
-    } catch {
-      // Directory read failure — return empty
-    }
-  }
-
-  // Sort naturally: wave_1 before wave_2 before wave_10
-  return [...found].sort((a, b) => {
-    const numA = parseInt(a.replace(/[^0-9]/g, ""), 10) || 0;
-    const numB = parseInt(b.replace(/[^0-9]/g, ""), 10) || 0;
-    return numA - numB;
-  });
-}
-
-/**
- * Filter to only unchecked phases. A phase is "unchecked" if main.md
- * has `- [ ] <filename>` for it, OR if main.md doesn't use checkbox
- * references at all (table/fallback format — check the phase file itself).
- */
-function filterUncheckedPhases(
-  phaseFiles: string[],
-  mainContent: string,
-  planDir: string,
-  readFile: (p: string) => string,
-): string[] {
-  // If main.md uses checkbox references, filter by checkbox state
-  const checkedRe = /^- \[x\]\s+(?:\[)?([a-zA-Z0-9_-]+\.md)/gm;
-  const checked = new Set<string>();
-  let match: RegExpExecArray | null;
-  while ((match = checkedRe.exec(mainContent)) !== null) {
-    checked.add(match[1]);
-  }
-
-  // If main.md has checkbox references, use them to filter
-  const hasCheckboxRefs = /^- \[[ xX]\]\s+(?:\[)?[a-zA-Z0-9_-]+\.md/m.test(mainContent);
-  if (hasCheckboxRefs) {
-    return phaseFiles.filter((f) => !checked.has(f));
-  }
-
-  // No checkbox references in main.md — check each phase file's own items
-  return phaseFiles.filter((f) => {
-    try {
-      const content = readFile(path.join(planDir, f));
-      return !isPhaseComplete(content);
-    } catch {
-      return true; // Can't read → assume unchecked
-    }
-  });
-}
-
-/**
- * Check whether a phase file has all its items completed.
- * Returns true if all checkboxes are checked, OR if there are no checkboxes
- * (nothing to track = nothing left to do).
- */
-function isPhaseComplete(phaseContent: string): boolean {
-  const checkboxRe = /^[ \t]*-\s+\[([ xX])\]/gm;
-  let total = 0;
-  let checked = 0;
-  let match: RegExpExecArray | null;
-  while ((match = checkboxRe.exec(phaseContent)) !== null) {
-    total++;
-    if (match[1] !== " ") checked++;
-  }
-  return total === 0 || checked === total;
-}
-
-/**
- * Update main.md to mark a phase checkbox as checked.
- * Replaces `- [ ] <filename>` with `- [x] <filename>`.
- * Handles both bare filenames and markdown links.
- */
-function markPhaseChecked(mainContent: string, phaseFile: string): string {
-  const escaped = phaseFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // Match both bare `- [ ] file.md` and linked `- [ ] [file.md](...)`
-  const re = new RegExp(`^(- )\\[ \\](\\s+(?:\\[)?${escaped})`, "m");
-  return mainContent.replace(re, "$1[x]$2");
-}
 
 /** Exit reasons that indicate a successful phase completion. */
 export const SUCCESS_REASONS = new Set(["sentinel", "idle", "max-iterations"]);
@@ -263,17 +115,6 @@ export const SUCCESS_REASONS = new Set(["sentinel", "idle", "max-iterations"]);
  */
 export function isSuccessExitReason(reason: string): boolean {
   return SUCCESS_REASONS.has(reason);
-}
-
-/**
- * Filter to only unchecked phases using the YAML spec's `completed` field.
- * A phase is "unchecked" when its `completed` field is false in spec/main.yaml.
- */
-function filterUncheckedPhasesYaml(
-  phaseFiles: string[],
-  planDir: string,
-): string[] {
-  return filterUncheckedSpecPhases(phaseFiles, planDir);
 }
 
 /**
@@ -420,31 +261,20 @@ export async function runLoopSession(
   const verifyConfig = extractVerifyConfig(opts.config);
   const hooksConfig = extractHooksConfig(opts.config);
 
-  const mainMdPath = path.join(opts.planPath, "main.md");
-
-  // YAML spec path: read goal/constraints/phases from spec/main.yaml when available
-  const useYamlSpec = hasSpec(opts.planPath);
-
-  let goal: string;
-  let constraints: string;
-  let allPhases: string[];
-
-  if (useYamlSpec) {
-    goal = readSpecGoal(opts.planPath);
-    constraints = readSpecConstraints(opts.planPath);
-    allPhases = detectSpecPhases(opts.planPath);
-  } else {
-    const mainContent = _readFileSync(mainMdPath);
-    goal = extractSection(mainContent, "Goal");
-    constraints = extractSection(mainContent, "Constraints");
-    allPhases = detectPhaseFiles(mainContent, opts.planPath);
+  // Guard: directory plans must have spec/ (produced by enrichment)
+  if (!hasSpec(opts.planPath)) {
+    return {
+      exitReason: "error",
+      iterations: 0,
+      message: "Plan directory has no spec/ — run enrichment first",
+    };
   }
 
-  // For unchecked-phase filtering, we need mainContent for the markdown path
-  const mainContentForFilter = useYamlSpec ? "" : _readFileSync(mainMdPath);
-  let uncheckedPhases = useYamlSpec
-    ? filterUncheckedPhasesYaml(allPhases, opts.planPath)
-    : filterUncheckedPhases(allPhases, mainContentForFilter, opts.planPath, _readFileSync);
+  const goal = readSpecGoal(opts.planPath);
+  const constraints = readSpecConstraints(opts.planPath);
+  const allPhases = detectSpecPhases(opts.planPath);
+
+  let uncheckedPhases = filterUncheckedSpecPhases(allPhases, opts.planPath);
 
   // Resume support: when --resume is set (or a checkpoint exists for the
   // current plan), skip phases already listed in `completedPhases`.
@@ -515,10 +345,7 @@ export async function runLoopSession(
     file: f,
     items: (() => {
       try {
-        if (useYamlSpec) {
-          return parseSpecItems(path.join(opts.planPath, "spec", f));
-        }
-        return parseItems(_readFileSync(path.join(opts.planPath, f)));
+        return parseSpecItems(path.join(opts.planPath, "spec", f));
       } catch {
         return [];
       }
@@ -627,7 +454,7 @@ export async function runLoopSession(
   }): Promise<LoopResult> => {
     const { phaseFile, phasePath, laneId, runCwd, useParallel } = args;
     const phaseContent = args.readFileSync(phasePath);
-    const allItems = useYamlSpec ? parseSpecItems(phasePath) : parseItems(phaseContent);
+    const allItems = parseSpecItems(phasePath);
     const items = allItems.filter((it) => !it.checked);
     log.info(
       { phase: phaseFile, total: allItems.length, unchecked: items.length, checked: allItems.length - items.length },
@@ -814,13 +641,7 @@ export async function runLoopSession(
       // Re-read phase content to detect whether this item's checkbox
       // was actually marked — if not, fall through to the caller's
       // phaseComplete check, which will keep the phase open.
-      let updatedContent: string;
-      try {
-        updatedContent = args.readFileSync(phasePath);
-      } catch {
-        updatedContent = phaseContent;
-      }
-      const updatedItems = parseItems(updatedContent);
+      const updatedItems = parseSpecItems(phasePath);
       const matched = updatedItems.find((u) => u.id === item.id);
       if (matched && !matched.checked) {
         log.warn(
@@ -861,22 +682,12 @@ export async function runLoopSession(
             "per-item verify failed",
           );
           // Uncheck item that failed verify (verify-before-check enforcement).
-          if (useYamlSpec && args.planPath) {
+          if (args.planPath) {
             markItemUnchecked(args.planPath, phaseFile, item.id);
             args.logger?.root.child({ component: "autopilot.per-item-verify" }).warn(
               { phase: phaseFile, itemId: item.id },
               "unchecked item that failed verify — will retry next iteration",
             );
-          } else if (args.writeFileSync) {
-            const currentPhaseContent = args.readFileSync(phasePath);
-            const uncheckContent = uncheckItemsInMarkdown(currentPhaseContent, [item.id]);
-            if (uncheckContent !== currentPhaseContent) {
-              args.writeFileSync(phasePath, uncheckContent);
-              args.logger?.root.child({ component: "autopilot.per-item-verify" }).warn(
-                { phase: phaseFile, itemId: item.id },
-                "unchecked item that failed verify — will retry next iteration",
-              );
-            }
           }
           if (args.verifyConfig.retryOnFailure) {
             return {
@@ -916,9 +727,7 @@ export async function runLoopSession(
     escalateToDeep?: boolean,
   ): Promise<PhaseResult & { phaseLoopResult: LoopResult; phaseComplete: boolean; verifyFailures?: string }> => {
     let verifyFailureSummary: string | undefined;
-    const phasePath = useYamlSpec
-      ? path.join(opts.planPath, "spec", phaseFile)
-      : path.join(opts.planPath, phaseFile);
+    const phasePath = path.join(opts.planPath, "spec", phaseFile);
     const phaseContent = _readFileSync(phasePath);
 
     // Record HEAD before this phase so we can soft-reset on failure
@@ -994,18 +803,13 @@ export async function runLoopSession(
     // its checkout — for the sequential path opts.cwd === runCwd, for
     // the parallel path the phase file resolves the same way (worktrees
     // share the same docs/ tree until the agent commits).
-    const updatedPhaseContent = _readFileSync(phasePath);
-    let phaseComplete = useYamlSpec
-      ? (() => {
-          const yamlItems = parseSpecItems(phasePath);
-          const checkedCount = yamlItems.filter((i) => i.checked).length;
-          log.info(
-            { phase: phaseFile, total: yamlItems.length, checked: checkedCount },
-            `phase completion check: ${checkedCount}/${yamlItems.length} items checked`,
-          );
-          return yamlItems.length > 0 && yamlItems.every((i) => i.checked);
-        })()
-      : isPhaseComplete(updatedPhaseContent);
+    const specItems = parseSpecItems(phasePath);
+    const checkedCount = specItems.filter((i) => i.checked).length;
+    log.info(
+      { phase: phaseFile, total: specItems.length, checked: checkedCount },
+      `phase completion check: ${checkedCount}/${specItems.length} items checked`,
+    );
+    let phaseComplete = specItems.length > 0 && specItems.every((i) => i.checked);
 
     // Post-phase test gate (item 4.1). When verify strategy is "skip",
     // bypass this entirely. When "after_item", verify already ran per-item
@@ -1019,9 +823,7 @@ export async function runLoopSession(
     const isAfterItemMode = verifyConfig.strategy === "after_item";
 
     if (phaseComplete && !shouldSkipVerify && !isAfterItemMode) {
-      const items = useYamlSpec
-        ? parseSpecItems(phasePath)
-        : parseItems(updatedPhaseContent);
+      const items = parseSpecItems(phasePath);
       const itemsWithVerify = items.filter((it) => it.verify?.trim());
       if (itemsWithVerify.length > 0) {
         log.info(
@@ -1069,18 +871,7 @@ export async function runLoopSession(
           // The agent marked them checked, but if verify fails, reset them so
           // the next iteration retries.
           for (const itemId of failedItemIds) {
-            if (useYamlSpec) {
-              markItemUnchecked(opts.planPath, phaseFile, itemId);
-            } else {
-              const uncheckContent = uncheckItemsInMarkdown(updatedPhaseContent, [itemId]);
-              if (uncheckContent !== updatedPhaseContent) {
-                _writeFileSync(phasePath, uncheckContent);
-                log.warn(
-                  { phase: phaseFile, itemId },
-                  "unchecked item that failed verify — will retry next iteration",
-                );
-              }
-            }
+            markItemUnchecked(opts.planPath, phaseFile, itemId);
           }
           phaseComplete = false;
           // Build a summary of failures for retry context
@@ -1202,14 +993,7 @@ export async function runLoopSession(
   ) => {
     phasesCompleted++;
     completedPhasesAcc.push(phaseFile);
-    if (useYamlSpec) {
-      // YAML path: update spec/main.yaml's completed field
-      specMarkPhaseCompleted(opts.planPath, phaseFile);
-    } else {
-      // Markdown path: update main.md's checkbox
-      const updatedMain = markPhaseChecked(_readFileSync(mainMdPath), phaseFile);
-      _writeFileSync(mainMdPath, updatedMain);
-    }
+    specMarkPhaseCompleted(opts.planPath, phaseFile);
     const checkpointEnabled = cfgObj?.checkpoint !== false;
     if (checkpointEnabled) {
       writeCheckpoint(opts.cwd, {
@@ -1522,52 +1306,6 @@ export async function runLoopSession(
       }
       // Remove the synchronous exit listener — graceful path completed.
       process.removeListener("exit", exitCleanup);
-    }
-  }
-
-  // All phases done. Now execute main.md's own cross-cutting acceptance
-  // criteria (items like x1, x2, etc. that aren't in any phase file).
-  // YAML specs don't have cross-cutting items in main.md (they'd be in
-  // the spec's items array), and main.md may not exist at all for a
-  // YAML-only plan — skip this block to avoid ENOENT.
-  if (!useYamlSpec) {
-    const finalMainContent = _readFileSync(mainMdPath);
-    const mainHasUnchecked = /^- \[ \]\s+id:/m.test(finalMainContent);
-
-    if (mainHasUnchecked) {
-      log.info("starting cross-cutting items");
-      const crossCuttingPrompt =
-        `You are executing the cross-cutting acceptance criteria from a multi-file plan's main.md. All phase files are complete. Work through every unchecked item (id: x1, x2, etc.) in main.md. Check each box as you complete it. Commit when done.\n\n` +
-        `## Overall goal\n${goal}\n\n` +
-        `## Constraints\n${constraints}\n\n` +
-        `## main.md\n${finalMainContent}\n\n` +
-        `Only work on the unchecked items in main.md's acceptance criteria. Phase items are already done. Do not ask questions.`;
-
-      const adapterName = opts.adapter?.name as AdapterName | undefined;
-      const cfgObj = opts.config as Record<string, unknown> | undefined;
-      const models = cfgObj?.models as Record<string, unknown> | undefined;
-      const executionSpecifier = models?.execution as string | undefined;
-      const executionModel = executionSpecifier
-        ? resolveModel(executionSpecifier, adapterName ?? "opencode")
-        : undefined;
-      const crossAdapters = (opts.config as Record<string, unknown> | undefined)?.adapters as Record<string, unknown> | undefined;
-      const crossOcAdapter = crossAdapters?.opencode as Record<string, unknown> | undefined;
-      const crossCuttingAgentOverrides = crossOcAdapter?.agents as Record<string, Record<string, unknown>> | undefined;
-      const crossResult = await _runRalphLoop({
-        prompt: crossCuttingPrompt,
-        cwd: opts.cwd,
-        agentName: "autopilot-fast",
-        model: executionModel,
-        stallMs,
-        config: opts.config,
-        agentOverrides: crossCuttingAgentOverrides,
-        logger: opts.logger,
-        emitter,
-        adapter: opts.adapter,
-      });
-      totalIterations += crossResult.iterations;
-      totalCostUsd += crossResult.cumulativeCostUsd ?? 0;
-      lastResult = crossResult;
     }
   }
 

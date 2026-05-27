@@ -5,7 +5,7 @@
  *   - validates YAML spec structure when spec directory exists
  *   - reports error for missing phases in main.yaml
  *   - reports error for item without intent in phase YAML
- *   - falls back to markdown validation without spec directory
+ *   - returns missing-spec error without spec directory
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -66,12 +66,6 @@ phases:
 `,
     );
 
-    // Also write main.md so the plan is structurally valid for the markdown path
-    fs.writeFileSync(
-      path.join(planDir, "main.md"),
-      `# My Plan\n\n## Phases\n\n- [ ] wave_0.yaml\n`,
-    );
-
     const report = validatePlan(planDir);
     expect(report.errors).toEqual([]);
   });
@@ -82,12 +76,6 @@ phases:
 
     // Write an invalid main.yaml (missing phases field)
     writeSpec(planDir, "main.yaml", "title: My Plan\n");
-
-    // Also write main.md
-    fs.writeFileSync(
-      path.join(planDir, "main.md"),
-      `# My Plan\n`,
-    );
 
     const report = validatePlan(planDir);
     expect(report.errors.some((e) => e.code === "invalid-spec-main")).toBe(true);
@@ -117,31 +105,17 @@ phases:
 `,
     );
 
-    fs.writeFileSync(
-      path.join(planDir, "main.md"),
-      `# My Plan\n\n## Phases\n\n- [ ] wave_0.yaml\n`,
-    );
-
     const report = validatePlan(planDir);
     expect(report.errors.some((e) => e.code === "invalid-spec-phase")).toBe(true);
   });
 
   it("falls back to markdown validation without spec directory", () => {
+    // No spec/ directory → should return missing-spec error
     const planDir = path.join(tmpDir, "plan");
     fs.mkdirSync(planDir);
 
-    // No spec/ directory — should use markdown validation
-    fs.writeFileSync(
-      path.join(planDir, "main.md"),
-      `# My Plan\n\n## Phases\n\n- [ ] phase_1.md\n`,
-    );
-    fs.writeFileSync(
-      path.join(planDir, "phase_1.md"),
-      `# Phase 1\n\n\`\`\`plan-state\n- [ ] id: a1\n  intent: Do the thing\n  files:\n    - src/foo.ts\n      Change: edit\n  tests:\n    - test/foo.test.ts::"passes"\n  verify: bun test\n\`\`\`\n`,
-    );
-
     const report = validatePlan(planDir);
-    // Markdown validation should pass with no errors
-    expect(report.errors).toEqual([]);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]?.code).toBe("missing-spec");
   });
 });

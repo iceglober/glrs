@@ -1,8 +1,8 @@
 /**
- * Tests for plan-enrichment's YAML path (a6).
+ * Tests for plan-enrichment's YAML path.
  *
  * Covers:
- *   - computeEnrichmentRatio reads from YAML spec when available
+ *   - computeSpecEnrichmentRatio reads from YAML spec
  *   - enrichment writes mirror/context/conventions to YAML
  */
 
@@ -12,10 +12,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { parse as yamlParse } from "yaml";
 import {
-  computeEnrichmentRatio,
   enrichPlanForFastModel,
-} from "../src/plan-enrichment.js";
-import {
   computeSpecEnrichmentRatio,
 } from "../src/plan-enrichment.js";
 import type { AgentAdapter, AgentHandle } from "../src/adapter.js";

@@ -10,80 +10,86 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { runLoopSession } from "../src/loop-session.js";
 
-const MAIN_MD = `# Goal
-
-## Goal
-
-Implement features.
-
-## Constraints
-
-- bun:test
-
-## Phases
-
-- [ ] phase_1.md
-`;
-
-const PHASE_WITH_TWO_ITEMS = `# Phase 1
-
-## Items
-
-- [ ] 1.1 **First item**
-- [ ] 1.2 **Second item**
-
-\`\`\`plan-state
-- [ ] id: 1.1
-  intent: do the first thing
-  files:
-    - src/a.ts
-      Change: edit it
-  tests:
-    - tests/a.test.ts
-  verify: bun test tests/a.test.ts
-
-- [ ] id: 1.2
-  intent: do the second thing
-  files:
-    - src/b.ts
-      Change: edit it
-  tests:
-    - tests/b.test.ts
-  verify: bun test tests/b.test.ts
-\`\`\`
-`;
-
-const PHASE_WITH_TWO_ITEMS_DONE = PHASE_WITH_TWO_ITEMS.replace(
-  /- \[ \] 1\.1/g,
-  "- [x] 1.1",
-).replace(/- \[ \] 1\.2/g, "- [x] 1.2");
-
 describe("per-item execution (item 4.8)", () => {
+  let mdTmpDir: string;
+
+  beforeEach(() => {
+    mdTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "per-item-md-test-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(mdTmpDir, { recursive: true, force: true });
+  });
+
   it("dispatches one runRalphLoop call per item", async () => {
-    const fileState: Record<string, string> = {
-      "/plans/feat/main.md": MAIN_MD,
-      "/plans/feat/phase_1.md": PHASE_WITH_TWO_ITEMS,
-    };
+    // Create a real plan directory with YAML spec files
+    const planDir = path.join(mdTmpDir, "plan");
+    const specDir = path.join(planDir, "spec");
+    fs.mkdirSync(specDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(specDir, "main.yaml"),
+      `title: My Feature
+goal: Implement features.
+constraints: Use bun:test
+phases:
+  - file: wave_0.yaml
+    completed: false
+`,
+    );
+
+    const phaseYaml = `items:
+  - id: "1.1"
+    intent: do the first thing
+    checked: false
+    files:
+      - path: src/a.ts
+        isNew: false
+        change: edit it
+    tests:
+      - tests/a.test.ts
+    verify: bun test tests/a.test.ts
+  - id: "1.2"
+    intent: do the second thing
+    checked: false
+    files:
+      - path: src/b.ts
+        isNew: false
+        change: edit it
+    tests:
+      - tests/b.test.ts
+    verify: bun test tests/b.test.ts
+`;
+    fs.writeFileSync(path.join(specDir, "wave_0.yaml"), phaseYaml);
 
     const dispatchedPrompts: string[] = [];
 
     await runLoopSession({
-      planPath: "/plans/feat",
-      cwd: "/repo",
+      planPath: planDir,
+      cwd: mdTmpDir,
       _deps: {
         isDirectory: () => true,
-        readFileSync: (p: string) => fileState[p] ?? "",
-        writeFileSync: (p: string, content: string) => {
-          fileState[p] = content;
-        },
+        readFileSync: (p: string) => fs.readFileSync(p, "utf-8"),
+        writeFileSync: (p: string, content: string) => fs.writeFileSync(p, content, "utf-8"),
         runRalphLoop: async (opts) => {
           dispatchedPrompts.push(opts.prompt);
-          // After each per-item call, mark BOTH items done so the
-          // phase-complete check passes after the second call. The
-          // ordering still matches: prompt 1 sees item 1 unchecked,
-          // prompt 2 sees item 2 unchecked.
-          if (dispatchedPrompts.length === 2) {
-            fileState["/plans/feat/phase_1.md"] = PHASE_WITH_TWO_ITEMS_DONE;
+          // After each per-item call, mark the item checked by rewriting the YAML
+          if (dispatchedPrompts.length === 1) {
+            // Mark 1.1 checked
+            const updated = fs.readFileSync(path.join(specDir, "wave_0.yaml"), "utf-8")
+              .replace(
+                /- id: "1.1"\n    intent: do the first thing\n    checked: false/,
+                '- id: "1.1"\n    intent: do the first thing\n    checked: true',
+              );
+            fs.writeFileSync(path.join(specDir, "wave_0.yaml"), updated);
+          } else if (dispatchedPrompts.length === 2) {
+            // Mark 1.2 checked
+            const updated = fs.readFileSync(path.join(specDir, "wave_0.yaml"), "utf-8")
+              .replace(
+                /- id: "1.2"\n    intent: do the second thing\n    checked: false/,
+                '- id: "1.2"\n    intent: do the second thing\n    checked: true',
+              );
+            fs.writeFileSync(path.join(specDir, "wave_0.yaml"), updated);
           }
           return {
             exitReason: "sentinel",
