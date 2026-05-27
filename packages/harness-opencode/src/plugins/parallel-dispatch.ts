@@ -53,6 +53,15 @@ function isTaskBuild(tool: string, args: unknown): boolean {
   );
 }
 
+function flushBatch(state: DispatchState): void {
+  if (state.buildCount === 1) {
+    track("subagent.dispatch.serial", { ops_count: 1 });
+  } else if (state.buildCount > 1) {
+    track("subagent.dispatch.parallel", { ops_count: state.buildCount });
+  }
+  state.buildCount = 0;
+}
+
 const plugin: Plugin = async () => {
   return {
     "tool.execute.after": async (input, output) => {
@@ -61,12 +70,7 @@ const plugin: Plugin = async () => {
       const state = getState(input.sessionID);
       const now = Date.now();
       if (now - state.lastDispatchTs > 5000) {
-        if (state.buildCount === 1) {
-          track("subagent.dispatch.serial", { ops_count: 1 });
-        } else if (state.buildCount > 1) {
-          track("subagent.dispatch.parallel", { ops_count: state.buildCount });
-        }
-        state.buildCount = 0;
+        flushBatch(state);
       }
       state.buildCount++;
       state.lastDispatchTs = now;
@@ -75,6 +79,15 @@ const plugin: Plugin = async () => {
       // (the model made a single task call instead of batching)
       if (state.buildCount === 1) {
         output.output += PARALLEL_GUIDANCE;
+      }
+    },
+
+    event: async ({ event }: { event: { type: string; properties?: any } }) => {
+      if (event.type === "session.idle") {
+        for (const state of sessions.values()) {
+          flushBatch(state);
+        }
+        sessions.clear();
       }
     },
   };
