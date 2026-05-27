@@ -29,8 +29,10 @@ const TRANSIENT_PATTERNS: ReadonlyArray<string> = [
   // Network
   "etimedout",
   "econnreset",
+  "econnrefused",
   "eai_again",
   "socket hang up",
+  "socket connection was closed",
   "network",
   "fetch failed",
   // Rate limits
