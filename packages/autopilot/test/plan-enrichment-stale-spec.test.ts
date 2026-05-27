@@ -42,21 +42,54 @@ function writeFile(dir: string, relPath: string, content: string): string {
 }
 
 /**
- * Build a minimal mock adapter that tracks which files were enriched
- * but does NOT write any spec files (for testing skip behavior).
+ * Build a minimal mock adapter that tracks which files were enriched.
+ *
+ * When `planDir` is provided, the adapter writes stub spec YAML files
+ * during `getLastResponse` so that post-enrichment validation passes.
+ * Without `planDir`, it returns SPEC_COMPLETE without writing anything.
  */
-function makeTrackingAdapter(): { adapter: AgentAdapter; enrichedFiles: string[] } {
+function makeTrackingAdapter(planDir?: string): { adapter: AgentAdapter; enrichedFiles: string[] } {
   const enrichedFiles: string[] = [];
+  let sessionCounter = 0;
+
   const adapter: AgentAdapter = {
     name: "mock",
     start: async () => ({ id: "mock-handle" } as AgentHandle),
     shutdown: async () => {},
     createSession: async (_handle, opts) => {
       enrichedFiles.push(opts?.agentName ?? "unknown");
-      return "mock-session";
+      const sid = `mock-session-${sessionCounter++}`;
+      return sid;
     },
     sendAndWait: async () => ({ kind: "idle" as const, title: "" }),
-    getLastResponse: async () => "SPEC_COMPLETE",
+    getLastResponse: async (_handle: AgentHandle, _sessionId: string) => {
+      if (planDir) {
+        // Write any missing spec phase files referenced in spec/main.yaml
+        const mainYamlPath = path.join(planDir, "spec", "main.yaml");
+        if (fs.existsSync(mainYamlPath)) {
+          const mainContent = fs.readFileSync(mainYamlPath, "utf-8");
+          const fileRefs = mainContent.match(/file:\s*(\S+\.yaml)/g) ?? [];
+          for (const ref of fileRefs) {
+            const fname = ref.replace(/^file:\s*/, "");
+            const fpath = path.join(planDir, "spec", fname);
+            if (!fs.existsSync(fpath)) {
+              writeFile(planDir, `spec/${fname}`, `items:
+  - id: "0.1"
+    intent: "Stub item"
+    checked: false
+    verify: echo done
+    mirror: "src/stub.ts"
+    context: "stub context"
+    conventions: "stub conventions"
+    proof: "stub proof"
+    proof_type: "test"
+`);
+            }
+          }
+        }
+      }
+      return "SPEC_COMPLETE";
+    },
     getSessionCost: async () => 0,
   };
   return { adapter, enrichedFiles };
@@ -101,7 +134,7 @@ phases:
       },
     };
 
-    const { adapter } = makeTrackingAdapter();
+    const { adapter } = makeTrackingAdapter(planDir);
 
     await enrichPlanForFastModel(
       planDir,
@@ -176,13 +209,21 @@ phases:
 
     const { adapter } = makeTrackingAdapter();
 
-    await enrichPlanForFastModel(
-      planDir,
-      planDir,
-      undefined,
-      mockEmitter as never,
-      adapter,
-    );
+    // The enrichment will throw because the mock adapter doesn't write
+    // wave_1.yaml and post-enrichment validation fails. We only care
+    // about the emitted events — the safety guard fires during the
+    // enrichment pass before validation runs.
+    try {
+      await enrichPlanForFastModel(
+        planDir,
+        planDir,
+        undefined,
+        mockEmitter as never,
+        adapter,
+      );
+    } catch {
+      // Expected — validation fails because wave_1.yaml is never written
+    }
 
     // main.md should be SKIPPED (safety guard: wave_0 has checked items)
     const skipEventsForMain = emittedEvents.filter(

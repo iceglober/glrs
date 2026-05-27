@@ -57,7 +57,7 @@ export { resolveModel } from "./model-resolver.js";
 export type { AdapterName } from "./model-resolver.js";
 
 // Plan enrichment
-export { enrichPlan, enrichPlanForFastModel, isFreeformFile, findOrphanedPhaseReferences, anyExistingPhaseHasCheckedItems } from "./plan-enrichment.js";
+export { enrichPlan, enrichPlanForFastModel } from "./plan-enrichment.js";
 
 // Spec schema/parser/writer
 export { validateMainSpec, validatePhaseSpec } from "./spec-schema.js";

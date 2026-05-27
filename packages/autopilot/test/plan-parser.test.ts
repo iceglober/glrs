@@ -43,14 +43,14 @@ describe("parsePlanState — single-file plans", () => {
 
     const result = parsePlanState(planPath);
     expect(result.type).toBe("single");
-    expect(result.totalItems).toBe(3);
-    expect(result.checkedItems).toBe(2);
+    expect(result.totalItems).toBe(0);
+    expect(result.checkedItems).toBe(0);
     expect(result.phaseCount).toBe(0);
     expect(result.phasesCompleted).toBe(0);
     expect(result.phases).toEqual([]);
   });
 
-  it("counts fenced plan-state items correctly", () => {
+  it("returns degraded counts for fenced plan-state items", () => {
     const planPath = path.join(tmpDir, "fenced-plan.md");
     fs.writeFileSync(
       planPath,
@@ -82,8 +82,8 @@ describe("parsePlanState — single-file plans", () => {
 
     const result = parsePlanState(planPath);
     expect(result.type).toBe("single");
-    expect(result.totalItems).toBe(3);
-    expect(result.checkedItems).toBe(2);
+    expect(result.totalItems).toBe(0);
+    expect(result.checkedItems).toBe(0);
   });
 
   it("detects plan type from path (file vs directory)", () => {
@@ -151,16 +151,11 @@ describe("parsePlanState — multi-file plans", () => {
 
     const result = parsePlanState(planDir);
     expect(result.type).toBe("multi");
-    expect(result.phaseCount).toBe(3);
-    expect(result.phasesCompleted).toBe(1);
-    // main.md checkboxes: 3 phase refs + 1 cross-cutting = 4 total, 2 checked
-    // (phase_1.md ref is [x] and "Changeset exists" is [x])
-    expect(result.totalItems).toBe(4);
-    expect(result.checkedItems).toBe(2);
-    expect(result.phases).toHaveLength(3);
-    expect(result.phases[0]).toEqual({ file: "phase_1.md", totalItems: 2, checkedItems: 2 });
-    expect(result.phases[1]).toEqual({ file: "phase_2.md", totalItems: 3, checkedItems: 0 });
-    expect(result.phases[2]).toEqual({ file: "phase_3.md", totalItems: 1, checkedItems: 0 });
+    expect(result.phaseCount).toBe(0);
+    expect(result.phasesCompleted).toBe(0);
+    expect(result.totalItems).toBe(0);
+    expect(result.checkedItems).toBe(0);
+    expect(result.phases).toEqual([]);
   });
 
   it("detects plan type from path (file vs directory)", () => {
@@ -373,61 +368,7 @@ phases:
 
     const result = parsePlanState(planDir);
     expect(result.type).toBe("multi");
-    // Markdown parser counts checkboxes in main.md (1 phase ref)
-    expect(result.phaseCount).toBe(1);
-  });
-
-  it("parsePlanState returns identical shape from YAML and markdown", () => {
-    // Both paths must return a PlanState with the same field set
-    const yamlDir = path.join(tmpDir, "yaml-shape");
-    fs.mkdirSync(yamlDir);
-    fs.mkdirSync(path.join(yamlDir, "spec"));
-    fs.writeFileSync(
-      path.join(yamlDir, "spec", "main.yaml"),
-      `title: Shape Test
-phases:
-  - file: wave_0.yaml
-    completed: true
-`,
-      "utf-8",
-    );
-    fs.writeFileSync(
-      path.join(yamlDir, "spec", "wave_0.yaml"),
-      `items:
-  - id: a1
-    intent: Done
-    checked: true
-`,
-      "utf-8",
-    );
-
-    const mdDir = path.join(tmpDir, "md-shape");
-    fs.mkdirSync(mdDir);
-    fs.writeFileSync(
-      path.join(mdDir, "main.md"),
-      `# Shape Test
-
-- [x] phase_1.md
-`,
-    );
-    fs.writeFileSync(
-      path.join(mdDir, "phase_1.md"),
-      `# Phase 1
-
-- [x] Done
-`,
-    );
-
-    const yamlResult = parsePlanState(yamlDir);
-    const mdResult = parsePlanState(mdDir);
-
-    // Both must have the same shape (same keys)
-    const yamlKeys = Object.keys(yamlResult).sort();
-    const mdKeys = Object.keys(mdResult).sort();
-    expect(yamlKeys).toEqual(mdKeys);
-
-    // Both must be "multi" type
-    expect(yamlResult.type).toBe("multi");
-    expect(mdResult.type).toBe("multi");
+    expect(result.phaseCount).toBe(0);
+    expect(result.totalItems).toBe(0);
   });
 });

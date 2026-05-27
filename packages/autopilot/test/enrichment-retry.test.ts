@@ -195,6 +195,12 @@ describe("enrichPlanForFastModel retry logic", () => {
   it("skips retry loop when retry is disabled", async () => {
     let startCount = 0;
 
+    // Create the single-file plan so readFileSync succeeds
+    fs.writeFileSync(
+      path.join(tmpPlanDir, "test-plan.md"),
+      "# Test Plan\n\n- [ ] 0.1 **Item one**\n",
+    );
+
     const fakeAdapter: AgentAdapter = {
       name: "fake",
       async start() {
@@ -217,15 +223,26 @@ describe("enrichPlanForFastModel retry logic", () => {
     };
 
     const logger = makeSilentLogger();
-    await enrichPlanForFastModel(
-      tmpPlanDir,
-      "test-plan.md",
-      logger,
-      undefined,
-      fakeAdapter,
-      { retry: false },
-    );
+    let threwError = false;
+    let errorMessage = "";
 
+    try {
+      await enrichPlanForFastModel(
+        tmpPlanDir,
+        "test-plan.md",
+        logger,
+        undefined,
+        fakeAdapter,
+        { retry: false },
+      );
+    } catch (err) {
+      threwError = true;
+      errorMessage = err instanceof Error ? err.message : String(err);
+    }
+
+    // retry:false → effectiveRetries=1, stall → throws on first attempt
+    expect(threwError).toBe(true);
+    expect(errorMessage).toContain("stalled");
     expect(startCount).toBe(1);
   });
 
@@ -317,6 +334,12 @@ describe("enrichPlanForFastModel retry logic", () => {
 
     const fakeEmitter = new SessionEventEmitter();
     fakeEmitter.on("event", (event) => events.push(event));
+
+    // Create the single-file plan so readFileSync succeeds
+    fs.writeFileSync(
+      path.join(tmpPlanDir, "test-plan.md"),
+      "# Test Plan\n\n- [ ] 0.1 **Item one**\n",
+    );
 
     const fakeAdapter: AgentAdapter = {
       name: "fake",
