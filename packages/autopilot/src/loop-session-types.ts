@@ -37,8 +37,10 @@ export interface LoopSessionOptions {
    */
   maxIterationsPerPhase?: number;
   /**
-   * Maximum number of retry attempts per phase when verify fails.
-   * Default: 3. Set to 1 to disable retries (single attempt per phase).
+   * Maximum number of recovery attempts per phase across all failure modes
+   * (verify failures, agent crashes, stalls, max-iterations). Each retry
+   * gets evolving context that changes strategy. Later attempts escalate
+   * to the deep model. Default: 5.
    */
   maxPhaseRetries?: number;
   /**

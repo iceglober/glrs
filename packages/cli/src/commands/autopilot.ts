@@ -117,6 +117,11 @@ export function runPreflightValidation(
     return { recovered: false, exitCode: null, errors: [], warnings };
   }
 
+  const enrichmentCodes = new Set(["requires-enrichment", "missing-spec"]);
+  if (validation.errors.every((e) => enrichmentCodes.has(e.code))) {
+    return { recovered: false, exitCode: null, errors: [], warnings };
+  }
+
   // Attempt auto-recovery when:
   //   1. Not resuming
   //   2. All errors are missing-spec-phase-file

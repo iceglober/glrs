@@ -59,10 +59,10 @@ describe("renderSummary", () => {
     expect(exitCode).toBe(0);
   });
 
-  it("max-iterations exit prints ✓ header, exit code 0", () => {
+  it("max-iterations exit prints ✗ header, exit code 1", () => {
     const { stdout, exitCode } = renderSummary(makeResult("max-iterations"));
-    expect(stdout).toContain("✓ Autopilot complete");
-    expect(exitCode).toBe(0);
+    expect(stdout).toContain("✗ Autopilot failed");
+    expect(exitCode).toBe(1);
   });
 
   // ---------------------------------------------------------------------------
@@ -124,16 +124,14 @@ describe("renderSummary", () => {
   // ---------------------------------------------------------------------------
 
   it("summary partition uses imported SUCCESS_REASONS, not a string literal", () => {
-    // Verify that isSuccessExitReason is the canonical authority.
-    // If SUCCESS_REASONS changes in loop-session.ts, this test catches drift.
     expect(isSuccessExitReason("sentinel")).toBe(true);
-    expect(isSuccessExitReason("max-iterations")).toBe(true);
+    expect(isSuccessExitReason("idle")).toBe(true);
+    expect(isSuccessExitReason("max-iterations")).toBe(false);
     expect(isSuccessExitReason("error")).toBe(false);
     expect(isSuccessExitReason("struggle")).toBe(false);
     expect(isSuccessExitReason("kill-switch")).toBe(false);
 
-    // renderSummary must agree with isSuccessExitReason for all known reasons
-    const successReasons: LoopExitReason[] = ["sentinel", "max-iterations"];
+    const successReasons: LoopExitReason[] = ["sentinel", "idle"];
     for (const r of successReasons) {
       const { exitCode } = renderSummary(makeResult(r));
       expect(exitCode).toBe(0);
@@ -146,6 +144,7 @@ describe("renderSummary", () => {
       "stall",
       "timeout",
       "aborted",
+      "max-iterations",
     ];
     for (const r of failureReasons) {
       const { exitCode } = renderSummary(makeResult(r));

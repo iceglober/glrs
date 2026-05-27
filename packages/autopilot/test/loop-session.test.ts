@@ -664,9 +664,11 @@ describe("per-phase session execution", () => {
       },
     });
 
-    // Should stop after first item fails — only one loop call
+    // Should stop after first item fails — only one loop call (1 attempt with _deps)
     expect(loopCalls).toHaveLength(1);
-    expect(result.exitReason).toBe("struggle");
+    // Halts the run after exhausting recovery attempts
+    expect(result.exitReason).toBe("error");
+    expect(result.message).toContain("failed after 1 recovery attempts");
   });
 
   it("stops and returns result when phase exits with stall", async () => {
@@ -710,7 +712,8 @@ describe("per-phase session execution", () => {
     });
 
     expect(loopCalls).toHaveLength(1);
-    expect(result.exitReason).toBe("stall");
+    expect(result.exitReason).toBe("error");
+    expect(result.message).toContain("failed after 1 recovery attempts");
   });
 });
 
@@ -978,7 +981,8 @@ describe("per-phase hook overrides (item 4.3)", () => {
       },
     });
 
-    // Phase should fail with struggle exit reason
-    expect(result.exitReason).toBe("struggle");
+    // Phase fails and halts the run after exhausting recovery attempts
+    expect(result.exitReason).toBe("error");
+    expect(result.message).toContain("failed after 1 recovery attempts");
   });
 });
