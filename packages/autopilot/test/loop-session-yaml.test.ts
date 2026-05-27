@@ -208,6 +208,17 @@ Do the thing
       // Per-item prompt contains "mark its checkbox in <phaseFile>"
       const match = /checkbox in ([\w_.]+\.yaml)/.exec(opts.prompt);
       if (match && !phasesRun.includes(match[1])) phasesRun.push(match[1]);
+      // Simulate marking the item as checked
+      const itemMatch = /id: (\w+)/.exec(opts.prompt);
+      const phaseMatch = /checkbox in ([\w_.]+\.yaml)/.exec(opts.prompt);
+      if (itemMatch && phaseMatch) {
+        const specPath = path.join(planDir, "spec", phaseMatch[1]);
+        const content = fs.readFileSync(specPath, "utf-8");
+        fs.writeFileSync(specPath, content.replace(
+          new RegExp(`(id: ${itemMatch[1]}[\\s\\S]*?)checked: false`),
+          `$1checked: true`,
+        ));
+      }
       return {
         exitReason: "sentinel",
         iterations: 1,

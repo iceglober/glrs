@@ -181,7 +181,7 @@ describe("runPreflightValidation", () => {
     }
   });
 
-  it("returns missing-spec error when plan has no spec/ directory", () => {
+  it("passes through directory plans without spec/ for enrichment", () => {
     const planDir = path.join(tmpDir, "clean-plan");
     fs.mkdirSync(planDir, { recursive: true });
 
@@ -190,8 +190,19 @@ describe("runPreflightValidation", () => {
     const result = runPreflightValidation(planDir, false);
 
     expect(result.recovered).toBe(false);
-    expect(result.exitCode).toBe(1);
-    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.exitCode).toBeNull();
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("passes through single-file plans for enrichment", () => {
+    const planFile = path.join(tmpDir, "single-plan.md");
+    fs.writeFileSync(planFile, `# My Plan\n\n## Goal\nDo the thing\n`, "utf-8");
+
+    const result = runPreflightValidation(planFile, false);
+
+    expect(result.recovered).toBe(false);
+    expect(result.exitCode).toBeNull();
+    expect(result.errors).toHaveLength(0);
   });
 
   it("passes validation when plan has valid spec/", () => {

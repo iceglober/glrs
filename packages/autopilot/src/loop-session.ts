@@ -105,8 +105,59 @@ function extractHooksConfig(config: unknown): {
 }
 
 
+/** Default number of retry attempts per phase across all failure modes. */
+const DEFAULT_MAX_PHASE_RETRIES = 5;
+
 /** Exit reasons that indicate a successful phase completion. */
-export const SUCCESS_REASONS = new Set(["sentinel", "idle", "max-iterations"]);
+export const SUCCESS_REASONS = new Set(["sentinel", "idle"]);
+
+/**
+ * Build evolving recovery context for retry attempts. Each attempt gets
+ * progressively different guidance to force new behavior.
+ */
+function buildRetryContext(
+  attempt: number,
+  maxAttempts: number,
+  failureInfo: { exitReason: string; message: string; verifyFailures?: string },
+): string {
+  const { exitReason, message, verifyFailures } = failureInfo;
+  const attemptsLeft = maxAttempts - attempt;
+
+  let failureSummary: string;
+  if (verifyFailures) {
+    failureSummary = `The verify commands failed:\n${verifyFailures}`;
+  } else if (exitReason === "max-iterations") {
+    failureSummary = `The previous attempt ran out of iterations without completing the work. The agent ran too many tool calls without finishing.`;
+  } else if (exitReason === "stall") {
+    failureSummary = `The previous attempt stalled — the agent stopped making progress and the session timed out.`;
+  } else if (exitReason === "struggle") {
+    failureSummary = `The previous attempt struggled — the agent reported difficulty and could not complete the task.`;
+  } else if (exitReason === "error") {
+    failureSummary = `The previous attempt errored: ${message}`;
+  } else {
+    failureSummary = `The previous attempt failed with exit reason "${exitReason}": ${message}`;
+  }
+
+  const strategies = [
+    // Attempt 2: diagnose first
+    `STRATEGY: Before writing any code, read the failing output carefully. Identify the root cause. State your diagnosis in a comment, then fix it. Do not repeat the same approach — if the last attempt's approach failed, try a different one.`,
+    // Attempt 3: simplify
+    `STRATEGY: The previous approaches did not work. Simplify aggressively. Use the smallest possible change that satisfies the intent. Avoid abstractions, helpers, or refactoring — write the most direct implementation possible. If the verify command failed, run it first to see the current state before making changes.`,
+    // Attempt 4: re-examine assumptions
+    `STRATEGY: Multiple attempts have failed. Re-examine your assumptions. Read the surrounding code and tests more carefully — you may be misunderstanding the expected behavior or API. Check imports, types, and existing patterns. Consider whether the item's intent needs to be interpreted differently.`,
+    // Attempt 5: last chance, maximum care
+    `STRATEGY: FINAL ATTEMPT (${attemptsLeft} remaining). Take maximum care. Read every relevant file before making any edit. Run the verify command before AND after each change. If you are unsure about the correct approach, look at how similar functionality works elsewhere in the codebase and follow that pattern exactly.`,
+  ];
+
+  const strategyIdx = Math.min(attempt - 2, strategies.length - 1);
+  const strategy = strategies[strategyIdx];
+
+  return (
+    `This is recovery attempt ${attempt} of ${maxAttempts}.\n\n` +
+    `**What went wrong:**\n${failureSummary}\n\n` +
+    `${strategy}`
+  );
+}
 
 /**
  * Returns true when the given exit reason indicates a successful run.
@@ -451,6 +502,8 @@ export async function runLoopSession(
     verifyConfig?: ReturnType<typeof extractVerifyConfig>;
     /** When true, use deep agent (agentName: undefined) instead of autopilot-fast. */
     escalateToDeep?: boolean;
+    /** Evolving recovery context injected on retries — describes what failed and what to try differently. */
+    retryContext?: string;
   }): Promise<LoopResult> => {
     const { phaseFile, phasePath, laneId, runCwd, useParallel } = args;
     const phaseContent = args.readFileSync(phasePath);
@@ -547,12 +600,12 @@ export async function runLoopSession(
       const executionStyle = (phaseConfigForItem as Record<string, unknown>)?.execution_style as string | undefined;
       const isTddMode = executionStyle !== "direct";
 
-      // Structured handoff for strict executors (per the existing PRIME
-      // system prompt). Each per-item prompt frames the work as a tight
-      // single-file/single-test-list task.
+      const retryBlock = args.retryContext
+        ? `\n## RECOVERY CONTEXT — PREVIOUS ATTEMPT FAILED\n\n${args.retryContext}\n\n`
+        : "";
+
       let itemPrompt: string;
       if (isTddMode) {
-        // TDD mode: enforce red-green-refactor cycle
         itemPrompt =
           `You are executing ONE item of a multi-item phase using TDD (test-driven development). Follow the red-green-refactor cycle strictly:\n\n` +
           `1. RED: Write a failing test/proof first. Run verify to confirm it fails.\n` +
@@ -568,6 +621,7 @@ export async function runLoopSession(
           `  files: ${filesList || "(none declared)"}\n` +
           `  verify: ${verify}\n\n` +
           enrichmentBlock +
+          retryBlock +
           `## Structured context\n\n` +
           `Files you may touch (ONLY these):\n` +
           (item.files.length > 0
@@ -587,7 +641,6 @@ export async function runLoopSession(
           `  - Do NOT work on items other than ${item.id}.\n\n` +
           `When done: mark the checkbox for item ${item.id} in ${phaseFile} as [x], commit, and emit the autopilot-done sentinel.`;
       } else {
-        // Standard mode: no TDD constraints
         itemPrompt =
           `You are executing ONE item of a multi-item phase. Complete only this item, mark its checkbox in ${phaseFile}, commit, and stop. Do not work on other items.\n\n` +
           `## Overall goal\n${goal}\n\n` +
@@ -598,6 +651,7 @@ export async function runLoopSession(
           `  files: ${filesList || "(none declared)"}\n` +
           `  verify: ${verify}\n\n` +
           enrichmentBlock +
+          retryBlock +
           `## Structured context\n\n` +
           `Files you may touch (ONLY these):\n` +
           (item.files.length > 0
@@ -791,6 +845,7 @@ export async function runLoopSession(
       agentOverrides: phaseAgentOverrides,
       verifyConfig: phaseVerifyConfig,
       escalateToDeep,
+      retryContext,
     });
     totalIterations += result.iterations;
     const costThisPhase = result.cumulativeCostUsd ?? 0;
@@ -937,24 +992,7 @@ export async function runLoopSession(
       };
     }
 
-    if (!phaseComplete && result.exitReason === "max-iterations") {
-      log.warn(
-        { phase: phaseFile, max: maxIterationsPerPhase },
-        "phase budget exhausted — moving on",
-      );
-      const checkpointEnabled = cfgObj?.checkpoint !== false;
-      if (checkpointEnabled) {
-        writeCheckpoint(opts.cwd, {
-          planPath: opts.planPath,
-          completedPhases: [...completedPhasesAcc],
-          totalCostUsd,
-          totalIterations,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    }
-
-    // Emit typed phase:done event (success or soft-failure)
+    // Emit typed phase:done event (success or incomplete)
     emitter?.emitEvent({
       type: "phase:done",
       timestamp: new Date().toISOString(),
@@ -1062,55 +1100,46 @@ export async function runLoopSession(
       );
       const phaseHooksConfig = extractHooksConfig(phaseConfig);
 
-      // Retry loop: re-run the phase when verify fails (up to N attempts, configurable).
-      // Default 3 retries in production; 1 (no retry) when test deps are injected.
-      // On the final retry, escalate to the deep model (Opus) for self-healing.
-      // When config.verify_retry is false, disable retries entirely (single attempt).
-      const verifyRetryConfig = extractVerifyConfig(opts.config);
-      const effectiveMaxRetries = verifyRetryConfig.retryOnFailure
-        ? (opts.maxPhaseRetries ?? (opts._deps ? 1 : 3))
-        : 1;
+      // Retry loop: re-run the phase on ANY failure (verify, fatal, max-iterations,
+      // stall, struggle, error). Default 5 retries; 1 (no retry) when test deps are
+      // injected. Each retry gets evolving context that changes strategy. On later
+      // attempts, escalate to the deep model (Opus). If all retries exhaust, the
+      // entire run halts — we never skip a failed phase.
+      const effectiveMaxRetries = opts.maxPhaseRetries ?? (opts._deps ? 1 : DEFAULT_MAX_PHASE_RETRIES);
       let attempt = 0;
       let phaseSuccess = false;
-      let lastVerifyFailures: string | undefined;
+      let lastRetryContext: string | undefined;
 
       while (attempt < effectiveMaxRetries && !phaseSuccess) {
         attempt++;
-        const isEscalation = attempt === effectiveMaxRetries && attempt > 1;
+        const isEscalation = attempt >= effectiveMaxRetries - 1 && attempt > 1;
 
         if (attempt > 1) {
           log.info(
-            { phase: phaseFile, attempt, escalate: isEscalation },
-            isEscalation ? "escalating to deep model for retry" : "retrying phase after verify failure",
+            { phase: phaseFile, attempt, maxAttempts: effectiveMaxRetries, escalate: isEscalation },
+            isEscalation ? "escalating to deep model for recovery" : "retrying phase with evolving strategy",
           );
           emitter?.emitEvent({
             type: "phase:start",
             timestamp: new Date().toISOString(),
-            phase: `${phaseFile} (${isEscalation ? "escalation" : `retry ${attempt - 1}`})`,
+            phase: `${phaseFile} (recovery ${attempt - 1}/${effectiveMaxRetries - 1}${isEscalation ? " — deep model" : ""})`,
             laneId: "lane-1",
             current: phasesCompleted + 1,
             total: uncheckedPhases.length,
           });
         }
 
-        // Run pre_phase hook (item 3.3, 4.3) — phase-level hooks override plan-level hooks.
         const effectivePrePhaseHook = phaseHooksConfig.pre_phase ?? hooksConfig.pre_phase;
         if (effectivePrePhaseHook) {
           const hookResult = await runHook(effectivePrePhaseHook, opts.cwd, verifyConfig.timeoutMs);
           if (!hookResult.ok) {
-            log.warn({ phase: phaseFile, output: hookResult.output }, "pre_phase hook failed — skipping phase");
-            // Skip this phase and move to the next
+            log.warn({ phase: phaseFile, output: hookResult.output }, "pre_phase hook failed");
             phaseSuccess = false;
             continue;
           }
         }
 
-        // On escalation, pass escalateToDeep so runPhaseInner uses the
-        // deep agent (Opus) instead of autopilot-fast for this attempt.
-        const r = await runPhaseInner(phaseFile, "lane-1", opts.cwd, lastVerifyFailures, isEscalation);
-
-        // Capture verify failures for next retry's context
-        lastVerifyFailures = r.verifyFailures;
+        const r = await runPhaseInner(phaseFile, "lane-1", opts.cwd, lastRetryContext, isEscalation);
 
         if (r.phaseComplete) {
           await recordPhaseCompletion(phaseFile, r.phaseLoopResult, phaseHooksConfig);
@@ -1118,19 +1147,31 @@ export async function runLoopSession(
           break;
         }
 
-        if (r.fatal) {
-          return {
-            ...r.phaseLoopResult,
-            iterations: totalIterations,
-            cumulativeCostUsd: totalCostUsd,
-            message: `${r.phaseLoopResult.message} (phase ${phaseFile}, ${phasesCompleted}/${uncheckedPhases.length} phases completed, total $${totalCostUsd.toFixed(2)})`,
-          };
+        // Phase failed — build evolving recovery context for next attempt
+        if (attempt < effectiveMaxRetries) {
+          lastRetryContext = buildRetryContext(attempt + 1, effectiveMaxRetries, {
+            exitReason: r.phaseLoopResult.exitReason,
+            message: r.phaseLoopResult.message,
+            verifyFailures: r.verifyFailures,
+          });
+          log.warn(
+            { phase: phaseFile, attempt, exitReason: r.phaseLoopResult.exitReason, attemptsLeft: effectiveMaxRetries - attempt },
+            "phase failed — will retry with evolved strategy",
+          );
         }
+      }
 
-        // Phase didn't complete (verify failed) — retry unless exhausted
-        if (attempt >= effectiveMaxRetries) {
-          log.warn({ phase: phaseFile, attempts: attempt }, "phase exhausted retries — moving on");
-        }
+      if (!phaseSuccess) {
+        log.error(
+          { phase: phaseFile, attempts: attempt },
+          "phase exhausted all recovery attempts — halting run",
+        );
+        return {
+          exitReason: "error",
+          iterations: totalIterations,
+          cumulativeCostUsd: totalCostUsd,
+          message: `Phase ${phaseFile} failed after ${attempt} recovery attempts (${phasesCompleted}/${uncheckedPhases.length} phases completed, total $${totalCostUsd.toFixed(2)})`,
+        };
       }
     }
   } else {
