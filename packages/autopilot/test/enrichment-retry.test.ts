@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { enrichPlanForFastModel } from "../src/plan-enrichment.js";
+import { enrichPlan } from "../src/plan-enrichment.js";
 import type { AgentAdapter, AgentHandle, SessionResult } from "../src/adapter.js";
 import type { AutopilotLogger } from "../src/lib/logger.js";
 import { SessionEventEmitter } from "../src/session-runner.js";
@@ -23,7 +23,7 @@ function writeFile(dir: string, name: string, content: string): string {
   return p;
 }
 
-describe("enrichPlanForFastModel retry logic", () => {
+describe("enrichPlan retry logic", () => {
   let tmpPlanDir: string;
   let planPath: string;
 
@@ -88,7 +88,7 @@ describe("enrichPlanForFastModel retry logic", () => {
     };
 
     const logger = makeSilentLogger();
-    await enrichPlanForFastModel(
+    await enrichPlan(
       tmpPlanDir,
       tmpPlanDir,
       logger,
@@ -131,7 +131,7 @@ describe("enrichPlanForFastModel retry logic", () => {
     };
 
     const logger = makeSilentLogger();
-    await enrichPlanForFastModel(
+    await enrichPlan(
       tmpPlanDir,
       tmpPlanDir,
       logger,
@@ -174,7 +174,7 @@ describe("enrichPlanForFastModel retry logic", () => {
     let errorMessage = "";
 
     try {
-      await enrichPlanForFastModel(
+      await enrichPlan(
         tmpPlanDir,
         tmpPlanDir,
         logger,
@@ -227,7 +227,7 @@ describe("enrichPlanForFastModel retry logic", () => {
     let errorMessage = "";
 
     try {
-      await enrichPlanForFastModel(
+      await enrichPlan(
         tmpPlanDir,
         "test-plan.md",
         logger,
@@ -272,7 +272,7 @@ describe("enrichPlanForFastModel retry logic", () => {
 
     const logger = makeSilentLogger();
     const customTimeout = 10 * 60 * 1000;
-    await enrichPlanForFastModel(
+    await enrichPlan(
       tmpPlanDir,
       tmpPlanDir,
       logger,
@@ -313,7 +313,7 @@ describe("enrichPlanForFastModel retry logic", () => {
     let threwError = false;
 
     try {
-      await enrichPlanForFastModel(
+      await enrichPlan(
         tmpPlanDir,
         tmpPlanDir,
         logger,
@@ -362,7 +362,7 @@ describe("enrichPlanForFastModel retry logic", () => {
     };
 
     const logger = makeSilentLogger();
-    await enrichPlanForFastModel(
+    await enrichPlan(
       tmpPlanDir,
       "test-plan.md",
       logger,

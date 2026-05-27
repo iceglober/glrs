@@ -163,7 +163,7 @@ export const autopilotInteractiveCmd = command({
     resume: flag({
       long: "resume",
       description:
-        "Resume from .agent/autopilot-checkpoint.json: skip phases listed in completedPhases (when the checkpoint's planPath matches --plan).",
+        "Resume a prior run: skip phases marked completed in spec/main.yaml and items already checked in spec/<phase>.yaml.",
     }),
     maxIterationsPerPhase: option({
       long: "max-iterations-per-phase",

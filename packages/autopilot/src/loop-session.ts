@@ -19,12 +19,6 @@ import pino from "pino";
 import { runRalphLoop, type LoopResult, type RalphLoopOptions } from "./loop.js";
 import type { LoopSessionOptions } from "./loop-session-types.js";
 import type { SessionEventEmitter } from "./session-runner.js";
-import {
-  writeCheckpoint,
-  deleteCheckpoint,
-  readCheckpoint,
-  type Checkpoint,
-} from "./checkpoint.js";
 import { recordHead, resetSoft } from "./git-safety.js";
 import { hasSpec, readSpecGoal, readSpecConstraints, detectSpecPhases, filterUncheckedSpecPhases, parseSpecItems } from "./spec-parser.js";
 import { markPhaseCompleted as specMarkPhaseCompleted, markItemUnchecked } from "./spec-writer.js";
@@ -344,29 +338,22 @@ export async function runLoopSession(
 
   let uncheckedPhases = filterUncheckedSpecPhases(allPhases, opts.planPath);
 
-  // Resume support: when --resume is set (or a checkpoint exists for the
-  // current plan), skip phases already listed in `completedPhases`.
-  // Validation: the checkpoint's planPath MUST exactly match opts.planPath
-  // — otherwise we discard it and start fresh (with a warning).
-  let resumedFromCheckpoint = false;
+  // Resume: spec/main.yaml already tracks phase completion via
+  // phases[].completed — filterUncheckedSpecPhases (above) handles this.
+  // No separate checkpoint file needed. Log what was skipped.
   if (opts.resume) {
-    const cp = readCheckpoint(opts.cwd);
-    if (cp) {
-      if (cp.planPath !== opts.planPath) {
-        log.warn({ expected: opts.planPath, found: cp.planPath }, "checkpoint planPath mismatch, starting fresh");
-      } else {
-        const skip = new Set(cp.completedPhases);
-        const before = uncheckedPhases.length;
-        uncheckedPhases = uncheckedPhases.filter((p) => !skip.has(p));
-        const skipped = before - uncheckedPhases.length;
-        if (skipped > 0) {
-          log.info({ skipped, remaining: uncheckedPhases.length }, "resuming from checkpoint");
-          resumedFromCheckpoint = true;
-        }
-      }
-    } else {
-      log.info("no checkpoint found, starting fresh");
+    const skipped = allPhases.length - uncheckedPhases.length;
+    if (skipped > 0) {
+      log.info({ skipped, remaining: uncheckedPhases.length }, "resuming — skipping completed phases from spec");
     }
+    // Backward compat: clean up old checkpoint file if it exists
+    const oldCheckpointPath = path.join(opts.cwd, ".agent", "autopilot-checkpoint.json");
+    try {
+      if (fs.existsSync(oldCheckpointPath)) {
+        fs.unlinkSync(oldCheckpointPath);
+        log.info("removed legacy autopilot-checkpoint.json (progress is now tracked in spec YAML)");
+      }
+    } catch { /* ignore */ }
   }
 
   log.info({ total: allPhases.length, remaining: uncheckedPhases.length }, "plan loaded");
@@ -439,36 +426,14 @@ export async function runLoopSession(
     }
   }
 
-  // Accumulate cost and iterations across all phases so the final
-  // LoopResult reflects the total run, not just the last phase.
-  // When resuming, seed with the checkpoint's prior totals so the final
-  // summary reflects the full run, not just this resumed slice.
   let totalCostUsd = 0;
   let totalIterations = 0;
   let phasesCompleted = 0;
-  // Per-lane cost accumulator (item 3.5). Sequential runs assign every
-  // phase to "lane-1"; parallel runs distribute across lane-1..lane-N.
-  // The final result includes this map only when > 1 lane was used so
-  // the breakdown isn't noisy on the common case.
   const laneCosts = new Map<string, number>();
-  // Surviving worktrees from failed merges (item 3.6) — surfaced in the
-  // final result for the user to clean up manually.
   const orphanedWorktrees: string[] = [];
-  // Per-phase verify-command results (item 4.1). Surfaced in the final
-  // result for the debrief; failures also gate phase completion.
   const verifyResults: Array<{ phaseFile: string; results: VerifyResult[] }> =
     [];
-  // Track which phases have completed across the WHOLE run (including
-  // pre-resume ones), used as the source of truth for checkpoint writes.
   const completedPhasesAcc: string[] = [];
-  if (resumedFromCheckpoint) {
-    const cp = readCheckpoint(opts.cwd);
-    if (cp) {
-      totalCostUsd = cp.totalCostUsd;
-      totalIterations = cp.totalIterations;
-      completedPhasesAcc.push(...cp.completedPhases);
-    }
-  }
 
   let lastResult: LoopResult = {
     exitReason: "sentinel",
@@ -521,6 +486,8 @@ export async function runLoopSession(
     escalateToDeep?: boolean;
     /** Evolving recovery context injected on retries — describes what failed and what to try differently. */
     retryContext?: string;
+    /** Rollback strategy: "soft" (default) resets to pre-item HEAD on failure; "off" keeps changes. */
+    rollbackConfig?: string;
   }): Promise<LoopResult> => {
     const { phaseFile, phasePath, laneId, runCwd, useParallel } = args;
     const phaseContent = args.readFileSync(phasePath);
@@ -581,7 +548,11 @@ export async function runLoopSession(
       message: "No items to execute.",
     };
 
+    const rollback = (args.rollbackConfig ?? "soft") !== "off";
+
     for (const item of items) {
+      const preItemSha = await recordHead(runCwd);
+
       const filesList = item.files
         .map((f) => `${f.path}${f.isNew ? " (CREATE)" : " (EDIT)"}`)
         .join(", ");
@@ -722,9 +693,14 @@ export async function runLoopSession(
       }
 
       if (!SUCCESS_REASONS.has(itemResult.exitReason)) {
-        // Hard failure (struggle/stall/timeout/error/kill-switch) —
-        // propagate so the caller's error path can soft-reset and
-        // surface the phase as failed.
+        if (rollback && preItemSha && preItemSha !== "HEAD") {
+          const ok = await resetSoft(runCwd, preItemSha, {
+            onWarn: (m) => log.warn(m),
+          });
+          if (ok) {
+            log.info({ phase: phaseFile, itemId: item.id, ref: preItemSha.slice(0, 8) }, "rolled back failed item to pre-item state");
+          }
+        }
         return {
           ...itemResult,
           iterations: cumulativeIterations,
@@ -752,7 +728,14 @@ export async function runLoopSession(
             },
             "per-item verify failed",
           );
-          // Uncheck item that failed verify (verify-before-check enforcement).
+          if (rollback && preItemSha && preItemSha !== "HEAD") {
+            const ok = await resetSoft(runCwd, preItemSha, {
+              onWarn: (m) => log.warn(m),
+            });
+            if (ok) {
+              log.info({ phase: phaseFile, itemId: item.id, ref: preItemSha.slice(0, 8) }, "rolled back verify-failed item to pre-item state");
+            }
+          }
           if (args.planPath) {
             markItemUnchecked(args.planPath, phaseFile, item.id);
             args.logger?.root.child({ component: "autopilot.per-item-verify" }).warn(
@@ -863,6 +846,7 @@ export async function runLoopSession(
       verifyConfig: phaseVerifyConfig,
       escalateToDeep,
       retryContext,
+      rollbackConfig: (cfgObj?.rollback_on_failure as string | undefined) ?? "soft",
     });
     totalIterations += result.iterations;
     const costThisPhase = result.cumulativeCostUsd ?? 0;
@@ -969,16 +953,23 @@ export async function runLoopSession(
 
     if (!phaseComplete && !SUCCESS_REASONS.has(result.exitReason)) {
       log.warn({ phase: phaseFile, exitReason: result.exitReason }, "phase failed");
-      const rollbackConfig = (cfgObj?.rollback_on_failure as string | undefined) ?? "soft";
-      if (rollbackConfig !== "off" && preHeadSha && preHeadSha !== "HEAD") {
-        const ok = await resetSoft(runCwd, preHeadSha, {
-          onWarn: (m) => log.warn(m),
-        });
-        if (ok) {
-          log.info({ ref: preHeadSha.slice(0, 8) }, "soft-reset to pre-phase state");
+      // Per-item rollback handles the common case inside runItemsForPhase.
+      // This phase-level fallback covers the zero-items legacy path where
+      // no per-item SHA was captured.
+      if (result.iterations > 0 && preHeadSha && preHeadSha !== "HEAD") {
+        const rollbackSetting = (cfgObj?.rollback_on_failure as string | undefined) ?? "soft";
+        if (rollbackSetting !== "off") {
+          const specItems = parseSpecItems(phasePath);
+          const hasPerItemRollback = specItems.length > 0;
+          if (!hasPerItemRollback) {
+            const ok = await resetSoft(runCwd, preHeadSha, {
+              onWarn: (m) => log.warn(m),
+            });
+            if (ok) {
+              log.info({ ref: preHeadSha.slice(0, 8) }, "soft-reset to pre-phase state (zero-items fallback)");
+            }
+          }
         }
-      } else if (rollbackConfig === "off" && preHeadSha && preHeadSha !== "HEAD") {
-        log.info({ ref: preHeadSha.slice(0, 8) }, "rollback disabled by config — keeping phase changes");
       }
       // Emit typed phase:done event (failed)
       emitter?.emitEvent({
@@ -1035,11 +1026,8 @@ export async function runLoopSession(
 
   /**
    * Mark a phase as completed: bump counters, push to the accumulator,
-   * update main.md's checkbox, and persist a checkpoint. Used by both
+   * and mark the phase as completed in spec/main.yaml. Used by both
    * paths after a phase reports `phaseComplete === true`.
-   *
-   * Accepts optional phaseHooksConfig for per-phase hook overrides (item 4.3).
-   * When provided, phase-level hooks override plan-level hooks.
    */
   const recordPhaseCompletion = async (
     phaseFile: string,
@@ -1049,16 +1037,6 @@ export async function runLoopSession(
     phasesCompleted++;
     completedPhasesAcc.push(phaseFile);
     specMarkPhaseCompleted(opts.planPath, phaseFile);
-    const checkpointEnabled = cfgObj?.checkpoint !== false;
-    if (checkpointEnabled) {
-      writeCheckpoint(opts.cwd, {
-        planPath: opts.planPath,
-        completedPhases: [...completedPhasesAcc],
-        totalCostUsd,
-        totalIterations,
-        timestamp: new Date().toISOString(),
-      });
-    }
     log.info(
       {
         phase: phaseFile,
@@ -1089,17 +1067,7 @@ export async function runLoopSession(
     for (const phaseFile of uncheckedPhases) {
       // Check abort signal at phase boundaries (graceful shutdown via TUI Ctrl+C)
       if (opts.signal?.aborted) {
-        log.info({ completed: phasesCompleted, remaining: uncheckedPhases.length }, "abort signal received — writing checkpoint and stopping");
-        const checkpointEnabled = cfgObj?.checkpoint !== false;
-        if (checkpointEnabled) {
-          writeCheckpoint(opts.cwd, {
-            planPath: opts.planPath,
-            completedPhases: [...completedPhasesAcc],
-            totalCostUsd,
-            totalIterations,
-            timestamp: new Date().toISOString(),
-          });
-        }
+        log.info({ completed: phasesCompleted, remaining: uncheckedPhases.length }, "abort signal received — stopping");
         return {
           exitReason: "aborted",
           iterations: totalIterations,
@@ -1433,10 +1401,6 @@ export async function runLoopSession(
       log.warn({ output: hookResult.output }, "post_run hook failed");
     }
   }
-
-  // Run completed successfully — delete the checkpoint so the next
-  // invocation against this plan starts clean.
-  deleteCheckpoint(opts.cwd);
 
   // Automatic changeset generation (item 3.4). Skipped when running
   // under test deps (in-memory paths can't host a .changeset/ dir) or

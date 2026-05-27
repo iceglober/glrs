@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { enrichPlanForFastModel } from "../src/plan-enrichment.js";
+import { enrichPlan } from "../src/plan-enrichment.js";
 import { validatePlan } from "../src/plan-validator.js";
 import type { AgentAdapter, AgentHandle } from "../src/adapter.js";
 
@@ -136,7 +136,7 @@ phases:
 
     const { adapter } = makeTrackingAdapter(planDir);
 
-    await enrichPlanForFastModel(
+    await enrichPlan(
       planDir,
       planDir,
       undefined,
@@ -214,7 +214,7 @@ phases:
     // about the emitted events — the safety guard fires during the
     // enrichment pass before validation runs.
     try {
-      await enrichPlanForFastModel(
+      await enrichPlan(
         planDir,
         planDir,
         undefined,
@@ -284,7 +284,7 @@ phases:
 
     const { adapter } = makeTrackingAdapter();
 
-    await enrichPlanForFastModel(
+    await enrichPlan(
       planDir,
       planDir,
       undefined,
@@ -380,7 +380,7 @@ phases:
       getSessionCost: async () => 0,
     };
 
-    await enrichPlanForFastModel(planDir, planDir, undefined, undefined, adapter);
+    await enrichPlan(planDir, planDir, undefined, undefined, adapter);
 
     // After recovery: validatePlan should have no missing-spec-phase-file errors
     const afterReport = validatePlan(planDir);
