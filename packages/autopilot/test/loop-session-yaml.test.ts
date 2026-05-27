@@ -203,22 +203,9 @@ Do the thing
       `# Wave 1\n\n\`\`\`plan-state\n- [ ] id: b1\n  intent: Second item\n  verify: echo done\n\`\`\`\n`,
     );
 
-    const phasesRun: string[] = [];
-    const mockLoop = async (opts: { prompt: string }): Promise<LoopResult> => {
-      // Per-item prompt contains "mark its checkbox in <phaseFile>"
-      const match = /checkbox in ([\w_.]+\.yaml)/.exec(opts.prompt);
-      if (match && !phasesRun.includes(match[1])) phasesRun.push(match[1]);
-      // Simulate marking the item as checked
-      const itemMatch = /id: (\w+)/.exec(opts.prompt);
-      const phaseMatch = /checkbox in ([\w_.]+\.yaml)/.exec(opts.prompt);
-      if (itemMatch && phaseMatch) {
-        const specPath = path.join(planDir, "spec", phaseMatch[1]);
-        const content = fs.readFileSync(specPath, "utf-8");
-        fs.writeFileSync(specPath, content.replace(
-          new RegExp(`(id: ${itemMatch[1]}[\\s\\S]*?)checked: false`),
-          `$1checked: true`,
-        ));
-      }
+    let loopCallCount = 0;
+    const mockLoop = async (_opts: { prompt: string }): Promise<LoopResult> => {
+      loopCallCount++;
       return {
         exitReason: "sentinel",
         iterations: 1,
@@ -248,10 +235,13 @@ Do the thing
       },
     });
 
-    // Both phases should have been run
-    expect(phasesRun).toHaveLength(2);
-    expect(phasesRun).toContain("wave_0.yaml");
-    expect(phasesRun).toContain("wave_1.yaml");
+    // Both phases should have been run (1 item each = 2 loop calls)
+    expect(loopCallCount).toBe(2);
+    // Orchestrator should have marked both items checked
+    const w0 = yamlParse(fs.readFileSync(path.join(planDir, "spec", "wave_0.yaml"), "utf-8")) as { items: Array<{ checked: boolean }> };
+    const w1 = yamlParse(fs.readFileSync(path.join(planDir, "spec", "wave_1.yaml"), "utf-8")) as { items: Array<{ checked: boolean }> };
+    expect(w0.items[0].checked).toBe(true);
+    expect(w1.items[0].checked).toBe(true);
   });
 });
 
@@ -380,10 +370,9 @@ phases:
       `# Wave 1\n\n\`\`\`plan-state\n- [ ] id: b1\n  intent: Pending\n  verify: echo done\n\`\`\`\n`,
     );
 
-    const phasesRun: string[] = [];
-    const mockLoop = async (opts: { prompt: string }): Promise<LoopResult> => {
-      const match = /checkbox in ([\w_.]+\.yaml)/.exec(opts.prompt);
-      if (match && !phasesRun.includes(match[1])) phasesRun.push(match[1]);
+    let loopCallCount = 0;
+    const mockLoop = async (_opts: { prompt: string }): Promise<LoopResult> => {
+      loopCallCount++;
       return {
         exitReason: "sentinel",
         iterations: 1,
@@ -414,8 +403,10 @@ phases:
     });
 
     // Only wave_1.yaml should have been run (wave_0 is completed)
-    expect(phasesRun).toHaveLength(1);
-    expect(phasesRun[0]).toBe("wave_1.yaml");
+    expect(loopCallCount).toBe(1);
+    // wave_1's item should be checked by orchestrator; wave_0 was already complete
+    const w1 = yamlParse(fs.readFileSync(path.join(planDir, "spec", "wave_1.yaml"), "utf-8")) as { items: Array<{ checked: boolean }> };
+    expect(w1.items[0].checked).toBe(true);
   });
 });
 

@@ -141,6 +141,53 @@ export function markPhaseCompleted(planDir: string, phaseFile: string): void {
  * @param itemId - The item id to update
  * @param fields - Enrichment fields to write (partial — only provided keys are set)
  */
+/**
+ * Adjust a spec item's fields during recovery. Unlike writeEnrichmentFields,
+ * this can update execution-critical fields (verify, intent, files) — not
+ * just enrichment metadata. Used by the spec-review step between retry
+ * attempts to fix items that are fundamentally mis-specified.
+ */
+export function adjustSpecItem(
+  planDir: string,
+  phaseFile: string,
+  itemId: string,
+  fields: {
+    verify?: string;
+    intent?: string;
+    files?: Array<{ path: string; isNew: boolean; change: string }>;
+    context?: string;
+    conventions?: string;
+  },
+): void {
+  const phasePath = path.join(planDir, "spec", phaseFile);
+  try {
+    const content = fs.readFileSync(phasePath, "utf-8");
+    const raw = yamlParse(content) as unknown;
+    if (typeof raw !== "object" || raw === null) return;
+    const obj = raw as Record<string, unknown>;
+    if (!Array.isArray(obj["items"])) return;
+
+    const items = obj["items"] as Array<Record<string, unknown>>;
+    let found = false;
+    for (const item of items) {
+      if (item["id"] === itemId) {
+        if (fields.verify !== undefined) item["verify"] = fields.verify;
+        if (fields.intent !== undefined) item["intent"] = fields.intent;
+        if (fields.files !== undefined) item["files"] = fields.files;
+        if (fields.context !== undefined) item["context"] = fields.context;
+        if (fields.conventions !== undefined) item["conventions"] = fields.conventions;
+        found = true;
+        break;
+      }
+    }
+    if (!found) return;
+
+    atomicWriteFileSync(phasePath, yamlStringify(raw));
+  } catch {
+    // Silent failure — orchestrator continues
+  }
+}
+
 export function writeEnrichmentFields(
   planDir: string,
   phaseFile: string,

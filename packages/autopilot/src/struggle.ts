@@ -30,9 +30,11 @@ export class StruggleDetector {
   /**
    * Record the result of one iteration.
    * @param madeProgress - true if the agent made filesystem changes this iteration.
+   * @param toolCallCount - number of tool calls the agent made this iteration.
+   *   When >= 3 without filesystem progress, the agent is exploring (not stuck).
    */
-  record(madeProgress: boolean): void {
-    if (madeProgress) {
+  record(madeProgress: boolean, toolCallCount?: number): void {
+    if (madeProgress || (toolCallCount != null && toolCallCount >= 3)) {
       this._consecutiveStalls = 0;
     } else {
       this._consecutiveStalls++;

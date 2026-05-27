@@ -924,7 +924,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       // No sentinel — record progress and check struggle.
       // Only reached when the agent did NOT emit the sentinel this iteration.
       const madeProgress = await checkProgress(opts.cwd, headBefore);
-      struggle.record(madeProgress);
+      struggle.record(madeProgress, thinkingToolCalls);
 
       // File-list scope validation (item 4.2). Compare the files the
       // agent actually touched this iteration against the union of

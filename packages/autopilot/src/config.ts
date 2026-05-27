@@ -66,6 +66,13 @@ export const MAX_ITERATIONS_PER_PHASE = 25;
 export const MAX_ITERATIONS_PER_ITEM = 5;
 
 /**
+ * Minimum per-item iteration budget. When the per-phase budget divided
+ * across items yields fewer iterations than this, the floor wins.
+ * Prevents large phases from starving individual items.
+ */
+export const MIN_PER_ITEM_ITERATIONS = 3;
+
+/**
  * Kill-switch file path (relative to cwd). If this file exists at the
  * start of any iteration, the loop exits immediately.
  */
