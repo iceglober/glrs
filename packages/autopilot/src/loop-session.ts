@@ -21,7 +21,7 @@ import type { LoopSessionOptions } from "./loop-session-types.js";
 import type { SessionEventEmitter } from "./session-runner.js";
 import { recordHead, resetSoft } from "./git-safety.js";
 import { hasSpec, readSpecGoal, readSpecConstraints, detectSpecPhases, filterUncheckedSpecPhases, parseSpecItems } from "./spec-parser.js";
-import { markPhaseCompleted as specMarkPhaseCompleted, markItemUnchecked } from "./spec-writer.js";
+import { markPhaseCompleted as specMarkPhaseCompleted, markItemChecked, markItemUnchecked, adjustSpecItem } from "./spec-writer.js";
 import { buildConflictGraph, hasParallelism } from "./conflict-graph.js";
 import { runLanes, type PhaseResult } from "./lane-orchestrator.js";
 import {
@@ -37,7 +37,7 @@ import {
 import { runHook } from "./hook-runner.js";
 import { validatePlan } from "./plan-validator.js";
 import { resolveModel, type AdapterName } from "./model-resolver.js";
-import { MAX_ITERATIONS_PER_PHASE, MAX_ITERATIONS_PER_ITEM, STALL_MS_DEFAULT } from "./config.js";
+import { MAX_ITERATIONS_PER_PHASE, MAX_ITERATIONS_PER_ITEM, MIN_PER_ITEM_ITERATIONS, STALL_MS_DEFAULT } from "./config.js";
 import { resolvePhaseConfig } from "./phase-config.js";
 
 export type { LoopSessionOptions, LoopResult };
@@ -105,8 +105,10 @@ const DEFAULT_MAX_PHASE_RETRIES = 5;
 /** Exit reasons that indicate a successful phase completion. */
 export const SUCCESS_REASONS = new Set(["sentinel", "idle"]);
 
-/** Per-phase wall-clock timeout across all recovery attempts. Default 30 minutes. */
-const DEFAULT_PHASE_TIMEOUT_MS = 30 * 60 * 1000;
+/** Base per-phase wall-clock timeout across all recovery attempts. */
+const BASE_PHASE_TIMEOUT_MS = 30 * 60 * 1000;
+/** Additional timeout budget per unchecked item in the phase. */
+const PER_ITEM_TIMEOUT_MS = 10 * 60 * 1000;
 
 const STRATEGY_LABELS = [
   "diagnose root cause, then fix",
@@ -177,6 +179,105 @@ function buildRetryContext(
  */
 export function isSuccessExitReason(reason: string): boolean {
   return SUCCESS_REASONS.has(reason);
+}
+
+/** Structured adjustment from a spec-review session. */
+interface SpecAdjustment {
+  itemId: string;
+  fields: {
+    verify?: string;
+    intent?: string;
+    files?: Array<{ path: string; isNew: boolean; change: string }>;
+    context?: string;
+  };
+  reason: string;
+}
+
+const SPEC_REVIEW_PROMPT = `You are reviewing spec items that failed during autopilot execution.
+Analyze the failure and suggest adjustments to the spec items so the next attempt can succeed.
+
+## Failed phase items
+{ITEMS_YAML}
+
+## Failure context
+{FAILURE_CONTEXT}
+
+## Task
+Output ONLY a JSON array of adjustments. Each element:
+{ "itemId": "string", "fields": { "verify?": "string", "intent?": "string", "context?": "string" }, "reason": "string" }
+
+Only include fields that need changing. If no adjustment is needed, output [].
+
+Common patterns:
+- verify uses a tool/command not available in this context → replace with a runnable shell command
+- verify checks post-merge state (Linear issue status, merged PR) → replace with "true"
+- intent scope is too broad for a single agent session → narrow to specific files/packages
+- intent references branches or PRs that don't exist → simplify to just the code change`;
+
+/**
+ * Run a short deep-model session to analyze phase failures and suggest
+ * spec adjustments. Returns parsed adjustments or null.
+ */
+async function runSpecReview(opts: {
+  phaseFile: string;
+  phasePath: string;
+  failureContext: string;
+  planPath: string;
+  cwd: string;
+  runRalphLoop: typeof runRalphLoop;
+  adapter?: import("./adapter.js").AgentAdapter;
+  config?: unknown;
+  logger?: import("./lib/logger.js").AutopilotLogger;
+}): Promise<SpecAdjustment[] | null> {
+  const parentLog = opts.logger?.root.child({ component: "autopilot.spec-review" });
+  const logInfo = (obj: Record<string, unknown>, msg: string) => parentLog?.info(obj, msg);
+  const logWarn = (obj: Record<string, unknown>, msg: string) => parentLog?.warn(obj, msg);
+
+  const items = parseSpecItems(opts.phasePath);
+  const uncheckedItems = items.filter((it) => !it.checked);
+  if (uncheckedItems.length === 0) return null;
+
+  const itemsYaml = uncheckedItems
+    .map((it) => `- id: "${it.id}"\n  intent: ${JSON.stringify(it.intent)}\n  verify: ${JSON.stringify(it.verify ?? "")}\n  checked: ${it.checked}`)
+    .join("\n");
+
+  const prompt = SPEC_REVIEW_PROMPT
+    .replace("{ITEMS_YAML}", itemsYaml)
+    .replace("{FAILURE_CONTEXT}", opts.failureContext);
+
+  try {
+    const result = await opts.runRalphLoop({
+      prompt,
+      cwd: opts.cwd,
+      agentName: undefined,
+      maxIterations: 1,
+      stallMs: 5 * 60 * 1000,
+      config: opts.config,
+      adapter: opts.adapter,
+    });
+
+    const responseText = result.message ?? "";
+    const jsonMatch = /\[[\s\S]*\]/.exec(responseText);
+    if (!jsonMatch) {
+      logInfo({}, "spec review returned no JSON array");
+      return null;
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]) as SpecAdjustment[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+
+    const valid = parsed.filter(
+      (adj) => typeof adj.itemId === "string" && adj.fields && typeof adj.fields === "object",
+    );
+
+    if (valid.length > 0) {
+      logInfo({ count: valid.length, items: valid.map((a) => a.itemId) }, "spec review proposed adjustments");
+    }
+    return valid.length > 0 ? valid : null;
+  } catch (err) {
+    logWarn({ err: String(err) }, "spec review session failed — continuing without adjustments");
+    return null;
+  }
 }
 
 /**
@@ -488,6 +589,10 @@ export async function runLoopSession(
     retryContext?: string;
     /** Rollback strategy: "soft" (default) resets to pre-item HEAD on failure; "off" keeps changes. */
     rollbackConfig?: string;
+    /** Phase wall-clock start time for timeout enforcement across items. */
+    phaseStartTime?: number;
+    /** Phase wall-clock timeout in ms. Checked after each item completes. */
+    phaseTimeoutMs?: number;
   }): Promise<LoopResult> => {
     const { phaseFile, phasePath, laneId, runCwd, useParallel } = args;
     const phaseContent = args.readFileSync(phasePath);
@@ -533,11 +638,8 @@ export async function runLoopSession(
     // Per-item iteration cap: smaller of maxIterationsPerItem and
     // the global per-phase budget split across items.
     const perItemCap = Math.max(
-      1,
-      Math.min(
-        maxIterationsPerItem,
-        Math.ceil(maxIterationsPerPhase / items.length),
-      ),
+      MIN_PER_ITEM_ITERATIONS,
+      Math.min(maxIterationsPerItem, Math.ceil(maxIterationsPerPhase / items.length)),
     );
 
     let cumulativeIterations = 0;
@@ -598,13 +700,12 @@ export async function runLoopSession(
           `You are executing ONE item of a multi-item phase using TDD (test-driven development). Follow the red-green-refactor cycle strictly:\n\n` +
           `1. RED: Write a failing test/proof first. Run verify to confirm it fails.\n` +
           `2. GREEN: Implement the minimal code to make the test pass. Run verify to confirm it passes.\n` +
-          `3. REFACTOR: Clean up the code if needed, re-run verify to ensure it still passes.\n` +
-          `4. MARK: Mark the item checkbox and commit only after the verify command passes.\n\n` +
-          `Complete only this item, mark its checkbox in ${phaseFile}, commit, and stop. Do not work on other items.\n\n` +
+          `3. REFACTOR: Clean up the code if needed, re-run verify to ensure it still passes.\n\n` +
+          `Complete only this item, commit, and stop. Do not work on other items.\n\n` +
           `## Overall goal\n${goal}\n\n` +
           `## Constraints\n${constraints}\n\n` +
           `## Your item\n` +
-          `- [ ] id: ${item.id}\n` +
+          `- id: ${item.id}\n` +
           `  intent: ${item.intent}\n` +
           `  files: ${filesList || "(none declared)"}\n` +
           `  verify: ${verify}\n\n` +
@@ -621,20 +722,19 @@ export async function runLoopSession(
           `TDD workflow:\n` +
           `  1. Write a test that fails (RED phase)\n` +
           `  2. Implement to make it pass (GREEN phase)\n` +
-          `  3. Refactor if needed, re-verify (REFACTOR phase)\n` +
-          `  4. Mark checkbox when verify passes\n\n` +
+          `  3. Refactor if needed, re-verify (REFACTOR phase)\n\n` +
           `Non-goals:\n` +
           `  - Do NOT skip the RED phase — always write the test first.\n` +
           `  - Do NOT modify files outside the list above.\n` +
           `  - Do NOT work on items other than ${item.id}.\n\n` +
-          `When done: mark the checkbox for item ${item.id} in ${phaseFile} as [x], commit, and emit the autopilot-done sentinel.`;
+          `When done: commit your changes and emit the autopilot-done sentinel.`;
       } else {
         itemPrompt =
-          `You are executing ONE item of a multi-item phase. Complete only this item, mark its checkbox in ${phaseFile}, commit, and stop. Do not work on other items.\n\n` +
+          `You are executing ONE item of a multi-item phase. Complete only this item, commit, and stop. Do not work on other items.\n\n` +
           `## Overall goal\n${goal}\n\n` +
           `## Constraints\n${constraints}\n\n` +
           `## Your item\n` +
-          `- [ ] id: ${item.id}\n` +
+          `- id: ${item.id}\n` +
           `  intent: ${item.intent}\n` +
           `  files: ${filesList || "(none declared)"}\n` +
           `  verify: ${verify}\n\n` +
@@ -651,7 +751,7 @@ export async function runLoopSession(
           `Non-goals:\n` +
           `  - Do NOT modify files outside the list above.\n` +
           `  - Do NOT work on items other than ${item.id}.\n\n` +
-          `When done: mark the checkbox for item ${item.id} in ${phaseFile} as [x], commit, and emit the autopilot-done sentinel.`;
+          `When done: commit your changes and emit the autopilot-done sentinel.`;
       }
 
       const adapterName = args.adapter?.name as AdapterName | undefined;
@@ -680,16 +780,9 @@ export async function runLoopSession(
       cumulativeCost += itemResult.cumulativeCostUsd ?? 0;
       lastItemResult = itemResult;
 
-      // Re-read phase content to detect whether this item's checkbox
-      // was actually marked — if not, fall through to the caller's
-      // phaseComplete check, which will keep the phase open.
-      const updatedItems = parseSpecItems(phasePath);
-      const matched = updatedItems.find((u) => u.id === item.id);
-      if (matched && !matched.checked) {
-        log.warn(
-          { phase: phaseFile, itemId: item.id },
-          "item completed iteration without marking its checkbox",
-        );
+      if (SUCCESS_REASONS.has(itemResult.exitReason) && args.planPath) {
+        markItemChecked(args.planPath, phaseFile, item.id);
+        log.info({ phase: phaseFile, itemId: item.id }, "item checked by orchestrator");
       }
 
       if (!SUCCESS_REASONS.has(itemResult.exitReason)) {
@@ -753,6 +846,22 @@ export async function runLoopSession(
           }
         }
       }
+
+      if (args.phaseStartTime && args.phaseTimeoutMs) {
+        const elapsed = Date.now() - args.phaseStartTime;
+        if (elapsed >= args.phaseTimeoutMs) {
+          log.warn(
+            { phase: phaseFile, elapsedMs: elapsed, timeoutMs: args.phaseTimeoutMs },
+            "phase timeout reached during item execution",
+          );
+          return {
+            exitReason: "error",
+            iterations: cumulativeIterations,
+            cumulativeCostUsd: cumulativeCost,
+            message: `Phase ${phaseFile} timed out after ${Math.round(elapsed / 60_000)} minutes`,
+          };
+        }
+      }
     }
 
     return {
@@ -779,6 +888,8 @@ export async function runLoopSession(
     runCwd: string,
     retryContext?: string,
     escalateToDeep?: boolean,
+    phaseStartTime?: number,
+    phaseTimeoutMs?: number,
   ): Promise<PhaseResult & { phaseLoopResult: LoopResult; phaseComplete: boolean; verifyFailures?: string }> => {
     let verifyFailureSummary: string | undefined;
     const phasePath = path.join(opts.planPath, "spec", phaseFile);
@@ -847,6 +958,8 @@ export async function runLoopSession(
       escalateToDeep,
       retryContext,
       rollbackConfig: (cfgObj?.rollback_on_failure as string | undefined) ?? "soft",
+      phaseStartTime,
+      phaseTimeoutMs,
     });
     totalIterations += result.iterations;
     const costThisPhase = result.cumulativeCostUsd ?? 0;
@@ -1091,17 +1204,19 @@ export async function runLoopSession(
       // attempts, escalate to the deep model (Opus). If all retries exhaust, the
       // entire run halts — we never skip a failed phase.
       const effectiveMaxRetries = opts.maxPhaseRetries ?? (opts._deps ? 1 : DEFAULT_MAX_PHASE_RETRIES);
+      const phasePath = path.join(opts.planPath, "spec", phaseFile);
+      const phaseItemCount = parseSpecItems(phasePath).filter((it) => !it.checked).length;
+      const phaseTimeoutMs = BASE_PHASE_TIMEOUT_MS + phaseItemCount * PER_ITEM_TIMEOUT_MS;
       let attempt = 0;
       let phaseSuccess = false;
       let lastRetryContext: string | undefined;
       const phaseStartTime = Date.now();
 
       while (attempt < effectiveMaxRetries && !phaseSuccess) {
-        // Per-phase wall-clock timeout — covers all recovery attempts combined
         const elapsedMs = Date.now() - phaseStartTime;
-        if (attempt > 1 && elapsedMs >= DEFAULT_PHASE_TIMEOUT_MS) {
+        if (elapsedMs >= phaseTimeoutMs) {
           log.error(
-            { phase: phaseFile, elapsedMs, attempts: attempt },
+            { phase: phaseFile, elapsedMs, attempts: attempt, timeoutMs: phaseTimeoutMs, itemCount: phaseItemCount },
             "phase exceeded wall-clock timeout — halting run",
           );
           return {
@@ -1142,7 +1257,7 @@ export async function runLoopSession(
 
         let r: Awaited<ReturnType<typeof runPhaseInner>>;
         try {
-          r = await runPhaseInner(phaseFile, "lane-1", opts.cwd, lastRetryContext, isEscalation);
+          r = await runPhaseInner(phaseFile, "lane-1", opts.cwd, lastRetryContext, isEscalation, phaseStartTime, phaseTimeoutMs);
         } catch (err) {
           // Uncaught exceptions from the adapter (socket errors, fetch failures)
           // must be captured so the retry loop can attempt recovery instead of
@@ -1184,6 +1299,40 @@ export async function runLoopSession(
             verifyFailures: r.verifyFailures,
           });
           lastRetryContext = retryInfo.prompt;
+
+          if (attempt >= 2) {
+            const phasePath = path.join(opts.planPath, "spec", phaseFile);
+            const adjustments = await runSpecReview({
+              phaseFile,
+              phasePath,
+              failureContext: retryInfo.prompt,
+              planPath: opts.planPath,
+              cwd: opts.cwd,
+              runRalphLoop: _runRalphLoop,
+              adapter: opts.adapter,
+              config: opts.config,
+              logger: opts.logger,
+            });
+            if (adjustments) {
+              for (const adj of adjustments) {
+                adjustSpecItem(opts.planPath, phaseFile, adj.itemId, adj.fields);
+              }
+              log.info(
+                { phase: phaseFile, adjustments: adjustments.length },
+                "spec items adjusted by recovery review",
+              );
+              emitter?.emitEvent({
+                type: "recovery:start",
+                timestamp: new Date().toISOString(),
+                phase: `${phaseFile} (spec-review: ${adjustments.length} items adjusted)`,
+                attempt: attempt + 1,
+                maxAttempts: effectiveMaxRetries,
+                failureReason: `spec adjusted: ${adjustments.map((a) => `${a.itemId}: ${a.reason}`).join("; ")}`,
+                strategy: "spec-review",
+                escalated: false,
+              });
+            }
+          }
 
           emitter?.emitEvent({
             type: "recovery:start",
