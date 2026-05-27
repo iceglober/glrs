@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.4.1
+
+### Patch Changes
+
+- [#125](https://github.com/iceglober/glrs/pull/125) [`9b0524a`](https://github.com/iceglober/glrs/commit/9b0524a0b7d3cd8b73d6bfc0883c0d960a24ad8f) Thanks [@iceglober](https://github.com/iceglober)! - Add autopilot observability: recovery event rendering, 30s heartbeat timer, per-phase wall-clock timeout (30 min default)
+
 ## 0.4.0
 
 ### Minor Changes

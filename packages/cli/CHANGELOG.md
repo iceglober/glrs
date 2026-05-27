@@ -1,5 +1,17 @@
 # @glrs-dev/cli
 
+## 2.10.13
+
+### Patch Changes
+
+- [#125](https://github.com/iceglober/glrs/pull/125) [`9b0524a`](https://github.com/iceglober/glrs/commit/9b0524a0b7d3cd8b73d6bfc0883c0d960a24ad8f) Thanks [@iceglober](https://github.com/iceglober)! - Add autopilot observability: recovery event rendering, 30s heartbeat timer, per-phase wall-clock timeout (30 min default)
+
+- Updated dependencies [[`9b0524a`](https://github.com/iceglober/glrs/commit/9b0524a0b7d3cd8b73d6bfc0883c0d960a24ad8f)]:
+  - @glrs-dev/autopilot@0.4.1
+  - @glrs-dev/adapter-claude-code@0.1.10
+  - @glrs-dev/adapter-opencode@0.1.10
+  - @glrs-dev/harness-plugin-opencode@2.10.13
+
 ## 2.10.12
 
 ### Patch Changes

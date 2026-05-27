@@ -1,6 +1,6 @@
 {
   "name": "@glrs-dev/harness-plugin-opencode",
-  "version": "2.10.12",
+  "version": "2.10.13",
   "description": "Opinionated OpenCode agent harness — PRIME, plan, build, QA, skills, MCP wiring, hashline editing.",
   "type": "module",
   "main": "./dist/index.js",
