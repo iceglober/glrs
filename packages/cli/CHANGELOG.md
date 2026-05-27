@@ -1,5 +1,19 @@
 # @glrs-dev/cli
 
+## 2.10.12
+
+### Patch Changes
+
+- [#122](https://github.com/iceglober/glrs/pull/122) [`088dcd8`](https://github.com/iceglober/glrs/commit/088dcd8a2cbf40e2e83271d1f8dc794fceeee2b5) Thanks [@iceglober](https://github.com/iceglober)! - Autopilot recovery: 5 evolving retry attempts on every failure mode (verify, crash, stall, max-iterations) with progressive strategy changes and deep-model escalation. Phases never skip on failure — the run halts if all attempts exhaust.
+
+  CLI: fix preflight validation blocking unenriched plans (single-file and directory without spec/) from reaching the enrichment step.
+
+- Updated dependencies [[`088dcd8`](https://github.com/iceglober/glrs/commit/088dcd8a2cbf40e2e83271d1f8dc794fceeee2b5)]:
+  - @glrs-dev/autopilot@0.4.0
+  - @glrs-dev/adapter-claude-code@0.1.9
+  - @glrs-dev/adapter-opencode@0.1.9
+  - @glrs-dev/harness-plugin-opencode@2.10.12
+
 ## 2.10.11
 
 ### Patch Changes
