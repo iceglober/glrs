@@ -16,7 +16,7 @@
 import { command, flag, option, optional, string as stringType, number as numberType, oneOf } from "cmd-ts";
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { formatElapsed, formatCost, EventStreamReader, deriveState, applyCLIOverrides, isSuccessExitReason, validatePlan, detectSpecPhases, parseSpecItems, anyExistingPhaseHasCheckedItems } from "@glrs-dev/autopilot";
+import { formatElapsed, formatCost, EventStreamReader, deriveState, applyCLIOverrides, isSuccessExitReason, validatePlan, detectSpecPhases, parseSpecItems } from "@glrs-dev/autopilot";
 import { SessionRunner } from "@glrs-dev/autopilot";
 import { createCliRenderer } from "../cli-renderer.js";
 import { createAdapter, ADAPTER_NAMES, DEFAULT_ADAPTER } from "../adapter-factory.js";
@@ -103,8 +103,7 @@ export interface PreflightResult {
  *   2. Every error has code `missing-spec-phase-file`
  *   3. No existing phase YAML has any `checked: true` item (safety guard)
  *
- * Mirrors the in-`enrichPlan` stale-spec recovery safety semantics exactly,
- * using the shared `anyExistingPhaseHasCheckedItems` helper.
+ * Mirrors the in-`enrichPlan` stale-spec recovery safety semantics exactly.
  */
 export function runPreflightValidation(
   planPath: string,
@@ -127,19 +126,19 @@ export function runPreflightValidation(
     validation.errors.every((e) => e.code === "missing-spec-phase-file");
 
   if (canAttemptRecovery) {
-    // Use detectSpecPhases to get the list of phase YAML filenames referenced
-    // in spec/main.yaml, then check for checked items via the shared helper.
     const referencedPhases = detectSpecPhases(planPath);
-    const hasChecked = anyExistingPhaseHasCheckedItems(planPath, referencedPhases);
+    const hasChecked = referencedPhases.some((p) => {
+      const pp = path.join(planPath, "spec", p);
+      if (!fs.existsSync(pp)) return false;
+      return parseSpecItems(pp).some((it) => it.checked);
+    });
 
     if (!hasChecked) {
-      // Safe to delete stale spec/
       fs.rmSync(path.join(planPath, "spec"), { recursive: true, force: true });
       return { recovered: true, exitCode: null, errors: [], warnings };
     }
   }
 
-  // Not recoverable — return errors for the caller to print
   const errors = validation.errors.map((e) => ({ message: e.message, file: e.file }));
   return { recovered: false, exitCode: 1, errors, warnings };
 }
