@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.6.0
+
+### Minor Changes
+
+- [#131](https://github.com/iceglober/glrs/pull/131) [`e74a396`](https://github.com/iceglober/glrs/commit/e74a396925b567ce194345a8248db076dbc44ef0) Thanks [@iceglober](https://github.com/iceglober)! - Autopilot iteration architecture: orchestrator-owned checkboxes, tool-call-aware struggle detection, item-level phase timeout, per-item cap floor, and in-flight spec adjustment via deep-model review
+
 ## 0.5.0
 
 ### Minor Changes

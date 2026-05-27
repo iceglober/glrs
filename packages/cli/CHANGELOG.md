@@ -1,5 +1,17 @@
 # @glrs-dev/cli
 
+## 2.10.16
+
+### Patch Changes
+
+- [#131](https://github.com/iceglober/glrs/pull/131) [`e74a396`](https://github.com/iceglober/glrs/commit/e74a396925b567ce194345a8248db076dbc44ef0) Thanks [@iceglober](https://github.com/iceglober)! - Autopilot iteration architecture: orchestrator-owned checkboxes, tool-call-aware struggle detection, item-level phase timeout, per-item cap floor, and in-flight spec adjustment via deep-model review
+
+- Updated dependencies [[`e74a396`](https://github.com/iceglober/glrs/commit/e74a396925b567ce194345a8248db076dbc44ef0)]:
+  - @glrs-dev/autopilot@0.6.0
+  - @glrs-dev/adapter-claude-code@0.1.13
+  - @glrs-dev/adapter-opencode@0.1.13
+  - @glrs-dev/harness-plugin-opencode@2.10.16
+
 ## 2.10.15
 
 ### Patch Changes
