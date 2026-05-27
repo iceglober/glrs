@@ -1,5 +1,13 @@
 # @glrs-dev/autopilot
 
+## 0.4.2
+
+### Patch Changes
+
+- [#127](https://github.com/iceglober/glrs/pull/127) [`8a0ce16`](https://github.com/iceglober/glrs/commit/8a0ce167bcbf94e3eea4bec2222a05ed56ffe442) Thanks [@iceglober](https://github.com/iceglober)! - Add autopilot observability: recovery event rendering, 30s heartbeat timer, per-phase wall-clock timeout (30 min default)
+
+- [#127](https://github.com/iceglober/glrs/pull/127) [`8a0ce16`](https://github.com/iceglober/glrs/commit/8a0ce167bcbf94e3eea4bec2222a05ed56ffe442) Thanks [@iceglober](https://github.com/iceglober)! - Fix crash recovery: catch thrown exceptions (socket errors, fetch failures) in retry loop instead of letting them kill the run
+
 ## 0.4.1
 
 ### Patch Changes
