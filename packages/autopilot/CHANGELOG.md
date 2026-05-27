@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.5.0
+
+### Minor Changes
+
+- [#129](https://github.com/iceglober/glrs/pull/129) [`3e818da`](https://github.com/iceglober/glrs/commit/3e818daebc6d114a5bf7e24a2d28826b2d23528b) Thanks [@iceglober](https://github.com/iceglober)! - Per-item rollback, checkpoint.json removal, and dead code cleanup — commits are the checkpoint mechanism now
+
 ## 0.4.2
 
 ### Patch Changes

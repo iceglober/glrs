@@ -1,5 +1,17 @@
 # @glrs-dev/cli
 
+## 2.10.15
+
+### Patch Changes
+
+- [#129](https://github.com/iceglober/glrs/pull/129) [`3e818da`](https://github.com/iceglober/glrs/commit/3e818daebc6d114a5bf7e24a2d28826b2d23528b) Thanks [@iceglober](https://github.com/iceglober)! - Per-item rollback, checkpoint.json removal, and dead code cleanup — commits are the checkpoint mechanism now
+
+- Updated dependencies [[`3e818da`](https://github.com/iceglober/glrs/commit/3e818daebc6d114a5bf7e24a2d28826b2d23528b)]:
+  - @glrs-dev/autopilot@0.5.0
+  - @glrs-dev/adapter-claude-code@0.1.12
+  - @glrs-dev/adapter-opencode@0.1.12
+  - @glrs-dev/harness-plugin-opencode@2.10.15
+
 ## 2.10.14
 
 ### Patch Changes
