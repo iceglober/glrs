@@ -181,37 +181,38 @@ describe("runPreflightValidation", () => {
     }
   });
 
-  it("passes validation when plan has no spec/ directory", () => {
+  it("returns missing-spec error when plan has no spec/ directory", () => {
     const planDir = path.join(tmpDir, "clean-plan");
     fs.mkdirSync(planDir, { recursive: true });
 
     writeFile(planDir, "main.md", `# My Plan\n\n## Goal\nDo the thing\n\n## Phases\n- [ ] wave_0.md\n`);
-    writeFile(planDir, "wave_0.md", `# Wave 0\n\n### 0.1 Item\n- intent: Do something\n  files:\n    - src/foo.ts\n  tests:\n    - test/foo.test.ts\n  verify: bun test test/foo.test.ts\n`);
+
+    const result = runPreflightValidation(planDir, false);
+
+    expect(result.recovered).toBe(false);
+    expect(result.exitCode).toBe(1);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("passes validation when plan has valid spec/", () => {
+    const planDir = path.join(tmpDir, "valid-plan");
+    fs.mkdirSync(planDir, { recursive: true });
+
+    const specDir = path.join(planDir, "spec");
+    fs.mkdirSync(specDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(specDir, "main.yaml"),
+      `title: My Plan\ngoal: Do the thing\nphases:\n  - file: wave_0.yaml\n    completed: false\n`,
+    );
+    fs.writeFileSync(
+      path.join(specDir, "wave_0.yaml"),
+      `items:\n  - id: "0.1"\n    intent: Do something\n    checked: false\n    verify: bun test\n`,
+    );
 
     const result = runPreflightValidation(planDir, false);
 
     expect(result.recovered).toBe(false);
     expect(result.exitCode).toBeNull();
     expect(result.errors).toHaveLength(0);
-  });
-
-  it("returns warnings even when validation passes", () => {
-    const planDir = path.join(tmpDir, "warn-plan");
-    fs.mkdirSync(planDir, { recursive: true });
-
-    // A plan with a plan-state fence that has items missing files/tests/verify
-    // will generate warnings. Use the fence format that parseItems recognizes.
-    writeFile(planDir, "main.md", `# My Plan\n\n## Goal\nDo the thing\n\n## Phases\n- [ ] wave_0.md\n`);
-    writeFile(
-      planDir,
-      "wave_0.md",
-      `# Wave 0\n\n\`\`\`plan-state\n- [ ] id: 0.1\n  intent: Do something\n\`\`\`\n`,
-    );
-
-    const result = runPreflightValidation(planDir, false);
-
-    expect(result.exitCode).toBeNull();
-    // Warnings about missing files/tests/verify
-    expect(result.warnings.length).toBeGreaterThan(0);
   });
 });
