@@ -1,5 +1,13 @@
 # @glrs-dev/autopilot
 
+## 0.4.0
+
+### Minor Changes
+
+- [#122](https://github.com/iceglober/glrs/pull/122) [`088dcd8`](https://github.com/iceglober/glrs/commit/088dcd8a2cbf40e2e83271d1f8dc794fceeee2b5) Thanks [@iceglober](https://github.com/iceglober)! - Autopilot recovery: 5 evolving retry attempts on every failure mode (verify, crash, stall, max-iterations) with progressive strategy changes and deep-model escalation. Phases never skip on failure — the run halts if all attempts exhaust.
+
+  CLI: fix preflight validation blocking unenriched plans (single-file and directory without spec/) from reaching the enrichment step.
+
 ## 0.3.0
 
 ### Minor Changes
