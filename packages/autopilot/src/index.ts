@@ -57,7 +57,7 @@ export { resolveModel } from "./model-resolver.js";
 export type { AdapterName } from "./model-resolver.js";
 
 // Plan enrichment
-export { enrichPlan, enrichPlanForFastModel } from "./plan-enrichment.js";
+export { enrichPlan } from "./plan-enrichment.js";
 
 // Spec schema/parser/writer
 export { validateMainSpec, validatePhaseSpec } from "./spec-schema.js";
@@ -67,10 +67,6 @@ export { markPhaseCompleted } from "./spec-writer.js";
 // Verify runner
 export { runVerifyCommands } from "./verify-runner.js";
 export type { VerifyResult } from "./verify-runner.js";
-
-// Checkpoint
-export { writeCheckpoint, readCheckpoint, deleteCheckpoint } from "./checkpoint.js";
-export type { Checkpoint } from "./checkpoint.js";
 
 // Config
 export {

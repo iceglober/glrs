@@ -42,7 +42,6 @@ import {
 } from "./config.js";
 import { classifyError } from "./lib/error-classifier.js";
 import { detectProvider } from "./lib/credential-refresh.js";
-import { writeCheckpoint } from "./checkpoint.js";
 
 /**
  * Retry budget for transient errors per iteration.
@@ -832,21 +831,6 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
             message: `Credentials expired (${provider}). Run \`gs-assume\` and then \`glrs oc autopilot --resume\`.`,
             iteration,
           });
-          // Best-effort checkpoint write so --resume picks up here.
-          // multi-phase runs already write per-phase checkpoints; this
-          // ensures the run-level state is captured for single-phase
-          // (loop CLI) and pre-first-phase scenarios too.
-          try {
-            writeCheckpoint(opts.cwd, {
-              planPath: opts.cwd,
-              completedPhases: [],
-              totalCostUsd: heartbeat?.getState().cumulativeCostUsd ?? 0,
-              totalIterations: iteration - 1,
-              timestamp: new Date().toISOString(),
-            });
-          } catch {
-            // writeCheckpoint already swallows internally.
-          }
           notify({
             event: "error",
             iteration,
@@ -1227,21 +1211,6 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
         log.debug({ err }, "WIP-status check failed (non-fatal)");
       }
 
-      // Best-effort checkpoint write — used by --resume to pick up
-      // from the next phase. Multi-phase runs already write checkpoints
-      // per phase; this is a final safety net to capture the
-      // interruption timestamp.
-      try {
-        writeCheckpoint(opts.cwd, {
-          planPath: opts.cwd,
-          completedPhases: [],
-          totalCostUsd: heartbeat?.getState().cumulativeCostUsd ?? 0,
-          totalIterations: heartbeat?.getState().iterationsCompleted ?? 0,
-          timestamp: new Date().toISOString(),
-        });
-      } catch {
-        // writeCheckpoint already swallows; this is belt-and-suspenders.
-      }
     }
 
     // Shut down the agent unless ownership was transferred to the caller via

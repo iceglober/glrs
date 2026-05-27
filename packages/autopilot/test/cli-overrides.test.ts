@@ -111,13 +111,6 @@ describe("applyCLIOverrides", () => {
     expect(result.auto_ship).toBe(true);
   });
 
-  it("--resume sets checkpoint to true", () => {
-    const result = applyCLIOverrides(baseConfig, {
-      resume: true,
-    }) as Record<string, unknown>;
-    expect(result.checkpoint).toBe(true);
-  });
-
   it("--max-iterations-per-phase N sets max_iterations_per_phase", () => {
     const result = applyCLIOverrides(baseConfig, {
       maxIterationsPerPhase: 3,

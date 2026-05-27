@@ -56,7 +56,6 @@ function deepClone(obj: unknown): unknown {
  * - `--adapter` → `adapter` (highest precedence)
  * - `--parallel N` → `execution_order: "parallel"` + `parallel_lanes: N`
  * - `--ship` → `auto_ship: true`
- * - `--resume` → `checkpoint: true` (implicit)
  * - `--max-iterations-per-phase N` → `max_iterations_per_phase: N`
  * - `--stall-timeout N` → `stall_timeout: N`
  * - `--notify URL` → `notify_url: URL`
@@ -91,11 +90,6 @@ export function applyCLIOverrides(config: unknown, flags: CLIFlags): unknown {
   // --ship: auto-ship after completion
   if (flags.ship) {
     result.auto_ship = true;
-  }
-
-  // --resume: implicit checkpoint
-  if (flags.resume) {
-    result.checkpoint = true;
   }
 
   // --max-iterations-per-phase N

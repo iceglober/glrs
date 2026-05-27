@@ -15,7 +15,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { enrichPlanForFastModel } from "../src/plan-enrichment.js";
+import { enrichPlan } from "../src/plan-enrichment.js";
 import { createAutopilotLogger } from "../src/lib/logger.js";
 import { SessionEventEmitter } from "../src/session-runner.js";
 import { scoreEnrichment } from "./score.js";
@@ -98,7 +98,7 @@ async function main() {
 
   try {
     console.error("[eval] Running enrichment...");
-    await enrichPlanForFastModel(
+    await enrichPlan(
       REPO_ROOT,
       planDir,
       logger,

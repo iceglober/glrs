@@ -22,10 +22,8 @@ export interface LoopSessionOptions {
   planPath: string;
   cwd: string;
   /**
-   * When true, read `<cwd>/.agent/autopilot-checkpoint.json` and skip
-   * phases already listed in `completedPhases` (provided the checkpoint's
-   * `planPath` matches the current `--plan`). On full completion the
-   * checkpoint is deleted.
+   * When true, skip phases marked `completed: true` in spec/main.yaml
+   * and items marked `checked: true` in spec/<phase>.yaml.
    */
   resume?: boolean;
   /**

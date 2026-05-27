@@ -303,7 +303,7 @@ Write the file \`${planDir}/${specPath}\` using the write/edit tool, then respon
 
 /**
  * Run a single enrichment pass, returning true if a stall occurred.
- * This is called from the retry loop in enrichPlanForFastModel.
+ * This is called from the retry loop in enrichPlan.
  */
 async function runEnrichmentPass(
   cwd: string,
@@ -963,9 +963,6 @@ export async function enrichPlan(
 
   return planDir;
 }
-
-/** @deprecated Use `enrichPlan` instead. Kept for backward compatibility. */
-export const enrichPlanForFastModel = enrichPlan;
 
 // ---------------------------------------------------------------------------
 // Enrichment execution helpers

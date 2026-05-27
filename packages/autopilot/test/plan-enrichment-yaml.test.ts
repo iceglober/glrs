@@ -12,7 +12,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { parse as yamlParse } from "yaml";
 import {
-  enrichPlanForFastModel,
+  enrichPlan,
   computeSpecEnrichmentRatio,
 } from "../src/plan-enrichment.js";
 import type { AgentAdapter, AgentHandle } from "../src/adapter.js";
@@ -200,7 +200,7 @@ describe("re-enrichment skips checked phases", () => {
     const planDir = path.join(tmpDir, "plan-a5");
     fs.mkdirSync(planDir);
 
-    // Write main.md so enrichPlanForFastModel can find plan files
+    // Write main.md so enrichPlan can find plan files
     fs.writeFileSync(
       path.join(planDir, "main.md"),
       `# My Plan\n\n## Goal\n\nDo the thing\n\n## Phases\n\n- [ ] wave_0.md\n`,
@@ -253,7 +253,7 @@ phases:
       getSessionCost: async () => 0,
     };
 
-    await enrichPlanForFastModel(planDir, planDir, undefined, undefined, mockAdapter);
+    await enrichPlan(planDir, planDir, undefined, undefined, mockAdapter);
 
     // wave_0.yaml has a checked item — the adapter should NOT have been asked
     // to create a session for wave_0.md enrichment
