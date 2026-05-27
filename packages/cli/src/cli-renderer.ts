@@ -48,11 +48,40 @@ function formatCost(usd: number): string {
  * it only writes to stderr when events arrive.
  */
 export function createCliRenderer(emitter: SessionEventEmitter): { unsubscribe: () => void } {
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  let lastActivityTime = Date.now();
+  let currentPhase: string | undefined;
+
+  function startHeartbeat(): void {
+    stopHeartbeat();
+    lastActivityTime = Date.now();
+    heartbeatTimer = setInterval(() => {
+      if (!process.stderr.isTTY) return;
+      const elapsedSec = Math.round((Date.now() - lastActivityTime) / 1000);
+      const phaseTag = currentPhase ? ` [${currentPhase}]` : "";
+      process.stderr.write(`\r\x1b[K  \x1b[2m⏱ ${formatDuration(elapsedSec * 1000)} since last activity${phaseTag}\x1b[0m`);
+    }, 30_000);
+  }
+
+  function stopHeartbeat(): void {
+    if (heartbeatTimer != null) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = undefined;
+    }
+  }
+
+  function tickActivity(): void {
+    lastActivityTime = Date.now();
+  }
+
   const handler = (event: SessionEvent) => {
     switch (event.type) {
       // Lifecycle — session:start and session:done are handled by the caller
       case "session:start":
+        startHeartbeat();
+        break;
       case "session:done":
+        stopHeartbeat();
         break;
 
       // Enrichment
@@ -84,8 +113,9 @@ export function createCliRenderer(emitter: SessionEventEmitter): { unsubscribe: 
 
       // Execution — phase
       case "phase:start":
+        tickActivity();
+        currentPhase = event.phase;
         if (event.current === 0) {
-          // Plan loading info (not a real phase)
           process.stderr.write(`\n\x1b[2m${event.phase}\x1b[0m\n`);
         } else {
           process.stderr.write(
@@ -111,8 +141,18 @@ export function createCliRenderer(emitter: SessionEventEmitter): { unsubscribe: 
         }
         break;
 
+      // Recovery
+      case "recovery:start":
+        tickActivity();
+        process.stderr.write(
+          `\n\x1b[33m⟳ Recovery ${event.attempt}/${event.maxAttempts}: ${event.failureReason}\x1b[0m\n` +
+          `  Strategy: ${event.strategy}${event.escalated ? " (deep model)" : ""}\n`,
+        );
+        break;
+
       // Execution — iteration
       case "iteration:start": {
+        tickActivity();
         const laneTag = event.laneId ? `[${event.laneId}] ` : "";
         process.stderr.write(`\n${laneTag}Iteration ${event.iteration}/${event.maxIterations} `);
         break;
@@ -135,9 +175,9 @@ export function createCliRenderer(emitter: SessionEventEmitter): { unsubscribe: 
       }
 
       case "tool:call": {
+        tickActivity();
         const laneTag = event.laneId ? `[${event.laneId}] ` : "";
         const argPart = event.firstArg ? ` ${event.firstArg}` : "";
-        // Overwrite the current line with the latest tool call (activity indicator)
         if (process.stderr.isTTY) {
           process.stderr.write(`\r\x1b[K  ${laneTag}⚙ ${event.toolName}${argPart}`);
         } else {
@@ -196,13 +236,18 @@ export function createCliRenderer(emitter: SessionEventEmitter): { unsubscribe: 
         break;
 
       case "thinking":
-        // Show thinking indicator on TTY (overwrites current line)
+        tickActivity();
         if (process.stderr.isTTY) {
           const dur = event.elapsedSec < 60
             ? `${event.elapsedSec}s`
             : `${Math.floor(event.elapsedSec / 60)}m${(event.elapsedSec % 60).toString().padStart(2, "0")}s`;
           process.stderr.write(`\r\x1b[K  💭 thinking… ${dur} · ${event.chars} chars`);
         }
+        break;
+
+      // Enrichment repair — no special rendering needed
+      case "enrich:repair:start":
+      case "enrich:repair:done":
         break;
     }
   };
@@ -211,6 +256,7 @@ export function createCliRenderer(emitter: SessionEventEmitter): { unsubscribe: 
 
   return {
     unsubscribe: () => {
+      stopHeartbeat();
       emitter.off("event", handler);
     },
   };

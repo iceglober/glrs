@@ -111,6 +111,32 @@ const DEFAULT_MAX_PHASE_RETRIES = 5;
 /** Exit reasons that indicate a successful phase completion. */
 export const SUCCESS_REASONS = new Set(["sentinel", "idle"]);
 
+/** Per-phase wall-clock timeout across all recovery attempts. Default 30 minutes. */
+const DEFAULT_PHASE_TIMEOUT_MS = 30 * 60 * 1000;
+
+const STRATEGY_LABELS = [
+  "diagnose root cause, then fix",
+  "simplify aggressively — smallest possible change",
+  "re-examine assumptions — re-read code and tests",
+  "final attempt — maximum care, verify before and after",
+];
+
+const STRATEGY_PROMPTS = [
+  `STRATEGY: Before writing any code, read the failing output carefully. Identify the root cause. State your diagnosis in a comment, then fix it. Do not repeat the same approach — if the last attempt's approach failed, try a different one.`,
+  `STRATEGY: The previous approaches did not work. Simplify aggressively. Use the smallest possible change that satisfies the intent. Avoid abstractions, helpers, or refactoring — write the most direct implementation possible. If the verify command failed, run it first to see the current state before making changes.`,
+  `STRATEGY: Multiple attempts have failed. Re-examine your assumptions. Read the surrounding code and tests more carefully — you may be misunderstanding the expected behavior or API. Check imports, types, and existing patterns. Consider whether the item's intent needs to be interpreted differently.`,
+  `STRATEGY: FINAL ATTEMPT. Take maximum care. Read every relevant file before making any edit. Run the verify command before AND after each change. If you are unsure about the correct approach, look at how similar functionality works elsewhere in the codebase and follow that pattern exactly.`,
+];
+
+function describeFailure(exitReason: string, message: string, verifyFailures?: string): string {
+  if (verifyFailures) return `verify failed: ${verifyFailures.split("\n")[0]}`;
+  if (exitReason === "max-iterations") return "ran out of iterations without completing";
+  if (exitReason === "stall") return "agent stalled (no output)";
+  if (exitReason === "struggle") return "agent struggled and gave up";
+  if (exitReason === "error") return `error: ${message.slice(0, 200)}`;
+  return `${exitReason}: ${message.slice(0, 200)}`;
+}
+
 /**
  * Build evolving recovery context for retry attempts. Each attempt gets
  * progressively different guidance to force new behavior.
@@ -119,15 +145,14 @@ function buildRetryContext(
   attempt: number,
   maxAttempts: number,
   failureInfo: { exitReason: string; message: string; verifyFailures?: string },
-): string {
+): { prompt: string; failureReason: string; strategyLabel: string } {
   const { exitReason, message, verifyFailures } = failureInfo;
-  const attemptsLeft = maxAttempts - attempt;
 
   let failureSummary: string;
   if (verifyFailures) {
     failureSummary = `The verify commands failed:\n${verifyFailures}`;
   } else if (exitReason === "max-iterations") {
-    failureSummary = `The previous attempt ran out of iterations without completing the work. The agent ran too many tool calls without finishing.`;
+    failureSummary = `The previous attempt ran out of iterations without completing the work.`;
   } else if (exitReason === "stall") {
     failureSummary = `The previous attempt stalled — the agent stopped making progress and the session timed out.`;
   } else if (exitReason === "struggle") {
@@ -138,25 +163,17 @@ function buildRetryContext(
     failureSummary = `The previous attempt failed with exit reason "${exitReason}": ${message}`;
   }
 
-  const strategies = [
-    // Attempt 2: diagnose first
-    `STRATEGY: Before writing any code, read the failing output carefully. Identify the root cause. State your diagnosis in a comment, then fix it. Do not repeat the same approach — if the last attempt's approach failed, try a different one.`,
-    // Attempt 3: simplify
-    `STRATEGY: The previous approaches did not work. Simplify aggressively. Use the smallest possible change that satisfies the intent. Avoid abstractions, helpers, or refactoring — write the most direct implementation possible. If the verify command failed, run it first to see the current state before making changes.`,
-    // Attempt 4: re-examine assumptions
-    `STRATEGY: Multiple attempts have failed. Re-examine your assumptions. Read the surrounding code and tests more carefully — you may be misunderstanding the expected behavior or API. Check imports, types, and existing patterns. Consider whether the item's intent needs to be interpreted differently.`,
-    // Attempt 5: last chance, maximum care
-    `STRATEGY: FINAL ATTEMPT (${attemptsLeft} remaining). Take maximum care. Read every relevant file before making any edit. Run the verify command before AND after each change. If you are unsure about the correct approach, look at how similar functionality works elsewhere in the codebase and follow that pattern exactly.`,
-  ];
+  const strategyIdx = Math.min(attempt - 2, STRATEGY_PROMPTS.length - 1);
 
-  const strategyIdx = Math.min(attempt - 2, strategies.length - 1);
-  const strategy = strategies[strategyIdx];
-
-  return (
-    `This is recovery attempt ${attempt} of ${maxAttempts}.\n\n` +
-    `**What went wrong:**\n${failureSummary}\n\n` +
-    `${strategy}`
-  );
+  return {
+    prompt: (
+      `This is recovery attempt ${attempt} of ${maxAttempts}.\n\n` +
+      `**What went wrong:**\n${failureSummary}\n\n` +
+      `${STRATEGY_PROMPTS[strategyIdx]}`
+    ),
+    failureReason: describeFailure(exitReason, message, verifyFailures),
+    strategyLabel: STRATEGY_LABELS[strategyIdx],
+  };
 }
 
 /**
@@ -1109,8 +1126,24 @@ export async function runLoopSession(
       let attempt = 0;
       let phaseSuccess = false;
       let lastRetryContext: string | undefined;
+      const phaseStartTime = Date.now();
 
       while (attempt < effectiveMaxRetries && !phaseSuccess) {
+        // Per-phase wall-clock timeout — covers all recovery attempts combined
+        const elapsedMs = Date.now() - phaseStartTime;
+        if (attempt > 1 && elapsedMs >= DEFAULT_PHASE_TIMEOUT_MS) {
+          log.error(
+            { phase: phaseFile, elapsedMs, attempts: attempt },
+            "phase exceeded wall-clock timeout — halting run",
+          );
+          return {
+            exitReason: "error",
+            iterations: totalIterations,
+            cumulativeCostUsd: totalCostUsd,
+            message: `Phase ${phaseFile} timed out after ${Math.round(elapsedMs / 60_000)} minutes and ${attempt} attempt(s)`,
+          };
+        }
+
         attempt++;
         const isEscalation = attempt >= effectiveMaxRetries - 1 && attempt > 1;
 
@@ -1149,11 +1182,24 @@ export async function runLoopSession(
 
         // Phase failed — build evolving recovery context for next attempt
         if (attempt < effectiveMaxRetries) {
-          lastRetryContext = buildRetryContext(attempt + 1, effectiveMaxRetries, {
+          const retryInfo = buildRetryContext(attempt + 1, effectiveMaxRetries, {
             exitReason: r.phaseLoopResult.exitReason,
             message: r.phaseLoopResult.message,
             verifyFailures: r.verifyFailures,
           });
+          lastRetryContext = retryInfo.prompt;
+
+          emitter?.emitEvent({
+            type: "recovery:start",
+            timestamp: new Date().toISOString(),
+            phase: phaseFile,
+            attempt: attempt + 1,
+            maxAttempts: effectiveMaxRetries,
+            failureReason: retryInfo.failureReason,
+            strategy: retryInfo.strategyLabel,
+            escalated: (attempt + 1) >= effectiveMaxRetries - 1,
+          });
+
           log.warn(
             { phase: phaseFile, attempt, exitReason: r.phaseLoopResult.exitReason, attemptsLeft: effectiveMaxRetries - attempt },
             "phase failed — will retry with evolved strategy",

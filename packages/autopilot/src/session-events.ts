@@ -186,6 +186,21 @@ export interface CredentialExpiredEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Recovery events
+// ---------------------------------------------------------------------------
+
+export interface RecoveryStartEvent {
+  type: "recovery:start";
+  timestamp: string;
+  phase: string;
+  attempt: number;
+  maxAttempts: number;
+  failureReason: string;
+  strategy: string;
+  escalated: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Verify events
 // ---------------------------------------------------------------------------
 
@@ -238,6 +253,7 @@ export type SessionEvent =
   | ThinkingEvent
   | ErrorEvent
   | CredentialExpiredEvent
+  | RecoveryStartEvent
   | VerifyStartEvent
   | VerifyResultEvent
   | VerifyDoneEvent;
