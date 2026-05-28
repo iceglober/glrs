@@ -604,12 +604,21 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
       // 3 total attempts with exponential backoff (1s → 2s → 4s, capped
       // at 30s). Permanent errors and credential-expiry fall through to
       // the existing error branches without retry.
+      // Hard per-iteration timeout: AbortSignal.timeout fires independently
+      // of the adapter's internal stall timer. If the adapter is stuck
+      // (SSE heartbeats defeating the stall timer), this kills the request.
+      const iterAbort = new AbortController();
+      const iterTimeout = setTimeout(() => iterAbort.abort(), stallMs * 2);
+      const combinedSignal = abort.signal.aborted ? abort.signal : iterAbort.signal;
+      // If the global abort fires, propagate to the per-iteration controller
+      abort.signal.addEventListener("abort", () => iterAbort.abort(), { once: true });
+
       const sendOnce = () =>
         adapter.sendAndWait(handle, {
           sessionId: sessionId!,
           message: fullPrompt,
           stallMs,
-          abortSignal: abort.signal,
+          abortSignal: combinedSignal,
           onToolCall: (toolName, firstArg) => {
             log.info(`${lanePrefix}tool: ${toolName}${firstArg ? " " + firstArg : ""}`);
             thinkingToolCalls++;
@@ -770,6 +779,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
         }
       }
 
+      clearTimeout(iterTimeout);
       const iterDurationMs = Date.now() - iterStart;
 
       if (result.kind === "abort") {
