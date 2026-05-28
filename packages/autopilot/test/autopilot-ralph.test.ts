@@ -128,19 +128,16 @@ describe("ralph loop exits on max-iterations budget", () => {
     expect(TIMEOUT_MS).toBe(4 * 60 * 60 * 1000);
   });
 
-  it("config exports STALL_MS defaulting to deep-tier value (30 minutes)", async () => {
-    // Wave 2 (item 2.3) split STALL_MS into a per-tier table. The
-    // top-level STALL_MS constant is now a backwards-compat default
-    // matching STALL_MS_BY_TIER.deep (30 minutes — down from the
-    // previous flat 60-minute window). The Ralph loop picks the
-    // tier-specific value at runtime; STALL_MS is the fallback when
-    // no tier is resolvable.
+  it("config exports STALL_MS defaulting to deep-tier value (3 minutes)", async () => {
+    // Stall timeouts are aggressive — hung connections should fail fast
+    // and retry. The adapter resets the timer on every tool call, text
+    // delta, and cost update, so active responses never hit it.
     const { STALL_MS, STALL_MS_BY_TIER } = await import("../src/config.js");
-    expect(STALL_MS).toBe(30 * 60 * 1000);
+    expect(STALL_MS).toBe(3 * 60 * 1000);
     expect(STALL_MS).toBe(STALL_MS_BY_TIER.deep);
-    expect(STALL_MS_BY_TIER["mid-execute"]).toBe(10 * 60 * 1000);
-    expect(STALL_MS_BY_TIER["autopilot-execute"]).toBe(10 * 60 * 1000);
-    expect(STALL_MS_BY_TIER.fast).toBe(5 * 60 * 1000);
+    expect(STALL_MS_BY_TIER["mid-execute"]).toBe(90 * 1000);
+    expect(STALL_MS_BY_TIER["autopilot-execute"]).toBe(90 * 1000);
+    expect(STALL_MS_BY_TIER.fast).toBe(90 * 1000);
   });
 });
 

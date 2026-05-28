@@ -30,18 +30,21 @@ export const TIMEOUT_MS = 4 * 60 * 60 * 1000;
  * and config.stall_timeout overrides both the CLI default and tier lookup.
  */
 export const STALL_MS_BY_TIER = {
-  deep: 30 * 60 * 1000,
-  mid: 15 * 60 * 1000,
-  "mid-execute": 10 * 60 * 1000,
-  "autopilot-execute": 10 * 60 * 1000,
-  fast: 5 * 60 * 1000,
+  deep: 3 * 60 * 1000,
+  mid: 2 * 60 * 1000,
+  "mid-execute": 90 * 1000,
+  "autopilot-execute": 90 * 1000,
+  fast: 90 * 1000,
 } as const;
 
 /** Backwards-compatible default (used when no tier is resolved). */
 export const STALL_MS = STALL_MS_BY_TIER.deep;
 
-/** Default stall timeout: 5 minutes. Used for per-item execution. */
-export const STALL_MS_DEFAULT = 5 * 60 * 1000;
+/** Default stall timeout: 90 seconds. Used for per-item execution.
+ * Aggressive by design — hung API connections should fail fast and retry
+ * rather than block for minutes. The adapter resets this timer on every
+ * tool call, text delta, and cost update, so active responses never hit it. */
+export const STALL_MS_DEFAULT = 90 * 1000;
 
 /**
  * Phase-level iteration budgets, keyed by model tier (item 2.7).
