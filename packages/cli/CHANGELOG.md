@@ -1,5 +1,17 @@
 # @glrs-dev/cli
 
+## 2.10.26
+
+### Patch Changes
+
+- [#155](https://github.com/iceglober/glrs/pull/155) [`c521908`](https://github.com/iceglober/glrs/commit/c5219089e081cae7abe930dcd59e601ddd3a4884) Thanks [@iceglober](https://github.com/iceglober)! - Prompt forbids branch switching — agent was creating branches from plan metadata, losing all prior work
+
+- Updated dependencies [[`c521908`](https://github.com/iceglober/glrs/commit/c5219089e081cae7abe930dcd59e601ddd3a4884)]:
+  - @glrs-dev/autopilot@0.7.7
+  - @glrs-dev/adapter-claude-code@0.1.21
+  - @glrs-dev/adapter-opencode@0.1.23
+  - @glrs-dev/harness-plugin-opencode@2.10.26
+
 ## 2.10.25
 
 ### Patch Changes
