@@ -1,5 +1,15 @@
 # @glrs-dev/cli
 
+## 2.10.22
+
+### Patch Changes
+
+- [#147](https://github.com/iceglober/glrs/pull/147) [`46f40bb`](https://github.com/iceglober/glrs/commit/46f40bbcfe5df62c94e5f286ba70f0e6f69ebd8d) Thanks [@iceglober](https://github.com/iceglober)! - Fix stall timer: cost polling events no longer reset the timer, so hung connections are detected within 90 seconds
+
+- Updated dependencies [[`46f40bb`](https://github.com/iceglober/glrs/commit/46f40bbcfe5df62c94e5f286ba70f0e6f69ebd8d)]:
+  - @glrs-dev/adapter-opencode@0.1.19
+  - @glrs-dev/harness-plugin-opencode@2.10.22
+
 ## 2.10.21
 
 ### Patch Changes
