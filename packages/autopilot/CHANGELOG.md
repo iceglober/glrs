@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.7.1
+
+### Patch Changes
+
+- [#136](https://github.com/iceglober/glrs/pull/136) [`302ebab`](https://github.com/iceglober/glrs/commit/302ebab7c56c357f3827190a013d9fd7398ba9f8) Thanks [@iceglober](https://github.com/iceglober)! - Snapshot spec files before phase attempts to survive agent branch switches and git rollbacks
+
 ## 0.7.0
 
 ### Minor Changes

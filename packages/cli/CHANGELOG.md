@@ -1,5 +1,17 @@
 # @glrs-dev/cli
 
+## 2.10.18
+
+### Patch Changes
+
+- [#136](https://github.com/iceglober/glrs/pull/136) [`302ebab`](https://github.com/iceglober/glrs/commit/302ebab7c56c357f3827190a013d9fd7398ba9f8) Thanks [@iceglober](https://github.com/iceglober)! - Snapshot spec files before phase attempts to survive agent branch switches and git rollbacks
+
+- Updated dependencies [[`302ebab`](https://github.com/iceglober/glrs/commit/302ebab7c56c357f3827190a013d9fd7398ba9f8)]:
+  - @glrs-dev/autopilot@0.7.1
+  - @glrs-dev/adapter-claude-code@0.1.15
+  - @glrs-dev/adapter-opencode@0.1.15
+  - @glrs-dev/harness-plugin-opencode@2.10.18
+
 ## 2.10.17
 
 ### Patch Changes
