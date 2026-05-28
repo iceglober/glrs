@@ -103,14 +103,33 @@ describe("inspectCachePin", () => {
     if (result.kind === "exact") expect(result.version).toBe("0.1.2");
   });
 
-  it("returns 'non-exact' for a caret range", async () => {
+  it("returns 'exact' for a caret range (extracts base version)", async () => {
     fs.writeFileSync(
       path.join(tmpCacheDir, "package.json"),
       JSON.stringify({ dependencies: { [PACKAGE_NAME]: "^0.6.0" } }),
     );
     const result = await inspectCachePin(tmpCacheDir);
+    expect(result.kind).toBe("exact");
+    if (result.kind === "exact") expect(result.version).toBe("0.6.0");
+  });
+
+  it("returns 'exact' for a tilde range (extracts base version)", async () => {
+    fs.writeFileSync(
+      path.join(tmpCacheDir, "package.json"),
+      JSON.stringify({ dependencies: { [PACKAGE_NAME]: "~1.2.3" } }),
+    );
+    const result = await inspectCachePin(tmpCacheDir);
+    expect(result.kind).toBe("exact");
+    if (result.kind === "exact") expect(result.version).toBe("1.2.3");
+  });
+
+  it("returns 'non-exact' for a complex range spec", async () => {
+    fs.writeFileSync(
+      path.join(tmpCacheDir, "package.json"),
+      JSON.stringify({ dependencies: { [PACKAGE_NAME]: ">=0.6.0 <1.0.0" } }),
+    );
+    const result = await inspectCachePin(tmpCacheDir);
     expect(result.kind).toBe("non-exact");
-    if (result.kind === "non-exact") expect(result.spec).toBe("^0.6.0");
   });
 
   it("returns 'not-our-package' when the pinned dep is a different name", async () => {
@@ -158,17 +177,29 @@ describe("refreshPluginCache", () => {
     expect(result.outcome).toBe("cache-missing");
   });
 
-  it("reports 'non-exact-pin' and does not rewrite when user uses a range spec", async () => {
+  it("rewrites cache when user uses a caret range and newer version exists", async () => {
     fs.writeFileSync(
       path.join(tmpCacheDir, "package.json"),
       JSON.stringify({ dependencies: { [PACKAGE_NAME]: "^0.6.0" } }, null, 2),
+    );
+    const result = await refreshPluginCache("0.6.0", "0.7.0", {
+      cacheDir: tmpCacheDir,
+      skipInstall: true,
+    });
+    expect(result.outcome).toBe("refreshed");
+    const pkgRaw = fs.readFileSync(path.join(tmpCacheDir, "package.json"), "utf8");
+    expect(pkgRaw).toContain("0.7.0");
+  });
+
+  it("reports 'non-exact-pin' for complex range specs", async () => {
+    fs.writeFileSync(
+      path.join(tmpCacheDir, "package.json"),
+      JSON.stringify({ dependencies: { [PACKAGE_NAME]: ">=0.6.0 <1.0.0" } }, null, 2),
     );
     const result = await refreshPluginCache("0.1.2", "0.6.0", {
       cacheDir: tmpCacheDir,
     });
     expect(result.outcome).toBe("non-exact-pin");
-    const pkgRaw = fs.readFileSync(path.join(tmpCacheDir, "package.json"), "utf8");
-    expect(pkgRaw).toContain("^0.6.0");
   });
 
   it("reports 'already-current' when cache is already pinned to the new version", async () => {
@@ -194,7 +225,7 @@ describe("refreshPluginCache", () => {
     expect(pkgRaw).toContain("0.1.2");
   });
 
-  it("rewrites package.json and lockfile and removes node_modules on real refresh", async () => {
+  it("rewrites package.json, deletes lockfiles, and removes node_modules on real refresh", async () => {
     writeCachePin(tmpCacheDir, "0.1.2", { withNodeModules: true });
     const nmPath = path.join(tmpCacheDir, "node_modules");
     expect(fs.existsSync(nmPath)).toBe(true);
@@ -211,15 +242,8 @@ describe("refreshPluginCache", () => {
     );
     expect(pkg.dependencies[PACKAGE_NAME]).toBe("0.6.0");
 
-    // lockfile updated and stale resolved/integrity stripped
-    const lock = JSON.parse(
-      fs.readFileSync(path.join(tmpCacheDir, "package-lock.json"), "utf8"),
-    );
-    expect(lock.packages[""].dependencies[PACKAGE_NAME]).toBe("0.6.0");
-    const nmEntry = lock.packages[`node_modules/${PACKAGE_NAME}`];
-    expect(nmEntry.version).toBe("0.6.0");
-    expect(nmEntry.resolved).toBeUndefined();
-    expect(nmEntry.integrity).toBeUndefined();
+    // lockfiles deleted (package manager regenerates on reinstall)
+    expect(fs.existsSync(path.join(tmpCacheDir, "package-lock.json"))).toBe(false);
 
     // node_modules removed
     expect(fs.existsSync(nmPath)).toBe(false);

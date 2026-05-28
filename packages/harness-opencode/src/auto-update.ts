@@ -136,6 +136,13 @@ export async function inspectCachePin(
   if (/^\d+\.\d+\.\d+(-[0-9a-zA-Z.-]+)?(\+[0-9a-zA-Z.-]+)?$/.test(spec)) {
     return { kind: "exact", version: spec };
   }
+  // Caret/tilde = "^2.10.10" or "~2.10.10". The lockfile pins the resolved
+  // version, so updates never land without a reinstall. We handle these the
+  // same as exact pins — delete lockfile + node_modules and reinstall.
+  const rangeMatch = spec.match(/^[~^](\d+\.\d+\.\d+(?:-[0-9a-zA-Z.-]+)?(?:\+[0-9a-zA-Z.-]+)?)$/);
+  if (rangeMatch) {
+    return { kind: "exact", version: rangeMatch[1] };
+  }
   return { kind: "non-exact", spec };
 }
 
@@ -236,43 +243,13 @@ export async function refreshPluginCache(
     const newPkg = { ...pkg, dependencies: deps };
     await atomicWriteJson(pkgPath, newPkg);
 
-    // 2. Rewrite lockfile (if present) to match. If parsing fails, delete
-    // it — bun/npm will regenerate from the updated package.json.
-    const lockPath = path.join(cacheDir, "package-lock.json");
-    try {
-      const lockRaw = await fs.readFile(lockPath, "utf8");
-      const lock = JSON.parse(lockRaw) as CacheLockfile;
-      const packages = { ...(lock.packages ?? {}) };
-      // Root package entry
-      if (packages[""] && packages[""].dependencies) {
-        packages[""] = {
-          ...packages[""],
-          dependencies: {
-            ...packages[""].dependencies,
-            [PACKAGE_NAME]: latestVersion,
-          },
-        };
-      }
-      // The pinned node_modules entry won't match once we delete
-      // node_modules/ anyway, but clean it up for hygiene so a partial
-      // re-read before node_modules/ is deleted doesn't see stale data.
-      const nmKey = `node_modules/${PACKAGE_NAME}`;
-      if (packages[nmKey]) {
-        packages[nmKey] = {
-          ...packages[nmKey],
-          version: latestVersion,
-        };
-        // Drop stale `resolved`/`integrity` — they pin the OLD tarball.
-        // bun/npm will backfill on reinstall.
-        delete (packages[nmKey] as Record<string, unknown>)["resolved"];
-        delete (packages[nmKey] as Record<string, unknown>)["integrity"];
-      }
-      const newLock = { ...lock, packages };
-      await atomicWriteJson(lockPath, newLock);
-    } catch {
-      // Lockfile missing or malformed — just remove it. Next install rebuilds.
+    // 2. Delete all lockfiles so the package manager regenerates them
+    // from the updated package.json. OpenCode's cache may use npm
+    // (package-lock.json) or bun (bun.lock / bun.lockb) depending on
+    // which package manager ran the install.
+    for (const lockName of ["package-lock.json", "bun.lock", "bun.lockb"]) {
       try {
-        await fs.rm(lockPath, { force: true });
+        await fs.rm(path.join(cacheDir, lockName), { force: true });
       } catch {
         // best-effort
       }
