@@ -459,7 +459,9 @@ export async function waitForIdle(
               | { role?: string; cost?: number; tokens?: { input?: number; output?: number } }
               | undefined;
             if (info && info.role === "assistant" && typeof info.cost === "number") {
-              resetStall();
+              // Do NOT resetStall() on cost updates — they fire from polling
+              // even when the model is idle, preventing stall detection.
+              // Only text deltas and tool calls indicate real activity.
               try {
                 opts.onCostUpdate(
                   info.cost,
