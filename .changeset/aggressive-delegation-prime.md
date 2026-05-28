@@ -4,9 +4,10 @@
 
 feat(harness): more aggressive delegation from PRIME to subagents
 
-- Add delegation-first posture at top of PRIME prompt with a 4-step delegation test applied every turn
-- Expand context firewall to cover Scope-stage exploration and pre-Plan grounding
-- Add Scope-stage delegation section pushing parallel @code-searcher + @lib-reader dispatch
-- Strengthen Plan grounding to delegate multi-area exploration before @plan dispatch
-- Broaden parallel-dispatch plugin to track ALL subagent types (not just @build) and nudge batching
+- Replace context firewall with deterministic delegation decision tree (evaluate in order, stop at first match)
+- Add `DEFAULT: DELEGATE` iron-law framing with concrete thresholds at every rule
+- Add @plan to routing table, multi-file tiebreaker, 2-file edge case handling
+- Make reviewer sequencing conditional-explicit with "never batch spec + code reviewer" carve-out
+- Add Scope-stage and Plan-stage delegation sections for parallel @code-searcher + @lib-reader dispatch
+- Broaden parallel-dispatch plugin to track all subagent types and nudge batching
 - Add telemetry for general subagent serial vs parallel dispatch patterns
