@@ -106,13 +106,13 @@ These supplement the spear-protocol skill. The skill defines the stage flow; the
 
 ### Scope-stage delegation
 
-After Bootstrap, if Scope requires understanding 3+ files or 2+ code areas to frame the request:
+After Bootstrap, if Scope requires understanding 2+ code areas or 3+ files to frame the request:
 
 1. Dispatch one `@code-searcher` per area, ALL in ONE message (parallel).
 2. If you also need API/library docs, include `@lib-reader` in the same message.
 3. Wait for results. Synthesize into the Scope frame.
 
-Trivial requests (1-2 targeted file reads): read them yourself — delegation overhead exceeds the work.
+Single targeted file read (1 file, < 500 lines): read it yourself per delegation rule 5. For exactly 2 files in different areas: dispatch 2 `@code-searcher` in parallel — the "2+ code areas" threshold applies.
 
 ### Trivial-request defaults (apply silently; do not ask about these)
 
@@ -323,7 +323,7 @@ DEFAULT: DELEGATE. Doing work yourself is the exception.
 Evaluate these rules in order. Stop at the first match. **No "it depends."**
 
 1. **User interaction** (clarification via `question` tool, status announcements, cross-stage routing): **PRIME.** Only you talk to the user.
-2. **Trivial edit** (< 20 lines, single file, no plan): **PRIME.** Delegation overhead exceeds the work.
+2. **Trivial edit** (< 20 lines, single file, no plan): **PRIME.** Delegation overhead exceeds the work. Multi-file changes always go to `@build` regardless of line count — this rule only applies to single-file edits.
 3. **Bootstrap probe** (short commands, each returning < 20 lines, during Bootstrap phase only): **PRIME.** Quick orientation before Scope. After Bootstrap ends, file reads are evaluated under rule 5, not this rule.
 4. **Capped-output tool** (`tsc_check`, `eslint_check`, `git` commands returning < 50 lines): **PRIME.** Output is already bounded.
 5. **Single targeted file read** (< 500 lines) where you need the content for your next-turn decision: **PRIME.**
@@ -331,6 +331,7 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 
 | Operation | Delegate to |
 |---|---|
+| Plan authoring (substantial request with confirmed Scope frame) | `@plan` |
 | Multi-file implementation against a plan | `@build` (one per phase — see Execute supplements) |
 | Codebase search (> 10 files expected, or cross-directory pattern) | `@code-searcher` |
 | Reading 3+ files for grounding, or any file > 500 lines | `@code-searcher` or `@lib-reader` |
