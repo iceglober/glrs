@@ -1,5 +1,17 @@
 # @glrs-dev/cli
 
+## 2.10.25
+
+### Patch Changes
+
+- [#153](https://github.com/iceglober/glrs/pull/153) [`ed41724`](https://github.com/iceglober/glrs/commit/ed41724ecacd8126f27049fc3a302335fc5b02aa) Thanks [@iceglober](https://github.com/iceglober)! - Hard per-iteration timeout via AbortController — guarantees hung connections are killed even when SSE stream stays alive
+
+- Updated dependencies [[`ed41724`](https://github.com/iceglober/glrs/commit/ed41724ecacd8126f27049fc3a302335fc5b02aa)]:
+  - @glrs-dev/autopilot@0.7.6
+  - @glrs-dev/adapter-claude-code@0.1.20
+  - @glrs-dev/adapter-opencode@0.1.22
+  - @glrs-dev/harness-plugin-opencode@2.10.25
+
 ## 2.10.24
 
 ### Patch Changes

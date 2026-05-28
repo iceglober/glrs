@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.7.6
+
+### Patch Changes
+
+- [#153](https://github.com/iceglober/glrs/pull/153) [`ed41724`](https://github.com/iceglober/glrs/commit/ed41724ecacd8126f27049fc3a302335fc5b02aa) Thanks [@iceglober](https://github.com/iceglober)! - Hard per-iteration timeout via AbortController — guarantees hung connections are killed even when SSE stream stays alive
+
 ## 0.7.5
 
 ### Patch Changes
