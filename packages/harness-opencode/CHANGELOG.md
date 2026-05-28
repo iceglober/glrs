@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.12.0
+
+### Minor Changes
+
+- [#166](https://github.com/iceglober/glrs/pull/166) [`037a9c1`](https://github.com/iceglober/glrs/commit/037a9c1cc0a42eefd58a75a2fc0efc54547f902b) Thanks [@iceglober](https://github.com/iceglober)! - feat(telemetry): emit token speed per model as Aptabase events
+
+  On each finalized assistant message, emits a `model.token_speed` event with: model ID, provider ID, output token count, generation duration, and tokens/second (tps). No file paths, prompts, or content — just model performance metrics.
+
 ## 2.11.2
 
 ### Patch Changes
