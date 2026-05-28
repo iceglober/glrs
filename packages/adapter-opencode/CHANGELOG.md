@@ -1,5 +1,12 @@
 # @glrs-dev/adapter-opencode
 
+## 0.1.14
+
+### Patch Changes
+
+- Updated dependencies [[`bdd69cd`](https://github.com/iceglober/glrs/commit/bdd69cd460f3ea9d3945080a70934cb48544b3e3)]:
+  - @glrs-dev/autopilot@0.7.0
+
 ## 0.1.13
 
 ### Patch Changes
