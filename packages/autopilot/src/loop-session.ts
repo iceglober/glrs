@@ -791,15 +791,6 @@ export async function runLoopSession(
       cumulativeCost += itemResult.cumulativeCostUsd ?? 0;
       lastItemResult = itemResult;
 
-      if (SUCCESS_REASONS.has(itemResult.exitReason) && args.planPath) {
-        markItemChecked(args.planPath, phaseFile, item.id);
-        const commitMsg = `feat(${item.id}): ${item.intent.split("\n")[0].slice(0, 72)}`;
-        const commitResult = await commitIfDirty(runCwd, commitMsg);
-        if (commitResult.committed) {
-          log.info({ phase: phaseFile, itemId: item.id, sha: commitResult.sha?.slice(0, 8) }, "auto-committed item changes");
-        }
-      }
-
       if (!SUCCESS_REASONS.has(itemResult.exitReason)) {
         if (rollback && preItemSha && preItemSha !== "HEAD") {
           const ok = await resetSoft(runCwd, preItemSha, {
@@ -818,9 +809,8 @@ export async function runLoopSession(
       }
 
       // Per-item verify gate (after_item strategy, item 3.1).
-      // When verify strategy is "after_item", run the item's verify
-      // command immediately. On failure, return early so the phase retry
-      // can pick it up again (if verify_retry is enabled).
+      // Runs BEFORE marking the item checked or committing — so verify
+      // failures don't persist as false-positive checked state.
       if (args.verifyConfig?.strategy === "after_item" && item.verify?.trim()) {
         const itemVerifyResult = await _runVerifyCommands([item], runCwd, {
           timeoutMs: args.verifyConfig.timeoutMs,
@@ -844,13 +834,6 @@ export async function runLoopSession(
               log.info({ phase: phaseFile, itemId: item.id, ref: preItemSha.slice(0, 8) }, "rolled back verify-failed item to pre-item state");
             }
           }
-          if (args.planPath) {
-            markItemUnchecked(args.planPath, phaseFile, item.id);
-            args.logger?.root.child({ component: "autopilot.per-item-verify" }).warn(
-              { phase: phaseFile, itemId: item.id },
-              "unchecked item that failed verify — will retry next iteration",
-            );
-          }
           if (args.verifyConfig.retryOnFailure) {
             return {
               exitReason: "sentinel",
@@ -859,6 +842,18 @@ export async function runLoopSession(
               message: `Item ${item.id} verify failed: ${failed.stderr.split("\n")[0]}`,
             };
           }
+        }
+      }
+
+      // Mark checked and commit AFTER verify passes (or when no per-item verify).
+      // This ordering prevents false-positive checked state from persisting
+      // when verify fails.
+      if (args.planPath) {
+        markItemChecked(args.planPath, phaseFile, item.id);
+        const commitMsg = `feat(${item.id}): ${item.intent.split("\n")[0].slice(0, 72)}`;
+        const commitResult = await commitIfDirty(runCwd, commitMsg);
+        if (commitResult.committed) {
+          log.info({ phase: phaseFile, itemId: item.id, sha: commitResult.sha?.slice(0, 8) }, "auto-committed item changes");
         }
       }
 
