@@ -1,5 +1,11 @@
 # @glrs-dev/adapter-opencode
 
+## 0.1.21
+
+### Patch Changes
+
+- [#151](https://github.com/iceglober/glrs/pull/151) [`8e329ce`](https://github.com/iceglober/glrs/commit/8e329cea5a47e5784c4ec0956964975a2008abd5) Thanks [@iceglober](https://github.com/iceglober)! - Fix stall detection: remove blanket resetStall on SSE heartbeats — only tool calls and text deltas indicate real activity
+
 ## 0.1.20
 
 ### Patch Changes

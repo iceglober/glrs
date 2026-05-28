@@ -49,7 +49,7 @@
     },
     "packages/adapter-opencode": {
       "name": "@glrs-dev/adapter-opencode",
-      "version": "0.1.20",
+      "version": "0.1.21",
       "dependencies": {
         "@glrs-dev/autopilot": "workspace:*",
         "@opencode-ai/sdk": "^1.15",
@@ -126,7 +126,7 @@
     },
     "packages/cli": {
       "name": "@glrs-dev/cli",
-      "version": "2.10.23",
+      "version": "2.10.24",
       "bin": {
         "glrs": "./dist/cli.js",
       },
@@ -161,7 +161,7 @@
     },
     "packages/harness-opencode": {
       "name": "@glrs-dev/harness-plugin-opencode",
-      "version": "2.10.23",
+      "version": "2.10.24",
       "dependencies": {
         "@inquirer/prompts": "^8.4.2",
         "cmd-ts": "^0.15.0",
