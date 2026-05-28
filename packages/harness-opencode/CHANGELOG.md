@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.11.1
+
+### Patch Changes
+
+- [#162](https://github.com/iceglober/glrs/pull/162) [`3459b1e`](https://github.com/iceglober/glrs/commit/3459b1effa931753ebc044ddcb87e8f3db32f100) Thanks [@iceglober](https://github.com/iceglober)! - fix(telemetry): use production mode for published builds
+
+  `isDebug` was keyed off `NODE_ENV !== "production"`, which is never true in a user's terminal — so every event was tagged as debug and filtered from Aptabase's production dashboard. Now uses `PKG_VERSION === "dev"` instead: published npm builds (where tsup bakes in the real version) report as production; unbundled dev/test runs report as debug.
+
 ## 2.11.0
 
 ### Minor Changes
