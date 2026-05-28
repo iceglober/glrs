@@ -79,6 +79,10 @@ describe("telemetry clean()", () => {
       subagent: "builder",
       memory_op: "read",
       tool_category: "custom",
+      model: "claude-opus-4-7",
+      provider: "anthropic",
+      output_tokens: 1500,
+      tps: 45.3,
     };
     const result = clean(allAllowed);
     expect(Object.keys(result).sort()).toEqual(Object.keys(allAllowed).sort());

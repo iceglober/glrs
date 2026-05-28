@@ -1,5 +1,9 @@
-# @glrs-dev/harness-plugin-opencode
-
+---
+title: '@glrs-dev/harness-plugin-opencode'
+description: >-
+  Opinionated agent harness for OpenCode. Agents, tools, slash commands, and an
+  unattended autopilot loop — one package.
+---
 Opinionated agent harness for [OpenCode](https://opencode.ai). Agents, tools, slash commands, and an unattended autopilot loop — one package.
 
 ## Quick start

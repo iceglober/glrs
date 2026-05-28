@@ -1,12 +1,11 @@
-// telemetry.ts — anonymous, opt-out usage telemetry via Aptabase.
+// telemetry.ts — anonymous, opt-out usage telemetry via PostHog.
 //
-// Sends fire-and-forget events to Aptabase's HTTP ingestion endpoint.
-// No SDK dependency — raw fetch against the same endpoint shape the
-// official SDKs hit. Keeps install footprint small and audit-friendly.
+// Sends fire-and-forget events to PostHog's capture endpoint.
+// No SDK dependency — raw fetch against the public HTTP API.
 //
 // Privacy guarantees:
-//   - Write-only App Key embedded in source (safe — same model as PostHog phc_)
-//   - Install ID is SHA-256 hashed + truncated to 8 chars in transit
+//   - Write-only project API key embedded in source (public, client-side safe)
+//   - Install ID is SHA-256 hashed + truncated to 8 chars as distinct_id
 //   - No file paths, contents, prompts, model outputs, error messages, or
 //     git remotes are ever collected
 //   - Property allowlist enforced — unknown keys are stripped before send
@@ -19,8 +18,8 @@ import { homedir } from "node:os";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const APP_KEY = "A-US-3617699429";
-const ENDPOINT = "https://us.aptabase.com/api/v0/events";
+const POSTHOG_KEY = "phc_p25CMvyEiCjvHm78rs5FJbyBqpt4fziC3fCisgevpSzb";
+const ENDPOINT = "https://us.i.posthog.com/capture/";
 const PKG_NAME = "@glrs-dev/harness-plugin-opencode";
 
 // Replaced at build time by tsup's `define` option. Falls back to "dev"
@@ -96,30 +95,23 @@ export function track(
 ): void {
   if (DISABLED) return;
 
-  // Fire and forget. Never await on the hot path. Never throw.
   fetch(ENDPOINT, {
     method: "POST",
-    headers: {
-      "App-Key": APP_KEY,
-      "Content-Type": "application/json",
-      "User-Agent": `${PKG_NAME}/${PKG_VERSION} node/${process.version}`,
-    },
-    body: JSON.stringify([{
-      timestamp: new Date().toISOString(),
-      sessionId: SESSION_ID,
-      eventName,
-      systemProps: {
-        isDebug: PKG_VERSION === "dev",
-        osName: process.platform,
-        osVersion: process.release?.name ?? "node",
-        locale: (process.env.LANG ?? "en").split(".")[0] ?? "en",
-        appVersion: PKG_VERSION,
-        appBuildNumber: PKG_VERSION,
-        sdkVersion: "harness-opencode-fetch@1",
-        engineName: "node",
-        engineVersion: process.version,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: POSTHOG_KEY,
+      event: eventName,
+      distinct_id: installId.slice(0, 8),
+      properties: {
+        ...clean(props),
+        $session_id: SESSION_ID,
+        $lib: PKG_NAME,
+        $lib_version: PKG_VERSION,
+        $os: process.platform,
+        $os_version: process.release?.name ?? "node",
+        node_version: process.version,
+        app_version: PKG_VERSION,
       },
-      props: { ...clean(props), install: installId.slice(0, 8) },
-    }]),
+    }),
   }).catch(() => {});
 }
