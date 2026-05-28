@@ -737,6 +737,7 @@ export async function runLoopSession(
           `Non-goals:\n` +
           `  - Do NOT skip the RED phase — always write the test first.\n` +
           `  - Do NOT modify files outside the list above.\n` +
+          `  - Do NOT create branches or switch branches (git checkout, git switch). Work on the current branch.\n` +
           `  - Do NOT work on items other than ${item.id}.\n\n` +
           `When done: run the verify command to confirm your changes work. Fix any failures. Only after verify passes, commit and emit the autopilot-done sentinel.\n\nVerify: ${verify}`;
       } else {
@@ -761,6 +762,7 @@ export async function runLoopSession(
           `\n\nVerify command (must exit 0):\n  - ${verify}\n\n` +
           `Non-goals:\n` +
           `  - Do NOT modify files outside the list above.\n` +
+          `  - Do NOT create branches or switch branches (git checkout, git switch). Work on the current branch.\n` +
           `  - Do NOT work on items other than ${item.id}.\n\n` +
           `When done: run the verify command to confirm your changes work. Fix any failures. Only after verify passes, commit and emit the autopilot-done sentinel.\n\nVerify: ${verify}`;
       }
