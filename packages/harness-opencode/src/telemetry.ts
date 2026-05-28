@@ -70,6 +70,10 @@ const ALLOWED_PROPS = new Set([
   "subagent",
   "memory_op",
   "tool_category",
+  "model",
+  "provider",
+  "output_tokens",
+  "tps",
 ]);
 
 export function clean(
