@@ -37,6 +37,14 @@ export interface SpecItem {
 export interface SpecPhaseRef {
   file: string;
   completed: boolean;
+  /** Branch name for this phase's work. When present, the orchestrator checks out this branch before execution and creates a PR on completion. */
+  branch?: string;
+  /** PR target branch (default: repo default). For stacked PRs, set to the previous phase's branch. */
+  base?: string;
+  /** Linear issue IDs associated with this phase. Moved to In Progress on start, Done on completion. */
+  linear_issues?: string[];
+  /** PR URL, populated by the orchestrator after creating the phase PR. */
+  pr_url?: string;
 }
 
 export interface MainSpec {
