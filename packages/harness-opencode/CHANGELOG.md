@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.11.2
+
+### Patch Changes
+
+- [#164](https://github.com/iceglober/glrs/pull/164) [`45a7550`](https://github.com/iceglober/glrs/commit/45a7550e64b9dd06fe677fe2f551e2a348c43fba) Thanks [@iceglober](https://github.com/iceglober)! - fix(telemetry): use correct Aptabase batch endpoint
+
+  The ingestion endpoint was `/api/v0/event` (singular, single object body) — Aptabase's actual API is `/api/v0/events` (plural, array body). The old endpoint returned 200 but silently dropped every event. This is why no events appeared in either the debug or production dashboard.
+
 ## 2.11.1
 
 ### Patch Changes
