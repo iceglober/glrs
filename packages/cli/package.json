@@ -1,6 +1,6 @@
 {
   "name": "@glrs-dev/cli",
-  "version": "2.10.20",
+  "version": "2.10.21",
   "description": "Unified CLI for the @glrs-dev ecosystem — OpenCode agent harness dispatch + worktree management.",
   "license": "MIT",
   "repository": {

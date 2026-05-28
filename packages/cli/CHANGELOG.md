@@ -1,5 +1,17 @@
 # @glrs-dev/cli
 
+## 2.10.21
+
+### Patch Changes
+
+- [#145](https://github.com/iceglober/glrs/pull/145) [`94af32b`](https://github.com/iceglober/glrs/commit/94af32b00cbde60ef210b49e4e0c4db1f76254f2) Thanks [@iceglober](https://github.com/iceglober)! - Fix: commit checked state after verify passes, not before — prevents false-positive item completion on verify failure
+
+- Updated dependencies [[`94af32b`](https://github.com/iceglober/glrs/commit/94af32b00cbde60ef210b49e4e0c4db1f76254f2)]:
+  - @glrs-dev/autopilot@0.7.4
+  - @glrs-dev/adapter-claude-code@0.1.18
+  - @glrs-dev/adapter-opencode@0.1.18
+  - @glrs-dev/harness-plugin-opencode@2.10.21
+
 ## 2.10.20
 
 ### Patch Changes
