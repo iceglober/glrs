@@ -268,10 +268,12 @@ When Execute dispatched multiple `@build` lanes, you can parallelize the first A
 - **`@code-reviewer-thorough`** if ANY of: >10 files, >500 lines, `Risk: high`, security/auth/crypto/billing/migration-sensitive paths, or Level 3/3 strictness.
 - **`@code-reviewer`** otherwise.
 
-### Two-stage delegation
+### Two-stage delegation (strictly sequential — reviewer ordering is a hard dependency)
 
-1. **`@spec-reviewer` first.** On `[PASS_SPEC]`: proceed. On `[FAIL_SPEC]`: route to `@build` (FIX-INLINE) or Plan (LOOP-TO-PLAN). Do NOT dispatch `@code-reviewer`.
-2. **`@code-reviewer` (or thorough) after `[PASS_SPEC]`.** Include the session-green summary from pre-Assess verification.
+1. **`@spec-reviewer` first.** Wait for its return.
+   - `[PASS_SPEC]` → proceed to step 2.
+   - `[FAIL_SPEC]` → route to `@build` (FIX-INLINE) or Plan (LOOP-TO-PLAN). Do NOT dispatch `@code-reviewer`.
+2. **ONLY after `[PASS_SPEC]`:** dispatch `@code-reviewer` (or thorough). Include the session-green summary from pre-Assess verification. Never batch `@spec-reviewer` and `@code-reviewer` in the same message — the parallel batching rule does not apply here because the second depends on the first's output.
 
 **Session-green summary** (always include when delegating to `@code-reviewer`):
 ```
@@ -322,7 +324,7 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 
 1. **User interaction** (clarification via `question` tool, status announcements, cross-stage routing): **PRIME.** Only you talk to the user.
 2. **Trivial edit** (< 20 lines, single file, no plan): **PRIME.** Delegation overhead exceeds the work.
-3. **Bootstrap probe** (short commands, each returning < 20 lines): **PRIME.** Quick orientation before Scope.
+3. **Bootstrap probe** (short commands, each returning < 20 lines, during Bootstrap phase only): **PRIME.** Quick orientation before Scope. After Bootstrap ends, file reads are evaluated under rule 5, not this rule.
 4. **Capped-output tool** (`tsc_check`, `eslint_check`, `git` commands returning < 50 lines): **PRIME.** Output is already bounded.
 5. **Single targeted file read** (< 500 lines) where you need the content for your next-turn decision: **PRIME.**
 6. **Everything else → delegate.** Pick the subagent from the table:
@@ -333,9 +335,9 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 | Codebase search (> 10 files expected, or cross-directory pattern) | `@code-searcher` |
 | Reading 3+ files for grounding, or any file > 500 lines | `@code-searcher` or `@lib-reader` |
 | API / library docs lookup | `@lib-reader` |
-| Full test suite / build / typecheck (pass/fail verification) | `@build` or reviewer |
+| Full test suite / build / typecheck (during Execute, as part of @build's per-file verify) | `@build` |
 | Log analysis / large output triage | `@code-searcher` |
-| Multi-area investigation or deep dive | `@research` |
+| Multi-area investigation spanning codebase + external context, or 3+ parallel research threads | `@research` |
 
 **Parallel batching rule.** When dispatching 2+ independent subagents on the same turn, ALL calls go in ONE message. "Independent" means: neither call's output is needed to construct the other's prompt. This applies to every subagent type — `@code-searcher`, `@lib-reader`, `@build`, reviewers, `@research`.
 
