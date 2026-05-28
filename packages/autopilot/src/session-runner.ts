@@ -275,12 +275,14 @@ export class SessionRunner {
     const writer = _createWriter(eventStreamPath);
 
     // Legacy status file bridge — writes .agent/autopilot-status.json
+    // Subscribes to the wildcard "event" on this.events so it receives
+    // ALL events, including those emitted from inside runRalphLoop.
     const statusBridge = new LegacyStatusBridge(cwd);
+    this.events.on("event", (event: SessionEvent) => statusBridge.onEvent(event));
 
     const emitEvent = (event: SessionEvent): void => {
       this.events.emitEvent(event);
       writer.emit(event);
-      statusBridge.onEvent(event);
     };
 
     // Create the session-wide logger (shared across enrichment + loop)
