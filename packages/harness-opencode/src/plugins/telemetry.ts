@@ -105,6 +105,31 @@ const plugin: Plugin = async () => {
           duration_ms: Date.now() - sessionStart,
           ops_count: toolCalls,
         });
+        return;
+      }
+
+      if (event.type === "message.updated") {
+        const info = event.properties?.info as {
+          role?: string;
+          modelID?: string;
+          providerID?: string;
+          tokens?: { output?: number };
+          time?: { created?: number; completed?: number | null };
+        } | undefined;
+        if (!info || info.role !== "assistant") return;
+        if (info.time?.completed == null) return;
+
+        const outputTokens = info.tokens?.output ?? 0;
+        const durationS = (info.time.completed - (info.time.created ?? 0)) / 1000;
+        if (outputTokens <= 0 || durationS <= 0) return;
+
+        track("model.token_speed", {
+          model: info.modelID ?? "unknown",
+          provider: info.providerID ?? "unknown",
+          output_tokens: outputTokens,
+          duration_ms: Math.round(durationS * 1000),
+          tps: Math.round((outputTokens / durationS) * 10) / 10,
+        });
       }
     },
   };
