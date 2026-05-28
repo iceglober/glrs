@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.7.0
+
+### Minor Changes
+
+- [#133](https://github.com/iceglober/glrs/pull/133) [`bdd69cd`](https://github.com/iceglober/glrs/commit/bdd69cd460f3ea9d3945080a70934cb48544b3e3) Thanks [@iceglober](https://github.com/iceglober)! - Smart-optional workflow features: per-phase stacked PRs, Linear issue status management, dependency auto-installation, per-item commit boundaries
+
 ## 0.6.0
 
 ### Minor Changes
