@@ -20,7 +20,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const APP_KEY = "A-US-3617699429";
-const ENDPOINT = "https://us.aptabase.com/api/v0/event";
+const ENDPOINT = "https://us.aptabase.com/api/v0/events";
 const PKG_NAME = "@glrs-dev/harness-plugin-opencode";
 
 // Replaced at build time by tsup's `define` option. Falls back to "dev"
@@ -100,7 +100,7 @@ export function track(
       "Content-Type": "application/json",
       "User-Agent": `${PKG_NAME}/${PKG_VERSION} node/${process.version}`,
     },
-    body: JSON.stringify({
+    body: JSON.stringify([{
       timestamp: new Date().toISOString(),
       sessionId: SESSION_ID,
       eventName,
@@ -116,6 +116,6 @@ export function track(
         engineVersion: process.version,
       },
       props: { ...clean(props), install: installId.slice(0, 8) },
-    }),
+    }]),
   }).catch(() => {});
 }
