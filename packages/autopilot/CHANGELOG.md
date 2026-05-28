@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.7.4
+
+### Patch Changes
+
+- [#145](https://github.com/iceglober/glrs/pull/145) [`94af32b`](https://github.com/iceglober/glrs/commit/94af32b00cbde60ef210b49e4e0c4db1f76254f2) Thanks [@iceglober](https://github.com/iceglober)! - Fix: commit checked state after verify passes, not before — prevents false-positive item completion on verify failure
+
 ## 0.7.3
 
 ### Patch Changes
