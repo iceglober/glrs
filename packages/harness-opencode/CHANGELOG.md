@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.14.0
+
+### Minor Changes
+
+- [#170](https://github.com/iceglober/glrs/pull/170) [`67510c4`](https://github.com/iceglober/glrs/commit/67510c462b5cd2e40a6f95e992c5096b4c4a12a9) Thanks [@iceglober](https://github.com/iceglober)! - feat(telemetry): migrate from Aptabase to PostHog
+
+  Replaces the Aptabase telemetry backend with PostHog. Same privacy guarantees (property allowlist, no PII, opt-out via env vars), but PostHog supports property-level breakdowns, filtering, and grouping in the dashboard — enabling analysis like token speed by model.
+
 ## 2.13.0
 
 ### Minor Changes
