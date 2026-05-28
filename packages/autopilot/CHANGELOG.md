@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.7.7
+
+### Patch Changes
+
+- [#155](https://github.com/iceglober/glrs/pull/155) [`c521908`](https://github.com/iceglober/glrs/commit/c5219089e081cae7abe930dcd59e601ddd3a4884) Thanks [@iceglober](https://github.com/iceglober)! - Prompt forbids branch switching — agent was creating branches from plan metadata, losing all prior work
+
 ## 0.7.6
 
 ### Patch Changes
