@@ -394,6 +394,20 @@ export class SessionRunner {
         }
       }
 
+      // Dependency installation — auto-detect and install if needed
+      try {
+        const { ensureDependencies } = await import("./deps-install.js");
+        const cfgObj = this.opts.config as Record<string, unknown> | undefined;
+        const depsResult = await ensureDependencies(cwd, {
+          installCommand: cfgObj?.install_command as string | undefined,
+        });
+        if (depsResult.installed) {
+          logger?.root.info({ command: depsResult.command }, "dependencies installed");
+        }
+      } catch {
+        // Non-fatal — execution may still succeed
+      }
+
       // Execution phase — use effectivePlanPath (may differ from planPath
       // when freeform decomposition created a plan directory)
       const loopOpts: LoopSessionOptions = {

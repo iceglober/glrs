@@ -19,7 +19,7 @@ import pino from "pino";
 import { runRalphLoop, type LoopResult, type RalphLoopOptions } from "./loop.js";
 import type { LoopSessionOptions } from "./loop-session-types.js";
 import type { SessionEventEmitter } from "./session-runner.js";
-import { recordHead, resetSoft } from "./git-safety.js";
+import { recordHead, resetSoft, commitIfDirty } from "./git-safety.js";
 import { hasSpec, readSpecGoal, readSpecConstraints, detectSpecPhases, filterUncheckedSpecPhases, parseSpecItems } from "./spec-parser.js";
 import { markPhaseCompleted as specMarkPhaseCompleted, markItemChecked, markItemUnchecked, adjustSpecItem } from "./spec-writer.js";
 import { buildConflictGraph, hasParallelism } from "./conflict-graph.js";
@@ -424,6 +424,17 @@ export async function runLoopSession(
   const verifyConfig = extractVerifyConfig(opts.config);
   const hooksConfig = extractHooksConfig(opts.config);
 
+  // Linear client — smart-optional: null when no API key available.
+  let linearClient: import("./linear-client.js").LinearClient | null = null;
+  if (!opts._deps) {
+    try {
+      const { createLinearClient } = await import("./linear-client.js");
+      linearClient = createLinearClient({
+        apiKey: cfgObj?.linear_api_key as string | undefined,
+      });
+    } catch { /* Linear integration is optional */ }
+  }
+
   // Guard: directory plans must have spec/ (produced by enrichment)
   if (!hasSpec(opts.planPath)) {
     return {
@@ -782,7 +793,11 @@ export async function runLoopSession(
 
       if (SUCCESS_REASONS.has(itemResult.exitReason) && args.planPath) {
         markItemChecked(args.planPath, phaseFile, item.id);
-        log.info({ phase: phaseFile, itemId: item.id }, "item checked by orchestrator");
+        const commitMsg = `feat(${item.id}): ${item.intent.split("\n")[0].slice(0, 72)}`;
+        const commitResult = await commitIfDirty(runCwd, commitMsg);
+        if (commitResult.committed) {
+          log.info({ phase: phaseFile, itemId: item.id, sha: commitResult.sha?.slice(0, 8) }, "auto-committed item changes");
+        }
       }
 
       if (!SUCCESS_REASONS.has(itemResult.exitReason)) {
@@ -894,6 +909,37 @@ export async function runLoopSession(
     let verifyFailureSummary: string | undefined;
     const phasePath = path.join(opts.planPath, "spec", phaseFile);
     const phaseContent = _readFileSync(phasePath);
+
+    // Read phase metadata (branch, base, linear_issues) from main spec.
+    // Smart-optional: fields are undefined when not present.
+    let phaseRef: import("./spec-schema.js").SpecPhaseRef | undefined;
+    try {
+      const mainContent = _readFileSync(path.join(opts.planPath, "spec", "main.yaml"));
+      const mainSpec = (await import("yaml")).parse(mainContent) as { phases?: Array<Record<string, unknown>> };
+      phaseRef = mainSpec.phases?.find((p) => p.file === phaseFile) as import("./spec-schema.js").SpecPhaseRef | undefined;
+    } catch { /* main spec read is non-fatal */ }
+
+    // Per-phase branch checkout — only when the spec declares a branch.
+    // Uses -B (create-or-reset) for idempotency on retries.
+    if (phaseRef?.branch && !opts._deps) {
+      try {
+        const { execFile: execFileCb } = await import("node:child_process");
+        const { promisify } = await import("node:util");
+        const execFile = promisify(execFileCb);
+        await execFile("git", ["checkout", "-B", phaseRef.branch], { cwd: runCwd });
+        log.info({ phase: phaseFile, branch: phaseRef.branch }, "checked out phase branch");
+      } catch (err) {
+        log.warn({ phase: phaseFile, branch: phaseRef.branch, err: String(err) }, "phase branch checkout failed — continuing on current branch");
+      }
+    }
+
+    // Linear: move linked issues to In Progress — smart-optional
+    if (linearClient && phaseRef?.linear_issues?.length) {
+      for (const issueId of phaseRef.linear_issues) {
+        const moved = await linearClient.moveIssue(issueId, "In Progress");
+        if (moved) log.info({ phase: phaseFile, issueId }, "Linear issue → In Progress");
+      }
+    }
 
     // Record HEAD before this phase so we can soft-reset on failure
     // (item 2.5). recordHead returns "HEAD" on git failure — we treat
@@ -1160,6 +1206,57 @@ export async function runLoopSession(
       },
       "phase complete",
     );
+
+    // Per-phase PR creation — smart-optional: only when spec declares a branch.
+    if (!opts._deps) {
+      try {
+        const mainContent = _readFileSync(path.join(opts.planPath, "spec", "main.yaml"));
+        const mainSpec = (await import("yaml")).parse(mainContent) as { phases?: Array<Record<string, unknown>> };
+        const phaseRef = mainSpec.phases?.find((p) => p.file === phaseFile) as import("./spec-schema.js").SpecPhaseRef | undefined;
+        if (phaseRef?.branch) {
+          const { shipPhase } = await import("./phase-ship.js");
+          const phaseName = phaseFile.replace(/\.(md|ya?ml)$/, "");
+          const shipResult = await shipPhase({
+            branch: phaseRef.branch,
+            base: phaseRef.base,
+            title: phaseName,
+            repoRoot: opts.cwd,
+          });
+          if (shipResult) {
+            const { writePhaseField } = await import("./spec-writer.js");
+            writePhaseField(opts.planPath, phaseFile, "pr_url", shipResult.prUrl);
+            log.info({ phase: phaseFile, prUrl: shipResult.prUrl, branch: shipResult.branch }, "phase PR created");
+            emitter?.emitEvent({
+              type: "phase:done",
+              timestamp: new Date().toISOString(),
+              phase: phaseFile,
+              laneId: "lane-1",
+              completed: true,
+              iterations: result.iterations,
+              costUsd: result.cumulativeCostUsd ?? 0,
+            });
+          }
+        }
+      } catch (err) {
+        log.warn({ phase: phaseFile, err: String(err) }, "per-phase PR creation failed — continuing");
+      }
+    }
+
+    // Linear: move linked issues to Done — smart-optional
+    if (linearClient) {
+      try {
+        const mainContent = _readFileSync(path.join(opts.planPath, "spec", "main.yaml"));
+        const mainSpec = (await import("yaml")).parse(mainContent) as { phases?: Array<Record<string, unknown>> };
+        const phaseRef = mainSpec.phases?.find((p) => p.file === phaseFile) as import("./spec-schema.js").SpecPhaseRef | undefined;
+        if (phaseRef?.linear_issues?.length) {
+          for (const issueId of phaseRef.linear_issues) {
+            const moved = await linearClient.moveIssue(issueId, "Done");
+            if (moved) log.info({ phase: phaseFile, issueId }, "Linear issue → Done");
+          }
+        }
+      } catch { /* Linear is non-fatal */ }
+    }
+
     // Run post_phase hook (item 3.3, 4.3) — phase-level hook overrides plan-level.
     // On failure, log warn but don't mark phase incomplete.
     const effectivePostPhaseHook = phaseHooksConfig?.post_phase ?? hooksConfig.post_phase;

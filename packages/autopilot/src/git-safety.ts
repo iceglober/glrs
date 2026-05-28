@@ -79,3 +79,30 @@ export async function resetSoft(
     return false;
   }
 }
+
+/**
+ * Commit uncommitted changes if the working tree is dirty. Smart-optional:
+ * no uncommitted changes → no-op. Never throws.
+ *
+ * Used by the orchestrator after each item to ensure per-item commit
+ * boundaries even when the agent forgets to commit.
+ */
+export async function commitIfDirty(
+  cwd: string,
+  message: string,
+  opts?: GitSafetyDeps,
+): Promise<{ committed: boolean; sha?: string }> {
+  const exec =
+    opts?.execGit ?? ((args: string[], c: string) => execFile("git", args, { cwd: c }));
+  try {
+    const { stdout } = await exec(["status", "--porcelain"], cwd);
+    if (!stdout.trim()) return { committed: false };
+
+    await exec(["add", "-A"], cwd);
+    await exec(["commit", "-m", message], cwd);
+    const { stdout: sha } = await exec(["rev-parse", "HEAD"], cwd);
+    return { committed: true, sha: sha.trim() };
+  } catch {
+    return { committed: false };
+  }
+}

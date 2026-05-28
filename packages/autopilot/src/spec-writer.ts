@@ -100,6 +100,38 @@ export function markItemUnchecked(
 }
 
 /**
+ * Write an arbitrary field on a phase entry in spec/main.yaml.
+ * Used to store PR URLs and other metadata after phase completion.
+ */
+export function writePhaseField(
+  planDir: string,
+  phaseFile: string,
+  field: string,
+  value: unknown,
+): void {
+  const mainPath = path.join(planDir, "spec", "main.yaml");
+  try {
+    const content = fs.readFileSync(mainPath, "utf-8");
+    const raw = yamlParse(content) as unknown;
+    if (typeof raw !== "object" || raw === null) return;
+    const obj = raw as Record<string, unknown>;
+    if (!Array.isArray(obj["phases"])) return;
+
+    const phases = obj["phases"] as Array<Record<string, unknown>>;
+    for (const phase of phases) {
+      if (phase["file"] === phaseFile) {
+        phase[field] = value;
+        break;
+      }
+    }
+
+    atomicWriteFileSync(mainPath, yamlStringify(raw));
+  } catch {
+    // Silent failure
+  }
+}
+
+/**
  * Mark a phase as completed in spec/main.yaml.
  *
  * @param planDir - The plan directory (parent of spec/)
