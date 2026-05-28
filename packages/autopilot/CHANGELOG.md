@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.7.3
+
+### Patch Changes
+
+- [#141](https://github.com/iceglober/glrs/pull/141) [`a90c16e`](https://github.com/iceglober/glrs/commit/a90c16e0826dffa755c64bc0e3e021824fe4280d) Thanks [@iceglober](https://github.com/iceglober)! - Agent prompt requires running verify command before emitting sentinel — catches test failures during development, not after
+
 ## 0.7.2
 
 ### Patch Changes

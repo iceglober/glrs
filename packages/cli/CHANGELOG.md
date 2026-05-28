@@ -1,5 +1,17 @@
 # @glrs-dev/cli
 
+## 2.10.20
+
+### Patch Changes
+
+- [#141](https://github.com/iceglober/glrs/pull/141) [`a90c16e`](https://github.com/iceglober/glrs/commit/a90c16e0826dffa755c64bc0e3e021824fe4280d) Thanks [@iceglober](https://github.com/iceglober)! - Agent prompt requires running verify command before emitting sentinel — catches test failures during development, not after
+
+- Updated dependencies [[`a90c16e`](https://github.com/iceglober/glrs/commit/a90c16e0826dffa755c64bc0e3e021824fe4280d)]:
+  - @glrs-dev/autopilot@0.7.3
+  - @glrs-dev/adapter-claude-code@0.1.17
+  - @glrs-dev/adapter-opencode@0.1.17
+  - @glrs-dev/harness-plugin-opencode@2.10.20
+
 ## 2.10.19
 
 ### Patch Changes
