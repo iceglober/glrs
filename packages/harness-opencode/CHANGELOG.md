@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.13.0
+
+### Minor Changes
+
+- [#168](https://github.com/iceglober/glrs/pull/168) [`d2d4c26`](https://github.com/iceglober/glrs/commit/d2d4c260347d85bba77f50d4ddafef54ad877cc0) Thanks [@iceglober](https://github.com/iceglober)! - feat(telemetry): emit token speed per model as Aptabase events
+
+  On each finalized assistant message, emits a `model.token_speed` event with: model ID, provider ID, output token count, generation duration, and tokens/second (tps). No file paths, prompts, or content — just model performance metrics.
+
+### Patch Changes
+
+- [#168](https://github.com/iceglober/glrs/pull/168) [`d2d4c26`](https://github.com/iceglober/glrs/commit/d2d4c260347d85bba77f50d4ddafef54ad877cc0) Thanks [@iceglober](https://github.com/iceglober)! - fix(auto-update): handle caret/tilde ranges in plugin cache
+
+  The auto-updater skipped caret (`^2.10.10`) and tilde (`~2.10.10`) ranges as "user-managed", but OpenCode's default cache uses `^` ranges. The lockfile pins the resolved version, so updates never landed — users stayed on the version from their first install indefinitely. Now treats `^`/`~` ranges the same as exact pins: extracts the base version, compares, and triggers a refresh when a newer version is available. Also deletes all lockfile formats (npm, bun) instead of rewriting just `package-lock.json`.
+
 ## 2.12.0
 
 ### Minor Changes
