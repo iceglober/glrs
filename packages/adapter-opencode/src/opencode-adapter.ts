@@ -648,7 +648,10 @@ export async function waitForIdle(
           // Only care about our session for session-level events
           if (eventSessionId !== opts.sessionId) continue;
 
-          resetStall();
+          // Do NOT resetStall() here — SSE heartbeat/keepalive events fire
+          // even when the model is silent, preventing stall detection.
+          // Only tool calls (line 385, 545) and text deltas (line 486)
+          // should reset the timer.
 
           if (type === "session.idle") {
             settle({ kind: "idle" });
