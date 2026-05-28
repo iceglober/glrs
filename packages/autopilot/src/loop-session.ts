@@ -19,7 +19,7 @@ import pino from "pino";
 import { runRalphLoop, type LoopResult, type RalphLoopOptions } from "./loop.js";
 import type { LoopSessionOptions } from "./loop-session-types.js";
 import type { SessionEventEmitter } from "./session-runner.js";
-import { recordHead, resetSoft, commitIfDirty } from "./git-safety.js";
+import { recordHead, resetSoft, commitIfDirty, snapshotSpecDir } from "./git-safety.js";
 import { hasSpec, readSpecGoal, readSpecConstraints, detectSpecPhases, filterUncheckedSpecPhases, parseSpecItems } from "./spec-parser.js";
 import { markPhaseCompleted as specMarkPhaseCompleted, markItemChecked, markItemUnchecked, adjustSpecItem } from "./spec-writer.js";
 import { buildConflictGraph, hasParallelism } from "./conflict-graph.js";
@@ -1304,6 +1304,7 @@ export async function runLoopSession(
       const phasePath = path.join(opts.planPath, "spec", phaseFile);
       const phaseItemCount = parseSpecItems(phasePath).filter((it) => !it.checked).length;
       const phaseTimeoutMs = BASE_PHASE_TIMEOUT_MS + phaseItemCount * PER_ITEM_TIMEOUT_MS;
+      const restoreSpec = snapshotSpecDir(opts.planPath);
       let attempt = 0;
       let phaseSuccess = false;
       let lastRetryContext: string | undefined;
@@ -1387,6 +1388,9 @@ export async function runLoopSession(
           phaseSuccess = true;
           break;
         }
+
+        // Restore spec files if the agent's branch switch or rollback removed them
+        restoreSpec();
 
         // Phase failed — build evolving recovery context for next attempt
         if (attempt < effectiveMaxRetries) {
