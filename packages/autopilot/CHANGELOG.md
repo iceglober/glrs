@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.7.5
+
+### Patch Changes
+
+- [#149](https://github.com/iceglober/glrs/pull/149) [`6cc8977`](https://github.com/iceglober/glrs/commit/6cc897792d887db0c4a2628ad7eecb1c7a4b2e7f) Thanks [@iceglober](https://github.com/iceglober)! - Fix status file: subscribe bridge to wildcard event channel so it receives iteration/cost events from inside the loop
+
 ## 0.7.4
 
 ### Patch Changes
