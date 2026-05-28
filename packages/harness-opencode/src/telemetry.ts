@@ -105,7 +105,7 @@ export function track(
       sessionId: SESSION_ID,
       eventName,
       systemProps: {
-        isDebug: process.env.NODE_ENV !== "production",
+        isDebug: PKG_VERSION === "dev",
         osName: process.platform,
         osVersion: process.release?.name ?? "node",
         locale: (process.env.LANG ?? "en").split(".")[0] ?? "en",
