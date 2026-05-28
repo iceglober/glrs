@@ -1071,11 +1071,11 @@ describe("prompt content assertions", () => {
     expect(prime).toContain("spear-protocol");
   });
 
-  // ---- context firewall + delegation strengthening ----
+  // ---- delegation decision tree ----
 
-  it("prime prompt contains context firewall section", () => {
-    expect(prime).toContain("Context firewall");
-    expect(prime).toContain("Mandatory delegation triggers");
+  it("prime prompt contains delegation decision tree", () => {
+    expect(prime).toContain("Delegation — when to do work yourself vs. dispatch a subagent");
+    expect(prime).toContain("DEFAULT: DELEGATE");
   });
 
   it("prime prompt runs pre-Assess verification for session-green timestamps", () => {

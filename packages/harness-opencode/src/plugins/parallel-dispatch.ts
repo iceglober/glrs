@@ -25,11 +25,11 @@ const BUILD_PARALLEL_GUIDANCE = [
 
 const GENERAL_PARALLEL_GUIDANCE = [
   "",
-  "[DELEGATION REMINDER]",
-  "You just dispatched a single subagent. Check: is there other independent",
-  "work (search, exploration, verification) you could have dispatched in",
-  "the SAME message? Batch independent subagent calls in one turn.",
-  "Orchestrate — don't serialize.",
+  "[PARALLEL BATCHING REMINDER]",
+  "You dispatched one subagent this turn. Before responding, check:",
+  "does the current stage have other independent work that could run",
+  "in parallel? If yes, dispatch ALL remaining independent subagent",
+  "calls in your NEXT message — one task() per unit, same message.",
 ].join("\n");
 
 interface DispatchState {
@@ -67,14 +67,15 @@ function isTaskBuild(args: unknown): boolean {
 
 function flushBatch(state: DispatchState): void {
   if (state.buildCount === 1) {
-    track("subagent.dispatch.serial", { ops_count: 1, agent: "build" });
+    track("subagent.dispatch.serial", { ops_count: 1 });
   } else if (state.buildCount > 1) {
-    track("subagent.dispatch.parallel", { ops_count: state.buildCount, agent: "build" });
+    track("subagent.dispatch.parallel", { ops_count: state.buildCount });
   }
-  if (state.totalTaskCount === 1) {
+  const nonBuildCount = state.totalTaskCount - state.buildCount;
+  if (nonBuildCount === 1) {
     track("subagent.dispatch.serial.any", { ops_count: 1 });
-  } else if (state.totalTaskCount > 1) {
-    track("subagent.dispatch.parallel.any", { ops_count: state.totalTaskCount });
+  } else if (nonBuildCount > 1) {
+    track("subagent.dispatch.parallel.any", { ops_count: nonBuildCount });
   }
   state.buildCount = 0;
   state.totalTaskCount = 0;
