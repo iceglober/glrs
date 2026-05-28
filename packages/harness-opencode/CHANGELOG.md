@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.11.0
+
+### Minor Changes
+
+- [#161](https://github.com/iceglober/glrs/pull/161) [`c7d206e`](https://github.com/iceglober/glrs/commit/c7d206e3a6e48d555b9561cb8821634c7483280c) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): more aggressive delegation from PRIME to subagents
+
+  - Replace context firewall with deterministic delegation decision tree (evaluate in order, stop at first match)
+  - Add `DEFAULT: DELEGATE` iron-law framing with concrete thresholds at every rule
+  - Add @plan to routing table, multi-file tiebreaker, 2-file edge case handling
+  - Make reviewer sequencing conditional-explicit with "never batch spec + code reviewer" carve-out
+  - Add Scope-stage and Plan-stage delegation sections for parallel @code-searcher + @lib-reader dispatch
+  - Broaden parallel-dispatch plugin to track all subagent types and nudge batching
+  - Add telemetry for general subagent serial vs parallel dispatch patterns
+
 ## 2.10.26
 
 ## 2.10.25
