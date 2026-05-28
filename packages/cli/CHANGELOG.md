@@ -1,5 +1,17 @@
 # @glrs-dev/cli
 
+## 2.10.19
+
+### Patch Changes
+
+- [#139](https://github.com/iceglober/glrs/pull/139) [`db2a2ae`](https://github.com/iceglober/glrs/commit/db2a2aef8c6761d7383ca28a608842568ae56620) Thanks [@iceglober](https://github.com/iceglober)! - Aggressive stall timeouts: 90s default, 3m deep — hung API connections fail fast instead of blocking 10-30 minutes
+
+- Updated dependencies [[`db2a2ae`](https://github.com/iceglober/glrs/commit/db2a2aef8c6761d7383ca28a608842568ae56620)]:
+  - @glrs-dev/autopilot@0.7.2
+  - @glrs-dev/adapter-claude-code@0.1.16
+  - @glrs-dev/adapter-opencode@0.1.16
+  - @glrs-dev/harness-plugin-opencode@2.10.19
+
 ## 2.10.18
 
 ### Patch Changes

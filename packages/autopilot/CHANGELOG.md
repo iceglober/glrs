@@ -1,5 +1,11 @@
 # @glrs-dev/autopilot
 
+## 0.7.2
+
+### Patch Changes
+
+- [#139](https://github.com/iceglober/glrs/pull/139) [`db2a2ae`](https://github.com/iceglober/glrs/commit/db2a2aef8c6761d7383ca28a608842568ae56620) Thanks [@iceglober](https://github.com/iceglober)! - Aggressive stall timeouts: 90s default, 3m deep — hung API connections fail fast instead of blocking 10-30 minutes
+
 ## 0.7.1
 
 ### Patch Changes
