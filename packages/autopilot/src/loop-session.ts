@@ -738,7 +738,7 @@ export async function runLoopSession(
           `  - Do NOT skip the RED phase — always write the test first.\n` +
           `  - Do NOT modify files outside the list above.\n` +
           `  - Do NOT work on items other than ${item.id}.\n\n` +
-          `When done: commit your changes and emit the autopilot-done sentinel.`;
+          `When done: run the verify command to confirm your changes work. Fix any failures. Only after verify passes, commit and emit the autopilot-done sentinel.\n\nVerify: ${verify}`;
       } else {
         itemPrompt =
           `You are executing ONE item of a multi-item phase. Complete only this item, commit, and stop. Do not work on other items.\n\n` +
@@ -762,7 +762,7 @@ export async function runLoopSession(
           `Non-goals:\n` +
           `  - Do NOT modify files outside the list above.\n` +
           `  - Do NOT work on items other than ${item.id}.\n\n` +
-          `When done: commit your changes and emit the autopilot-done sentinel.`;
+          `When done: run the verify command to confirm your changes work. Fix any failures. Only after verify passes, commit and emit the autopilot-done sentinel.\n\nVerify: ${verify}`;
       }
 
       const adapterName = args.adapter?.name as AdapterName | undefined;
