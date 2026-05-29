@@ -71,6 +71,26 @@ Otherwise, produce a **single-file plan** (the default).
 - Prefer 2–4 phases of 2–5 items over 1 mega-phase of 10+ items
 - If all items share files, a single phase is correct — don't force-split for parallelism's sake
 
+**Execution DAG (required for multi-file plans).** After defining phases, add a `## Execution DAG` section to `main.md` that specifies the dependency graph. PRIME-ULTRA uses this to dispatch phases as waves — independent phases run in parallel, dependent phases wait.
+
+For each phase, list which other phases it depends on (by reading their output files or importing their types). Phases with no dependencies form Wave 1. Format:
+
+```
+## Execution DAG
+
+phase_1 → (phase_2, phase_3) → phase_4
+
+Wave 1: phase_1 (no dependencies)
+Wave 2: phase_2 + phase_3 (both depend on phase_1)
+Wave 3: phase_4 (depends on phase_2 and phase_3)
+```
+
+Rules for computing dependencies:
+- Phase B depends on phase A if B reads/imports files that A creates or modifies
+- Phase B depends on phase A if B's tests reference functionality that A implements
+- If two phases touch completely disjoint files, they are independent
+- When in doubt, declare the dependency — false parallelism is worse than unnecessary serialization
+
 Multi-file plan template:
 
 ```markdown
@@ -83,6 +103,14 @@ Multi-file plan template:
 
 - [ ] phase_1.md — <Phase 1 title>
 - [ ] phase_2.md — <Phase 2 title>
+...
+
+## Execution DAG
+
+phase_1 → (phase_2, phase_3) → ...
+
+Wave 1: phase_1 (no dependencies)
+Wave 2: phase_2 + phase_3 (depend on phase_1)
 ...
 
 ## Cross-cutting acceptance criteria

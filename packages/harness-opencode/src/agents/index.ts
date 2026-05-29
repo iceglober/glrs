@@ -53,6 +53,7 @@ const researchLocalPrompt = readPrompt("research-local.md");
 const researchAutoPrompt = readPrompt("research-auto.md");
 const debrieferPrompt = readPrompt("debriefer.md");
 const designerPrompt = readPrompt("designer.md");
+const primeUltraPrompt = readPrompt("prime-ultra.md");
 
 /**
  * Agents that have a strict-executor prompt variant, used when the agent
@@ -649,6 +650,7 @@ export type ModelTier = "deep" | "mid" | "mid-execute" | "autopilot-execute" | "
  */
 export const AGENT_TIERS: Record<string, ModelTier> = {
   prime: "deep",
+  "prime-ultra": "deep",
   scoper: "deep",
   "autopilot-prime": "deep",
   "autopilot-fast": "autopilot-execute",
@@ -679,6 +681,14 @@ export function createAgents(): Record<string, AgentConfig> {
     // Primary agents
     prime: agentFromPrompt(primePrompt, {
       description: "End-to-end PRIME (Primary Routing and Intelligence Management Entity). Takes a request from intent to ready-to-ship in one session. Default primary agent.",
+      mode: "primary",
+      model: "anthropic/claude-opus-4-7",
+      temperature: 0.2,
+      tools: { task: true },
+      permission: PRIME_PERMISSIONS as AgentConfig["permission"],
+    }),
+    "prime-ultra": agentFromPrompt(primeUltraPrompt, {
+      description: "Enhanced PRIME with wave-based DAG execution. Decomposes work into dependency waves and dispatches each wave in parallel. Use instead of `prime` for complex multi-phase tasks. Falls back to standard PRIME behavior for simple tasks.",
       mode: "primary",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.2,
