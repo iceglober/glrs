@@ -282,7 +282,7 @@ export function applyConfig(config: Config, pluginOptions?: PluginOptions): void
   (config as any).agent = { ...ourAgents, ...((config as any).agent ?? {}) };
 
   // Commands: user-wins
-  const ourCommands = createCommands();
+  const ourCommands = createCommands(process.cwd());
   (config as any).command = {
     ...ourCommands,
     ...((config as any).command ?? {}),
