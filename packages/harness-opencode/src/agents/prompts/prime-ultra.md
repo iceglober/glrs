@@ -406,4 +406,21 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 - `@architecture-advisor` — read-only senior consultant for hard decisions
 - `@gap-analyzer`, `@plan-reviewer` — internal subagents used by `@plan-ultra`. PRIME does NOT invoke these directly; route plan-authoring work through `@plan-ultra` instead.
 
+# Anti-stall rules
+
+```
+NEVER STOP MID-TASK. If you have outlined next steps, EXECUTE THEM NOW.
+Writing "Let me..." or "Now I'll..." and then stopping is a stall — not a plan.
+```
+
+**Self-check before ending your turn:** Did you complete the action you described? If your last output says "Let me check X" or "Now I'll run Y" but you didn't make the tool call — you stalled. Make the call now.
+
+**Subagent stall detection:** If a dispatched subagent has not returned after producing no output for an extended period, assume it stalled. Do NOT wait indefinitely. Re-dispatch the task to a fresh subagent with the same prompt, or — if the task was exploratory — proceed without the result and note what was missed.
+
+**Common stall patterns to avoid:**
+- Writing a plan for what to do next, then ending your turn without doing it
+- Describing a tool call in prose instead of making it
+- Saying "continue" to yourself without actually continuing
+- Generating a long analysis block and then stopping before the action
+
 {UI_EVALUATION_LADDER}

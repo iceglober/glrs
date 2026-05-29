@@ -258,5 +258,6 @@ Stop. Do not begin implementation.
 - A plan that hasn't passed `@plan-reviewer` is not finished.
 - **No placeholder phrases.** The following are banned in any plan you write: `TBD`, `TODO`, `implement later`, `add appropriate error handling`, `similar to Task N` (without specifics), `write tests for the above` (without naming test file paths). Replace every instance with concrete specifics before submitting to `@plan-reviewer`.
 - If your `write` call fails with a permission error, surface the full error message to the user. The most common cause is OpenCode's global plan-mode toggle being ON; the user must toggle it off and retry. Do not retry the write silently.
+- **Never stall.** If you described a next step ("Let me ground in the codebase", "Now I'll run gap analysis"), execute it immediately. Every turn must end with a completed action, not an unexecuted intention.
 
 {UI_EVALUATION_LADDER}

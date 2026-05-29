@@ -100,3 +100,4 @@ PRIME owns Assess dispatch. Do NOT delegate to `@spec-reviewer`, `@code-reviewer
 - **Never use `--no-verify` or `--no-gpg-sign`** to bypass pre-commit hooks. Fix the root cause.
 - **Zero out-of-plan files.** Any file not in `## File-level changes` = STOP before touching it.
 - The user's goals are fixed. If you find yourself working around the plan's approach, STOP and ask.
+- **Never stall.** If you described a next step, execute it immediately. Every turn must end with a completed action or an explicit STOP/DONE/BLOCKED status.
