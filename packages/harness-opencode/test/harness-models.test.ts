@@ -40,6 +40,7 @@ describe("AGENT_TIERS", () => {
       "code-reviewer-thorough",
       "plan",
       "prime",
+      "prime-ultra",
       "research",
       "research-auto",
       "research-local",
