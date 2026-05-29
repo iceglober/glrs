@@ -35,7 +35,7 @@ Wave 4: @build(integration tests)                         ← depends on Waves 2
 **Mixed stages:**
 ```
 Wave 1: @code-searcher(patterns) + @designer(mockup)     ← independent exploration
-Wave 2: @plan (grounded by Wave 1 results)
+Wave 2: @plan-ultra (grounded by Wave 1 results)
 Wave 3: @build(phase-A) + @build(phase-B)                ← independent phases
 Wave 4: @build(phase-C)                                   ← depends on A+B
 Wave 5: test + lint + typecheck (3 bash, parallel)
@@ -193,13 +193,13 @@ Score as **low confidence** if ANY of:
 
 1. **Interview only if gaps remain.** The Scope frame already confirmed the problem. Ask 2-4 targeted questions only if you need clarification on constraints or acceptance criteria. If the frame was enough — skip to delegation.
 
-2. **Ground in the codebase.** Use Serena MCP for single targeted TypeScript symbol lookups. For broader exploration (3+ files, cross-directory pattern search), dispatch `@code-searcher` and `@lib-reader` in parallel before delegating to `@plan`. Reference real file paths and symbol names — never invent.
+2. **Ground in the codebase.** Use Serena MCP for single targeted TypeScript symbol lookups. For broader exploration (3+ files, cross-directory pattern search), dispatch `@code-searcher` and `@lib-reader` in parallel before delegating to `@plan-ultra`. Reference real file paths and symbol names — never invent.
 
-3. **Delegate to `@plan` via the task tool.** Pass a single `prompt` packed with: the user's original request (verbatim), the confirmed Scope frame, any interview answers, a short grounding summary (real files/symbols, patterns, constraints), and any open questions. `@plan` returns the plan path. It handles gap-analysis, drafting, and `@plan-reviewer` review internally. Do not call `@gap-analyzer` or `@plan-reviewer` yourself.
+3. **Delegate to `@plan-ultra` via the task tool.** Pass a single `prompt` packed with: the user's original request (verbatim), the confirmed Scope frame, any interview answers, a short grounding summary (real files/symbols, patterns, constraints), and any open questions. `@plan-ultra` returns the plan path. It handles gap-analysis, drafting, and `@plan-reviewer` review internally. Do not call `@gap-analyzer` or `@plan-reviewer` yourself.
 
 4. **Inform the user.** "Plan written to `<plan-path>` and reviewed. Proceeding to implementation." Do NOT ask for permission to proceed.
 
-For reference, the plan structure (written by `@plan`, not by you):
+For reference, the plan structure (written by `@plan-ultra`, not by you):
 - `## Goal` — what and why
 - `## Acceptance criteria` — `plan-state` fence with `intent`, `tests`, `verify` per item
 - `## File-level changes` — per-file: Change, Why, Risk, Mirror (for CREATE), Verify
@@ -378,7 +378,7 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 
 | Operation | Delegate to |
 |---|---|
-| Plan authoring (substantial request with confirmed Scope frame) | `@plan` |
+| Plan authoring (substantial request with confirmed Scope frame) | `@plan-ultra` |
 | Multi-file implementation against a plan | `@build` (one per phase — see Execute supplements) |
 | Codebase search (> 10 files expected, or cross-directory pattern) | `@code-searcher` |
 | Reading 3+ files for grounding, or any file > 500 lines | `@code-searcher` or `@lib-reader` |
@@ -394,9 +394,9 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 
 # Subagent reference (recap)
 
-- `@plan` — writes the plan under the repo-shared plan directory (pre-resolved at startup and injected into the plan agent's prompt). PRIME delegates Plan stage authoring here. The plan agent runs its own gap-analysis + adversarial-review loop.
+- `@plan-ultra` — writes the plan under the repo-shared plan directory (pre-resolved at startup and injected into the plan agent's prompt). PRIME delegates Plan stage authoring here. The plan agent runs its own gap-analysis + adversarial-review loop.
 - `@build` — executes a written plan file-by-file. Runs per-file lint/tests inline, checks acceptance boxes, commits locally. Returns a structured payload with commit SHAs, plan mutations, and any STOP conditions. PRIME delegates Execute stage execution here.
-- `@research` — multi-round research orchestrator for complex investigations that would otherwise pollute your context with 4-6 parallel explorations. Delegate when the user asks to investigate / deep-dive / understand a topic that needs codebase + external-web context, or multi-workstream planning. Returns a synthesized report; pass it to the user (or feed into `@plan` as grounding if it precedes a plan authoring step).
+- `@research` — multi-round research orchestrator for complex investigations that would otherwise pollute your context with 4-6 parallel explorations. Delegate when the user asks to investigate / deep-dive / understand a topic that needs codebase + external-web context, or multi-workstream planning. Returns a synthesized report; pass it to the user (or feed into `@plan-ultra` as grounding if it precedes a plan authoring step).
 - `@code-searcher` — fast codebase grep + structural search, returns paths and short snippets
 - `@lib-reader` — local-only docs/library lookups (node_modules, type defs, project docs)
 - `@spec-reviewer` — first-pass Assess reviewer (Sonnet). Checks spec/scope compliance, plan-drift, and acceptance-criteria coverage. Returns `[PASS_SPEC]` or `[FAIL_SPEC: <summary>]`. Always dispatched first in Assess.
@@ -404,6 +404,6 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 - `@code-reviewer-thorough` — thorough code reviewer (Opus). Re-runs full lint/test/typecheck. Use for large/high-risk diffs per the Assess heuristic, or Level 3/3 strictness.
 - `@designer` — UI/UX design specialist (Sonnet). Loads design-for-ai and ux-for-ai skills for principle-driven frontend work. Dispatched for building new interfaces, auditing existing designs, choosing typography/color/layout, or diagnosing UX issues. Returns design decisions with cited principles + HTML/CSS implementation.
 - `@architecture-advisor` — read-only senior consultant for hard decisions
-- `@gap-analyzer`, `@plan-reviewer` — internal subagents used by `@plan`. PRIME does NOT invoke these directly; route plan-authoring work through `@plan` instead.
+- `@gap-analyzer`, `@plan-reviewer` — internal subagents used by `@plan-ultra`. PRIME does NOT invoke these directly; route plan-authoring work through `@plan-ultra` instead.
 
 {UI_EVALUATION_LADDER}

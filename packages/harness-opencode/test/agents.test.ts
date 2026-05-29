@@ -8,7 +8,7 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 23 agents", () => {
+  it("returns exactly 24 agents", () => {
     // 20 agents total: prime (mode:primary), scoper (mode:primary),
     // autopilot-prime (mode:subagent — PRIME variant with question tool
     // denied for lights-out runs), plan + build + research (mode:all —
@@ -18,7 +18,7 @@ describe("createAgents", () => {
     // code-reviewer, code-reviewer-thorough, plan-reviewer, code-searcher,
     // gap-analyzer, architecture-advisor, docs-maintainer, lib-reader,
     // agents-md-writer), plus debriefer (mode:subagent — post-run summary agent).
-    expect(Object.keys(agents).length).toBe(23);
+    expect(Object.keys(agents).length).toBe(24);
   });
 
   it("has 3 primary-capable agents besides plan (prime, scoper, build; mode=primary or mode=all)", () => {
@@ -39,8 +39,8 @@ describe("createAgents", () => {
     expect(agents["scoper"]).toBeDefined();
   });
 
-  it("scoper agent has primary mode", () => {
-    expect(agents["scoper"]!.mode).toBe("primary");
+  it("scoper agent has all mode", () => {
+    expect(agents["scoper"]!.mode).toBe("all");
   });
 
   it("scoper agent disables question tool (wizard handles user input via inquirer)", () => {
@@ -239,8 +239,8 @@ describe("createAgents", () => {
   });
 
   it("agent count is correct", () => {
-    // Alias for the "returns exactly 23 agents" test — used by changeset a9.
-    expect(Object.keys(agents).length).toBe(23);
+    // Alias for the "returns exactly 24 agents" test — used by changeset a9.
+    expect(Object.keys(agents).length).toBe(24);
   });
 
   it("plan agent has hallucination-defense clause", () => {
