@@ -673,6 +673,7 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   "build-cheap": "cheap",
   "build-deep": "deep",
   "plan-cheap": "cheap",
+  "plan-ultra-cheap": "cheap",
   "spec-reviewer": "mid-execute",
   "code-reviewer": "mid-execute",
   "code-reviewer-thorough": "deep",
@@ -785,6 +786,14 @@ export function createAgents(): Record<string, AgentConfig> {
     }),
     "plan-cheap": agentFromPrompt(planPrompt, {
       description: "Cheap-tier @plan variant. Same prompt, runs on GLM via Bedrock. PRIME dispatches @plan-cheap for trivial/medium plans; escalates to @plan for substantial work or when @plan-reviewer rejects.",
+      mode: "subagent",
+      model: "amazon-bedrock/zai.glm-5",
+      temperature: 0.3,
+      tools: { task: true },
+      permission: PLAN_PERMISSIONS as AgentConfig["permission"],
+    }),
+    "plan-ultra-cheap": agentFromPrompt(planUltraPrompt, {
+      description: "Cheap-tier @plan-ultra variant. Same DAG-writing prompt as @plan-ultra, runs on GLM via Bedrock. PRIME-ULTRA dispatches this first for cost-aware cascading. Escalates to @plan-ultra on [REJECT] from @plan-reviewer or model-capability failures.",
       mode: "subagent",
       model: "amazon-bedrock/zai.glm-5",
       temperature: 0.3,

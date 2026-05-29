@@ -73,7 +73,7 @@ describe("AGENT_TIERS", () => {
       .filter(([, t]) => t === "cheap")
       .map(([n]) => n)
       .sort();
-    expect(cheap).toEqual(["build-cheap", "plan-cheap"]);
+    expect(cheap).toEqual(["build-cheap", "plan-cheap", "plan-ultra-cheap"]);
   });
 });
 

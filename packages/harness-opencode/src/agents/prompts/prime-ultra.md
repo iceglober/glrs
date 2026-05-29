@@ -217,9 +217,11 @@ For `@build` and `@plan` dispatches in the wave DAG, three model tiers exist as 
 
 | Tier | Build agent | Plan agent | Default model |
 |---|---|---|---|
-| Cheap (first attempt) | `@build-cheap` | `@plan-cheap` | `amazon-bedrock/zai.glm-5` |
-| Standard (escalation 1) | `@build` | `@plan-ultra` (or `@plan`) | Sonnet (build) / Opus (plan) |
+| Cheap (first attempt) | `@build-cheap` | `@plan-ultra-cheap` | `amazon-bedrock/zai.glm-5` |
+| Standard (escalation 1) | `@build` | `@plan-ultra` | Sonnet (build) / Opus (plan) |
 | Deep (escalation 2) | `@build-deep` | (use `@plan-ultra`) | Opus |
+
+**Always use the `-ultra` variant for plan dispatches** — `@plan-cheap` writes plans WITHOUT execution DAGs, which breaks wave-based dispatch. Use `@plan-ultra-cheap` so you get DAG output even on the cheap tier.
 
 **Wave-aware default:** In your execution DAG, default each `@build` wave to `@build-cheap`. Escalate failed lanes individually to `@build` in the next wave — DON'T escalate the whole wave just because one lane failed.
 
@@ -440,8 +442,9 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 
 # Subagent reference (recap)
 
-- `@plan-ultra` — writes the plan with `## Execution DAG` section. PRIME-ULTRA delegates Plan stage authoring here. Runs on Opus.
-- `@plan-cheap` — same prompt as `@plan` (no DAG), runs on GLM. For cost-aware cascading when DAG isn't strictly needed (simple multi-file plans).
+- `@plan-ultra` — writes the plan with `## Execution DAG` section. PRIME-ULTRA's standard Plan-stage dispatch (escalation tier). Runs on Opus.
+- `@plan-ultra-cheap` — same DAG-writing prompt as `@plan-ultra`, runs on GLM via Bedrock. PRIME-ULTRA's first-attempt Plan dispatch for cost-aware cascading; escalates to `@plan-ultra` on `[REJECT]` or model-capability failures. Preserves DAG output on the cheap tier.
+- `@plan-cheap` — same prompt as `@plan` (no DAG), runs on GLM. Used by standard PRIME, NOT PRIME-ULTRA — DAG-less plans break wave-based dispatch.
 - `@build` — executes a written plan file-by-file. Runs on Sonnet.
 - `@build-cheap` — same prompt as `@build`, runs on GLM via Bedrock. Default first attempt per wave.
 - `@build-deep` — same prompt as `@build`, runs on Opus. Deep escalation tier.

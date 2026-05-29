@@ -8,7 +8,7 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 27 agents", () => {
+  it("returns exactly 28 agents", () => {
     // 20 agents total: prime (mode:primary), scoper (mode:primary),
     // autopilot-prime (mode:subagent — PRIME variant with question tool
     // denied for lights-out runs), plan + build + research (mode:all —
@@ -18,7 +18,7 @@ describe("createAgents", () => {
     // code-reviewer, code-reviewer-thorough, plan-reviewer, code-searcher,
     // gap-analyzer, architecture-advisor, docs-maintainer, lib-reader,
     // agents-md-writer), plus debriefer (mode:subagent — post-run summary agent).
-    expect(Object.keys(agents).length).toBe(27);
+    expect(Object.keys(agents).length).toBe(28);
   });
 
   it("has 3 primary-capable agents besides plan (prime, scoper, build; mode=primary or mode=all)", () => {
@@ -240,7 +240,7 @@ describe("createAgents", () => {
 
   it("agent count is correct", () => {
     // Alias for the "returns exactly 24 agents" test — used by changeset a9.
-    expect(Object.keys(agents).length).toBe(27);
+    expect(Object.keys(agents).length).toBe(28);
   });
 
   it("plan agent has hallucination-defense clause", () => {
