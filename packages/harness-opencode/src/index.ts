@@ -40,6 +40,7 @@ import costTrackerPlugin from "./plugins/cost-tracker.js";
 import toolHooksPlugin from "./plugins/tool-hooks.js";
 import telemetryPlugin from "./plugins/telemetry.js";
 import parallelDispatchPlugin from "./plugins/parallel-dispatch.js";
+import stallDetectorPlugin from "./plugins/stall-detector.js";
 
 // ---- Update notification ----
 
@@ -134,6 +135,7 @@ const plugin: Plugin = async (input, options) => {
   const toolHooks = await toolHooksPlugin(input, pluginOptions);
   const telemetryHooks = await telemetryPlugin(input);
   const parallelDispatchHooks = await parallelDispatchPlugin(input);
+  const stallDetectorHooks = await stallDetectorPlugin(input);
 
   // Merge all hooks.
   //
@@ -163,6 +165,7 @@ const plugin: Plugin = async (input, options) => {
       if (notifyHooks.event) await notifyHooks.event(input);
       if (costTrackerHooks.event) await costTrackerHooks.event(input);
       if (telemetryHooks.event) await telemetryHooks.event(input);
+      if (stallDetectorHooks.event) await stallDetectorHooks.event(input);
     },
   };
 
@@ -184,6 +187,7 @@ const plugin: Plugin = async (input, options) => {
       );
     }
     if (hasTelemetryBefore) await telemetryHooks["tool.execute.before"]!(input, output);
+    if (stallDetectorHooks["tool.execute.before"]) await stallDetectorHooks["tool.execute.before"]!(input, output);
   };
 
   // tool.execute.after — chain tool-hooks middleware (backpressure, verify
