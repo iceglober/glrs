@@ -39,6 +39,7 @@ describe("AGENT_TIERS", () => {
       "autopilot-prime",
       "code-reviewer-thorough",
       "plan",
+      "plan-ultra",
       "prime",
       "prime-ultra",
       "research",

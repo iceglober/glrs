@@ -54,6 +54,7 @@ const researchAutoPrompt = readPrompt("research-auto.md");
 const debrieferPrompt = readPrompt("debriefer.md");
 const designerPrompt = readPrompt("designer.md");
 const primeUltraPrompt = readPrompt("prime-ultra.md");
+const planUltraPrompt = readPrompt("plan-ultra.md");
 
 /**
  * Agents that have a strict-executor prompt variant, used when the agent
@@ -651,6 +652,7 @@ export type ModelTier = "deep" | "mid" | "mid-execute" | "autopilot-execute" | "
 export const AGENT_TIERS: Record<string, ModelTier> = {
   prime: "deep",
   "prime-ultra": "deep",
+  "plan-ultra": "deep",
   scoper: "deep",
   "autopilot-prime": "deep",
   "autopilot-fast": "autopilot-execute",
@@ -697,7 +699,7 @@ export function createAgents(): Record<string, AgentConfig> {
     }),
     scoper: agentFromPrompt(scoperPrompt, {
       description: "Interactive scoping agent. Runs an inquirer-driven wizard loop — asks short questions via assistant text, collects answers via inquirer, then writes scope.md. Use at the start of a new feature to align on intent, constraints, and acceptance criteria before planning.",
-      mode: "primary",
+      mode: "all",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
       permission: SCOPER_PERMISSIONS as AgentConfig["permission"],
@@ -744,6 +746,14 @@ export function createAgents(): Record<string, AgentConfig> {
       tools: { task: true },
       permission: PLAN_PERMISSIONS as AgentConfig["permission"],
     }),
+    "plan-ultra": agentFromPrompt(planUltraPrompt, {
+      description: "Enhanced planner that produces execution DAGs for wave-based dispatch. Used by prime-ultra. Outputs multi-file plans with explicit phase dependency graphs.",
+      mode: "subagent",
+      model: "anthropic/claude-opus-4-7",
+      temperature: 0.3,
+      tools: { task: true },
+      permission: PLAN_PERMISSIONS as AgentConfig["permission"],
+    }),
     build: agentFromPrompt(buildPrompt, {
       description: "Executes a written plan. Runs tests inline, gates completion on QA review.",
       mode: "all",
@@ -784,6 +794,7 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: AGENTS_MD_WRITER_PERMISSIONS as AgentConfig["permission"],
     }),
     designer: agentFromPrompt(designerPrompt, {
+      mode: "primary",
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
 
