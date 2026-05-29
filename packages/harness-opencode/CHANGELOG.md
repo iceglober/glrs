@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.21.0
+
+### Minor Changes
+
+- [#184](https://github.com/iceglober/glrs/pull/184) [`3b95289`](https://github.com/iceglober/glrs/commit/3b95289255af646ee4d83827acddd63ad63b74f6) Thanks [@iceglober](https://github.com/iceglober)! - feat: add .glrs/hooks/ and .glrs/extensions/ system
+
+  **Hooks** (shell scripts, run by the CLI):
+
+  - `.glrs/hooks/wt-new` — runs after `glrs wt new` creates a worktree. Receives the worktree path as $1 and WORKTREE_DIR + REPO_NAME as env vars. Use for: installing deps, setting up .env, running migrations, starting dev services.
+
+  **Extensions** (agent prompt fragments, loaded by the harness):
+
+  - `.glrs/extensions/post-ship.md` — appended to the `/ship` command's prompt. Use for: custom post-PR-creation behavior like "wait for auto-review, address feedback, monitor checks, get PR mergeable."
+
+  Hooks are executable files that run synchronously with a 2-minute timeout. Extensions are markdown files whose content is injected into the agent's prompt at command dispatch time. Both are repo-level (committed, shared across worktrees).
+
 ## 2.20.0
 
 ### Minor Changes
