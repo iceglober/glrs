@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.17.0
+
+### Minor Changes
+
+- [#176](https://github.com/iceglober/glrs/pull/176) [`7cef98d`](https://github.com/iceglober/glrs/commit/7cef98de31bc6f6dab4f13aa2f8ac2348ad08f2a) Thanks [@iceglober](https://github.com/iceglober)! - feat(telemetry): migrate from PostHog to TelemetryDeck
+
+  Replaces the PostHog telemetry backend with TelemetryDeck. Same privacy guarantees (property allowlist, no PII, opt-out via env vars). TelemetryDeck uses a public write-only App ID (no secret needed), making it suitable for open-source distribution. Events use TelemetryDeck's `isTestMode` flag for dev/production separation and `floatValue` for numeric aggregation of durations.
+
 ## 2.16.0
 
 ### Minor Changes
