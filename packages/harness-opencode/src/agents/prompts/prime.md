@@ -338,6 +338,7 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 | API / library docs lookup | `@lib-reader` |
 | Full test suite / build / typecheck (during Execute, as part of @build's per-file verify) | `@build` |
 | Log analysis / large output triage | `@code-searcher` |
+| UI/UX design — building interfaces, choosing fonts/colors/layout, auditing visual design, fixing UX | `@designer` |
 | Multi-area investigation spanning codebase + external context, or 3+ parallel research threads | `@research` |
 
 **Parallel batching rule.** When dispatching 2+ independent subagents on the same turn, ALL calls go in ONE message. "Independent" means: neither call's output is needed to construct the other's prompt. This applies to every subagent type — `@code-searcher`, `@lib-reader`, `@build`, reviewers, `@research`.
@@ -354,6 +355,7 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 - `@spec-reviewer` — first-pass Assess reviewer (Sonnet). Checks spec/scope compliance, plan-drift, and acceptance-criteria coverage. Returns `[PASS_SPEC]` or `[FAIL_SPEC: <summary>]`. Always dispatched first in Assess.
 - `@code-reviewer` — second-pass Assess reviewer (Sonnet). Checks code quality, patterns, safety, and deployment risk. Trusts the PRIME's recent green output within this session. Returns `[PASS]`, `[LOOP-TO-PLAN: <summary>]`, or `[FIX-INLINE: <summary>]`. Dispatched only after `[PASS_SPEC]`.
 - `@code-reviewer-thorough` — thorough code reviewer (Opus). Re-runs full lint/test/typecheck. Use for large/high-risk diffs per the Assess heuristic, or Level 3/3 strictness.
+- `@designer` — UI/UX design specialist (Sonnet). Loads design-for-ai and ux-for-ai skills for principle-driven frontend work. Dispatched for building new interfaces, auditing existing designs, choosing typography/color/layout, or diagnosing UX issues. Returns design decisions with cited principles + HTML/CSS implementation.
 - `@architecture-advisor` — read-only senior consultant for hard decisions
 - `@gap-analyzer`, `@plan-reviewer` — internal subagents used by `@plan`. PRIME does NOT invoke these directly; route plan-authoring work through `@plan` instead.
 

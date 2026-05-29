@@ -66,7 +66,7 @@ describe("skills bundle", () => {
     expect(fs.existsSync(DIST_SKILLS)).toBe(true);
   });
 
-  it("has exactly 16 skill directories", () => {
+  it("has exactly 17 skill directories", () => {
     const dirs = fs.readdirSync(DIST_SKILLS, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name);
@@ -84,6 +84,7 @@ describe("skills bundle", () => {
       "review-plan",
       "root-cause-diagnosis",
       "spear-protocol",
+      "ux-for-ai",
       "vercel-composition-patterns",
       "vercel-react-best-practices",
       "web-design-guidelines",

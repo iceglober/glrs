@@ -52,6 +52,7 @@ const researchWebPrompt = readPrompt("research-web.md");
 const researchLocalPrompt = readPrompt("research-local.md");
 const researchAutoPrompt = readPrompt("research-auto.md");
 const debrieferPrompt = readPrompt("debriefer.md");
+const designerPrompt = readPrompt("designer.md");
 
 /**
  * Agents that have a strict-executor prompt variant, used when the agent
@@ -667,6 +668,7 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   "lib-reader": "mid",
   "agents-md-writer": "mid",
   debriefer: "mid",
+  designer: "mid",
   "code-searcher": "fast",
 };
 
@@ -770,6 +772,9 @@ export function createAgents(): Record<string, AgentConfig> {
     }),
     "agents-md-writer": agentFromPrompt(agentsMdWriterPrompt, {
       permission: AGENTS_MD_WRITER_PERMISSIONS as AgentConfig["permission"],
+    }),
+    designer: agentFromPrompt(designerPrompt, {
+      permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
 
     // Research agent — mode:all for both primary invocation and task-tool dispatch
