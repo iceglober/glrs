@@ -3,6 +3,7 @@ import { spawnShell } from "../lib/git.js";
 import { info } from "../lib/fmt.js";
 import { createWorktree } from "../lib/worktree.js";
 import { loadRegistry } from "../lib/registry.js";
+import { runHook } from "../lib/hooks.js";
 import type { RepoIndex } from "./types.js";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -140,6 +141,12 @@ export const create = command({
   handler: ({ repo, from }) => {
     const repoPath = resolveRepoPath(repo);
     const { wtPath } = createWorktree({ from, repoPath, repo });
+
+    runHook("wt-new", wtPath, {
+      WORKTREE_DIR: wtPath,
+      REPO_NAME: repo ?? path.basename(repoPath ?? wtPath),
+    });
+
     console.log(`\n  cd ${wtPath}\n`);
 
     if (process.stdin.isTTY) {

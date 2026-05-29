@@ -1,16 +1,14 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 function readPrompt(name: string): string {
-  // In the bundled dist/index.js, import.meta.url resolves to dist/,
-  // but prompts are at dist/commands/prompts/. In dev, HERE is src/commands/.
   const candidates = [
-    join(HERE, "prompts", name),                                  // dev: src/commands/prompts/
-    join(HERE, "commands", "prompts", name),                      // dist: dist/ → dist/commands/prompts/
-    join(HERE, "..", "..", "src", "commands", "prompts", name),   // fallback dev
+    join(HERE, "prompts", name),
+    join(HERE, "commands", "prompts", name),
+    join(HERE, "..", "..", "src", "commands", "prompts", name),
   ];
   for (const p of candidates) {
     try {
@@ -20,6 +18,17 @@ function readPrompt(name: string): string {
     }
   }
   throw new Error(`Could not find command prompt: ${name}`);
+}
+
+function readExtension(commandName: string, cwd: string): string {
+  const extPath = join(cwd, ".glrs", "extensions", `post-${commandName}.md`);
+  if (!existsSync(extPath)) return "";
+  try {
+    const content = readFileSync(extPath, "utf8").trim();
+    return `\n\n## Post-${commandName} extension (from .glrs/extensions/post-${commandName}.md)\n\n${content}`;
+  } catch {
+    return "";
+  }
 }
 
 const shipPrompt = readPrompt("ship.md");
@@ -35,10 +44,11 @@ type CommandConfig = {
   agent?: string;
 };
 
-export function createCommands(): Record<string, CommandConfig> {
+export function createCommands(cwd?: string): Record<string, CommandConfig> {
+  const dir = cwd ?? process.cwd();
   return {
     ship: {
-      template: shipPrompt,
+      template: shipPrompt + readExtension("ship", dir),
       description:
         "Finalize, commit, push, and open a PR/MR. Human-gated at each step.",
     },
