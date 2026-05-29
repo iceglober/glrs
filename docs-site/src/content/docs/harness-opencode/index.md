@@ -279,7 +279,7 @@ This is a plugin with broad local-machine access. Install it deliberately:
 - **Makes outbound HTTPS calls** (all opt-out-able):
   - `registry.npmjs.org` — daily version check. Opt out: `HARNESS_OPENCODE_UPDATE_CHECK=0`.
   - `catwalk.charm.land` — model catalog during interactive install only. Response is schema-validated before it reaches your `opencode.json`.
-  - `us.i.posthog.com` — anonymous telemetry. Opt out: `HARNESS_OPENCODE_TELEMETRY=0`, `DO_NOT_TRACK=1`, or `CI=true`.
+  - `nom.telemetrydeck.com` — anonymous telemetry. Opt out: `HARNESS_OPENCODE_TELEMETRY=0`, `DO_NOT_TRACK=1`, or `CI=true`.
 - **Configures MCP servers** in your OpenCode config that, on first use, download third-party code via `uvx` (Serena, `mcp-server-git`) or `npx` (`@playwright/mcp`, `@modelcontextprotocol/server-memory`). These MCPs run in their own subprocesses. Review them before enabling ones that ship disabled by default (`playwright`, `linear`).
 
 ### What is NOT a sandbox
@@ -307,7 +307,7 @@ A future release may sandbox the bash surface (filesystem allow-list, egress fil
 
 **Catwalk model catalog.** During interactive `install` only, fetches the provider list from `catwalk.charm.land/v2/providers`. The response is schema-validated (see `src/cli/catwalk.ts`) before any value reaches your `opencode.json`. If validation fails, the installer falls back to built-in presets.
 
-**Telemetry.** `@glrs-dev/harness-plugin-opencode` collects anonymous usage data via [PostHog](https://posthog.com) to help improve reliability. The data is opt-out, contains no personal information, and has no stable user identifier.
+**Telemetry.** `@glrs-dev/harness-plugin-opencode` collects anonymous usage data via [TelemetryDeck](https://telemetrydeck.com) to help improve reliability. The data is opt-out, contains no personal information, and has no stable user identifier.
 
 **What gets sent:** package version, OS, Node version, which tools were invoked (hashline, serena, memory, custom tools), tool durations, file extensions of edited files (e.g. `.ts`), edit success/failure outcomes, and hashline mismatch rates.
 
