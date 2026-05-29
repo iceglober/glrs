@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.16.0
+
+### Minor Changes
+
+- [#174](https://github.com/iceglober/glrs/pull/174) [`d071813`](https://github.com/iceglober/glrs/commit/d0718131f883abeea1f8e3fd664d39dd27b4c27c) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): add @designer agent + ux-for-ai skill
+
+  New `@designer` subagent for UI/UX design work. PRIME dispatches it for building interfaces, auditing designs, choosing typography/color/layout, or diagnosing UX issues. Loads both `design-for-ai` and `ux-for-ai` skills for principle-driven design grounded in Kadavy, Tufte, Refactoring UI, Every Layout, and Norman. Runs on Sonnet tier with BUILD_PERMISSIONS.
+
+  Also bundles the `ux-for-ai` skill (Norman's Design of Everyday Things + Emotional Design) with 8 chapter reference files covering the two gulfs, discoverability, feedback, mental models, constraints, and the visceral/behavioral/reflective joy layers.
+
 ## 2.15.0
 
 ### Minor Changes
