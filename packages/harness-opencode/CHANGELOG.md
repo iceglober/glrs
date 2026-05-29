@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.15.0
+
+### Minor Changes
+
+- [#172](https://github.com/iceglober/glrs/pull/172) [`2f18be5`](https://github.com/iceglober/glrs/commit/2f18be5d900d971d8519c66e741b387329c07609) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): add design-for-ai skill — visual design principles for building organic-feeling UI
+
+  Bundled skill that teaches agents to apply real design theory (Kadavy, Tufte, Refactoring UI, Every Layout) when building or reviewing frontend code. Includes CHECKER mode (10-category audit) and APPLIER mode (8-phase gated workflow). Research-tested: live agent evaluation scored 8.45/10 on organic feel, visual system coherence, code quality, and craft details.
+
 ## 2.14.0
 
 ### Minor Changes
