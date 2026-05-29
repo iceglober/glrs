@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.23.0
+
+### Minor Changes
+
+- [#191](https://github.com/iceglober/glrs/pull/191) [`e4fb192`](https://github.com/iceglober/glrs/commit/e4fb1921cd21ff792bc2b1d50404b5c929e691ca) Thanks [@iceglober](https://github.com/iceglober)! - Add `@plan-ultra-cheap` agent — preserves PRIME-ULTRA's wave-based DAG dispatch when cascading to the cheap tier. Same DAG-writing prompt as `@plan-ultra`, runs on `amazon-bedrock/zai.glm-5`. PRIME-ULTRA's cascading table now points to `@plan-ultra-cheap` instead of `@plan-cheap` so the cheap-tier plan still includes `## Execution DAG`. `@plan-cheap` remains for standard PRIME, which doesn't need DAG output.
+
 ## 2.22.0
 
 ### Minor Changes
