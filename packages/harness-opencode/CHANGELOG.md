@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.19.0
+
+### Minor Changes
+
+- [#180](https://github.com/iceglober/glrs/pull/180) [`f635283`](https://github.com/iceglober/glrs/commit/f63528302ca53a858321e2bd522b027cc6668e33) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): add plan-ultra agent, promote designer to primary, demote scoper
+
+  - Add `plan-ultra` subagent — writes execution DAGs for wave-based dispatch by prime-ultra. Decoupled from standard `plan` so the two systems don't cross-contaminate.
+  - Revert DAG additions from standard `plan.md` — standard plan stays clean for standard prime.
+  - Promote `designer` to primary mode — user-selectable in TUI for direct UI/UX work.
+  - Demote `scoper` from primary to all — still invocable by users via @scoper, but not in the primary agent selector.
+  - Demote `plan-ultra` to subagent — only dispatched by prime-ultra, not user-selectable.
+
+  Primary agents (TUI selector): prime, prime-ultra, designer.
+
 ## 2.18.0
 
 ### Minor Changes
