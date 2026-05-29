@@ -204,6 +204,11 @@ export function resolveHarnessModels(
       if (tier === "mid-execute" && perTier === undefined) {
         perTier = modelsConfig["mid"];
       }
+      // cheap fallback: cheap → fast. If still undefined, the hardcoded
+      // model in the agent registration (typically GLM via Bedrock) stays.
+      if (tier === "cheap" && perTier === undefined) {
+        perTier = modelsConfig["fast"];
+      }
       if (perTier !== undefined) {
         const picked = Array.isArray(perTier) ? perTier[0]! : perTier;
         agentCfg.model = picked;
