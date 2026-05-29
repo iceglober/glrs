@@ -50,7 +50,7 @@ If a vulnerability is confirmed and fixed, we will publish a GitHub security adv
 - Outbound network calls the plugin makes on its own:
   - `https://registry.npmjs.org/` — daily update check (opt-out: `HARNESS_OPENCODE_UPDATE_CHECK=0`).
   - `https://catwalk.charm.land/` — model catalog fetch during interactive install.
-  - `https://us.i.posthog.com/` — anonymous telemetry (opt-out: `HARNESS_OPENCODE_TELEMETRY=0`, `DO_NOT_TRACK=1`, or `CI=true`).
+  - `https://nom.telemetrydeck.com/` — anonymous telemetry (opt-out: `HARNESS_OPENCODE_TELEMETRY=0`, `DO_NOT_TRACK=1`, or `CI=true`).
 
 **Out of scope (will not be treated as vulnerabilities in this package):**
 

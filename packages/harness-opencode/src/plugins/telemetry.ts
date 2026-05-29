@@ -1,5 +1,5 @@
 // telemetry sub-plugin — hooks tool.execute.before/after and session events
-// to emit anonymous usage telemetry via PostHog.
+// to emit anonymous usage telemetry via TelemetryDeck.
 //
 // Follows the sub-plugin pattern established by cost-tracker.ts.
 // Composed in src/index.ts alongside other sub-plugins.

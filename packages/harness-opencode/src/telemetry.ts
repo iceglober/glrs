@@ -1,11 +1,11 @@
-// telemetry.ts — anonymous, opt-out usage telemetry via PostHog.
+// telemetry.ts — anonymous, opt-out usage telemetry via TelemetryDeck.
 //
-// Sends fire-and-forget events to PostHog's capture endpoint.
+// Sends fire-and-forget events to TelemetryDeck's ingestion endpoint.
 // No SDK dependency — raw fetch against the public HTTP API.
 //
 // Privacy guarantees:
-//   - Write-only project API key embedded in source (public, client-side safe)
-//   - Install ID is SHA-256 hashed + truncated to 8 chars as distinct_id
+//   - Write-only App ID embedded in source (public, no secret needed)
+//   - Install ID is SHA-256 hashed + truncated to 8 chars as clientUser
 //   - No file paths, contents, prompts, model outputs, error messages, or
 //     git remotes are ever collected
 //   - Property allowlist enforced — unknown keys are stripped before send
@@ -18,8 +18,8 @@ import { homedir } from "node:os";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const POSTHOG_KEY = "phc_p25CMvyEiCjvHm78rs5FJbyBqpt4fziC3fCisgevpSzb";
-const ENDPOINT = "https://us.i.posthog.com/capture/";
+const APP_ID = "BA5189DD-2BB8-4DCC-88B0-F3769D0208FB";
+const ENDPOINT = "https://nom.telemetrydeck.com/v2/namespace/glrs.dev/";
 const PKG_NAME = "@glrs-dev/harness-plugin-opencode";
 
 // Replaced at build time by tsup's `define` option. Falls back to "dev"
@@ -95,23 +95,26 @@ export function track(
 ): void {
   if (DISABLED) return;
 
+  const cleaned = clean(props);
+  const payload: Record<string, string> = {};
+  for (const [k, v] of Object.entries(cleaned)) {
+    payload[`Harness.${k}`] = String(v);
+  }
+  payload["Harness.app_version"] = PKG_VERSION;
+  payload["Harness.os"] = process.platform;
+  payload["Harness.node_version"] = process.version;
+
   fetch(ENDPOINT, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      api_key: POSTHOG_KEY,
-      event: eventName,
-      distinct_id: installId.slice(0, 8),
-      properties: {
-        ...clean(props),
-        $session_id: SESSION_ID,
-        $lib: PKG_NAME,
-        $lib_version: PKG_VERSION,
-        $os: process.platform,
-        $os_version: process.release?.name ?? "node",
-        node_version: process.version,
-        app_version: PKG_VERSION,
-      },
-    }),
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify([{
+      appID: APP_ID,
+      clientUser: installId.slice(0, 8),
+      sessionID: SESSION_ID,
+      type: eventName,
+      isTestMode: PKG_VERSION === "dev",
+      floatValue: typeof cleaned.duration_ms === "number" ? cleaned.duration_ms : undefined,
+      payload,
+    }]),
   }).catch(() => {});
 }
