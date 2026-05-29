@@ -632,7 +632,7 @@ const DEBRIEFER_PERMISSIONS = {
 
 // ---- Tier map ----
 
-export type ModelTier = "deep" | "mid" | "mid-execute" | "autopilot-execute" | "fast";
+export type ModelTier = "deep" | "mid" | "mid-execute" | "autopilot-execute" | "fast" | "cheap";
 
 /**
  * Maps every agent name to its model tier. Used by the harness.models
@@ -645,6 +645,11 @@ export type ModelTier = "deep" | "mid" | "mid-execute" | "autopilot-execute" | "
  *                if not configured. Use for Kimi K2.x, Qwen3-Coder, or
  *                any model the user wants to run as a strict executor.
  * - fast:        cheap, low-latency (haiku-class)
+ * - cheap:       very cheap cascading tier (GLM/Haiku-class via Bedrock).
+ *                Used by @build-cheap, @plan-cheap, etc. for the first
+ *                pass of cost-cascading. PRIME escalates from cheap →
+ *                mid-execute → deep on failure signals. Falls back to
+ *                fast if not configured.
  *
  * Adding an agent to createAgents() without adding it here will fail
  * the AGENT_TIERS completeness test — that's intentional.
@@ -665,6 +670,9 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   "research-local": "deep",
   "research-auto": "deep",
   build: "mid-execute",
+  "build-cheap": "cheap",
+  "build-deep": "deep",
+  "plan-cheap": "cheap",
   "spec-reviewer": "mid-execute",
   "code-reviewer": "mid-execute",
   "code-reviewer-thorough": "deep",
@@ -760,6 +768,28 @@ export function createAgents(): Record<string, AgentConfig> {
       model: "anthropic/claude-sonnet-4-6",
       temperature: 0.1,
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
+    }),
+    "build-cheap": agentFromPrompt(buildPrompt, {
+      description: "Cheap-tier @build variant. Same prompt, runs on GLM via Bedrock. PRIME dispatches @build-cheap first for cost savings; escalates to @build on BLOCKED or [FAIL_SPEC].",
+      mode: "subagent",
+      model: "amazon-bedrock/zai.glm-5",
+      temperature: 0.1,
+      permission: BUILD_PERMISSIONS as AgentConfig["permission"],
+    }),
+    "build-deep": agentFromPrompt(buildPrompt, {
+      description: "Deep-tier @build variant. Same prompt, runs on Opus. PRIME escalates to @build-deep after @build also returns BLOCKED/[FAIL_SPEC].",
+      mode: "subagent",
+      model: "anthropic/claude-opus-4-7",
+      temperature: 0.1,
+      permission: BUILD_PERMISSIONS as AgentConfig["permission"],
+    }),
+    "plan-cheap": agentFromPrompt(planPrompt, {
+      description: "Cheap-tier @plan variant. Same prompt, runs on GLM via Bedrock. PRIME dispatches @plan-cheap for trivial/medium plans; escalates to @plan for substantial work or when @plan-reviewer rejects.",
+      mode: "subagent",
+      model: "amazon-bedrock/zai.glm-5",
+      temperature: 0.3,
+      tools: { task: true },
+      permission: PLAN_PERMISSIONS as AgentConfig["permission"],
     }),
 
     // Subagents — model/mode/description from frontmatter, permissions

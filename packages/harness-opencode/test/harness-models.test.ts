@@ -10,7 +10,7 @@ describe("AGENT_TIERS", () => {
   });
 
   it("every value is a valid tier", () => {
-    const validTiers = new Set(["deep", "mid", "mid-execute", "autopilot-execute", "fast"]);
+    const validTiers = new Set(["deep", "mid", "mid-execute", "autopilot-execute", "fast", "cheap"]);
     for (const [name, tier] of Object.entries(AGENT_TIERS)) {
       expect(validTiers.has(tier)).toBe(true);
     }
@@ -37,6 +37,7 @@ describe("AGENT_TIERS", () => {
     expect(deep).toEqual([
       "architecture-advisor",
       "autopilot-prime",
+      "build-deep",
       "code-reviewer-thorough",
       "plan",
       "plan-ultra",
@@ -68,6 +69,11 @@ describe("AGENT_TIERS", () => {
       .sort();
     expect(autopilotExecute).toEqual(["autopilot-fast"]);
     expect(fast).toEqual(["code-searcher"]);
+    const cheap = Object.entries(AGENT_TIERS)
+      .filter(([, t]) => t === "cheap")
+      .map(([n]) => n)
+      .sort();
+    expect(cheap).toEqual(["build-cheap", "plan-cheap"]);
   });
 });
 

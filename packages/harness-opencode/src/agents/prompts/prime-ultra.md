@@ -205,6 +205,52 @@ For reference, the plan structure (written by `@plan-ultra`, not by you):
 - `## File-level changes` — per-file: Change, Why, Risk, Mirror (for CREATE), Verify
 - `## Non-goals`, `## Test plan`, `## Out of scope`, `## Open questions`
 
+## Cost-aware cascading — cheap-first dispatch
+
+```
+START CHEAP. ESCALATE ON FAILURE.
+Based on FrugalGPT (Chen et al. 2023): up to 98% cost reduction is
+achievable by cascading from cheap models to expensive ones.
+```
+
+For `@build` and `@plan` dispatches in the wave DAG, three model tiers exist as **separate agents** (each with the same prompt, different model):
+
+| Tier | Build agent | Plan agent | Default model |
+|---|---|---|---|
+| Cheap (first attempt) | `@build-cheap` | `@plan-cheap` | `amazon-bedrock/zai.glm-5` |
+| Standard (escalation 1) | `@build` | `@plan-ultra` (or `@plan`) | Sonnet (build) / Opus (plan) |
+| Deep (escalation 2) | `@build-deep` | (use `@plan-ultra`) | Opus |
+
+**Wave-aware default:** In your execution DAG, default each `@build` wave to `@build-cheap`. Escalate failed lanes individually to `@build` in the next wave — DON'T escalate the whole wave just because one lane failed.
+
+**Escalation triggers** (re-dispatch the SAME work to the next tier):
+- Subagent returns `BLOCKED` with model-capability signal: "couldn't parse plan format", "syntax error in generated code", "tool call malformed", "didn't understand the task"
+- `DONE_WITH_CONCERNS` where the concerns are about the model's own limitations
+- Empty or near-empty output
+- `@spec-reviewer` returns `[FAIL_SPEC]` on the cheap-tier work
+- `@code-reviewer` returns `[LOOP-TO-PLAN]` → escalate the next @plan dispatch to standard `@plan-ultra` (Opus)
+
+**Do NOT escalate for:**
+- Real blockers (missing dependency, broken environment, design ambiguity)
+- Scope expansion requests
+- Successful `DONE` — accept the cheap result
+
+**Wave example with cascading:**
+```
+Wave 1: @build-cheap(phase_1) + @build-cheap(phase_2) + @build-cheap(phase_3)
+  → phase_1 [DONE], phase_2 [FAIL_SPEC], phase_3 [DONE]
+Wave 2: @build(phase_2) — re-dispatch the failed lane only, escalated
+  → [PASS_SPEC] then [PASS]
+```
+
+**When to skip cheap entirely** (dispatch to `@build` directly):
+- Phase is flagged `Risk: high` in the plan
+- Security/auth/crypto/billing/migration-sensitive paths
+- > 10 files of substantial logic in the phase
+- The DAG shows this phase has dependencies that would cascade-fail expensively if it fails (e.g., 4 downstream waves)
+
+State the skip-cheap reason in your dispatch announcement so it shows up in telemetry.
+
 ## Execute supplements
 
 ### Pre-dispatch consistency check
@@ -394,8 +440,11 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 
 # Subagent reference (recap)
 
-- `@plan-ultra` — writes the plan under the repo-shared plan directory (pre-resolved at startup and injected into the plan agent's prompt). PRIME delegates Plan stage authoring here. The plan agent runs its own gap-analysis + adversarial-review loop.
-- `@build` — executes a written plan file-by-file. Runs per-file lint/tests inline, checks acceptance boxes, commits locally. Returns a structured payload with commit SHAs, plan mutations, and any STOP conditions. PRIME delegates Execute stage execution here.
+- `@plan-ultra` — writes the plan with `## Execution DAG` section. PRIME-ULTRA delegates Plan stage authoring here. Runs on Opus.
+- `@plan-cheap` — same prompt as `@plan` (no DAG), runs on GLM. For cost-aware cascading when DAG isn't strictly needed (simple multi-file plans).
+- `@build` — executes a written plan file-by-file. Runs on Sonnet.
+- `@build-cheap` — same prompt as `@build`, runs on GLM via Bedrock. Default first attempt per wave.
+- `@build-deep` — same prompt as `@build`, runs on Opus. Deep escalation tier.
 - `@research` — multi-round research orchestrator for complex investigations that would otherwise pollute your context with 4-6 parallel explorations. Delegate when the user asks to investigate / deep-dive / understand a topic that needs codebase + external-web context, or multi-workstream planning. Returns a synthesized report; pass it to the user (or feed into `@plan-ultra` as grounding if it precedes a plan authoring step).
 - `@code-searcher` — fast codebase grep + structural search, returns paths and short snippets
 - `@lib-reader` — local-only docs/library lookups (node_modules, type defs, project docs)

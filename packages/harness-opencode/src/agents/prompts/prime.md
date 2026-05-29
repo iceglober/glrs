@@ -160,6 +160,48 @@ For reference, the plan structure (written by `@plan`, not by you):
 - `## File-level changes` — per-file: Change, Why, Risk, Mirror (for CREATE), Verify
 - `## Non-goals`, `## Test plan`, `## Out of scope`, `## Open questions`
 
+## Cost-aware cascading — cheap-first dispatch
+
+```
+START CHEAP. ESCALATE ON FAILURE.
+Based on FrugalGPT (Chen et al. 2023): up to 98% cost reduction is
+achievable by cascading from cheap models to expensive ones.
+```
+
+For `@build` and `@plan` dispatches, three model tiers exist as **separate agents** (each with the same prompt, different model):
+
+| Tier | Build agent | Plan agent | Default model |
+|---|---|---|---|
+| Cheap (first attempt) | `@build-cheap` | `@plan-cheap` | `amazon-bedrock/zai.glm-5` |
+| Standard (escalation 1) | `@build` | `@plan` | Sonnet (build) / Opus (plan) |
+| Deep (escalation 2) | `@build-deep` | (use `@plan`) | Opus |
+
+**Default dispatch:**
+- For trivial-to-medium tasks, dispatch `@build-cheap` (and `@plan-cheap` when planning is needed).
+- For substantial multi-phase work where the cheap model is likely to struggle (complex refactors, novel patterns, anything with intricate cross-file dependencies), skip cheap and dispatch `@build` (Sonnet) directly. State your reason in one line.
+
+**Escalation triggers (re-dispatch the SAME work to the next tier):**
+- Subagent returns `BLOCKED` with a model-capability signal: "couldn't parse plan format", "syntax error in generated code", "tool call malformed", "didn't understand the task"
+- `DONE_WITH_CONCERNS` where the concerns are about the model's own limitations ("I had trouble with this pattern", "my changes may not be optimal")
+- Empty or near-empty output
+- `@spec-reviewer` returns `[FAIL_SPEC]` on the cheap-tier work
+- `@code-reviewer` returns `[LOOP-TO-PLAN]` → escalate the next @plan dispatch to standard `@plan` (Opus)
+
+**Do NOT escalate for:**
+- Real blockers (missing dependency, broken environment, design ambiguity) — escalation doesn't fix these, route to user
+- Scope expansion requests — pass to user, don't throw more model at it
+- Successful `DONE` — accept the cheap result
+
+**Cascading sequence example:**
+```
+Wave 1: @build-cheap (full plan, GLM)
+  → returns [FAIL_SPEC] from @spec-reviewer
+Wave 2: @build (same plan, Sonnet) — escalated
+  → returns [PASS_SPEC], then [PASS] from @code-reviewer
+```
+
+**When to skip cheap entirely:** If your Scope/Plan analysis flagged the work as `Risk: high`, security/auth/crypto/billing/migration-sensitive, or > 10 files of substantial logic — go directly to `@build` (Sonnet). State that you're skipping the cheap tier in your dispatch announcement.
+
 ## Execute supplements
 
 ### Pre-dispatch consistency check
@@ -347,8 +389,11 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 
 # Subagent reference (recap)
 
-- `@plan` — writes the plan under the repo-shared plan directory (pre-resolved at startup and injected into the plan agent's prompt). PRIME delegates Plan stage authoring here. The plan agent runs its own gap-analysis + adversarial-review loop.
-- `@build` — executes a written plan file-by-file. Runs per-file lint/tests inline, checks acceptance boxes, commits locally. Returns a structured payload with commit SHAs, plan mutations, and any STOP conditions. PRIME delegates Execute stage execution here.
+- `@plan` — writes the plan under the repo-shared plan directory (pre-resolved at startup and injected into the plan agent's prompt). PRIME delegates Plan stage authoring here. The plan agent runs its own gap-analysis + adversarial-review loop. Runs on Opus.
+- `@plan-cheap` — same prompt as `@plan`, runs on GLM via Bedrock. Default first attempt for cost-aware cascading. PRIME escalates to `@plan` on `[REJECT]` from @plan-reviewer or model-capability failures.
+- `@build` — executes a written plan file-by-file. Runs per-file lint/tests inline, checks acceptance boxes, commits locally. Returns a structured payload with commit SHAs, plan mutations, and any STOP conditions. Runs on Sonnet.
+- `@build-cheap` — same prompt as `@build`, runs on GLM via Bedrock. Default first attempt for cost-aware cascading.
+- `@build-deep` — same prompt as `@build`, runs on Opus. Deep escalation tier for the cheap → standard → deep cascade.
 - `@research` — multi-round research orchestrator for complex investigations that would otherwise pollute your context with 4-6 parallel explorations. Delegate when the user asks to investigate / deep-dive / understand a topic that needs codebase + external-web context, or multi-workstream planning. Returns a synthesized report; pass it to the user (or feed into `@plan` as grounding if it precedes a plan authoring step).
 - `@code-searcher` — fast codebase grep + structural search, returns paths and short snippets
 - `@lib-reader` — local-only docs/library lookups (node_modules, type defs, project docs)
