@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.21.1
+
+### Patch Changes
+
+- [#186](https://github.com/iceglober/glrs/pull/186) [`120a068`](https://github.com/iceglober/glrs/commit/120a068f4bd2f3a542bb6d1d4a049785f4082260) Thanks [@iceglober](https://github.com/iceglober)! - fix(harness): add anti-stall rules to all primary and executor agents
+
+  Adds explicit anti-stall instructions to prime, prime-ultra, plan, plan-ultra, build, and build.open prompts. The stall pattern: the model describes what it will do next ("Let me check X", "Now I'll run Y") then stops generating without making the tool call. The anti-stall rules:
+
+  - Iron-law fenced block: "NEVER STOP MID-TASK"
+  - Self-check instruction: verify last output completed the described action
+  - Common stall patterns enumerated (plan-without-execute, prose-instead-of-tool-call)
+  - Subagent stall detection guidance for PRIME: re-dispatch or proceed without result
+  - Build agents: every turn must end with a completed action or explicit STOP/DONE/BLOCKED
+
 ## 2.21.0
 
 ### Minor Changes
