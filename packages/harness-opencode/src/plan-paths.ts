@@ -7,7 +7,7 @@
  * Before this module, the harness wrote every plan to `$WORKTREE/.agent/plans/`,
  * which meant plans disappeared when `/fresh` wiped the worktree and were
  * invisible from any other worktree/tab pointed at the same repo. This
- * module moves plan storage to `~/.glorious/opencode/<repo-folder>/plans/`
+ * module moves plan storage to `~/.glrs/opencode/<repo-folder>/plans/`
  * — a per-repo, worktree-agnostic location that mirrors the storage shape
  * already used by the cost-tracker plugin (see src/plugins/cost-tracker.ts
  * `resolveDataDir`).
@@ -143,8 +143,8 @@ export async function getRepoFolder(worktreeDir: string): Promise<string> {
  * Resolve the absolute plans directory for the repo containing
  * `worktreeDir`. Shape: `<base>/<repo-folder>/plans`.
  *
- *   - `<base>` = `$GLORIOUS_PLAN_DIR` if set (with leading `~` expanded),
- *     else `~/.glorious/opencode`.
+ *   - `<base>` = `$GLRS_PLAN_DIR` (or legacy `$GLORIOUS_PLAN_DIR`) if set,
+ *     else `~/.glrs/opencode`.
  *   - `<repo-folder>` = `getRepoFolder(worktreeDir)`.
  *
  * Creates the full directory tree if missing (`fs.mkdir recursive`).
@@ -152,10 +152,10 @@ export async function getRepoFolder(worktreeDir: string): Promise<string> {
  * without side effects beyond a (no-op) mkdir.
  */
 export async function getPlanDir(worktreeDir: string): Promise<string> {
-  const override = process.env.GLORIOUS_PLAN_DIR;
+  const override = process.env.GLRS_PLAN_DIR ?? process.env.GLORIOUS_PLAN_DIR;
   const base = override
     ? expandTilde(override)
-    : path.join(os.homedir(), ".glorious", "opencode");
+    : path.join(os.homedir(), ".glrs", "opencode");
 
   const repoFolder = await getRepoFolder(worktreeDir);
   const planDir = path.join(base, repoFolder, "plans");

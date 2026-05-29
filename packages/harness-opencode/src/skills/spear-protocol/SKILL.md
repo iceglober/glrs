@@ -15,7 +15,7 @@ Before Scope, run this probe inline (no subagent) — sessions typically start i
 2. `git status --short` — see uncommitted work.
 3. `git log --oneline -5` — recent history.
 4. Resolve the plan dir and list recent plans:
-   `PLAN_BASE="${GLORIOUS_PLAN_DIR:-$HOME/.glorious/opencode}" && GIT_COMMON="$(git rev-parse --git-common-dir 2>/dev/null)" && [ -n "$GIT_COMMON" ] && [[ "$GIT_COMMON" != /* ]] && GIT_COMMON="$PWD/$GIT_COMMON"; REPO_FOLDER="$(basename "$(dirname "$GIT_COMMON")" 2>/dev/null)" && [ -n "$REPO_FOLDER" ] && [ "$REPO_FOLDER" != "." ] && ls "$PLAN_BASE/$REPO_FOLDER/plans" 2>/dev/null | tail -5` — plans for this repo.
+   `PLAN_BASE="${GLRS_PLAN_DIR:-$HOME/.glrs/opencode}" && GIT_COMMON="$(git rev-parse --git-common-dir 2>/dev/null)" && [ -n "$GIT_COMMON" ] && [[ "$GIT_COMMON" != /* ]] && GIT_COMMON="$PWD/$GIT_COMMON"; REPO_FOLDER="$(basename "$(dirname "$GIT_COMMON")" 2>/dev/null)" && [ -n "$REPO_FOLDER" ] && [ "$REPO_FOLDER" != "." ] && ls "$PLAN_BASE/$REPO_FOLDER/plans" 2>/dev/null | tail -5` — plans for this repo.
 
 For each plan found, read it and count unchecked acceptance items. Classify as **stale** (ignore) only if `git merge-base --is-ancestor HEAD origin/main` (fallback `origin/master`) exits 0. If classification fails, treat as active.
 
