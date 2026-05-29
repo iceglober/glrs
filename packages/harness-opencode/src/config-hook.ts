@@ -63,10 +63,10 @@ export function resolvePlanDirSync(cwd: string): string | null {
       : path.resolve(cwd, gitCommonRaw);
     const repoFolder = path.basename(path.dirname(absCommon));
 
-    const override = process.env["GLORIOUS_PLAN_DIR"];
+    const override = process.env["GLRS_PLAN_DIR"] ?? process.env["GLORIOUS_PLAN_DIR"];
     const base = override
       ? (override === "~" ? os.homedir() : override.startsWith("~/") ? path.join(os.homedir(), override.slice(2)) : override)
-      : path.join(os.homedir(), ".glorious", "opencode");
+      : path.join(os.homedir(), ".glrs", "opencode");
 
     const planDir = path.join(base, repoFolder, "plans");
     fs.mkdirSync(planDir, { recursive: true });
@@ -342,8 +342,10 @@ export function applyConfig(config: Config, pluginOptions?: PluginOptions): void
   (config as any).permission = {
     ...existingPermission,
     external_directory: {
-      "~/.glorious/worktrees/**": "allow",
-      "~/.glorious/opencode/**": "allow",  // repo-shared plan storage (see src/plan-paths.ts) + cost-tracker data
+      "~/.glrs/worktrees/**": "allow",
+      "~/.glrs/opencode/**": "allow",
+      "~/.glorious/worktrees/**": "allow",   // legacy fallback
+      "~/.glorious/opencode/**": "allow",    // legacy fallback
       "/tmp/**": "allow",
       "/private/tmp/**": "allow",          // macOS: /tmp symlinks to /private/tmp
       "/var/folders/**/T/**": "allow",     // macOS $TMPDIR expansion

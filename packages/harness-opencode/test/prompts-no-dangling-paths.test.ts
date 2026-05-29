@@ -18,7 +18,7 @@ const FORBIDDEN_PATTERNS = [
   "~/.config/opencode",
   "home/.config/opencode",
   // Legacy per-worktree plan storage path. Plans now live in
-  // `~/.glorious/opencode/<repo>/plans/` — resolved at runtime via
+  // `~/.glrs/opencode/<repo>/plans/` — resolved at runtime via
   // `bunx @glrs-dev/harness-plugin-opencode plan-dir`. A prompt that references
   // `.agent/plans` is pointing at a directory agents no longer write to,
   // which means the plan they describe will be invisible from sibling

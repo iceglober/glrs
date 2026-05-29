@@ -1135,7 +1135,7 @@ describe("prompt content assertions", () => {
     // Must reference one of the new shapes in the ship example.
     const hasNewShape =
       autopilotTemplate.includes("/ship <plan-path>") ||
-      autopilotTemplate.includes("/ship ~/.glorious/opencode/");
+      autopilotTemplate.includes("/ship ~/.glrs/opencode/");
     expect(hasNewShape).toBe(true);
   });
 });

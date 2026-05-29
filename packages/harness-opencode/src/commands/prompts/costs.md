@@ -1,5 +1,5 @@
 ---
-description: Show running LLM cost totals accrued by the cost-tracker plugin. Reads ~/.glorious/opencode/costs.json (or $GLORIOUS_COST_TRACKER_DIR/costs.json) and prints a human-readable breakdown by provider and model. Pass `--json` to dump the raw rollup; pass `--log` to tail the event log. No arguments shows the sorted pretty-print.
+description: Show running LLM cost totals accrued by the cost-tracker plugin. Reads ~/.glrs/opencode/costs.json (or $GLRS_COST_TRACKER_DIR/costs.json) and prints a human-readable breakdown by provider and model. Pass `--json` to dump the raw rollup; pass `--log` to tail the event log. No arguments shows the sorted pretty-print.
 ---
 
 User input: $ARGUMENTS
@@ -16,7 +16,7 @@ Parse the user's input for flags. Behavior:
 
 ## Resolving the data directory
 
-The rollup lives at `${GLORIOUS_COST_TRACKER_DIR:-~/.glorious/opencode}/costs.json` (tilde-expand `~` via `$HOME`). Check `$GLORIOUS_COST_TRACKER_DIR` first; fall back to `$HOME/.glorious/opencode`.
+The rollup lives at `${GLRS_COST_TRACKER_DIR:-~/.glrs/opencode}/costs.json` (tilde-expand `~` via `$HOME`). Check `$GLRS_COST_TRACKER_DIR` first; fall back to `$HOME/.glrs/opencode`.
 
 ## Pretty-print (default)
 
@@ -25,10 +25,10 @@ Run this node one-liner (node is always available under OpenCode/Claude Code). U
 ```bash
 node -e '
 const fs=require("fs"),path=require("path"),os=require("os");
-const overrideDir=process.env.GLORIOUS_COST_TRACKER_DIR;
+const overrideDir=process.env.GLRS_COST_TRACKER_DIR;
 let dir;
 if(overrideDir){dir=overrideDir.startsWith("~")?path.join(os.homedir(),overrideDir.slice(1)):overrideDir;}
-else{dir=path.join(os.homedir(),".glorious","opencode");}
+else{dir=path.join(os.homedir(),".glrs","opencode");}
 const p=path.join(dir,"costs.json");
 let r;
 try{r=JSON.parse(fs.readFileSync(p,"utf8"));}
@@ -62,8 +62,8 @@ Just `cat` the rollup, or use a tiny node wrapper to handle the dir resolution:
 ```bash
 node -e '
 const fs=require("fs"),path=require("path"),os=require("os");
-const overrideDir=process.env.GLORIOUS_COST_TRACKER_DIR;
-const dir=overrideDir?(overrideDir.startsWith("~")?path.join(os.homedir(),overrideDir.slice(1)):overrideDir):path.join(os.homedir(),".glorious","opencode");
+const overrideDir=process.env.GLRS_COST_TRACKER_DIR;
+const dir=overrideDir?(overrideDir.startsWith("~")?path.join(os.homedir(),overrideDir.slice(1)):overrideDir):path.join(os.homedir(),".glrs","opencode");
 const p=path.join(dir,"costs.json");
 try{process.stdout.write(fs.readFileSync(p,"utf8"));}
 catch(e){if(e.code==="ENOENT"){console.log("{}");process.exit(0);}console.error(e.message);process.exit(1);}
@@ -77,8 +77,8 @@ Show the last 20 lines of `costs.jsonl`:
 ```bash
 node -e '
 const fs=require("fs"),path=require("path"),os=require("os");
-const overrideDir=process.env.GLORIOUS_COST_TRACKER_DIR;
-const dir=overrideDir?(overrideDir.startsWith("~")?path.join(os.homedir(),overrideDir.slice(1)):overrideDir):path.join(os.homedir(),".glorious","opencode");
+const overrideDir=process.env.GLRS_COST_TRACKER_DIR;
+const dir=overrideDir?(overrideDir.startsWith("~")?path.join(os.homedir(),overrideDir.slice(1)):overrideDir):path.join(os.homedir(),".glrs","opencode");
 const p=path.join(dir,"costs.jsonl");
 try{const lines=fs.readFileSync(p,"utf8").split(/\n/).filter(Boolean);for(const l of lines.slice(-20))console.log(l);}
 catch(e){if(e.code==="ENOENT"){console.log("No event log yet at "+p+".");process.exit(0);}console.error(e.message);process.exit(1);}

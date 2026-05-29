@@ -1,5 +1,5 @@
 ---
-description: Re-key the current worktree to a new task. Runs the repo's .glorious/hooks/fresh-reset if present+executable; otherwise discards local changes, fetches latest origin, and creates a new branch from it. Then continues inline into the PRIME on the new task. Assumes long-running worktree model — one terminal tab, one persistent worktree, many tasks over its lifetime.
+description: Re-key the current worktree to a new task. Runs the repo's .glrs/hooks/fresh-reset if present+executable; otherwise discards local changes, fetches latest origin, and creates a new branch from it. Then continues inline into the PRIME on the new task. Assumes long-running worktree model — one terminal tab, one persistent worktree, many tasks over its lifetime.
 ---
 
 User input: $ARGUMENTS
@@ -25,7 +25,7 @@ You are re-keying an existing, long-running git worktree to a new unit of work. 
 
 ## Mental model (read this first)
 
-The user keeps 7–10 terminal tabs open, each permanently cd'd into a separate git worktree (typically under `~/.glorious/worktrees/<repo>/<name>`). Tabs are long-lived — the same tab hosts many tasks over weeks. `/fresh` is how a tab transitions from one task to the next without closing the session, spawning a new worktree, or touching any other tab's state.
+The user keeps 7–10 terminal tabs open, each permanently cd'd into a separate git worktree (typically under `~/.glrs/worktrees/<repo>/<name>`). Tabs are long-lived — the same tab hosts many tasks over weeks. `/fresh` is how a tab transitions from one task to the next without closing the session, spawning a new worktree, or touching any other tab's state.
 
 What `/fresh` does NOT do:
 
@@ -49,7 +49,7 @@ What `/fresh` DOES do, in order:
 
 - **`/fresh` owns the protocol:** argument parsing, safety gates (dirty-tree checks, `--yes` abort semantics, `--no-discard`), `OLD_BRANCH` capture, summary printing, PRIME kickoff. These are invariants that must be consistent across every repo that uses the harness.
 
-- **The reset strategy owns the reset:** discarding working tree, switching branches, cleaning up repo-specific processes/containers, resetting env files. This is project-specific. The built-in flow is the default strategy (sensible for the long-running-worktree model); projects can ship their own at `.glorious/hooks/fresh-reset` if they want different semantics (e.g., "brand new worktree per task," "nuke containers only," "no-op on a bare repo").
+- **The reset strategy owns the reset:** discarding working tree, switching branches, cleaning up repo-specific processes/containers, resetting env files. This is project-specific. The built-in flow is the default strategy (sensible for the long-running-worktree model); projects can ship their own at `.glrs/hooks/fresh-reset` if they want different semantics (e.g., "brand new worktree per task," "nuke containers only," "no-op on a bare repo").
 
 **The two paths are mutually exclusive.** Either the hook runs, or the built-in flow runs. Never both. Hooks that want "the built-in thing plus some extras" must either (a) explicitly replicate the built-in logic inline (see §5a for the exact commands to copy), or (b) leave the hook absent and rely on the user running their extras manually after `/fresh`.
 
@@ -66,7 +66,7 @@ Same parsing rules as a typical fresh-worktree command:
 
 - **Core flags** (consumed here):
   - `--from <branch>` — base branch override (default: repo's default branch, usually `main`)
-  - `--skip-hook` — force the built-in flow even when `.glorious/hooks/fresh-reset` is present+executable. Escape hatch for when you want to bypass the hook (e.g., debugging a broken hook). When no hook is present, this flag is a silent no-op.
+  - `--skip-hook` — force the built-in flow even when `.glrs/hooks/fresh-reset` is present+executable. Escape hatch for when you want to bypass the hook (e.g., debugging a broken hook). When no hook is present, this flag is a silent no-op.
   - `--no-discard` — refuse to proceed if the working tree is dirty, instead of discarding. Aborts cleanly with the dirty list. Sanity safety for paranoid users who want a hard gate.
   - `--confirm` — **interactive safety gate**. Before discarding a dirty tree, prompt via the `question` tool with the "what would be lost" list. Without this flag, the default interactive behavior is **wipe without asking** — `/fresh` is the user saying "I want a fresh workspace, don't slow me down with prompts." Use `--confirm` when you're not sure whether your working tree has anything salvageable.
   - `--yes` — **non-interactive mode**. Assume yes on any confirmation that would normally use the `question` tool. Autopilot and PRIME pass this when invoking `/fresh` inside a loop. Crucially, `--yes` is STRICTER than interactive default: it aborts on tracked changes or non-gitignored untracked files to protect unattended loops from silent data loss. See § Non-interactive mode below.
@@ -181,7 +181,7 @@ This is the branch point where the reset strategy is chosen. `/fresh` does NOT r
 **Hook discovery:**
 
 ```bash
-HOOK_PATH="$WORKTREE_DIR/.glorious/hooks/fresh-reset"
+HOOK_PATH="$WORKTREE_DIR/.glrs/hooks/fresh-reset"
 ```
 
 Three discovery outcomes:
@@ -365,7 +365,7 @@ outer loop (e.g., glrs oc autopilot)
 
 ## Hook contract, for repo authors
 
-A repo opts into a custom `/fresh` reset strategy by committing an executable file at `.glorious/hooks/fresh-reset` (committed to the repo, so it's automatically present in every worktree). It receives:
+A repo opts into a custom `/fresh` reset strategy by committing an executable file at `.glrs/hooks/fresh-reset` (committed to the repo, so it's automatically present in every worktree). It receives:
 
 - **Env:** `WORKTREE_DIR`, `WORKTREE_NAME`, `OLD_BRANCH`, `NEW_BRANCH` (suggested), `BASE_BRANCH` (requested), `FRESH_PASSTHROUGH_ARGS`
 - **Positional args:** the pass-through args from the command input
@@ -382,4 +382,4 @@ Projects that want the built-in long-running-worktree flow ARE the default; they
 
 ## One-sentence philosophy
 
-`/fresh` is a re-key-and-go protocol with a pluggable reset strategy: it wipes the worktree without friction (the human running `/fresh` has already decided), fetches the fresh base, checks out a new branch, and continues inline into the PRIME on the new task — one command, one turn, one uninterrupted transition from old task to new. Repos can ship their own reset strategy at `.glorious/hooks/fresh-reset`; `/fresh` owns the invariants (safety gates, summary, PRIME kickoff) so those remain consistent across every repo that uses the harness.
+`/fresh` is a re-key-and-go protocol with a pluggable reset strategy: it wipes the worktree without friction (the human running `/fresh` has already decided), fetches the fresh base, checks out a new branch, and continues inline into the PRIME on the new task — one command, one turn, one uninterrupted transition from old task to new. Repos can ship their own reset strategy at `.glrs/hooks/fresh-reset`; `/fresh` owns the invariants (safety gates, summary, PRIME kickoff) so those remain consistent across every repo that uses the harness.

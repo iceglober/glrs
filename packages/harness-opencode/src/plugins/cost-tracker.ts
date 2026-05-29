@@ -1,6 +1,6 @@
 // cost-tracker — accrues running LLM spend by provider/model across sessions.
 //
-// Writes two files under a data directory (default ~/.glorious/opencode/):
+// Writes two files under a data directory (default ~/.glrs/opencode/):
 //   - costs.jsonl : append-only event log, one JSON line per cost-changing event
 //                   or finalization. Source of truth; rollup is always derivable.
 //   - costs.json  : rollup snapshot (provider → model → {cost, tokens, messages}
@@ -9,8 +9,8 @@
 //                   most once per 5 seconds during active streaming.
 //
 // Env vars:
-//   GLORIOUS_COST_TRACKER=0        — disable the plugin entirely
-//   GLORIOUS_COST_TRACKER_DIR=<p>  — override the default data directory. Tilde
+//   GLRS_COST_TRACKER=0        — disable the plugin entirely
+//   GLRS_COST_TRACKER_DIR=<p>  — override the default data directory. Tilde
 //                                    (~) is expanded via os.homedir().
 //
 // Design notes:
@@ -82,14 +82,14 @@ const MAX_LINE_BYTES = 2048;
 const ROLLUP_DEBOUNCE_MS = 5000;
 
 function resolveDataDir(): string {
-  const override = process.env.GLORIOUS_COST_TRACKER_DIR;
+  const override = process.env.GLRS_COST_TRACKER_DIR ?? process.env.GLORIOUS_COST_TRACKER_DIR;
   if (override) {
     if (override.startsWith("~")) {
       return path.join(os.homedir(), override.slice(1));
     }
     return override;
   }
-  return path.join(os.homedir(), ".glorious", "opencode");
+  return path.join(os.homedir(), ".glrs", "opencode");
 }
 
 function zeroTokens(): Tokens {
@@ -182,7 +182,7 @@ function emptyRollup(): Rollup {
 }
 
 const plugin: Plugin = async () => {
-  if (process.env.GLORIOUS_COST_TRACKER === "0") {
+  if ((process.env.GLRS_COST_TRACKER ?? process.env.GLORIOUS_COST_TRACKER) === "0") {
     return {};
   }
 
