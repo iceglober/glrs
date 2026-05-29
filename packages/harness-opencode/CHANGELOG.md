@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.22.0
+
+### Minor Changes
+
+- [#190](https://github.com/iceglober/glrs/pull/190) [`0fd62f4`](https://github.com/iceglober/glrs/commit/0fd62f44d8317b864a4954f7c48a04ca3aad9b24) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): cost-aware model cascading via cheap-tier agents
+
+  Implements [FrugalGPT](https://arxiv.org/abs/2305.05176) (Chen et al. 2023) cost-cascading by adding three new subagents that share prompts with existing agents but run on different models:
+
+  - `@build-cheap` — same prompt as `@build`, runs on `amazon-bedrock/zai.glm-5`. Default first dispatch for cost-aware cascading.
+  - `@build-deep` — same prompt as `@build`, runs on `anthropic/claude-opus-4-7`. Deep escalation tier.
+  - `@plan-cheap` — same prompt as `@plan`, runs on GLM. For trivial-to-medium plans.
+
+  New `cheap` model tier added to `AGENT_TIERS`. Users can override the cheap-tier model in opencode.json via `harness.models.cheap`. Falls back to `fast` tier if unconfigured.
+
+  PRIME and PRIME-ultra prompts updated with cascading rules:
+
+  - Default dispatch to cheap tier
+  - Escalate to standard tier on `[FAIL_SPEC]` from `@spec-reviewer`, `BLOCKED` with model-capability signals, or empty output
+  - Escalate to deep tier on second failure
+  - Skip cheap entirely for high-risk paths (security/auth/migrations/>10 files of substantial logic)
+
+  New `dispatch-tracker` plugin emits `subagent.dispatch` telemetry (subagent name + tier) on every task tool call. Combined with existing `model.token_speed` and `tool.call` outcome events, this gives empirical data to tune cascading thresholds over time.
+
+  **Why cheap-tier as separate agents (not a model-override parameter):** OpenCode's `task` tool does not accept a `model` parameter — each AgentConfig has a single hardcoded model. Implementing cascading at the agent level is the only mechanism the platform actually exposes.
+
+### Patch Changes
+
+- [#188](https://github.com/iceglober/glrs/pull/188) [`c4a2455`](https://github.com/iceglober/glrs/commit/c4a2455f3eb050f3925cb57e6ae29c037e284df2) Thanks [@iceglober](https://github.com/iceglober)! - fix(harness): recover stall-detector plugin dropped from PR [#186](https://github.com/iceglober/glrs/issues/186) squash merge
+
+  The stall-detector plugin was added in PR [#186](https://github.com/iceglober/glrs/issues/186) but the squash merge captured only the first commit of the branch, dropping the plugin file. This PR restores it: a watchdog timer that fires after each assistant message finalization and nudges the session via `client.session.promptAsync()` if no tool call arrives within 45 seconds. Based on Wink (2026) — 94% recovery rate for stalled agents using asynchronous message injection.
+
 ## 2.21.1
 
 ### Patch Changes
