@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.26.0
+
+### Minor Changes
+
+- [#203](https://github.com/iceglober/glrs/pull/203) [`5446a11`](https://github.com/iceglober/glrs/commit/5446a1189ce74861374438e876f9100911ab43c9) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): local dispatch tracker, remove TelemetryDeck, disable cheap cascading
+
+  - Remove TelemetryDeck telemetry entirely — no data leaves the machine
+  - Replace telemetry-based dispatch tracking with local file-based tracker (`~/.glrs/opencode/dispatches.jsonl` + `dispatches.json`)
+  - Add `/dispatches` command to view agent dispatch counts by tier and agent
+  - Disable cheap-tier cascading in PRIME prompts — @build/@plan (standard tier) is now the default dispatch target. Cheap cascading caused production failures (git conflicts, scope confusion, truncated output from GLM models on multi-package tasks)
+
 ## 2.25.0
 
 ### Minor Changes
