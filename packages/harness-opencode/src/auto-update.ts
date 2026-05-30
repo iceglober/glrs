@@ -57,7 +57,7 @@ export function getOpenCodeCachePackageDir(): string {
     "opencode",
     "packages",
     "@glrs-dev",
-    "harness-opencode@latest",
+    "harness-plugin-opencode@latest",
   );
 }
 
