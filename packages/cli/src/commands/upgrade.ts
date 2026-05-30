@@ -7,6 +7,7 @@
 
 import { command } from "cmd-ts";
 import { execFileSync } from "node:child_process";
+import { recordLatestVersion } from "../lib/auto-update.js";
 
 const PACKAGE_NAME = "@glrs-dev/cli";
 const REGISTRY_TIMEOUT_MS = 5000;
@@ -49,6 +50,11 @@ export const upgradeCmd = command({
       );
       process.exit(1);
     }
+
+    // Always record the fresh registry result so autoUpdate's rate-limited
+    // cache stays current — prevents stale cached version from blocking
+    // auto-upgrade on the next command.
+    recordLatestVersion(latest);
 
     if (latest === current) {
       process.stderr.write(`\x1b[32m[glrs]\x1b[0m Already on latest (${current})\n`);

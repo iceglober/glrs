@@ -55,6 +55,15 @@ function writeState(state: UpdateState): void {
 }
 
 /**
+ * Record a fresh registry result so the rate-limited autoUpdate() picks it
+ * up without waiting for the next check window. Called by `glrs upgrade`
+ * after it fetches the latest version independently.
+ */
+export function recordLatestVersion(version: string): void {
+  writeState({ lastCheckAt: Date.now(), latestVersion: version });
+}
+
+/**
  * Get the currently installed version of @glrs-dev/cli.
  */
 function getCurrentVersion(): string | null {
