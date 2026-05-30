@@ -1,5 +1,20 @@
 # @glrs-dev/cli
 
+## 2.24.1
+
+### Patch Changes
+
+- [#197](https://github.com/iceglober/glrs/pull/197) [`04765b3`](https://github.com/iceglober/glrs/commit/04765b36fb49780143c66d3d0a4f87f0446ba5f6) Thanks [@iceglober](https://github.com/iceglober)! - fix(cli): `glrs upgrade` now writes fresh registry result to auto-update state
+
+  Previously, `upgrade` and `autoUpdate` maintained separate state. If `upgrade`
+  ran during npm CDN propagation delay and cached a stale version, the 1-hour
+  rate limit prevented `autoUpdate` from re-checking on the next command.
+  Now `upgrade` writes the registry result to the shared state file so both
+  paths stay in sync.
+
+- Updated dependencies []:
+  - @glrs-dev/harness-plugin-opencode@2.24.1
+
 ## 2.24.0
 
 ### Patch Changes
