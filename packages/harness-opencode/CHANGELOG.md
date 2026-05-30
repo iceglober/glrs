@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.25.0
+
+### Minor Changes
+
+- [#201](https://github.com/iceglober/glrs/pull/201) [`4b073bf`](https://github.com/iceglober/glrs/commit/4b073bf5d8388c9fa4e14bf5e1fd0287dcf79fff) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): switch cheap tier to GLM 4.7 Flash and add tier to telemetry
+
+  - Default cheap-tier model changed from `zai.glm-5` ($1/$3.20) to `zai.glm-4.7-flash` ($0.07/$0.40) — ~12x cheaper than Haiku
+  - Add `tier` to the telemetry allowlist so `subagent.dispatch` events include the resolved tier (cheap/mid-execute/fast/deep) in TelemetryDeck
+  - Enables cascade efficacy measurement: correlate cheap-tier dispatches with escalation patterns
+
 ## 2.24.2
 
 ### Patch Changes
