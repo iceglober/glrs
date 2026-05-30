@@ -2,7 +2,7 @@
  * Static assertions for the `/fresh` command prompt and registration.
  *
  * The /fresh command implements a dispatcher-model reset: a project-committed
- * .glrs/hooks/fresh-reset (if present + executable) owns the reset
+ * .glrs/hooks/fresh_init (if present + executable) owns the reset
  * strategy; otherwise the built-in long-running-worktree flow runs. These
  * tests pin down load-bearing tokens in the prompt and catch accidental
  * regression on the hook-first dispatch semantics.
@@ -30,8 +30,8 @@ describe("fresh prompt contract", () => {
   const freshPrompt = fs.readFileSync(FRESH_PROMPT_PATH, "utf8");
   const commandsIndex = fs.readFileSync(COMMANDS_INDEX_PATH, "utf8");
 
-  it("references .glrs/hooks/fresh-reset at least twice (dispatch + hook contract)", () => {
-    const token = ".glrs/hooks/fresh-reset";
+  it("references .glrs/hooks/fresh_init at least twice (dispatch + hook contract)", () => {
+    const token = ".glrs/hooks/fresh_init";
     const occurrences = freshPrompt.split(token).length - 1;
     expect(occurrences).toBeGreaterThanOrEqual(2);
   });
