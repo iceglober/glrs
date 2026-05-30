@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.27.1
+
+### Patch Changes
+
+- [#211](https://github.com/iceglober/glrs/pull/211) [`cf0cfc2`](https://github.com/iceglober/glrs/commit/cf0cfc2e1135000cea242c74ad9e4658757e5c14) Thanks [@iceglober](https://github.com/iceglober)! - fix(harness): suppress stall detector on completion messages
+
+  The stall detector was nudging sessions that had legitimately finished — "STATUS: DONE", "no further action", "PR is open". Now checks the last message text for completion signals before firing the watchdog.
+
 ## 2.27.0
 
 ### Patch Changes
