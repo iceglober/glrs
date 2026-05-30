@@ -37,6 +37,7 @@ const initDeepPrompt = readPrompt("init-deep.md");
 const researchPrompt = readPrompt("research.md");
 const freshPrompt = readPrompt("fresh.md");
 const costsPrompt = readPrompt("costs.md");
+const dispatchesPrompt = readPrompt("dispatches.md");
 
 type CommandConfig = {
   template: string;
@@ -75,6 +76,11 @@ export function createCommands(cwd?: string): Record<string, CommandConfig> {
       template: costsPrompt,
       description:
         "Show running LLM cost totals accrued by the cost-tracker plugin. Pass --json or --log for raw data.",
+    },
+    dispatches: {
+      template: dispatchesPrompt,
+      description:
+        "Show subagent dispatch totals accrued by the dispatch-tracker plugin. Pass --json, --log, or --reset.",
     },
   };
 }

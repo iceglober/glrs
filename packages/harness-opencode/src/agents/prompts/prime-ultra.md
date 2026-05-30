@@ -205,53 +205,27 @@ For reference, the plan structure (written by `@plan-ultra`, not by you):
 - `## File-level changes` — per-file: Change, Why, Risk, Mirror (for CREATE), Verify
 - `## Non-goals`, `## Test plan`, `## Out of scope`, `## Open questions`
 
-## Cost-aware cascading — cheap-first dispatch
+## Dispatch tiers
 
-```
-START CHEAP. ESCALATE ON FAILURE.
-Based on FrugalGPT (Chen et al. 2023): up to 98% cost reduction is
-achievable by cascading from cheap models to expensive ones.
-```
-
-For `@build` and `@plan` dispatches in the wave DAG, three model tiers exist as **separate agents** (each with the same prompt, different model):
+For `@build` and `@plan` dispatches in the wave DAG, two active tiers:
 
 | Tier | Build agent | Plan agent | Default model |
 |---|---|---|---|
-| Cheap (first attempt) | `@build-cheap` | `@plan-ultra-cheap` | `amazon-bedrock/zai.glm-5` |
-| Standard (escalation 1) | `@build` | `@plan-ultra` | Sonnet (build) / Opus (plan) |
-| Deep (escalation 2) | `@build-deep` | (use `@plan-ultra`) | Opus |
+| Standard | `@build` | `@plan-ultra` | Sonnet (build) / Opus (plan) |
+| Deep (escalation) | `@build-deep` | (use `@plan-ultra`) | Opus |
 
-**Always use the `-ultra` variant for plan dispatches** — `@plan-cheap` writes plans WITHOUT execution DAGs, which breaks wave-based dispatch. Use `@plan-ultra-cheap` so you get DAG output even on the cheap tier.
+**Default dispatch:** Always use `@build` and `@plan-ultra` (standard tier). Do NOT use `@build-cheap` or `@plan-ultra-cheap` — cheap-tier cascading is disabled pending decomposition improvements.
 
-**Wave-aware default:** In your execution DAG, default each `@build` wave to `@build-cheap`. Escalate failed lanes individually to `@build` in the next wave — DON'T escalate the whole wave just because one lane failed.
-
-**Escalation triggers** (re-dispatch the SAME work to the next tier):
-- Subagent returns `BLOCKED` with model-capability signal: "couldn't parse plan format", "syntax error in generated code", "tool call malformed", "didn't understand the task"
-- `DONE_WITH_CONCERNS` where the concerns are about the model's own limitations
-- Empty or near-empty output
-- `@spec-reviewer` returns `[FAIL_SPEC]` on the cheap-tier work
-- `@code-reviewer` returns `[LOOP-TO-PLAN]` → escalate the next @plan dispatch to standard `@plan-ultra` (Opus)
+**Escalation to deep tier** — re-dispatch the SAME work to `@build-deep` when:
+- `@build` returns `BLOCKED` with a capability signal
+- `@spec-reviewer` returns `[FAIL_SPEC]` after a standard-tier attempt
+- `@code-reviewer` returns `[LOOP-TO-PLAN]` → escalate the next @plan dispatch to `@plan-ultra` (Opus)
 
 **Do NOT escalate for:**
 - Real blockers (missing dependency, broken environment, design ambiguity)
 - Scope expansion requests
-- Successful `DONE` — accept the cheap result
 
-**Wave example with cascading:**
-```
-Wave 1: @build-cheap(phase_1) + @build-cheap(phase_2) + @build-cheap(phase_3)
-  → phase_1 [DONE], phase_2 [FAIL_SPEC], phase_3 [DONE]
-Wave 2: @build(phase_2) — re-dispatch the failed lane only, escalated
-  → [PASS_SPEC] then [PASS]
-```
-
-**When to skip cheap entirely** (dispatch to `@build` directly):
-- Phase is flagged `Risk: high` in the plan
-- Security/auth/crypto/billing/migration-sensitive paths
-- > 10 files of substantial logic in the phase
-- The DAG shows this phase has dependencies that would cascade-fail expensively if it fails (e.g., 4 downstream waves)
-
-State the skip-cheap reason in your dispatch announcement so it shows up in telemetry.
+**Wave-aware escalation:** escalate failed lanes individually to `@build-deep` — DON'T escalate the whole wave just because one lane failed.
 
 ## Execute supplements
 

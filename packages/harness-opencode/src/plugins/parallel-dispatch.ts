@@ -12,7 +12,6 @@
  */
 
 import type { Plugin } from "@opencode-ai/plugin";
-import { track } from "../telemetry.js";
 
 const BUILD_PARALLEL_GUIDANCE = [
   "",
@@ -66,17 +65,6 @@ function isTaskBuild(args: unknown): boolean {
 }
 
 function flushBatch(state: DispatchState): void {
-  if (state.buildCount === 1) {
-    track("subagent.dispatch.serial", { ops_count: 1 });
-  } else if (state.buildCount > 1) {
-    track("subagent.dispatch.parallel", { ops_count: state.buildCount });
-  }
-  const nonBuildCount = state.totalTaskCount - state.buildCount;
-  if (nonBuildCount === 1) {
-    track("subagent.dispatch.serial.any", { ops_count: 1 });
-  } else if (nonBuildCount > 1) {
-    track("subagent.dispatch.parallel.any", { ops_count: nonBuildCount });
-  }
   state.buildCount = 0;
   state.totalTaskCount = 0;
 }
