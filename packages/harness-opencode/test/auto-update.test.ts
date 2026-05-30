@@ -74,7 +74,7 @@ describe("getOpenCodeCachePackageDir", () => {
     const dir = getOpenCodeCachePackageDir();
     expect(dir).toContain(path.join("opencode", "packages"));
     expect(dir).toContain("@glrs-dev");
-    expect(dir).toContain("harness-opencode@latest");
+    expect(dir).toContain("harness-plugin-opencode@latest");
   });
 
   it("honours XDG_CACHE_HOME when set", () => {
