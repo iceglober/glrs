@@ -15,7 +15,7 @@ import { command } from "cmd-ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { promptChoice, promptSearch, type SearchChoice } from "./plugin-check.js";
+import { promptChoice, promptSelect, promptSearch, type SearchChoice } from "./plugin-check.js";
 import { fetchModelsDevProviders, type ModelsDevProvider } from "./models-dev.js";
 import { writePluginOption, writeMcpToggles, writePluginToggles } from "./install.js";
 import type { ModelTier } from "../agents/index.js";
@@ -79,44 +79,66 @@ interface TierDef {
 const TIER_DEFS: TierDef[] = [
   {
     tier: "deep",
-    label: "Deep",
+    label: "deep",
     agents: "@plan, @prime, @architecture-advisor, @research, @build-deep, @code-reviewer-thorough",
   },
   {
     tier: "mid",
-    label: "Mid",
+    label: "mid",
     agents: "@build, @docs-maintainer, @lib-reader, @plan-reviewer, @debriefer, @designer",
   },
   {
     tier: "mid-execute",
-    label: "Mid-execute",
+    label: "mid-execute",
     agents: "@build, @spec-reviewer, @code-reviewer (strict executor variant)",
     fallback: "mid",
   },
   {
     tier: "autopilot-execute",
-    label: "Autopilot",
+    label: "autopilot",
     agents: "@autopilot-fast",
     fallback: "mid-execute → mid",
   },
   {
     tier: "fast",
-    label: "Fast",
+    label: "fast",
     agents: "@code-searcher",
   },
   {
     tier: "cheap",
-    label: "Cheap",
+    label: "cheap",
     agents: "@build-cheap, @plan-cheap, @plan-ultra-cheap (cascading first-pass)",
     fallback: "fast",
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Model selection — single searchable list of provider/model
-// ---------------------------------------------------------------------------
-
 const BACK_SENTINEL = "__back__";
+
+// Pad string to fixed width (visible characters only, ignoring ANSI codes)
+function pad(s: string, width: number): string {
+  // Strip ANSI escape sequences to measure visible length
+  const visible = s.replace(/\x1b\[[0-9;]*m/g, "");
+  const padding = Math.max(0, width - visible.length);
+  return s + " ".repeat(padding);
+}
+
+// Extract the short model name from a full model ID for summary display.
+// "amazon-bedrock/global.anthropic.claude-opus-4-7" → "claude-opus-4-7"
+// "anthropic/claude-sonnet-4-6" → "claude-sonnet-4-6"
+function shortModelName(fullId: string): string {
+  const afterSlash = fullId.split("/").pop() ?? fullId;
+  // Strip provider prefixes like "global.anthropic."
+  const parts = afterSlash.split(".");
+  if (parts.length > 1) {
+    const last = parts[parts.length - 1]!;
+    if (last.startsWith("claude-") || last.startsWith("haiku-")) return last;
+  }
+  return afterSlash;
+}
+
+// ---------------------------------------------------------------------------
+// Model search — flat searchable list, model IDs as primary display
+// ---------------------------------------------------------------------------
 
 function buildModelSearchChoices(
   providers: ModelsDevProvider[],
@@ -128,20 +150,21 @@ function buildModelSearchChoices(
     const models = Object.entries(provider.models);
     if (models.length === 0) continue;
 
-    for (const [modelId, model] of models) {
+    for (const [modelId] of models) {
       const fullId = `${provider.id}/${modelId}`;
-      const name = (model as any).name ?? modelId;
-      const cost = (model as any).cost;
+      const cost = (provider.models[modelId] as any)?.cost;
+
       let desc = provider.name;
       if (cost?.input != null && cost?.output != null) {
-        desc += ` · $${cost.input}/${cost.output} per 1M tok`;
+        desc += `  ·  in: $${cost.input}  out: $${cost.output}`;
       }
       if (fullId === currentModel) {
-        desc += " (current)";
+        desc += "  ✦ current";
       }
+
       choices.push({
         value: fullId,
-        name: `${provider.id}/${name}`,
+        name: fullId,
         description: desc,
         short: fullId,
       });
@@ -151,43 +174,76 @@ function buildModelSearchChoices(
   choices.push({
     value: BACK_SENTINEL,
     name: "← Back",
-    description: "Return to tier list",
+    description: "",
   });
 
   return choices;
 }
 
+// ---------------------------------------------------------------------------
+// Tier selection — two-column layout with descriptions on focus
+// ---------------------------------------------------------------------------
+
+const TIER_NAME_WIDTH = 14;
+
+function buildTierChoices(
+  currentModels: Record<string, string[]>,
+): ({ value: string; name: string; description: string; short: string } | { separator: string })[] {
+  const choices: ({ value: string; name: string; description: string; short: string } | { separator: string })[] = [];
+
+  for (const def of TIER_DEFS) {
+    const model = currentModels[def.tier]?.[0];
+    const tierLabel = pad(def.label, TIER_NAME_WIDTH);
+
+    let valuePart: string;
+    if (model) {
+      valuePart = `${c.cyan}${model}${c.reset}`;
+    } else if (def.fallback) {
+      valuePart = `${c.dim}→ ${def.fallback}${c.reset}`;
+    } else {
+      valuePart = `${c.dim}(not set)${c.reset}`;
+    }
+
+    choices.push({
+      value: def.tier,
+      name: `${tierLabel}${valuePart}`,
+      description: def.agents,
+      short: def.label,
+    });
+  }
+
+  choices.push({ separator: " " });
+  choices.push({
+    value: BACK_SENTINEL,
+    name: "← Back",
+    description: "",
+    short: "back",
+  });
+
+  return choices;
+}
+
+// ---------------------------------------------------------------------------
+// Configure: Models
+// ---------------------------------------------------------------------------
+
 async function configureModels(configPath: string, currentModels: Record<string, string[]>): Promise<void> {
-  // Fetch models once, reuse across tier selections
   info("Fetching available models…");
   const providers = await fetchModelsDevProviders();
 
   while (true) {
-    // Build tier menu with current values
-    console.log();
-    const tierChoices = TIER_DEFS.map((def) => {
-      const model = currentModels[def.tier]?.[0];
-      const fallbackNote = !model && def.fallback
-        ? `${c.dim}(falls back to ${def.fallback})${c.reset}`
-        : "";
-      const modelDisplay = model
-        ? `${c.cyan}${model}${c.reset}`
-        : `${c.dim}(not set)${c.reset} ${fallbackNote}`;
-      return `${c.bold}${def.label}${c.reset}  ${modelDisplay}\n    ${c.dim}${def.agents}${c.reset}`;
-    });
-    tierChoices.push("← Back");
+    const tierChoices = buildTierChoices(currentModels);
+    const selected = await promptSelect("Which tier?", tierChoices, BACK_SENTINEL);
+    if (selected === BACK_SENTINEL) return;
 
-    const tierIdx = await promptChoice("Which tier to change?", tierChoices, tierChoices.length - 1);
-    if (tierIdx >= TIER_DEFS.length) return;
-
-    const def = TIER_DEFS[tierIdx]!;
+    const def = TIER_DEFS.find((d) => d.tier === selected)!;
     const currentModel = currentModels[def.tier]?.[0];
 
     if (!providers || providers.length === 0) {
       console.log(`${c.yellow}!${c.reset} Could not reach Models.dev API. Enter model ID manually.`);
       const { input } = await import("@inquirer/prompts");
       const modelId = await input({
-        message: `  ${def.tier} model ID:`,
+        message: `${def.label} model ID:`,
         default: currentModel ?? "",
       });
       if (modelId) {
@@ -200,37 +256,30 @@ async function configureModels(configPath: string, currentModels: Record<string,
     }
 
     const choices = buildModelSearchChoices(providers, currentModel);
-    const selected = await promptSearch(
-      `${def.label} model (type to search):`,
+    const selectedModel = await promptSearch(
+      `${def.label} model (type to filter):`,
       choices,
       BACK_SENTINEL,
     );
 
-    if (selected === BACK_SENTINEL) continue;
+    if (selectedModel === BACK_SENTINEL) continue;
 
-    if (selected === "") {
-      // Clear the tier override
-      const newModels = { ...currentModels };
-      delete newModels[def.tier];
-      writePluginOption(configPath, "models", newModels, { dryRun: false });
-      Object.assign(currentModels, newModels);
-      ok(`${def.label} tier cleared (will use fallback)`);
-    } else {
-      const newModels = { ...currentModels, [def.tier]: [selected] };
-      writePluginOption(configPath, "models", newModels, { dryRun: false });
-      Object.assign(currentModels, { [def.tier]: [selected] });
-      ok(`${def.label} → ${selected}`);
-    }
+    const newModels = { ...currentModels, [def.tier]: [selectedModel] };
+    writePluginOption(configPath, "models", newModels, { dryRun: false });
+    Object.assign(currentModels, { [def.tier]: [selectedModel] });
+    ok(`${def.label} → ${selectedModel}`);
   }
 }
 
+// ---------------------------------------------------------------------------
+// Configure: Notifications
+// ---------------------------------------------------------------------------
+
 async function configureNotifications(configPath: string, currentNotifyUrl: string | undefined): Promise<string | undefined> {
-  console.log(`\n${c.bold}Notifications configuration:${c.reset}\n`);
-  if (currentNotifyUrl) {
-    console.log(`  Current webhook URL: ${c.cyan}${currentNotifyUrl}${c.reset}\n`);
-  } else {
-    console.log(`  ${c.dim}No webhook URL configured.${c.reset}\n`);
-  }
+  const urlDisplay = currentNotifyUrl
+    ? `${c.cyan}${currentNotifyUrl}${c.reset}`
+    : `${c.dim}none${c.reset}`;
+  console.log(`\n  Webhook: ${urlDisplay}\n`);
 
   const choices = [
     "Set Slack incoming webhook URL",
@@ -240,10 +289,9 @@ async function configureNotifications(configPath: string, currentNotifyUrl: stri
   ];
   const choice = await promptChoice("Notifications:", choices, choices.length - 1);
 
-  if (choice === choices.length - 1) return currentNotifyUrl; // Back
+  if (choice === choices.length - 1) return currentNotifyUrl;
 
   if (choice === 2) {
-    // Clear — write null to the plugin option
     writeNotifyUrl(configPath, undefined);
     ok("Webhook URL cleared.");
     return undefined;
@@ -251,8 +299,8 @@ async function configureNotifications(configPath: string, currentNotifyUrl: stri
 
   const { input } = await import("@inquirer/prompts");
   const prompt = choice === 0
-    ? "  Slack incoming webhook URL (https://hooks.slack.com/...):"
-    : "  Webhook URL:";
+    ? "Slack incoming webhook URL:"
+    : "Webhook URL:";
   const url = await input({
     message: prompt,
     default: currentNotifyUrl ?? "",
@@ -260,7 +308,7 @@ async function configureNotifications(configPath: string, currentNotifyUrl: stri
 
   if (url) {
     writeNotifyUrl(configPath, url);
-    ok(`Webhook URL set: ${url}`);
+    ok(`Webhook URL set.`);
     return url;
   }
 
@@ -305,6 +353,10 @@ function writeNotifyUrl(configPath: string, url: string | undefined): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Main menu
+// ---------------------------------------------------------------------------
+
 export const configureCmd = command({
   name: "configure",
   description: "Interactively edit opencode.json settings — models, MCPs, plugin add-ons.",
@@ -322,15 +374,14 @@ export const configureCmd = command({
     const models: Record<string, string[]> = opts?.models ?? {};
     let notifyUrl: string | undefined = opts?.notifyUrl as string | undefined;
 
-    console.log(`\n${c.bold}${c.blue}glrs oc configure${c.reset}\n`);
+    console.log(`\n${c.bold}glrs harness configure${c.reset}\n`);
 
     while (true) {
-      // Compact status line for each tier
-      const tierSummary = TIER_DEFS.map((def) => {
-        const model = models[def.tier]?.[0];
-        const short = model ? model.split("/").pop() : (def.fallback ? `→${def.fallback}` : "–");
-        return `${def.label}: ${short}`;
-      }).join(", ");
+      const deepShort = shortModelName(models.deep?.[0] ?? "");
+      const midShort = shortModelName(models.mid?.[0] ?? "");
+      const modelSummary = deepShort && midShort
+        ? `deep: ${deepShort}  ·  mid: ${midShort}`
+        : deepShort || midShort || "(not configured)";
 
       const mcpEnabled = Object.entries(config.mcp ?? {})
         .filter(([, v]: [string, any]) => v?.enabled)
@@ -342,7 +393,7 @@ export const configureCmd = command({
         : "none";
 
       const sections = [
-        `Models — ${tierSummary}`,
+        `Models\n    ${c.dim}${modelSummary}${c.reset}`,
         `MCPs — ${mcpEnabled.length > 0 ? mcpEnabled.join(", ") : "none"}`,
         `Notifications — ${notifyLabel}`,
         "Done",
@@ -351,13 +402,12 @@ export const configureCmd = command({
       const choice = await promptChoice("What to configure?", sections, sections.length - 1);
 
       if (choice === sections.length - 1) {
-        console.log(`\n${c.bold}Done.${c.reset} Restart opencode to pick up changes.\n`);
+        console.log(`\nRestart opencode to pick up changes.\n`);
         break;
       }
 
       if (choice === 0) {
         await configureModels(configPath, models);
-        // Re-read config after changes
         const updated = readConfig(configPath);
         if (updated) {
           const updatedOpts = extractPluginOptions(updated);
@@ -368,7 +418,6 @@ export const configureCmd = command({
       }
 
       if (choice === 1) {
-        // MCP toggles
         const { promptMulti } = await import("./plugin-check.js");
         const MCP_TOGGLES = [
           { name: "playwright", label: "Playwright — browser automation" },
@@ -388,7 +437,6 @@ export const configureCmd = command({
       }
 
       if (choice === 2) {
-        // Notifications
         notifyUrl = await configureNotifications(configPath, notifyUrl);
       }
     }
