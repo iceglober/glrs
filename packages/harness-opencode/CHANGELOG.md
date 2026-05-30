@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.24.0
+
+### Minor Changes
+
+- [#195](https://github.com/iceglober/glrs/pull/195) [`6244a31`](https://github.com/iceglober/glrs/commit/6244a31f733cd54529b12906726139bb4e925f78) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): searchable model picker and full tier coverage in `configure`
+
+  - Replace the two-step provider→model selection with a single searchable list (type to filter by provider, model name, or cost)
+  - Add missing `cheap` tier so cascading-first-pass models are configurable
+  - Show all 6 tiers (deep, mid, mid-execute, autopilot, fast, cheap) with their agent lists and fallback chains
+  - Fetch models once per session instead of per-tier-change
+
 ## 2.23.1
 
 ### Patch Changes
