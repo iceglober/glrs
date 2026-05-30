@@ -155,24 +155,26 @@ set -euo pipefail
 # cd "$1" && pnpm install
 `,
   "hooks/fresh_init": `#!/usr/bin/env bash
-# Runs during \`/fresh\` to reset the worktree for a new task.
+# REPLACES the built-in /fresh reset when present + executable.
+# If this hook exists, /fresh will NOT run its own git reset/checkout —
+# this hook owns the entire reset strategy. Remove this file to use
+# the built-in flow instead.
+#
 # Receives env: WORKTREE_DIR, WORKTREE_NAME, OLD_BRANCH, NEW_BRANCH, BASE_BRANCH
 set -euo pipefail
 
 cd "$WORKTREE_DIR"
 
-# Reset git state
+# --- Git reset (required — the built-in won't run) ---
 git reset --hard HEAD
 git clean -fdx
+git fetch origin "\${BASE_BRANCH:-main}" --prune
+git checkout -b "$NEW_BRANCH" "origin/\${BASE_BRANCH:-main}"
 
-# Fetch and checkout new branch
-DEFAULT_BRANCH="\${BASE_BRANCH:-main}"
-git fetch origin "$DEFAULT_BRANCH" --prune
-git checkout -b "$NEW_BRANCH" "origin/$DEFAULT_BRANCH"
-
-# Example: reinstall deps, reset env
+# --- Project-specific setup (the reason to use a hook) ---
 # pnpm install
 # cp .env.template .env
+# docker compose -p "$WORKTREE_NAME" down --remove-orphans 2>/dev/null || true
 `,
 };
 
