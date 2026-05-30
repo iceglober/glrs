@@ -195,11 +195,13 @@ const plugin: Plugin = async (input, options) => {
   const hasToolHooksAfter = toolHooks["tool.execute.after"] !== undefined;
   const hasParallelAfter = parallelDispatchHooks["tool.execute.after"] !== undefined;
   const hasDispatchAfter = dispatchTrackerHooks["tool.execute.after"] !== undefined;
-  if (hasToolHooksAfter || hasParallelAfter || hasDispatchAfter) {
+  const hasStallAfter = stallDetectorHooks["tool.execute.after"] !== undefined;
+  if (hasToolHooksAfter || hasParallelAfter || hasDispatchAfter || hasStallAfter) {
     hooks["tool.execute.after"] = async (input, output) => {
       if (hasToolHooksAfter) await toolHooks["tool.execute.after"]!(input, output);
       if (hasParallelAfter) await parallelDispatchHooks["tool.execute.after"]!(input, output);
       if (hasDispatchAfter) await dispatchTrackerHooks["tool.execute.after"]!(input, output);
+      if (hasStallAfter) await stallDetectorHooks["tool.execute.after"]!(input, output);
     };
   }
 
