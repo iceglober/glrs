@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { select, checkbox, confirm } from "@inquirer/prompts";
+import { select, checkbox, confirm, search } from "@inquirer/prompts";
 
 const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
 
@@ -101,4 +101,35 @@ export async function promptMulti(
   return new Set(answers);
 }
 
+export interface SearchChoice<T> {
+  value: T;
+  name: string;
+  description?: string;
+  short?: string;
+}
 
+/**
+ * Interactive prompt: searchable list. User types to filter, arrow keys to
+ * select. Returns the chosen value, or `fallback` for non-TTY.
+ */
+export async function promptSearch<T>(
+  question: string,
+  choices: SearchChoice<T>[],
+  fallback: T,
+): Promise<T> {
+  if (!process.stdin.isTTY) return fallback;
+
+  return search({
+    message: question,
+    pageSize: 15,
+    source: (term) => {
+      if (!term) return choices;
+      const lower = term.toLowerCase();
+      return choices.filter(
+        (c) =>
+          c.name.toLowerCase().includes(lower) ||
+          (c.description?.toLowerCase().includes(lower) ?? false),
+      );
+    },
+  });
+}

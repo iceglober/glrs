@@ -15,9 +15,10 @@ import { command } from "cmd-ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { promptChoice } from "./plugin-check.js";
+import { promptChoice, promptSearch, type SearchChoice } from "./plugin-check.js";
 import { fetchModelsDevProviders, type ModelsDevProvider } from "./models-dev.js";
 import { writePluginOption, writeMcpToggles, writePluginToggles } from "./install.js";
+import type { ModelTier } from "../agents/index.js";
 
 const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
 
@@ -64,103 +65,163 @@ function extractPluginOptions(config: Record<string, any>): Record<string, any> 
   return null;
 }
 
-const TIER_LABELS: Record<string, string> = {
-  deep: "@plan, @prime, @architecture-advisor",
-  mid: "@build, @docs-maintainer, @lib-reader",
-  "mid-execute": "@build, @spec-reviewer, @code-reviewer (overrides mid when set)",
-  "autopilot-execute": "autopilot --fast",
-  fast: "@code-searcher",
-};
+// ---------------------------------------------------------------------------
+// Tier definitions — every tier from agents/index.ts ModelTier
+// ---------------------------------------------------------------------------
 
-const TIERS = ["deep", "mid", "mid-execute", "autopilot-execute", "fast"] as const;
+interface TierDef {
+  tier: ModelTier;
+  label: string;
+  agents: string;
+  fallback?: string;
+}
 
-async function configureModels(configPath: string, currentModels: Record<string, string[]>): Promise<void> {
-  // Show current config
-  console.log(`\n${c.bold}Current model configuration:${c.reset}\n`);
-  for (const tier of TIERS) {
-    const model = currentModels[tier]?.[0] ?? "(not set)";
-    const label = TIER_LABELS[tier] ?? tier;
-    console.log(`  ${c.cyan}${label}${c.reset}`);
-    console.log(`    ${model}\n`);
-  }
-  console.log();
+const TIER_DEFS: TierDef[] = [
+  {
+    tier: "deep",
+    label: "Deep",
+    agents: "@plan, @prime, @architecture-advisor, @research, @build-deep, @code-reviewer-thorough",
+  },
+  {
+    tier: "mid",
+    label: "Mid",
+    agents: "@build, @docs-maintainer, @lib-reader, @plan-reviewer, @debriefer, @designer",
+  },
+  {
+    tier: "mid-execute",
+    label: "Mid-execute",
+    agents: "@build, @spec-reviewer, @code-reviewer (strict executor variant)",
+    fallback: "mid",
+  },
+  {
+    tier: "autopilot-execute",
+    label: "Autopilot",
+    agents: "@autopilot-fast",
+    fallback: "mid-execute → mid",
+  },
+  {
+    tier: "fast",
+    label: "Fast",
+    agents: "@code-searcher",
+  },
+  {
+    tier: "cheap",
+    label: "Cheap",
+    agents: "@build-cheap, @plan-cheap, @plan-ultra-cheap (cascading first-pass)",
+    fallback: "fast",
+  },
+];
 
-  // Which tier to change?
-  const tierChoices = [
-    ...TIERS.map((t) => {
-      const label = TIER_LABELS[t] ?? t;
-      const model = currentModels[t]?.[0] ?? "(not set)";
-      return `${label}  →  ${model}`;
-    }),
-    "← Back",
-  ];
-  const tierIdx = await promptChoice("Which tier to change?", tierChoices, tierChoices.length - 1);
-  if (tierIdx >= TIERS.length) return; // Back
+// ---------------------------------------------------------------------------
+// Model selection — single searchable list of provider/model
+// ---------------------------------------------------------------------------
 
-  const tier = TIERS[tierIdx];
+const BACK_SENTINEL = "__back__";
 
-  // Fetch available models
-  info("Fetching available models…");
-  const providers = await fetchModelsDevProviders();
+function buildModelSearchChoices(
+  providers: ModelsDevProvider[],
+  currentModel: string | undefined,
+): SearchChoice<string>[] {
+  const choices: SearchChoice<string>[] = [];
 
-  if (!providers || providers.length === 0) {
-    console.log(`${c.yellow}!${c.reset} Could not reach Models.dev API. Enter model ID manually.`);
-    const { input } = await import("@inquirer/prompts");
-    const modelId = await input({
-      message: `  ${tier} model ID:`,
-      default: currentModels[tier]?.[0] ?? "",
-    });
-    if (modelId) {
-      const newModels = { ...currentModels, [tier]: [modelId] };
-      writePluginOption(configPath, "models", newModels, { dryRun: false });
-    }
-    return;
-  }
-
-  // Build a flat list of all models across all providers
-  const allModels: Array<{ id: string; provider: string; name: string }> = [];
   for (const provider of providers) {
-    for (const [modelId, model] of Object.entries(provider.models)) {
-      allModels.push({
-        id: `${provider.id}/${modelId}`,
-        provider: provider.name,
-        name: (model as any).name ?? modelId,
+    const models = Object.entries(provider.models);
+    if (models.length === 0) continue;
+
+    for (const [modelId, model] of models) {
+      const fullId = `${provider.id}/${modelId}`;
+      const name = (model as any).name ?? modelId;
+      const cost = (model as any).cost;
+      let desc = provider.name;
+      if (cost?.input != null && cost?.output != null) {
+        desc += ` · $${cost.input}/${cost.output} per 1M tok`;
+      }
+      if (fullId === currentModel) {
+        desc += " (current)";
+      }
+      choices.push({
+        value: fullId,
+        name: `${provider.id}/${name}`,
+        description: desc,
+        short: fullId,
       });
     }
   }
 
-  // Group by provider for display
-  const byProvider = new Map<string, typeof allModels>();
-  for (const m of allModels) {
-    if (!byProvider.has(m.provider)) byProvider.set(m.provider, []);
-    byProvider.get(m.provider)!.push(m);
+  choices.push({
+    value: BACK_SENTINEL,
+    name: "← Back",
+    description: "Return to tier list",
+  });
+
+  return choices;
+}
+
+async function configureModels(configPath: string, currentModels: Record<string, string[]>): Promise<void> {
+  // Fetch models once, reuse across tier selections
+  info("Fetching available models…");
+  const providers = await fetchModelsDevProviders();
+
+  while (true) {
+    // Build tier menu with current values
+    console.log();
+    const tierChoices = TIER_DEFS.map((def) => {
+      const model = currentModels[def.tier]?.[0];
+      const fallbackNote = !model && def.fallback
+        ? `${c.dim}(falls back to ${def.fallback})${c.reset}`
+        : "";
+      const modelDisplay = model
+        ? `${c.cyan}${model}${c.reset}`
+        : `${c.dim}(not set)${c.reset} ${fallbackNote}`;
+      return `${c.bold}${def.label}${c.reset}  ${modelDisplay}\n    ${c.dim}${def.agents}${c.reset}`;
+    });
+    tierChoices.push("← Back");
+
+    const tierIdx = await promptChoice("Which tier to change?", tierChoices, tierChoices.length - 1);
+    if (tierIdx >= TIER_DEFS.length) return;
+
+    const def = TIER_DEFS[tierIdx]!;
+    const currentModel = currentModels[def.tier]?.[0];
+
+    if (!providers || providers.length === 0) {
+      console.log(`${c.yellow}!${c.reset} Could not reach Models.dev API. Enter model ID manually.`);
+      const { input } = await import("@inquirer/prompts");
+      const modelId = await input({
+        message: `  ${def.tier} model ID:`,
+        default: currentModel ?? "",
+      });
+      if (modelId) {
+        const newModels = { ...currentModels, [def.tier]: [modelId] };
+        writePluginOption(configPath, "models", newModels, { dryRun: false });
+        Object.assign(currentModels, { [def.tier]: [modelId] });
+        ok(`${def.label} → ${modelId}`);
+      }
+      continue;
+    }
+
+    const choices = buildModelSearchChoices(providers, currentModel);
+    const selected = await promptSearch(
+      `${def.label} model (type to search):`,
+      choices,
+      BACK_SENTINEL,
+    );
+
+    if (selected === BACK_SENTINEL) continue;
+
+    if (selected === "") {
+      // Clear the tier override
+      const newModels = { ...currentModels };
+      delete newModels[def.tier];
+      writePluginOption(configPath, "models", newModels, { dryRun: false });
+      Object.assign(currentModels, newModels);
+      ok(`${def.label} tier cleared (will use fallback)`);
+    } else {
+      const newModels = { ...currentModels, [def.tier]: [selected] };
+      writePluginOption(configPath, "models", newModels, { dryRun: false });
+      Object.assign(currentModels, { [def.tier]: [selected] });
+      ok(`${def.label} → ${selected}`);
+    }
   }
-
-  // First pick provider
-  const providerNames = [...byProvider.keys()];
-  providerNames.push("← Back");
-  const providerIdx = await promptChoice(`Provider for ${tier}:`, providerNames, 0);
-  if (providerIdx >= providerNames.length - 1) return;
-
-  const providerModels = byProvider.get(providerNames[providerIdx])!;
-  const modelChoices = providerModels.map((m) => m.id);
-  modelChoices.push("← Back");
-
-  // Find current model in the list for default selection
-  const currentModel = currentModels[tier]?.[0] ?? "";
-  const currentIdx = modelChoices.indexOf(currentModel);
-
-  const modelIdx = await promptChoice(
-    `${tier} model:`,
-    modelChoices,
-    currentIdx >= 0 ? currentIdx : 0,
-  );
-  if (modelIdx >= modelChoices.length - 1) return;
-
-  const selectedModel = modelChoices[modelIdx];
-  const newModels = { ...currentModels, [tier]: [selectedModel] };
-  writePluginOption(configPath, "models", newModels, { dryRun: false });
-  ok(`${tier} → ${selectedModel}`);
 }
 
 async function configureNotifications(configPath: string, currentNotifyUrl: string | undefined): Promise<string | undefined> {
@@ -206,11 +267,6 @@ async function configureNotifications(configPath: string, currentNotifyUrl: stri
   return currentNotifyUrl;
 }
 
-/**
- * Write the notifyUrl plugin option directly to the config file.
- * Uses the same plugin-entry lookup as writePluginOption but handles
- * the "notifyUrl" key which is not in writePluginOption's allowed set.
- */
 function writeNotifyUrl(configPath: string, url: string | undefined): void {
   try {
     if (!fs.existsSync(configPath)) return;
@@ -269,12 +325,12 @@ export const configureCmd = command({
     console.log(`\n${c.bold}${c.blue}glrs oc configure${c.reset}\n`);
 
     while (true) {
-      // Show current state summary
-      const deepModel = models.deep?.[0] ?? "(not set)";
-      const midModel = models.mid?.[0] ?? "(not set)";
-      const midExecModel = models["mid-execute"]?.[0] ?? "(not set)";
-      const autopilotExecModel = models["autopilot-execute"]?.[0] ?? `(falls back to ${midExecModel})`;
-      const fastModel = models.fast?.[0] ?? "(not set)";
+      // Compact status line for each tier
+      const tierSummary = TIER_DEFS.map((def) => {
+        const model = models[def.tier]?.[0];
+        const short = model ? model.split("/").pop() : (def.fallback ? `→${def.fallback}` : "–");
+        return `${def.label}: ${short}`;
+      }).join(", ");
 
       const mcpEnabled = Object.entries(config.mcp ?? {})
         .filter(([, v]: [string, any]) => v?.enabled)
@@ -286,7 +342,7 @@ export const configureCmd = command({
         : "none";
 
       const sections = [
-        `Models — deep: ${deepModel.split("/").pop()}, autopilot --fast: ${autopilotExecModel.split("/").pop()}`,
+        `Models — ${tierSummary}`,
         `MCPs — ${mcpEnabled.length > 0 ? mcpEnabled.join(", ") : "none"}`,
         `Notifications — ${notifyLabel}`,
         "Done",
