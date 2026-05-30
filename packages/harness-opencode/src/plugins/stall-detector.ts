@@ -27,11 +27,25 @@ const NUDGE_MESSAGE =
   "but no tool call followed. Execute the action now. " +
   "If you're blocked, say so explicitly with a STOP or BLOCKED status.";
 
+// Messages ending with these patterns are completions, not stalls.
+const DONE_PATTERNS = [
+  /\bSTATUS:\s*DONE\b/i,
+  /\bSTOP\b.*\b(complete|done|no.*action|no.*pending)\b/i,
+  /\b(work|task|PR|issue)\b.*\b(complete|done|shipped|merged|open)\b/i,
+  /\bno\s+(further|pending|remaining)\s+action\b/i,
+];
+
+function looksComplete(text: string): boolean {
+  const tail = text.slice(-500);
+  return DONE_PATTERNS.some((p) => p.test(tail));
+}
+
 interface SessionState {
   watchdog: ReturnType<typeof setTimeout> | null;
   nudgeCount: number;
   lastToolCallTs: number;
   lastMessageTs: number;
+  lastMessageText: string;
   activeToolCalls: number;
 }
 
@@ -40,7 +54,7 @@ const sessions = new Map<string, SessionState>();
 function getState(sessionId: string): SessionState {
   let s = sessions.get(sessionId);
   if (!s) {
-    s = { watchdog: null, nudgeCount: 0, lastToolCallTs: 0, lastMessageTs: 0, activeToolCalls: 0 };
+    s = { watchdog: null, nudgeCount: 0, lastToolCallTs: 0, lastMessageTs: 0, lastMessageText: "", activeToolCalls: 0 };
     sessions.set(sessionId, s);
   }
   return s;
@@ -64,10 +78,11 @@ const plugin: Plugin = async (input) => {
     state.watchdog = setTimeout(async () => {
       state.watchdog = null;
 
-      // Not stalled if a tool call happened since the message, or if
-      // tool calls (subagents, background tasks) are still in-flight.
+      // Not stalled if a tool call happened since the message, if
+      // tool calls are in-flight, or if the message is a completion.
       if (state.lastToolCallTs > state.lastMessageTs) return;
       if (state.activeToolCalls > 0) return;
+      if (looksComplete(state.lastMessageText)) return;
 
       state.nudgeCount++;
 
@@ -106,6 +121,7 @@ const plugin: Plugin = async (input) => {
         const info = event.properties?.info as {
           role?: string;
           sessionID?: string;
+          content?: string;
           time?: { completed?: number | null };
         } | undefined;
 
@@ -117,6 +133,7 @@ const plugin: Plugin = async (input) => {
         // Message finalized — the model stopped generating
         if (info.time?.completed != null) {
           state.lastMessageTs = Date.now();
+          state.lastMessageText = typeof info.content === "string" ? info.content : "";
           startWatchdog(info.sessionID, state);
         } else {
           // Still streaming — reset the watchdog
