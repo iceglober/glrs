@@ -227,6 +227,32 @@ For `@build` and `@plan` dispatches in the wave DAG, two active tiers:
 
 **Wave-aware escalation:** escalate failed lanes individually to `@build-deep` — DON'T escalate the whole wave just because one lane failed.
 
+## Task decomposition — mandatory before dispatch
+
+Do NOT dispatch an entire plan phase as a single `@build` call. A phase that spans multiple packages or touches >3 files MUST be decomposed into atomic per-file subtasks first.
+
+**Rule:** Each `@build` dispatch should target ONE file (or a tightly coupled pair in the same package). If a phase's file-level changes list has 6 entries across 4 packages, that's 4-6 separate `@build` dispatches — not one monolithic call.
+
+**Anti-pattern (caused production failures):**
+```
+BAD:  @build("Execute Phase 1 — the entire unbilled appointments feature")
+      → agent touches 6 files across core/contracts/api-server/web-app
+      → git conflicts, scope confusion, truncated output
+```
+
+**Correct decomposition:**
+```
+GOOD: Wave 1: @build("Add listUnbilledEncounters method to encounter/model.ts")
+      Wave 1: @build("Create rcm-unbilled.contract.ts in api-contracts")
+      Wave 2: @build("Add unbilled route to rcm.router.ts")  ← depends on contract
+      Wave 2: @build("Create UnbilledTable component in web-app")
+      Wave 3: @build("Create unbilled page.tsx wiring component + route")  ← depends on component
+```
+
+**When a phase spans multiple packages** (e.g., `@kn/core` + `@kn/api-contracts` + `@kn/api-server` + `@kn/web-app`), decompose along package boundaries at minimum. Cross-package dispatches fail because the agent can't hold the full dependency context.
+
+**When parallel lanes share a worktree:** dispatch sequentially (one `@build` at a time) or use worktree isolation per lane. Never run parallel code-writing agents on the same working tree — they corrupt each other's git state.
+
 ## Execute supplements
 
 ### Pre-dispatch consistency check
