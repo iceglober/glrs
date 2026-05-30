@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeEach, mock, spyOn } from "bun:test";
+import { describe, it, expect, beforeEach } from "bun:test";
 import pluginFactory from "../src/plugins/parallel-dispatch.js";
-import * as telemetry from "../src/telemetry.js";
 
 async function getHook() {
   const hooks = await (pluginFactory as any)();
@@ -88,46 +87,5 @@ describe("parallel-dispatch hook", () => {
       output,
     );
     expect(output.output).toContain("[PARALLEL DISPATCH REMINDER]");
-  });
-});
-
-describe("parallel-dispatch telemetry", () => {
-  let hook: Awaited<ReturnType<typeof getHook>>;
-  const calls: Array<[string, Record<string, unknown>]> = [];
-
-  beforeEach(async () => {
-    hook = await getHook();
-    calls.length = 0;
-    spyOn(telemetry, "track").mockImplementation(((name: string, props: Record<string, unknown>) => {
-      calls.push([name, props]);
-    }) as typeof telemetry.track);
-  });
-
-  it("emits subagent.dispatch.serial for a single @build batch", async () => {
-    await hook(buildInput("telem-1"), { output: "" });
-    expect(calls).toHaveLength(0);
-
-    const original = Date.now;
-    Date.now = () => original() + 6000;
-    await hook(buildInput("telem-1"), { output: "" });
-    Date.now = original;
-
-    expect(calls).toEqual([["subagent.dispatch.serial", { ops_count: 1 }]]);
-  });
-
-  it("emits subagent.dispatch.parallel for batched @build calls", async () => {
-    await hook(buildInput("telem-2"), { output: "" });
-    await hook(buildInput("telem-2"), { output: "" });
-    await hook(buildInput("telem-2"), { output: "" });
-
-    const callsBefore = calls.length;
-
-    const original = Date.now;
-    Date.now = () => original() + 6000;
-    await hook(buildInput("telem-2"), { output: "" });
-    Date.now = original;
-
-    const newCalls = calls.slice(callsBefore);
-    expect(newCalls).toEqual([["subagent.dispatch.parallel", { ops_count: 3 }]]);
   });
 });

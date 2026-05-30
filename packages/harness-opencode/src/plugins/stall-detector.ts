@@ -17,7 +17,6 @@
  */
 
 import type { Plugin } from "@opencode-ai/plugin";
-import { track } from "../telemetry.js";
 
 const STALL_TIMEOUT_MS = 45_000;
 const MAX_NUDGES_PER_SESSION = 3;
@@ -68,9 +67,6 @@ const plugin: Plugin = async (input) => {
       if (state.lastToolCallTs > state.lastMessageTs) return;
 
       state.nudgeCount++;
-      track("agent.stall.nudge", {
-        ops_count: state.nudgeCount,
-      });
 
       try {
         await client.session.promptAsync({

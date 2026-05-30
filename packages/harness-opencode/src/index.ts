@@ -34,11 +34,11 @@ import {
 // config interpolation resolves {env:VAR} references.
 import { loadDotenv } from "./plugins/dotenv.js";
 
-// Sub-plugins (OS notifications + cost tracking + tool output middleware + telemetry)
+// Sub-plugins (OS notifications + cost tracking + tool output middleware +
+// parallel dispatch + stall detection + dispatch tracking)
 import notifyPlugin from "./plugins/notify.js";
 import costTrackerPlugin from "./plugins/cost-tracker.js";
 import toolHooksPlugin from "./plugins/tool-hooks.js";
-import telemetryPlugin from "./plugins/telemetry.js";
 import parallelDispatchPlugin from "./plugins/parallel-dispatch.js";
 import stallDetectorPlugin from "./plugins/stall-detector.js";
 import dispatchTrackerPlugin from "./plugins/dispatch-tracker.js";
@@ -134,7 +134,6 @@ const plugin: Plugin = async (input, options) => {
   const notifyHooks = await notifyPlugin(input);
   const costTrackerHooks = await costTrackerPlugin(input);
   const toolHooks = await toolHooksPlugin(input, pluginOptions);
-  const telemetryHooks = await telemetryPlugin(input);
   const parallelDispatchHooks = await parallelDispatchPlugin(input);
   const stallDetectorHooks = await stallDetectorPlugin(input);
   const dispatchTrackerHooks = await dispatchTrackerPlugin(input);
@@ -166,15 +165,13 @@ const plugin: Plugin = async (input, options) => {
     event: async (input) => {
       if (notifyHooks.event) await notifyHooks.event(input);
       if (costTrackerHooks.event) await costTrackerHooks.event(input);
-      if (telemetryHooks.event) await telemetryHooks.event(input);
       if (stallDetectorHooks.event) await stallDetectorHooks.event(input);
     },
   };
 
-  // tool.execute.before — block question tool in headless mode + telemetry timing.
+  // tool.execute.before — block question tool in headless mode + stall detector.
   // Throwing from tool.execute.before is the documented "deny this tool execution"
   // signal. The LLM gets an error response instead of a blocking prompt.
-  const hasTelemetryBefore = telemetryHooks["tool.execute.before"] !== undefined;
   hooks["tool.execute.before"] = async (input, output) => {
     // Block the question tool in headless autopilot mode. The Ralph loop
     // sets GLRS_AUTOPILOT_HEADLESS=1; throwing here prevents the tool from
@@ -188,25 +185,21 @@ const plugin: Plugin = async (input, options) => {
         "Pick a sensible default and continue without asking the user.",
       );
     }
-    if (hasTelemetryBefore) await telemetryHooks["tool.execute.before"]!(input, output);
     if (stallDetectorHooks["tool.execute.before"]) await stallDetectorHooks["tool.execute.before"]!(input, output);
   };
 
   // tool.execute.after — chain tool-hooks middleware (backpressure, verify
-  // loop, loop detection, read dedup) + telemetry event emission.
+  // loop, loop detection, read dedup) + parallel dispatch + dispatch tracking.
   // tool-hooks runs first so its output mutations (e.g. backpressure
-  // truncation) are visible to the agent; telemetry runs second and
-  // observes the final output shape.
+  // truncation) are visible to the agent.
   const hasToolHooksAfter = toolHooks["tool.execute.after"] !== undefined;
-  const hasTelemetryAfter = telemetryHooks["tool.execute.after"] !== undefined;
   const hasParallelAfter = parallelDispatchHooks["tool.execute.after"] !== undefined;
   const hasDispatchAfter = dispatchTrackerHooks["tool.execute.after"] !== undefined;
-  if (hasToolHooksAfter || hasTelemetryAfter || hasParallelAfter || hasDispatchAfter) {
+  if (hasToolHooksAfter || hasParallelAfter || hasDispatchAfter) {
     hooks["tool.execute.after"] = async (input, output) => {
       if (hasToolHooksAfter) await toolHooks["tool.execute.after"]!(input, output);
       if (hasParallelAfter) await parallelDispatchHooks["tool.execute.after"]!(input, output);
       if (hasDispatchAfter) await dispatchTrackerHooks["tool.execute.after"]!(input, output);
-      if (hasTelemetryAfter) await telemetryHooks["tool.execute.after"]!(input, output);
     };
   }
 
