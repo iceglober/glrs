@@ -21,11 +21,11 @@ function readPrompt(name: string): string {
 }
 
 function readExtension(commandName: string, cwd: string): string {
-  const extPath = join(cwd, ".glrs", "extensions", `post-${commandName}.md`);
+  const extPath = join(cwd, ".glrs", "extensions", `${commandName}.md`);
   if (!existsSync(extPath)) return "";
   try {
     const content = readFileSync(extPath, "utf8").trim();
-    return `\n\n## Post-${commandName} extension (from .glrs/extensions/post-${commandName}.md)\n\n${content}`;
+    return `\n\n## Extension (from .glrs/extensions/${commandName}.md)\n\n${content}`;
   } catch {
     return "";
   }
@@ -54,21 +54,21 @@ export function createCommands(cwd?: string): Record<string, CommandConfig> {
         "Finalize, commit, push, and open a PR/MR. Human-gated at each step.",
     },
     review: {
-      template: reviewPrompt,
+      template: reviewPrompt + readExtension("review", dir),
       description:
         "Adversarial read-only review of a PR, current branch, commit range, or file.",
     },
     "init-deep": {
-      template: initDeepPrompt,
+      template: initDeepPrompt + readExtension("init-deep", dir),
       description:
         "Generate hierarchical AGENTS.md files for the current repo.",
     },
     research: {
-      template: researchPrompt,
+      template: researchPrompt + readExtension("research", dir),
       description: "Deep codebase exploration via parallel subagents.",
     },
     fresh: {
-      template: freshPrompt,
+      template: freshPrompt + readExtension("fresh", dir),
       description:
         "Re-key the current worktree to a new task. Runs the repo's .glrs/hooks/fresh-reset if present; otherwise discards local changes and creates a new branch from latest origin/<default>. Then continues inline into the PRIME on the new task.",
     },
