@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.26.2
+
+### Patch Changes
+
+- [#207](https://github.com/iceglober/glrs/pull/207) [`d25067e`](https://github.com/iceglober/glrs/commit/d25067e7d6a93afc0a98325d86acbf7af35f6762) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): all commands read `.glrs/extensions/<command>.md`
+
+  All workflow commands (/ship, /fresh, /review, /research, /init-deep) now read an optional extension file from the repo and append it to the command prompt. Repos can customize command behavior without forking the harness.
+
 ## 2.26.1
 
 ### Patch Changes
