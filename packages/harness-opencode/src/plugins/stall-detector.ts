@@ -32,6 +32,7 @@ interface SessionState {
   nudgeCount: number;
   lastToolCallTs: number;
   lastMessageTs: number;
+  activeToolCalls: number;
 }
 
 const sessions = new Map<string, SessionState>();
@@ -39,7 +40,7 @@ const sessions = new Map<string, SessionState>();
 function getState(sessionId: string): SessionState {
   let s = sessions.get(sessionId);
   if (!s) {
-    s = { watchdog: null, nudgeCount: 0, lastToolCallTs: 0, lastMessageTs: 0 };
+    s = { watchdog: null, nudgeCount: 0, lastToolCallTs: 0, lastMessageTs: 0, activeToolCalls: 0 };
     sessions.set(sessionId, s);
   }
   return s;
@@ -63,8 +64,10 @@ const plugin: Plugin = async (input) => {
     state.watchdog = setTimeout(async () => {
       state.watchdog = null;
 
-      // Check if a tool call happened since we set the timer
+      // Not stalled if a tool call happened since the message, or if
+      // tool calls (subagents, background tasks) are still in-flight.
       if (state.lastToolCallTs > state.lastMessageTs) return;
+      if (state.activeToolCalls > 0) return;
 
       state.nudgeCount++;
 
@@ -87,7 +90,15 @@ const plugin: Plugin = async (input) => {
     ) => {
       const state = getState(toolInput.sessionID);
       state.lastToolCallTs = Date.now();
+      state.activeToolCalls++;
       clearWatchdog(state);
+    },
+
+    "tool.execute.after": async (
+      toolInput: { sessionID: string },
+    ) => {
+      const state = getState(toolInput.sessionID);
+      state.activeToolCalls = Math.max(0, state.activeToolCalls - 1);
     },
 
     event: async ({ event }: { event: { type: string; properties?: any } }) => {

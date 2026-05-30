@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # cascade-decomposition-eval.sh
 #
-# Evaluates PRIME prompt quality for cheap-tier cascading by checking
-# whether the prompt contains the right decomposition guidance.
+# Scores PRIME prompt quality for cheap-tier cascading readiness.
+# Checks whether the prompt contains decomposition rules that would
+# prevent the Applemint-session failure mode (monolithic multi-package
+# dispatches to cheap models).
 #
-# Outputs a score (0-100). Higher is better.
-# Each check is worth points. Presence of each rule in the prompt text
-# adds to the score.
+# Outputs score on last line. Higher is better. Max 100.
 #
-# Usage: bash eval/cascade-decomposition-eval.sh <prompt-file>
+# Usage: bash eval/cascade-decomposition-eval.sh [prompt-file]
 
 set -euo pipefail
 
@@ -19,50 +19,62 @@ total=0
 check() {
   local points=$1
   local label=$2
-  local pattern=$3
+  shift 2
   total=$((total + points))
-  if grep -qiP "$pattern" "$PROMPT" 2>/dev/null; then
-    score=$((score + points))
-    echo "  [+$points] $label"
-  else
-    echo "  [  0] $label (MISSING)"
-  fi
+  for pat in "$@"; do
+    if grep -qiE "$pat" "$PROMPT" 2>/dev/null; then
+      score=$((score + points))
+      echo "  [+$points] $label"
+      return
+    fi
+  done
+  echo "  [  0] $label (MISSING)"
 }
 
 echo "Evaluating: $PROMPT"
 echo ""
 
-# === Decomposition guidance (40 points) ===
-echo "=== Decomposition guidance ==="
-check 10 "Per-file subtask decomposition rule" "per.file|one.file.per.dispatch|atomic.subtask|single.file"
-check 10 "Multi-package tasks must be split" "multi.package|cross.package|multiple.package|split.across.package"
-check 10 "Example of decomposed dispatch" "add.*method.*model\.ts|create.*contract\.ts|add.*route.*router"
-check 10 "Never send entire phase as one dispatch" "never.*entire.phase|do.not.*whole.phase|one.phase.per.dispatch|monolithic"
+# === Task decomposition (40 points) ===
+echo "=== Task decomposition ==="
+check 10 "Per-file or per-package subtask rule" \
+  "per.file" "one file" "single.file" "atomic.subtask" "per.package" "each file"
+check 10 "Multi-package tasks must be decomposed" \
+  "multi.package" "cross.package" "multiple packages" "spans?.*(multiple|several) package"
+check 10 "Example of decomposed per-file dispatch" \
+  "add.*method.*model" "create.*contract" "add.*route.*router" "one.*file.*per.*dispatch"
+check 10 "Explicit anti-pattern: never dispatch entire phase" \
+  "never.*entire phase" "do not.*whole phase" "monolithic" "not.*send.*phase as (one|a single)"
 
-# === Skip-cheap criteria (25 points) ===
+# === Cheap-tier gating (25 points) ===
 echo ""
-echo "=== Skip-cheap criteria ==="
-check 5 "Skip cheap for >10 files" "10.file"
-check 5 "Skip cheap for multi-package" "multi.package.*skip|skip.*multi.package|span.*multiple.*package.*skip|skip.*span"
-check 5 "Skip cheap for security/auth/crypto" "security|auth|crypto|billing"
-check 5 "Skip cheap for high risk" "risk.*high|high.*risk"
-check 5 "Skip cheap for expensive cascade-fail" "cascade.fail|downstream.*wave|expensive.*fail"
+echo "=== Cheap-tier gating ==="
+check 5 "Gate for file count threshold" \
+  "[0-9]+ files"
+check 5 "Gate for multi-package scope" \
+  "multi.package" "cross.package" "multiple package" "span.*package"
+check 5 "Gate for security-sensitive paths" \
+  "[Ss]ecurity" "[Aa]uth" "[Cc]rypto" "[Bb]illing"
+check 5 "Gate for high risk" \
+  "[Rr]isk.*high" "high.*risk" "flagged.*risk"
+check 5 "Gate for expensive downstream failures" \
+  "cascade.fail" "downstream.*wave" "expensive.*fail" "dependencies.*fail"
 
 # === Dispatch shape (20 points) ===
 echo ""
 echo "=== Dispatch shape ==="
-check 10 "Sequential dispatch for shared worktree" "sequential|one.at.a.time|serial.*dispatch|do.not.*parallel.*same.*worktree"
-check 10 "Worktree isolation for parallel lanes" "worktree.*isolat|separate.*worktree|isolation.*per.lane|worktree.*per"
+check 10 "Sequential or isolated dispatch for shared worktree" \
+  "sequential" "one at a time" "serial" "do not.*parallel.*same.*worktree" "never.*parallel.*one.*worktree"
+check 10 "Worktree isolation for parallel code lanes" \
+  "worktree.*isol" "separate.*worktree" "per.lane.*worktree" "worktree per" "isolat.*worktree"
 
 # === Escalation (15 points) ===
 echo ""
 echo "=== Escalation signals ==="
 check 5 "Escalate on BLOCKED" "BLOCKED"
 check 5 "Escalate on FAIL_SPEC" "FAIL_SPEC"
-check 5 "Escalate on empty output" "empty.*output|near.empty"
+check 5 "Escalate on empty/truncated output" \
+  "[Ee]mpty.*output" "near.empty" "truncat"
 
 echo ""
 echo "Score: $score / $total"
-
-# Output just the score for autoresearch verify
 echo "$score"

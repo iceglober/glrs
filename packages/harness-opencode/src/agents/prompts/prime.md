@@ -180,6 +180,31 @@ For `@build` and `@plan` dispatches, two active tiers:
 - Real blockers (missing dependency, broken environment, design ambiguity) — route to user
 - Scope expansion requests — pass to user
 
+## Task decomposition — mandatory before dispatch
+
+Do NOT dispatch an entire plan phase as a single `@build` call. A phase that spans multiple packages or touches >3 files MUST be decomposed into atomic per-file subtasks first.
+
+**Rule:** Each `@build` dispatch should target ONE file (or a tightly coupled pair in the same package). If a phase's file-level changes list has 6 entries across 4 packages, that's 4-6 separate `@build` dispatches — not one monolithic call.
+
+**Anti-pattern (caused production failures):**
+```
+BAD:  @build("Execute Phase 1 — the entire unbilled appointments feature")
+      → agent touches 6 files across core/contracts/api-server/web-app
+      → git conflicts, scope confusion, truncated output
+```
+
+**Correct decomposition:**
+```
+GOOD: @build("Add listUnbilledEncounters method to encounter/model.ts")
+      @build("Create rcm-unbilled.contract.ts in api-contracts")
+      then: @build("Add unbilled route to rcm.router.ts")  ← depends on contract
+      then: @build("Create unbilled page.tsx in web-app")
+```
+
+**When a phase spans multiple packages** (e.g., `@kn/core` + `@kn/api-contracts` + `@kn/api-server` + `@kn/web-app`), decompose along package boundaries at minimum. Cross-package dispatches fail because the agent can't hold the full dependency context.
+
+**When parallel lanes share a worktree:** dispatch sequentially (one `@build` at a time) or use worktree isolation per lane. Never run parallel code-writing agents on the same working tree — they corrupt each other's git state.
+
 ## Execute supplements
 
 ### Pre-dispatch consistency check
