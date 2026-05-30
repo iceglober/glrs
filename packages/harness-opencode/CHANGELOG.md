@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.26.1
+
+### Patch Changes
+
+- [#205](https://github.com/iceglober/glrs/pull/205) [`5b53b96`](https://github.com/iceglober/glrs/commit/5b53b96aed800aa4dc8353bd5e7ca4e443824209) Thanks [@iceglober](https://github.com/iceglober)! - fix(harness): suppress stall detector during in-flight tool calls, add PRIME decomposition rules
+
+  - Stall detector now tracks `activeToolCalls` per session — suppresses false-positive nudges while subagents, long-running bash commands, or background tasks are in-flight
+  - Add mandatory task decomposition guidance to PRIME prompts: per-file subtask rule, multi-package split requirement, concrete examples, and explicit anti-pattern (never dispatch entire phase as one call)
+
 ## 2.26.0
 
 ### Minor Changes
