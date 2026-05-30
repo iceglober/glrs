@@ -126,7 +126,7 @@
     },
     "packages/cli": {
       "name": "@glrs-dev/cli",
-      "version": "2.24.1",
+      "version": "2.24.2",
       "bin": {
         "glrs": "./dist/cli.js",
       },
@@ -161,7 +161,7 @@
     },
     "packages/harness-opencode": {
       "name": "@glrs-dev/harness-plugin-opencode",
-      "version": "2.24.1",
+      "version": "2.24.2",
       "dependencies": {
         "@inquirer/prompts": "^8.4.2",
         "cmd-ts": "^0.15.0",

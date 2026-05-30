@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.24.2
+
+### Patch Changes
+
+- [#199](https://github.com/iceglober/glrs/pull/199) [`bb98089`](https://github.com/iceglober/glrs/commit/bb98089db8dc62594d45e3fc65f3251bd49c6f3b) Thanks [@iceglober](https://github.com/iceglober)! - fix(harness): redesign `configure` TUI for clarity and usability
+
+  - Model search shows `provider/model_id` (the actual config value) instead of `provider/Model Name`
+  - Tier list uses aligned two-column layout: tier name left, value right, with agent list shown on focus
+  - Configured tiers display in cyan, unconfigured show fallback chain in dim
+  - Cost display uses explicit `in: $X  out: $Y` format instead of cryptic `$X/$Y`
+  - Main menu shows compact two-line Models summary (deep + mid) instead of all 6 tiers
+  - Add `promptSelect` helper supporting rich choices with descriptions and separators
+
 ## 2.24.1
 
 ## 2.24.0
