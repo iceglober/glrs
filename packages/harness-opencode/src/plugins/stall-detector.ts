@@ -6,7 +6,8 @@
  * call. The session goes silent — no error, no completion, just nothing.
  *
  * Detection: after each assistant message finalizes, start a watchdog timer.
- * If no tool call or new message arrives within the timeout, the model stalled.
+ * If no tool call or new message arrives within the timeout AND the message
+ * ends with unfulfilled-intent language, the model stalled.
  *
  * Intervention: send a continuation message to the session via the SDK client.
  * The message is a system-reminder-style nudge that pushes the model to
@@ -18,8 +19,9 @@
 
 import type { Plugin } from "@opencode-ai/plugin";
 
-const STALL_TIMEOUT_MS = 45_000;
+const STALL_TIMEOUT_MS = 90_000;
 const MAX_NUDGES_PER_SESSION = 3;
+const SUBAGENT_GRACE_MS = 5 * 60 * 1000;
 
 const NUDGE_MESSAGE =
   "You described an action but didn't execute it. " +
@@ -35,9 +37,22 @@ const DONE_PATTERNS = [
   /\bno\s+(further|pending|remaining)\s+action\b/i,
 ];
 
+// Unfulfilled-intent language — the model declared it would take an action.
+// Only nudge when the message tail matches one of these; a long analysis
+// or summary that happens not to end with a tool call is not a stall.
+const INTENT_PATTERNS = [
+  /\b(?:let me|i'll|i will)\b(?!\s+know\b).{0,300}$/is,
+  /\b(?:now i|going to|about to)\b\s+\w.{0,300}$/is,
+];
+
 function looksComplete(text: string): boolean {
   const tail = text.slice(-500);
   return DONE_PATTERNS.some((p) => p.test(tail));
+}
+
+function looksLikeUnfulfilledIntent(text: string): boolean {
+  const tail = text.slice(-500);
+  return INTENT_PATTERNS.some((p) => p.test(tail));
 }
 
 interface SessionState {
@@ -47,6 +62,7 @@ interface SessionState {
   lastMessageTs: number;
   lastMessageText: string;
   activeToolCalls: number;
+  lastTaskDispatchTs: number;
 }
 
 const sessions = new Map<string, SessionState>();
@@ -54,7 +70,7 @@ const sessions = new Map<string, SessionState>();
 function getState(sessionId: string): SessionState {
   let s = sessions.get(sessionId);
   if (!s) {
-    s = { watchdog: null, nudgeCount: 0, lastToolCallTs: 0, lastMessageTs: 0, lastMessageText: "", activeToolCalls: 0 };
+    s = { watchdog: null, nudgeCount: 0, lastToolCallTs: 0, lastMessageTs: 0, lastMessageText: "", activeToolCalls: 0, lastTaskDispatchTs: 0 };
     sessions.set(sessionId, s);
   }
   return s;
@@ -74,15 +90,19 @@ const plugin: Plugin = async (input) => {
     clearWatchdog(state);
 
     if (state.nudgeCount >= MAX_NUDGES_PER_SESSION) return;
+    // Never start the watchdog while tools or subagents are active.
+    if (state.activeToolCalls > 0) return;
+    if (Date.now() - state.lastTaskDispatchTs < SUBAGENT_GRACE_MS) return;
 
     state.watchdog = setTimeout(async () => {
       state.watchdog = null;
 
-      // Not stalled if a tool call happened since the message, if
-      // tool calls are in-flight, or if the message is a completion.
+      // Re-check at fire time — state may have changed since the timer started.
       if (state.lastToolCallTs > state.lastMessageTs) return;
       if (state.activeToolCalls > 0) return;
       if (looksComplete(state.lastMessageText)) return;
+      if (Date.now() - state.lastTaskDispatchTs < SUBAGENT_GRACE_MS) return;
+      if (!looksLikeUnfulfilledIntent(state.lastMessageText)) return;
 
       state.nudgeCount++;
 
@@ -101,11 +121,14 @@ const plugin: Plugin = async (input) => {
 
   return {
     "tool.execute.before": async (
-      toolInput: { sessionID: string },
+      toolInput: { sessionID: string; tool?: string },
     ) => {
       const state = getState(toolInput.sessionID);
       state.lastToolCallTs = Date.now();
       state.activeToolCalls++;
+      if (toolInput.tool === "task") {
+        state.lastTaskDispatchTs = Date.now();
+      }
       clearWatchdog(state);
     },
 
