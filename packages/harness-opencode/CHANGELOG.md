@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.27.2
+
+### Patch Changes
+
+- [#214](https://github.com/iceglober/glrs/pull/214) [`32b4f27`](https://github.com/iceglober/glrs/commit/32b4f2731055fadd850c94408a4b0a08478034b7) Thanks [@iceglober](https://github.com/iceglober)! - fix(harness): reduce stall detector false positives — require intent language, suppress during tool/subagent execution
+
 ## 2.27.1
 
 ### Patch Changes
