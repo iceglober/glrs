@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.27.0
+
+### Patch Changes
+
+- [#209](https://github.com/iceglober/glrs/pull/209) [`8189f66`](https://github.com/iceglober/glrs/commit/8189f6627cc84597102a16cc113033317b6efe59) Thanks [@iceglober](https://github.com/iceglober)! - feat(cli): `glrs harness hooks init` scaffolds example hooks and extensions
+
+  - Add `glrs harness hooks init` — writes example `.glrs/hooks/` and `.glrs/extensions/` files to the current repo. Does not overwrite existing files.
+  - Rename hooks to snake_case: `wt-new` → `wt_new`, `fresh-reset` → `fresh_init`
+  - Wire all workflow commands (/ship, /fresh, /review, /research, /init-deep) to read `.glrs/extensions/<command>.md`
+
 ## 2.26.2
 
 ### Patch Changes
