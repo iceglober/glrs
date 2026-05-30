@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.23.1
+
+### Patch Changes
+
+- [#193](https://github.com/iceglober/glrs/pull/193) [`1461ca7`](https://github.com/iceglober/glrs/commit/1461ca7d78e473545799a2ad13798114cb87e8cd) Thanks [@iceglober](https://github.com/iceglober)! - Fix self-update cache-dir path. `getOpenCodeCachePackageDir()` was looking at `~/.cache/opencode/packages/@glrs-dev/harness-opencode@latest/`, but opencode actually writes the cache at `harness-plugin-opencode@latest/` (matching the package name). The mismatch made every release return `cache-missing` and silently fall through, forcing users to manually `rm -rf` the cache after each release. The self-update hook already ran every session and did the right thing — it was just pointed at a non-existent directory.
+
 ## 2.23.0
 
 ### Minor Changes
