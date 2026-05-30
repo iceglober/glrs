@@ -160,47 +160,25 @@ For reference, the plan structure (written by `@plan`, not by you):
 - `## File-level changes` — per-file: Change, Why, Risk, Mirror (for CREATE), Verify
 - `## Non-goals`, `## Test plan`, `## Out of scope`, `## Open questions`
 
-## Cost-aware cascading — cheap-first dispatch
+## Dispatch tiers
 
-```
-START CHEAP. ESCALATE ON FAILURE.
-Based on FrugalGPT (Chen et al. 2023): up to 98% cost reduction is
-achievable by cascading from cheap models to expensive ones.
-```
-
-For `@build` and `@plan` dispatches, three model tiers exist as **separate agents** (each with the same prompt, different model):
+For `@build` and `@plan` dispatches, two active tiers:
 
 | Tier | Build agent | Plan agent | Default model |
 |---|---|---|---|
-| Cheap (first attempt) | `@build-cheap` | `@plan-cheap` | `amazon-bedrock/zai.glm-5` |
-| Standard (escalation 1) | `@build` | `@plan` | Sonnet (build) / Opus (plan) |
-| Deep (escalation 2) | `@build-deep` | (use `@plan`) | Opus |
+| Standard | `@build` | `@plan` | Sonnet (build) / Opus (plan) |
+| Deep (escalation) | `@build-deep` | (use `@plan`) | Opus |
 
-**Default dispatch:**
-- For trivial-to-medium tasks, dispatch `@build-cheap` (and `@plan-cheap` when planning is needed).
-- For substantial multi-phase work where the cheap model is likely to struggle (complex refactors, novel patterns, anything with intricate cross-file dependencies), skip cheap and dispatch `@build` (Sonnet) directly. State your reason in one line.
+**Default dispatch:** Always use `@build` and `@plan` (standard tier). Do NOT use `@build-cheap` or `@plan-cheap` — cheap-tier cascading is disabled pending decomposition improvements.
 
-**Escalation triggers (re-dispatch the SAME work to the next tier):**
-- Subagent returns `BLOCKED` with a model-capability signal: "couldn't parse plan format", "syntax error in generated code", "tool call malformed", "didn't understand the task"
-- `DONE_WITH_CONCERNS` where the concerns are about the model's own limitations ("I had trouble with this pattern", "my changes may not be optimal")
-- Empty or near-empty output
-- `@spec-reviewer` returns `[FAIL_SPEC]` on the cheap-tier work
-- `@code-reviewer` returns `[LOOP-TO-PLAN]` → escalate the next @plan dispatch to standard `@plan` (Opus)
+**Escalation to deep tier** — re-dispatch the SAME work to `@build-deep` when:
+- `@build` returns `BLOCKED` with a capability signal
+- `@spec-reviewer` returns `[FAIL_SPEC]` after a standard-tier attempt
+- `@code-reviewer` returns `[LOOP-TO-PLAN]` → escalate the next @plan dispatch to `@plan` (Opus)
 
 **Do NOT escalate for:**
-- Real blockers (missing dependency, broken environment, design ambiguity) — escalation doesn't fix these, route to user
-- Scope expansion requests — pass to user, don't throw more model at it
-- Successful `DONE` — accept the cheap result
-
-**Cascading sequence example:**
-```
-Wave 1: @build-cheap (full plan, GLM)
-  → returns [FAIL_SPEC] from @spec-reviewer
-Wave 2: @build (same plan, Sonnet) — escalated
-  → returns [PASS_SPEC], then [PASS] from @code-reviewer
-```
-
-**When to skip cheap entirely:** If your Scope/Plan analysis flagged the work as `Risk: high`, security/auth/crypto/billing/migration-sensitive, or > 10 files of substantial logic — go directly to `@build` (Sonnet). State that you're skipping the cheap tier in your dispatch announcement.
+- Real blockers (missing dependency, broken environment, design ambiguity) — route to user
+- Scope expansion requests — pass to user
 
 ## Execute supplements
 
