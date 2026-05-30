@@ -645,11 +645,11 @@ export type ModelTier = "deep" | "mid" | "mid-execute" | "autopilot-execute" | "
  *                if not configured. Use for Kimi K2.x, Qwen3-Coder, or
  *                any model the user wants to run as a strict executor.
  * - fast:        cheap, low-latency (haiku-class)
- * - cheap:       very cheap cascading tier (GLM/Haiku-class via Bedrock).
- *                Used by @build-cheap, @plan-cheap, etc. for the first
- *                pass of cost-cascading. PRIME escalates from cheap →
- *                mid-execute → deep on failure signals. Falls back to
- *                fast if not configured.
+ * - cheap:       very cheap cascading tier (GLM 4.7 Flash via Bedrock,
+ *                ~12x cheaper than Haiku). Used by @build-cheap,
+ *                @plan-cheap, etc. for the first pass of cost-cascading.
+ *                PRIME escalates from cheap → mid-execute → deep on
+ *                failure signals. Falls back to fast if not configured.
  *
  * Adding an agent to createAgents() without adding it here will fail
  * the AGENT_TIERS completeness test — that's intentional.
@@ -771,9 +771,9 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
     "build-cheap": agentFromPrompt(buildPrompt, {
-      description: "Cheap-tier @build variant. Same prompt, runs on GLM via Bedrock. PRIME dispatches @build-cheap first for cost savings; escalates to @build on BLOCKED or [FAIL_SPEC].",
+      description: "Cheap-tier @build variant. Same prompt, runs on GLM 4.7 Flash via Bedrock (~12x cheaper than Haiku). PRIME dispatches @build-cheap first for cost savings; escalates to @build on BLOCKED or [FAIL_SPEC].",
       mode: "subagent",
-      model: "amazon-bedrock/zai.glm-5",
+      model: "amazon-bedrock/zai.glm-4.7-flash",
       temperature: 0.1,
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
@@ -785,17 +785,17 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
     "plan-cheap": agentFromPrompt(planPrompt, {
-      description: "Cheap-tier @plan variant. Same prompt, runs on GLM via Bedrock. PRIME dispatches @plan-cheap for trivial/medium plans; escalates to @plan for substantial work or when @plan-reviewer rejects.",
+      description: "Cheap-tier @plan variant. Same prompt, runs on GLM 4.7 Flash via Bedrock (~12x cheaper than Haiku). PRIME dispatches @plan-cheap for trivial/medium plans; escalates to @plan for substantial work or when @plan-reviewer rejects.",
       mode: "subagent",
-      model: "amazon-bedrock/zai.glm-5",
+      model: "amazon-bedrock/zai.glm-4.7-flash",
       temperature: 0.3,
       tools: { task: true },
       permission: PLAN_PERMISSIONS as AgentConfig["permission"],
     }),
     "plan-ultra-cheap": agentFromPrompt(planUltraPrompt, {
-      description: "Cheap-tier @plan-ultra variant. Same DAG-writing prompt as @plan-ultra, runs on GLM via Bedrock. PRIME-ULTRA dispatches this first for cost-aware cascading. Escalates to @plan-ultra on [REJECT] from @plan-reviewer or model-capability failures.",
+      description: "Cheap-tier @plan-ultra variant. Same DAG-writing prompt as @plan-ultra, runs on GLM 4.7 Flash via Bedrock. PRIME-ULTRA dispatches this first for cost-aware cascading. Escalates to @plan-ultra on [REJECT] from @plan-reviewer or model-capability failures.",
       mode: "subagent",
-      model: "amazon-bedrock/zai.glm-5",
+      model: "amazon-bedrock/zai.glm-4.7-flash",
       temperature: 0.3,
       tools: { task: true },
       permission: PLAN_PERMISSIONS as AgentConfig["permission"],

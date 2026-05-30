@@ -67,6 +67,7 @@ const ALLOWED_PROPS = new Set([
   "stale",
   "error_class",
   "subagent",
+  "tier",
   "memory_op",
   "tool_category",
   "model",
