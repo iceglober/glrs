@@ -142,7 +142,7 @@ export const create = command({
     const repoPath = resolveRepoPath(repo);
     const { wtPath } = createWorktree({ from, repoPath, repo });
 
-    runHook("wt-new", wtPath, {
+    runHook("wt_new", wtPath, {
       WORKTREE_DIR: wtPath,
       REPO_NAME: repo ?? path.basename(repoPath ?? wtPath),
     });
