@@ -4,6 +4,7 @@ pub mod console;
 pub mod contexts;
 pub mod credential_process;
 pub mod exec;
+pub mod init;
 pub mod login;
 pub mod logout;
 pub mod mcp;

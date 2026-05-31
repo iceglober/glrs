@@ -2,9 +2,15 @@
 
 SSO credential manager for AWS and GCP. Authenticate once, switch contexts per-shell, credentials auto-refresh.
 
+## Install
+
 ```bash
-npm i -g @glrs-dev/assume
+glrs assume init
 ```
+
+Installs `@glrs-dev/assume` if missing, runs login, lets you approve contexts for agent access, and configures the MCP server. One command.
+
+Or install standalone: `npm i -g @glrs-dev/assume`
 
 Bins: `glrs-assume`, `gsa` (alias).
 

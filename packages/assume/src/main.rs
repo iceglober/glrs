@@ -37,6 +37,8 @@ struct Cli {
 enum Commands {
     /// Agent access management and MCP server
     Agent(cli::agent::AgentArgs),
+    /// Set up agent cloud credentials (login + approve contexts + configure MCP)
+    Init(cli::init::InitArgs),
     /// Authenticate with a cloud provider (opens browser)
     Login(cli::login::LoginArgs),
     /// Switch active context — requires shell eval, use 'exec' for scripts/agents
@@ -130,6 +132,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Exec(_) => cli::exec::REQUIREMENT,
         Commands::CredentialProcess(_) => cli::credential_process::REQUIREMENT,
         Commands::Serve(_) => cli::serve::REQUIREMENT,
+        Commands::Init(_) => cli::init::REQUIREMENT,
         Commands::Login(_) => cli::login::REQUIREMENT,
         Commands::Logout(_) => cli::logout::REQUIREMENT,
         Commands::Status(_) => cli::status::REQUIREMENT,
@@ -176,6 +179,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Agent(args) => cli::agent::run(args, &registry, &cfg).await,
         Commands::Config(args) => cli::config_cmd::run(args).await,
+        Commands::Init(args) => cli::init::run(args, &registry, &cfg).await,
         Commands::Login(args) => cli::login::run(args, &registry, &cfg).await,
         Commands::Use(args) => cli::use_cmd::run(args, &registry, &cfg).await,
         Commands::Status(args) => cli::status::run(args, &registry, &cfg).await,
