@@ -1,5 +1,11 @@
 # @glrs-dev/assume
 
+## 0.7.2
+
+### Patch Changes
+
+- [#225](https://github.com/iceglober/glrs/pull/225) [`f2129eb`](https://github.com/iceglober/glrs/commit/f2129eb779d0a255fe0b2b7488e5c2fbd6bd112d) Thanks [@iceglober](https://github.com/iceglober)! - fix(assume): suppress migration nag in shell-init wrapper + fix daemon detection on macOS
+
 ## 0.7.1
 
 ### Patch Changes
