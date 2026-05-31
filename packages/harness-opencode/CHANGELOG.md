@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.28.1
+
+### Patch Changes
+
+- [#216](https://github.com/iceglober/glrs/pull/216) [`0e76646`](https://github.com/iceglober/glrs/commit/0e766469bbde0ac4ce554cac2985bdbecaa3a24c) Thanks [@iceglober](https://github.com/iceglober)! - docs: comprehensive documentation revamp + brutalist docs site redesign
+
 ## 2.28.0
 
 ### Minor Changes
