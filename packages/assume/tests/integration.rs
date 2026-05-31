@@ -141,7 +141,10 @@ fn test_shell_init_zsh_prompt_uses_zero_width_markers() {
 #[test]
 fn test_shell_init_bash_prompt_uses_zero_width_markers() {
     // ANSI codes in prompts must be wrapped in \[...\] for bash
-    let output = glrs_assume().args(["shell-init", "bash"]).assert().success();
+    let output = glrs_assume()
+        .args(["shell-init", "bash"])
+        .assert()
+        .success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout);
     assert!(
         stdout.contains("\\[") && stdout.contains("\\]"),
@@ -292,10 +295,7 @@ fn test_no_nudge_when_dispatched() {
 /// shell-init zsh)"` will error and break the user's terminal.
 #[test]
 fn test_shell_init_stdout_is_clean_shell_code() {
-    let output = glrs_assume()
-        .args(["shell-init", "zsh"])
-        .output()
-        .unwrap();
+    let output = glrs_assume().args(["shell-init", "zsh"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Every non-empty, non-comment line should be valid shell syntax:
@@ -308,7 +308,10 @@ fn test_shell_init_stdout_is_clean_shell_code() {
         // Tracing output looks like: "2024-01-01T00:00:00Z INFO ..."
         // or "  at src/core/daemon.rs:123"
         assert!(
-            !trimmed.contains(" INFO ") && !trimmed.contains(" WARN ") && !trimmed.contains(" ERROR ") && !trimmed.starts_with("at "),
+            !trimmed.contains(" INFO ")
+                && !trimmed.contains(" WARN ")
+                && !trimmed.contains(" ERROR ")
+                && !trimmed.starts_with("at "),
             "shell-init stdout contains tracing/log output which would corrupt eval: {trimmed}"
         );
     }
@@ -318,10 +321,7 @@ fn test_shell_init_stdout_is_clean_shell_code() {
 #[test]
 fn test_shell_init_all_shells_succeed() {
     for shell in &["bash", "zsh", "fish"] {
-        let output = glrs_assume()
-            .args(["shell-init", shell])
-            .output()
-            .unwrap();
+        let output = glrs_assume().args(["shell-init", shell]).output().unwrap();
         assert!(
             output.status.success(),
             "shell-init {shell} failed with status {}",

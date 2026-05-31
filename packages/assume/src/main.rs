@@ -163,9 +163,7 @@ async fn main() -> anyhow::Result<()> {
                                 );
                             }
                             Err(e) => {
-                                tracing::debug!(
-                                    "Inline refresh failed for {provider_id}: {e}"
-                                );
+                                tracing::debug!("Inline refresh failed for {provider_id}: {e}");
                             }
                         }
                     }

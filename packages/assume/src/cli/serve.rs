@@ -107,8 +107,7 @@ pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config)
     eprintln!("Daemon ready. Press Ctrl+C to stop.");
 
     // Wait for SIGINT or SIGTERM (launchd sends SIGTERM on shutdown)
-    let mut sigterm =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {}
         _ = sigterm.recv() => {}

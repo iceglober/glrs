@@ -1,6 +1,6 @@
 {
   "name": "@glrs-dev/assume-linux-x64",
-  "version": "0.6.6",
+  "version": "0.7.0",
   "publishConfig": {
     "access": "public"
   },
