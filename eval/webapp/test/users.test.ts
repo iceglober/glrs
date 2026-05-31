@@ -53,7 +53,8 @@ describe("Users API", () => {
       body: JSON.stringify({ name: "Bob", email: "bob@test.com" }),
     });
     const res = await fetch(BASE);
-    const users = await res.json();
+    const body = await res.json();
+    const users = body.data;
     // 2 users: the authenticated user + the one we just created
     expect(users.length).toBe(2);
   });

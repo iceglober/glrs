@@ -97,7 +97,8 @@ describe("Posts API", () => {
       body: JSON.stringify({ title: "Second", body: "2" }),
     });
     const res = await fetch(BASE);
-    const posts = await res.json();
+    const body = await res.json();
+    const posts = body.data;
     expect(posts.length).toBe(2);
     // Most recent first
     expect(posts[0].title).toBe("Second");
@@ -209,7 +210,8 @@ describe("Posts API", () => {
       headers: { "Authorization": `Bearer ${token}` },
     });
     const res = await fetch(BASE);
-    const posts = await res.json();
+    const body = await res.json();
+    const posts = body.data;
     expect(posts.length).toBe(0);
   });
 });
