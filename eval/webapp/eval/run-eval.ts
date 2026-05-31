@@ -24,6 +24,9 @@ const REPO_ROOT = path.resolve(import.meta.dir, "../../..");
 const WEBAPP_DIR = path.resolve(import.meta.dir, "..");
 const PLAN_DIR = path.join(WEBAPP_DIR, "plans", "add-posts");
 
+const ENRICH_MODEL = process.env.EVAL_ENRICH_MODEL ?? "claude-opus-4-7";
+const EXECUTE_MODEL = process.env.EVAL_EXECUTE_MODEL ?? "claude-sonnet-4-6";
+
 async function createAdapter() {
   const { ClaudeCodeCliAdapter } = await import(
     "../../../packages/adapter-claude-code/src/claude-code-adapter.js"
@@ -31,8 +34,8 @@ async function createAdapter() {
   return new ClaudeCodeCliAdapter({
     dangerouslySkipPermissions: true,
     models: {
-      enrich: "claude-opus-4-7",
-      execute: "claude-sonnet-4-6",
+      enrich: ENRICH_MODEL,
+      execute: EXECUTE_MODEL,
     },
   });
 }
@@ -100,8 +103,8 @@ async function runAutopilot(): Promise<{ durationS: number; costUsd: number }> {
     config: {
       adapter: "claude-code-cli",
       models: {
-        enrichment: "claude-opus-4-7",
-        execution: "claude-sonnet-4-6",
+        enrichment: ENRICH_MODEL,
+        execution: EXECUTE_MODEL,
       },
     },
   });
@@ -142,6 +145,8 @@ async function main() {
   console.error("[eval] Webapp eval starting...");
   console.error(`[eval] Plan: ${PLAN_DIR}`);
   console.error(`[eval] Webapp: ${WEBAPP_DIR}`);
+  console.error(`[eval] Enrich model: ${ENRICH_MODEL}`);
+  console.error(`[eval] Execute model: ${EXECUTE_MODEL}`);
 
   await ensureDocker();
   await resetWebapp();

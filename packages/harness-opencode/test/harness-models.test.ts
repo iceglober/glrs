@@ -40,9 +40,10 @@ describe("AGENT_TIERS", () => {
       "build-deep",
       "code-reviewer-thorough",
       "plan",
+      "plan-legacy",
       "plan-ultra",
       "prime",
-      "prime-ultra",
+      "prime-legacy",
       "research",
       "research-auto",
       "research-local",
@@ -61,6 +62,7 @@ describe("AGENT_TIERS", () => {
     expect(midExecute).toEqual([
       "build",
       "code-reviewer",
+      "prime-ultra",
       "spec-reviewer",
     ]);
     const autopilotExecute = Object.entries(AGENT_TIERS)
@@ -73,7 +75,7 @@ describe("AGENT_TIERS", () => {
       .filter(([, t]) => t === "cheap")
       .map(([n]) => n)
       .sort();
-    expect(cheap).toEqual(["build-cheap", "plan-cheap", "plan-ultra-cheap"]);
+    expect(cheap).toEqual(["build-cheap", "plan-legacy-cheap", "plan-ultra-cheap"]);
   });
 });
 
