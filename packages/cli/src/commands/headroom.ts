@@ -175,34 +175,10 @@ function stopProxy(): void {
   }
 }
 
-function configureOpenCode(): void {
-  if (!existsSync(OPENCODE_CONFIG)) {
-    process.stderr.write(`[glrs] opencode.json not found at ${OPENCODE_CONFIG}\n`);
-    process.stderr.write("[glrs] Run 'glrs harness install' first\n");
-    return;
-  }
-
-  const raw = readFileSync(OPENCODE_CONFIG, "utf8");
-  const config = JSON.parse(raw);
-
-  // Check if already configured
-  const provider = config.provider ?? {};
-  const anthropic = provider.anthropic ?? {};
-  if (anthropic.baseURL === `http://localhost:${PROXY_PORT}`) {
-    process.stderr.write("[glrs] ✓ OpenCode already configured for headroom proxy\n");
-    return;
-  }
-
-  // Set the Anthropic base URL to route through the proxy
-  if (!config.provider) config.provider = {};
-  if (!config.provider.anthropic) config.provider.anthropic = {};
-  config.provider.anthropic.baseURL = `http://localhost:${PROXY_PORT}`;
-
-  writeFileSync(OPENCODE_CONFIG, JSON.stringify(config, null, 2) + "\n");
-  process.stderr.write("[glrs] ✓ OpenCode configured to route through headroom proxy\n");
-}
-
-function unconfigureOpenCode(): void {
+function cleanupOldProxyConfig(): void {
+  // Remove the old provider.anthropic.baseURL redirect if present.
+  // Headroom now works as a compression service via tool-hooks,
+  // not as an API proxy.
   if (!existsSync(OPENCODE_CONFIG)) return;
 
   const raw = readFileSync(OPENCODE_CONFIG, "utf8");
@@ -217,7 +193,7 @@ function unconfigureOpenCode(): void {
       delete config.provider;
     }
     writeFileSync(OPENCODE_CONFIG, JSON.stringify(config, null, 2) + "\n");
-    process.stderr.write("[glrs] ✓ OpenCode provider config restored to direct\n");
+    process.stderr.write("[glrs] ✓ Removed old proxy redirect from opencode.json\n");
   }
 }
 
@@ -273,13 +249,13 @@ export async function headroomCmd(args: string[]): Promise<void> {
     }
     process.stderr.write("[glrs] ✓ Proxy running (persists across reboots)\n");
 
-    // 3. Configure OpenCode
-    configureOpenCode();
+    // 3. Clean up old proxy-redirect config if present
+    cleanupOldProxyConfig();
 
-    process.stderr.write("\n[glrs] ✓ Done. Restart OpenCode to enable compression.\n");
-    process.stderr.write(`[glrs]   Proxy: http://localhost:${PROXY_PORT}\n`);
-    process.stderr.write("[glrs]   All LLM traffic now routes through headroom for compression.\n");
-    process.stderr.write("[glrs]   Run 'glrs headroom stop' to disable and restore direct access.\n");
+    process.stderr.write("\n[glrs] ✓ Done. Headroom compresses tool outputs automatically.\n");
+    process.stderr.write("[glrs]   Works with any provider (Bedrock, Anthropic, OpenAI).\n");
+    process.stderr.write("[glrs]   Run 'glrs headroom status' to check compression stats.\n");
+    process.stderr.write("[glrs]   Run 'glrs headroom stop' to disable.\n");
     return;
   }
 
@@ -292,13 +268,12 @@ export async function headroomCmd(args: string[]): Promise<void> {
     if (!proxyRunning()) {
       startProxy();
     }
-    configureOpenCode();
     return;
   }
 
   if (sub === "stop") {
     stopProxy();
-    unconfigureOpenCode();
+    cleanupOldProxyConfig();
     return;
   }
 
@@ -336,15 +311,7 @@ export async function headroomCmd(args: string[]): Promise<void> {
       process.stderr.write("proxy: not running\n");
     }
 
-    if (existsSync(OPENCODE_CONFIG)) {
-      const config = JSON.parse(readFileSync(OPENCODE_CONFIG, "utf8"));
-      const baseURL = config.provider?.anthropic?.baseURL;
-      if (baseURL === `http://localhost:${PROXY_PORT}`) {
-        process.stderr.write("opencode: routing through proxy\n");
-      } else {
-        process.stderr.write("opencode: direct (not routing through proxy)\n");
-      }
-    }
+    process.stderr.write("mode: tool-output compression (provider-agnostic)\n");
     return;
   }
 

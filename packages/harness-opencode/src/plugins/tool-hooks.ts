@@ -283,6 +283,76 @@ async function resolveSessionDir(
   return sess.directory;
 }
 
+// ---- Headroom compression -------------------------------------------------
+
+const HEADROOM_URL = "http://localhost:8787";
+const HEADROOM_COMPRESS_TIMEOUT = 10_000;
+let headroomAvailable: boolean | null = null;
+
+async function isHeadroomRunning(): Promise<boolean> {
+  if (headroomAvailable !== null) return headroomAvailable;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`${HEADROOM_URL}/health`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    headroomAvailable = res.ok;
+  } catch {
+    headroomAvailable = false;
+  }
+  // Re-check every 5 minutes (proxy might start/stop)
+  setTimeout(() => { headroomAvailable = null; }, 5 * 60 * 1000);
+  return headroomAvailable;
+}
+
+async function tryHeadroomCompress(
+  cfg: ToolHooksConfig["backpressure"],
+  toolName: string,
+  output: { output: string },
+): Promise<boolean> {
+  if (!cfg.enabled) return false;
+  if (!cfg.tools.has(toolName)) return false;
+
+  const text = output.output;
+  const threshold = cfg.perTool[toolName]?.threshold ?? cfg.threshold;
+  if (text.length <= threshold) return false;
+
+  if (!(await isHeadroomRunning())) return false;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HEADROOM_COMPRESS_TIMEOUT);
+    const res = await fetch(`${HEADROOM_URL}/v1/compress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        messages: [{ role: "user", content: text }],
+        model: "compression-only",
+      }),
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) return false;
+
+    const data = (await res.json()) as {
+      messages?: Array<{ content?: string }>;
+      tokens_saved?: number;
+    };
+
+    const compressed = data.messages?.[0]?.content;
+    if (!compressed || compressed.length >= text.length) return false;
+
+    const saved = text.length - compressed.length;
+    output.output = compressed + `\n\n[headroom: ${saved} chars compressed]`;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ---- Backpressure ---------------------------------------------------------
 
 /** Returns true if `filePath` is within the plugin's tool-output spill dir. */
@@ -569,9 +639,16 @@ const plugin: Plugin = async ({ client }, options) => {
         }
       }
 
-      // 3. Backpressure (runs last — truncates after verify loop has
-      //    had a chance to append diagnostics to edit output)
-      applyBackpressure(cfg.backpressure, toolName, input.callID, output, input.args);
+      // 3. Headroom compression or backpressure (runs last — after verify
+      //    loop has had a chance to append diagnostics to edit output)
+      const compressed = await tryHeadroomCompress(
+        cfg.backpressure,
+        toolName,
+        output,
+      );
+      if (!compressed) {
+        applyBackpressure(cfg.backpressure, toolName, input.callID, output, input.args);
+      }
     },
   };
 };
