@@ -22,10 +22,10 @@ fn shell_escape(s: &str) -> String {
         .replace('!', "\\!")
 }
 
-/// Output export lines to set the prompt to [provider:no-profile].
+/// Output export lines to set the prompt to [provider:no-context].
 /// Used when login completes but no specific context is selected.
 fn print_provider_prompt(provider_id: &str) {
-    let label = format!("{provider_id}:no-profile");
+    let label = format!("{provider_id}:no-context");
     let color = if provider_id == "gcp" {
         "blue"
     } else {
@@ -235,7 +235,7 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
             } else {
                 // Multiple contexts — set provider-only prompt
                 print_provider_prompt(&provider_id);
-                eprintln!("Run: gsa use {provider_id} <profile> to select a context");
+                eprintln!("Run: gsa use {provider_id} <context> to select a context");
             }
         }
         Err(e) => {

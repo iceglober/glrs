@@ -1,5 +1,5 @@
 /**
- * `glrs oc configure` — Interactive configuration editor.
+ * `glrs harness configure` — Interactive configuration editor.
  *
  * Shows the current opencode.json config as a navigable menu.
  * The user selects a setting to change, picks from available options

@@ -1,12 +1,13 @@
 pub mod agent;
 pub mod config_cmd;
 pub mod console;
+pub mod contexts;
 pub mod credential_process;
 pub mod exec;
+pub mod init;
 pub mod login;
 pub mod logout;
 pub mod mcp;
-pub mod profiles;
 pub mod serve;
 pub mod shell_init;
 pub mod status;

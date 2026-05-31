@@ -10,8 +10,8 @@ pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::BackgroundEnsure;
 #[derive(Args, Debug)]
 pub struct ExecArgs {
     /// Context pattern (e.g., "prod/admin", "gcp:my-project"). Omit to use active context.
-    #[arg(long = "profile", short = 'p')]
-    pub profile: Option<String>,
+    #[arg(long = "context", short = 'c', alias = "profile")]
+    pub context: Option<String>,
 
     /// Provider to search in (e.g., "aws", "gcp"). Narrows context matching.
     #[arg(long)]
@@ -24,16 +24,16 @@ pub struct ExecArgs {
 
 pub async fn run(args: ExecArgs, registry: &PluginRegistry, _cfg: &config::Config) -> Result<()> {
     if args.command.is_empty() {
-        bail!("No command specified. Usage: gsa exec [-p <pattern>] -- <command>");
+        bail!("No command specified. Usage: gsa exec [-c <pattern>] -- <command>");
     }
 
-    // Resolve context: use --profile if given, otherwise fall back to active context
-    let context = if let Some(ref profile) = args.profile {
+    // Resolve context: use --context if given, otherwise fall back to active context
+    let context = if let Some(ref ctx_pattern) = args.context {
         // Support "gcp:novelist-app" syntax — split into provider + pattern
-        let (provider_filter, pattern) = if let Some((prov, pat)) = profile.split_once(':') {
+        let (provider_filter, pattern) = if let Some((prov, pat)) = ctx_pattern.split_once(':') {
             (Some(prov.to_string()), pat.to_string())
         } else {
-            (args.provider.clone(), profile.clone())
+            (args.provider.clone(), ctx_pattern.clone())
         };
 
         // Collect contexts — prefer cache, fall back to live API
@@ -62,21 +62,21 @@ pub async fn run(args: ExecArgs, registry: &PluginRegistry, _cfg: &config::Confi
         let matches = fuzzy::match_contexts(&pattern, &all_contexts);
         match matches.first() {
             Some(m) => m.context.clone(),
-            None => bail!("No context matching '{profile}'"),
+            None => bail!("No context matching '{ctx_pattern}'"),
         }
     } else if let Some(ref provider_id) = args.provider {
-        // --provider without --profile: use the active context if it matches the provider
+        // --provider without --context: use the active context if it matches the provider
         let active = crate::core::cache::load_active_context().ok_or_else(|| {
-            anyhow::anyhow!("No active context. Run: gsa use {provider_id} <profile>")
+            anyhow::anyhow!("No active context. Run: gsa use {provider_id} <context>")
         })?;
         if active.provider_id != *provider_id {
-            bail!("Active context is for '{}', not '{provider_id}'. Run: gsa use {provider_id} <profile>", active.provider_id);
+            bail!("Active context is for '{}', not '{provider_id}'. Run: gsa use {provider_id} <context>", active.provider_id);
         }
         active
     } else {
         // Use the active context
         crate::core::cache::load_active_context().ok_or_else(|| {
-            anyhow::anyhow!("No active context. Run: gsa use <provider> <profile>")
+            anyhow::anyhow!("No active context. Run: gsa use <provider> <context>")
         })?
     };
     let context = &context;

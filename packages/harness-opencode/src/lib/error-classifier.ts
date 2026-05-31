@@ -53,7 +53,7 @@ const TRANSIENT_PATTERNS: ReadonlyArray<string> = [
 /**
  * Substring patterns that explicitly mark expired credentials. These
  * take precedence over generic "transient" classification — the loop
- * cannot recover by retrying, the user must run `gs-assume`.
+ * cannot recover by retrying, the user must run `gsa login`.
  */
 const CREDENTIAL_EXPIRED_PATTERNS: ReadonlyArray<RegExp> = [
   /expiredtoken/i,

@@ -103,6 +103,37 @@ if (sub === "harness") {
   process.exit(0);
 }
 
+// Handle assume subcommand — installs @glrs-dev/assume if missing, then dispatches to gsa
+if (sub === "assume") {
+  // Check if gsa is on PATH
+  const which = Bun.spawnSync(["which", "gsa"]);
+  if (which.exitCode !== 0) {
+    process.stderr.write("[glrs] gsa not found — installing @glrs-dev/assume...\n");
+    const install = spawn("npm", ["i", "-g", "@glrs-dev/assume"], { stdio: "inherit" });
+    const installCode = await new Promise<number>((resolve) => {
+      install.on("exit", (code) => resolve(code ?? 1));
+      install.on("error", () => resolve(1));
+    });
+    if (installCode !== 0) {
+      process.stderr.write("[glrs] Failed to install @glrs-dev/assume\n");
+      process.exit(1);
+    }
+    process.stderr.write("\n");
+  }
+
+  const gsaArgs = args.slice(1);
+  const child = spawn("gsa", gsaArgs, { stdio: "inherit" });
+  child.on("exit", (code, signal) => {
+    if (signal) { process.kill(process.pid, signal); return; }
+    process.exit(code ?? 0);
+  });
+  child.on("error", () => {
+    process.stderr.write("[glrs] 'gsa' still not found after install. Check your PATH.\n");
+    process.exit(1);
+  });
+  await new Promise(() => {});
+}
+
 // Handle upgrade subcommand
 if (sub === "upgrade") {
   const { upgradeCmd } = await import("./commands/upgrade.js");

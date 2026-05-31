@@ -7,13 +7,13 @@ use clap::Args;
 pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
 
 #[derive(Args, Debug)]
-pub struct ProfilesArgs {
+pub struct ContextsArgs {
     /// Filter by provider
     pub provider: Option<String>,
 }
 
 pub async fn run(
-    args: ProfilesArgs,
+    args: ContextsArgs,
     registry: &PluginRegistry,
     cfg: &config::Config,
 ) -> Result<()> {
@@ -126,7 +126,7 @@ pub async fn run(
     }
 
     if !found_any {
-        println!("No profiles available. Run: gsa login <provider>");
+        println!("No contexts available. Run: gsa login <provider>");
     }
 
     Ok(())

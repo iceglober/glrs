@@ -3,7 +3,7 @@
  *
  * The autopilot detects expired credentials via `classifyError` (see
  * src/lib/error-classifier.ts) and surfaces an actionable message
- * pointing the user at `gs-assume`. This module provides the
+ * pointing the user at `gsa login`. This module provides the
  * scaffolding for an *opt-in* refresh path that invokes the user's
  * SSO command directly (`aws sso login`, `az login`).
  *
@@ -73,7 +73,7 @@ export interface CredentialRefreshDeps {
  * Default policy — see module-level note: callers should NOT invoke
  * this automatically in headless autopilot runs. The recommended path
  * is to write a checkpoint and exit with an actionable message
- * (`Run gs-assume and then glrs oc autopilot --resume`).
+ * (`Run gsa login and then glrs loop --resume`).
  */
 export async function attemptCredentialRefresh(
   provider: CredentialProvider,

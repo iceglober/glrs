@@ -102,7 +102,7 @@ To detect the tracked-vs-untracked split from `git status --porcelain`:
 - Lines starting with ` M`, `M `, `MM`, `A `, `D `, ` D`, `R `, `C `, `U ` (or any non-`??` prefix) = tracked changes present
 - Lines starting with `??` = untracked; run `git check-ignore --stdin` across them to split gitignored-debris from intentional-new-files
 
-**Why safety gates are owned by `/fresh`, not the hook:** the `question` tool is available only to the PRIME agent; a bash hook cannot prompt. To keep `--yes` abort semantics deterministic (which unattended loops like `glrs oc autopilot` rely on) and interactive-mode confirmations coherent, all dirty-tree gating runs in `/fresh` BEFORE dispatching to either path. The dispatch target (hook or built-in) always runs against a tree that either is clean, is only gitignored debris cleared for `git clean -fdx`, or has been confirmed-for-discard by the user.
+**Why safety gates are owned by `/fresh`, not the hook:** the `question` tool is available only to the PRIME agent; a bash hook cannot prompt. To keep `--yes` abort semantics deterministic (which unattended loops like `glrs loop` rely on) and interactive-mode confirmations coherent, all dirty-tree gating runs in `/fresh` BEFORE dispatching to either path. The dispatch target (hook or built-in) always runs against a tree that either is clean, is only gitignored debris cleared for `git clean -fdx`, or has been confirmed-for-discard by the user.
 
 ## 2. Derive the new branch name
 
@@ -301,7 +301,7 @@ This is the piece that makes `/fresh` feel like "re-key and go" instead of "re-k
 
 **Why in the same turn:** the user ran `/fresh <task>` expecting work to start, not a checkpoint. One command, one turn, one uninterrupted transition from old task to new.
 
-**Interaction with `--yes` (unattended-loop mode):** same behavior. `/fresh --yes <ref>` re-keys and continues inline into the PRIME arc on the new ref. When invoked from inside an unattended loop (e.g., `glrs oc autopilot` driving a multi-issue prompt), the agent calls `/fresh --yes` between issues from within its own session — `/fresh` hands off to the PRIME, the PRIME runs plan → build → verify → STOP, and control returns to the outer loop.
+**Interaction with `--yes` (unattended-loop mode):** same behavior. `/fresh --yes <ref>` re-keys and continues inline into the PRIME arc on the new ref. When invoked from inside an unattended loop (e.g., `glrs loop` driving a multi-issue prompt), the agent calls `/fresh --yes` between issues from within its own session — `/fresh` hands off to the PRIME, the PRIME runs plan → build → verify → STOP, and control returns to the outer loop.
 
 **Exception — abort paths:** if `/fresh` aborts in §0 (not in a worktree), §1 (empty input), §3 (`--yes` + dirty tracked), or §3 (`--no-discard` + dirty), DO NOT enter §7. The whole point of an abort is that no work should start. Print the abort message and stop.
 
@@ -332,7 +332,7 @@ This is the piece that makes `/fresh` feel like "re-key and go" instead of "re-k
 
 ## Integration with unattended-loop callers
 
-When the user runs an unattended loop like `glrs oc autopilot "<multi-issue prompt>"`, the loop re-sends the same prompt each iteration and the agent (PRIME) decides what to do. For multi-issue workflows, the agent typically calls `/fresh --yes <next-ref>` from inside its session to isolate each issue on its own branch. The contract across that boundary:
+When the user runs an unattended loop like `glrs loop "<multi-issue prompt>"`, the loop re-sends the same prompt each iteration and the agent (PRIME) decides what to do. For multi-issue workflows, the agent typically calls `/fresh --yes <next-ref>` from inside its session to isolate each issue on its own branch. The contract across that boundary:
 
 **From the agent's side** (before calling `/fresh`):
 
@@ -349,7 +349,7 @@ When the user runs an unattended loop like `glrs oc autopilot "<multi-issue prom
 **Shape:**
 
 ```
-outer loop (e.g., glrs oc autopilot)
+outer loop (e.g., glrs loop)
   → sends the same prompt to PRIME each iteration
   → agent decides: "need to re-key for the next issue"
   → agent calls /fresh --yes <ref>

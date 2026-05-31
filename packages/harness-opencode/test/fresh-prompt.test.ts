@@ -54,7 +54,7 @@ describe("fresh prompt contract", () => {
 
   it("does not reset the autopilot-state file (moved out of /fresh)", () => {
     // /fresh no longer touches .agent/autopilot-state.json. Autopilot is
-    // now a CLI-only feature (`glrs oc autopilot`); /fresh is purely a
+    // now a CLI-only feature (`glrs loop`); /fresh is purely a
     // workspace-cleanup-and-branch command.
     expect(freshPrompt).not.toContain("autopilot-state.json");
   });

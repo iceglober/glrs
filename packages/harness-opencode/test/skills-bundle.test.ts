@@ -66,7 +66,7 @@ describe("skills bundle", () => {
     expect(fs.existsSync(DIST_SKILLS)).toBe(true);
   });
 
-  it("has exactly 17 skill directories", () => {
+  it("has exactly 18 skill directories", () => {
     const dirs = fs.readdirSync(DIST_SKILLS, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name);
@@ -74,6 +74,7 @@ describe("skills bundle", () => {
       "adr",
       "adversarial-review-rubric",
       "agent-estimation",
+      "cloud-credentials",
       "code-quality",
       "design-for-ai",
       "research",

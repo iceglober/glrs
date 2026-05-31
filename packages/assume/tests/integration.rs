@@ -49,8 +49,8 @@ fn test_status_no_auth() {
 }
 
 #[test]
-fn test_profiles_no_auth() {
-    glrs_assume().arg("profiles").assert().success();
+fn test_contexts_no_auth() {
+    glrs_assume().arg("contexts").assert().success();
 }
 
 #[test]
