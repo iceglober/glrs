@@ -135,7 +135,10 @@ pub fn print_context_exports(selected: &Context, cfg: &config::Config) {
         "export GLRS_ASSUME_CONTEXT=\"{}\"",
         shell_escape(&prompt_label)
     );
-    println!("export GLRS_ASSUME_CONTEXT_COLOR=\"{}\"", shell_escape(color));
+    println!(
+        "export GLRS_ASSUME_CONTEXT_COLOR=\"{}\"",
+        shell_escape(color)
+    );
     println!(
         "export GLRS_ASSUME_CONTEXT_ID=\"{}\"",
         shell_escape(&selected.id)

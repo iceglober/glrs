@@ -106,7 +106,11 @@ pub struct MockOidcClientForRotation {
 
 impl MockOidcClientForRotation {
     pub fn new(access_token: String, refresh_token: Option<String>, expires_in: i32) -> Self {
-        Self { access_token, refresh_token, expires_in }
+        Self {
+            access_token,
+            refresh_token,
+            expires_in,
+        }
     }
 }
 

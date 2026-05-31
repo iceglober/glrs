@@ -760,8 +760,7 @@ async fn inline_refresh_succeeds_with_expired_session_and_valid_refresh() {
     // Precondition: this is exactly the condition main.rs checks
     assert!(tokens.session_expires_at < now, "session must be expired");
     assert!(tokens.refresh_expires_at > now, "refresh must be valid");
-    let should_inline_refresh =
-        tokens.session_expires_at <= now && tokens.refresh_expires_at > now;
+    let should_inline_refresh = tokens.session_expires_at <= now && tokens.refresh_expires_at > now;
     assert!(should_inline_refresh);
 
     // Refresh succeeds without needing a valid session token

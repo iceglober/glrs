@@ -7,11 +7,11 @@ mod helpers;
 
 use assume::core::config;
 use assume::core::daemon::{DaemonState, SharedDaemonState};
+use assume::plugin::registry::PluginRegistry;
 use assume::plugin::{
-    AuthTokens, Context, Credentials, CredentialEndpoint, EndpointAuth, PromptSegment,
+    AuthTokens, Context, CredentialEndpoint, Credentials, EndpointAuth, PromptSegment,
     ProviderConfig, ProviderError, RefreshSchedule,
 };
-use assume::plugin::registry::PluginRegistry;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use helpers::make_tokens_relative;
@@ -80,9 +80,15 @@ fn make_test_context() -> Context {
 
 #[async_trait]
 impl assume::plugin::Provider for MockProvider {
-    fn trait_version(&self) -> u32 { 1 }
-    fn id(&self) -> &'static str { "mock" }
-    fn display_name(&self) -> &'static str { "Mock Provider" }
+    fn trait_version(&self) -> u32 {
+        1
+    }
+    fn id(&self) -> &'static str {
+        "mock"
+    }
+    fn display_name(&self) -> &'static str {
+        "Mock Provider"
+    }
 
     async fn login(&self, _config: &ProviderConfig) -> Result<AuthTokens, ProviderError> {
         Err(ProviderError::Other("not implemented".into()))
@@ -134,7 +140,10 @@ impl assume::plugin::Provider for MockProvider {
     }
 
     fn prompt_segment(&self, _ctx: &Context) -> PromptSegment {
-        PromptSegment { text: "mock".into(), color: "green".into() }
+        PromptSegment {
+            text: "mock".into(),
+            color: "green".into(),
+        }
     }
 
     fn console_url(&self, _ctx: &Context, _creds: &Credentials) -> Result<String, ProviderError> {
@@ -153,7 +162,9 @@ impl assume::plugin::Provider for MockProvider {
 /// Build a DaemonState with the mock provider pre-loaded with tokens and context.
 fn build_daemon_state(provider: Arc<MockProvider>, tokens: AuthTokens) -> SharedDaemonState {
     let mut registry = PluginRegistry::new();
-    registry.register(provider.clone() as Arc<dyn assume::plugin::Provider>).unwrap();
+    registry
+        .register(provider.clone() as Arc<dyn assume::plugin::Provider>)
+        .unwrap();
 
     let ctx = make_test_context();
     let config = config::Config::default();
@@ -230,15 +241,17 @@ async fn credential_endpoint_retries_after_session_expiry() {
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     // Make a credential request
-    let (status, body) = fetch_credentials(
-        port,
-        "/credentials/test-context-123",
-        "test-bearer-token",
-    )
-    .await;
+    let (status, body) =
+        fetch_credentials(port, "/credentials/test-context-123", "test-bearer-token").await;
 
-    assert_eq!(status, 200, "Expected 200 after retry, got {status}: {body}");
-    assert!(body.contains("AKIAIOSFODNN7EXAMPLE"), "Response should contain credentials");
+    assert_eq!(
+        status, 200,
+        "Expected 200 after retry, got {status}: {body}"
+    );
+    assert!(
+        body.contains("AKIAIOSFODNN7EXAMPLE"),
+        "Response should contain credentials"
+    );
 
     // Verify: get_credentials called twice (fail + retry), refresh called once
     assert_eq!(provider.get_cred_call_count.load(Ordering::SeqCst), 2);
