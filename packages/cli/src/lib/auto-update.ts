@@ -14,7 +14,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { join, sep } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 
@@ -68,8 +68,11 @@ export function recordLatestVersion(version: string): void {
  */
 function getCurrentVersion(): string | null {
   try {
-    const __dirname = import.meta.dir;
-    const pkgPath = join(__dirname, "..", "package.json");
+    // Read version from package.json relative to the entry script, not
+    // the chunk. import.meta.dir in a bundled chunk can resolve to the
+    // wrong location. process.argv[1] is the actual entry file path.
+    const entryDir = dirname(realpathSync(process.argv[1]!));
+    const pkgPath = join(entryDir, "..", "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
     return pkg.version ?? null;
   } catch {
