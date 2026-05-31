@@ -1,5 +1,11 @@
 # @glrs-dev/assume
 
+## 0.7.1
+
+### Patch Changes
+
+- [#223](https://github.com/iceglober/glrs/pull/223) [`a6132bd`](https://github.com/iceglober/glrs/commit/a6132bd13a85bad9d8055c979e08c734a0420a5b) Thanks [@iceglober](https://github.com/iceglober)! - fix(assume): publish platform packages with glrs-assume binary (was gs-assume)
+
 ## 0.7.0
 
 ### Minor Changes
