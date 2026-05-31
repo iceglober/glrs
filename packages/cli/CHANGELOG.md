@@ -1,5 +1,14 @@
 # @glrs-dev/cli
 
+## 2.29.3
+
+### Patch Changes
+
+- [#245](https://github.com/iceglober/glrs/pull/245) [`19f80b2`](https://github.com/iceglober/glrs/commit/19f80b2c7707265eafb4295d8839e0d38cfef519) Thanks [@iceglober](https://github.com/iceglober)! - fix(cli): auto-update uses npm when installed via npm (stops update loop)
+
+- Updated dependencies []:
+  - @glrs-dev/harness-plugin-opencode@2.29.3
+
 ## 2.29.2
 
 ### Patch Changes
