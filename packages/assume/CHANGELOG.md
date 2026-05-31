@@ -1,5 +1,13 @@
 # @glrs-dev/assume
 
+## 0.8.0
+
+### Minor Changes
+
+- [#230](https://github.com/iceglober/glrs/pull/230) [`129e479`](https://github.com/iceglober/glrs/commit/129e479bf7b8f7381458fbc02125cf52110d1166) Thanks [@iceglober](https://github.com/iceglober)! - feat(assume): rename `gsa profiles` → `gsa contexts`, unify "context" terminology
+
+  Breaking: `gsa profiles` is now `gsa contexts`. `gsa exec -p` is now `gsa exec -c` (`-p` still works as alias).
+
 ## 0.7.3
 
 ### Patch Changes
