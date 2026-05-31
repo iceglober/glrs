@@ -61,6 +61,11 @@ jobs:
         run: |
           gsutil -m rsync -d -r docs-site/dist/ gs://${{ vars.GCP_DOCS_BUCKET }}/
 
+      - name: Configure SPA routing (404 → index.html)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run == false }}
+        run: |
+          gsutil web set -m index.html -e index.html gs://${{ vars.GCP_DOCS_BUCKET }}
+
       - name: Invalidate CDN cache
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run == false }}
         run: |
