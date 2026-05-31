@@ -394,7 +394,32 @@ Include only lines that actually passed in pre-Assess verification. Do not fabri
 ### Loop limits
 
 - Max 3 Assess → Plan loops. After 3, escalate to user.
-- No limit on FIX-INLINE iterations.
+- No limit on FIX-INLINE iterations — BUT the repeated-failure escalation rule below applies.
+
+### Repeated-failure escalation (mandatory)
+
+When you attempt a fix and CI/tests produce the **same error** (same error message, same failing test, same root cause) after your fix:
+
+1. **First retry:** acceptable. Your fix might have been incomplete.
+2. **Second retry with same error:** you are stuck. **STOP fixing inline.** You lack the reasoning depth to solve this.
+3. **Escalate to `@build-deep` (Opus):** re-dispatch the failing unit to `@build-deep` with full context:
+   - The original error
+   - What you tried (all attempts)
+   - Why each attempt failed
+   - The relevant source files
+
+**Detection:** two consecutive CI runs that produce the same error class (same exception type + same call site OR same test name failing) after two different fix attempts = stuck. Don't wait for a third.
+
+**This is the highest-priority rule in Execute.** A Sonnet-class model looping on the same error wastes more tokens and wall-clock time than a single Opus dispatch. The cost of one `@build-deep` call is less than the cost of three failed Sonnet retries.
+
+**Do NOT:**
+- Try a third variation of the same approach
+- Add more mocks/stubs hoping one sticks
+- Grep for more context to feed into another Sonnet attempt
+
+**DO:**
+- Package everything you learned into the `@build-deep` prompt
+- Let Opus read the full dependency chain and solve it in one pass
 
 ## Resolve supplements
 
