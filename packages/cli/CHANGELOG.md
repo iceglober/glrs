@@ -1,5 +1,16 @@
 # @glrs-dev/cli
 
+## 2.29.0
+
+### Minor Changes
+
+- [#236](https://github.com/iceglober/glrs/pull/236) [`186e86c`](https://github.com/iceglober/glrs/commit/186e86cdac5f1e594175e422f4b26acf1cd58db8) Thanks [@iceglober](https://github.com/iceglober)! - feat(cli): add `glrs headroom` subcommand for context compression via headroom-ai
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @glrs-dev/harness-plugin-opencode@2.29.0
+
 ## 2.28.2
 
 ### Patch Changes
