@@ -238,14 +238,14 @@ jobs:
         run: bun run --cwd packages/cli restore-publish
 
       # Create a GitHub release for the main package and attach platform
-      # binaries as release assets. Auto-upgrade in gs-assume (update_check.rs)
+      # binaries as release assets. Auto-upgrade in glrs-assume (update_check.rs)
       # downloads from this URL pattern:
       #
       #   https://github.com/iceglober/glrs/releases/download/
-      #     @glrs-dev/assume@<version>/gs-assume-<platform>
+      #     @glrs-dev/assume@<version>/glrs-assume-<platform>
       #
       # Asset names use the legacy `*-amd64` suffix (NOT `*-x64`) so that
-      # pre-monorepo installs of gs-assume 0.6.3 and earlier, whose
+      # pre-monorepo installs of glrs-assume 0.6.3 and earlier, whose
       # detect_platform() returns `amd64`, can auto-upgrade to the new
       # binaries. Keeping `-amd64` frozen is the transition contract.
       #
@@ -284,26 +284,26 @@ jobs:
           # installs can auto-upgrade. Our artifact dirs are `*-x64`; map
           # on upload.
           declare -A ASSET_MAP=(
-            ["darwin-arm64"]="gs-assume-darwin-arm64"
-            ["darwin-x64"]="gs-assume-darwin-amd64"
-            ["linux-arm64"]="gs-assume-linux-arm64"
-            ["linux-x64"]="gs-assume-linux-amd64"
+            ["darwin-arm64"]="glrs-assume-darwin-arm64"
+            ["darwin-x64"]="glrs-assume-darwin-amd64"
+            ["linux-arm64"]="glrs-assume-linux-arm64"
+            ["linux-x64"]="glrs-assume-linux-amd64"
           )
 
           cd packages/assume/.release-artifacts
           for plat in "${!ASSET_MAP[@]}"; do
             asset_name="${ASSET_MAP[$plat]}"
-            src="$plat/gs-assume"
+            src="$plat/glrs-assume"
             if [ ! -f "$src" ]; then
               echo "MISSING: $src" >&2
               exit 1
             fi
             # gh release upload uses the filename (not the #label) as the
             # asset name. Copy to a correctly-named file so each platform
-            # gets its own asset instead of all four clobbering "gs-assume".
+            # gets its own asset instead of all four clobbering "glrs-assume".
             cp "$src" "$asset_name"
             gh release upload "$TAG" "$asset_name" --clobber
-            echo "Attached $asset_name (from $plat/gs-assume)"
+            echo "Attached $asset_name (from $plat/glrs-assume)"
           done
 
       # crates.io publishing for the `glrs-assume` crate is deliberately

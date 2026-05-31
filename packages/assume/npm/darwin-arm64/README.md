@@ -1,6 +1,6 @@
 # @glrs-dev/assume-darwin-arm64
 
-Prebuilt `gs-assume` binary for macOS arm64 (Apple Silicon).
+Prebuilt `glrs-assume` binary for macOS arm64 (Apple Silicon).
 
 This is an **internal** distribution package. You should not install this directly. Instead install the main package:
 
