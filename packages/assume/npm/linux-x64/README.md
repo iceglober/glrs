@@ -1,6 +1,6 @@
 # @glrs-dev/assume-linux-x64
 
-Prebuilt `gs-assume` binary for Linux x64.
+Prebuilt `glrs-assume` binary for Linux x64.
 
 This is an **internal** distribution package. You should not install this directly. Instead install the main package:
 

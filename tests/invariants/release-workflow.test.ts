@@ -132,12 +132,12 @@ describe("release workflow", () => {
     expect(releaseYml).toContain("Attach platform binaries to GitHub release");
     expect(releaseYml).toContain("gh release upload");
     // Assets must be named with the legacy `*-amd64` suffix so
-    // pre-monorepo gs-assume installs can auto-upgrade (their
-    // detect_platform returns `amd64`, not `x64`).
-    expect(releaseYml).toContain("gs-assume-darwin-amd64");
-    expect(releaseYml).toContain("gs-assume-linux-amd64");
-    expect(releaseYml).toContain("gs-assume-darwin-arm64");
-    expect(releaseYml).toContain("gs-assume-linux-arm64");
+    // pre-monorepo installs can auto-upgrade (their detect_platform
+    // returns `amd64`, not `x64`).
+    expect(releaseYml).toContain("glrs-assume-darwin-amd64");
+    expect(releaseYml).toContain("glrs-assume-linux-amd64");
+    expect(releaseYml).toContain("glrs-assume-darwin-arm64");
+    expect(releaseYml).toContain("glrs-assume-linux-arm64");
     // Skip on dry-run (no real tag to attach to).
     expect(releaseYml).toMatch(/if:\s*\$\{\{\s*github\.event\.inputs\.dry_run\s*!=\s*'true'\s*\}\}/);
   });

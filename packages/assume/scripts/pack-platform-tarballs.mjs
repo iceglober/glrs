@@ -6,21 +6,21 @@
  * platform package's bin/ directory, so `bun publish` picks them up.
  *
  * Input layout (from the release workflow's artifact-download step):
- *   packages/assume/.release-artifacts/darwin-arm64/gs-assume
+ *   packages/assume/.release-artifacts/darwin-arm64/glrs-assume
  *   packages/assume/.release-artifacts/darwin-arm64/gsa
- *   packages/assume/.release-artifacts/darwin-x64/gs-assume
+ *   packages/assume/.release-artifacts/darwin-x64/glrs-assume
  *   ...
- *   packages/assume/.release-artifacts/linux-arm64/gs-assume
+ *   packages/assume/.release-artifacts/linux-arm64/glrs-assume
  *   packages/assume/.release-artifacts/linux-arm64/gsa
  *
  * Output layout:
- *   packages/assume/npm/darwin-arm64/bin/gs-assume  (mode 0o755)
+ *   packages/assume/npm/darwin-arm64/bin/glrs-assume  (mode 0o755)
  *   packages/assume/npm/darwin-arm64/bin/gsa        (mode 0o755)
  *   ...
- *   packages/assume/npm/linux-arm64/bin/gs-assume
+ *   packages/assume/npm/linux-arm64/bin/glrs-assume
  *   packages/assume/npm/linux-arm64/bin/gsa
  *
- * Note: the platform package.json files DO list bins (gs-assume-bin) —
+ * Note: the platform package.json files DO list bins (glrs-assume-bin) —
  * npm symlinks them into node_modules/.bin. The parent @glrs-dev/assume
  * shim (src/cli.ts) resolves the binary via require.resolve and spawns
  * it directly.
@@ -66,7 +66,7 @@ for (const { key, exe } of platforms) {
   mkdirSync(destDir, { recursive: true });
 
   const suffix = exe ? ".exe" : "";
-  for (const bin of ["gs-assume", "gsa"]) {
+  for (const bin of ["glrs-assume", "gsa"]) {
     const srcBin = resolve(srcDir, `${bin}${suffix}`);
     const destBin = resolve(destDir, `${bin}${suffix}`);
     if (!existsSync(srcBin)) {

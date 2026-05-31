@@ -83,7 +83,7 @@ jobs:
         working-directory: packages/assume
         run: |
           mkdir -p .release-artifacts/${{ matrix.platform }}
-          cp target/${{ matrix.target }}/release/gs-assume${{ matrix.bin_suffix }} .release-artifacts/${{ matrix.platform }}/
+          cp target/${{ matrix.target }}/release/glrs-assume${{ matrix.bin_suffix }} .release-artifacts/${{ matrix.platform }}/
           cp target/${{ matrix.target }}/release/gsa${{ matrix.bin_suffix }} .release-artifacts/${{ matrix.platform }}/
       - uses: actions/upload-artifact@v4
         with:

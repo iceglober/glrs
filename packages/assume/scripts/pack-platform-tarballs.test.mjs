@@ -30,7 +30,7 @@ function createFixture() {
     mkdirSync(artifactDir, { recursive: true });
 
     // Create fake binaries (just empty files for testing)
-    writeFileSync(resolve(artifactDir, "gs-assume"), "fake-binary");
+    writeFileSync(resolve(artifactDir, "glrs-assume"), "fake-binary");
     writeFileSync(resolve(artifactDir, "gsa"), "fake-binary");
 
     // Create npm platform directory
@@ -55,7 +55,7 @@ describe("pack-platforms", () => {
     }
   });
 
-  test("pack-platforms copies gs-assume and gsa binaries into each platform bin dir", () => {
+  test("pack-platforms copies glrs-assume and gsa binaries into each platform bin dir", () => {
     execSync(`bun ${scriptPath}`, {
       env: { ...process.env, ASSUME_PKG_DIR: tempDir },
       stdio: "pipe",
@@ -66,7 +66,7 @@ describe("pack-platforms", () => {
 
     for (const key of platforms) {
       const binDir = resolve(tempDir, "npm", key, "bin");
-      expect(existsSync(resolve(binDir, "gs-assume"))).toBe(true);
+      expect(existsSync(resolve(binDir, "glrs-assume"))).toBe(true);
       expect(existsSync(resolve(binDir, "gsa"))).toBe(true);
     }
   });
@@ -97,7 +97,7 @@ describe("pack-platforms", () => {
     // All four platforms are Unix; all must have executable bit set.
     const platforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"];
     for (const key of platforms) {
-      const gsAssumeStat = statSync(resolve(tempDir, "npm", key, "bin", "gs-assume"));
+      const gsAssumeStat = statSync(resolve(tempDir, "npm", key, "bin", "glrs-assume"));
       const gsaStat = statSync(resolve(tempDir, "npm", key, "bin", "gsa"));
 
       // Check executable bit is set (mode & 0o111)
