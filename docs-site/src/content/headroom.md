@@ -1,8 +1,8 @@
 # Headroom
 
-Context compression for LLM sessions. Compresses tool outputs, logs, files, and conversation history before they reach the model. 60-95% fewer tokens, same answers.
+Context compression for LLM sessions. Compresses tool outputs — bash results, file reads, grep matches — before they enter the context window. 60-95% fewer tokens, same answers.
 
-Powered by [headroom-ai](https://github.com/chopratejas/headroom). Runs entirely local — no data leaves your machine.
+Powered by [headroom-ai](https://github.com/chopratejas/headroom). Runs entirely local — no data leaves your machine. Works with any provider (Bedrock, Anthropic, OpenAI).
 
 ## Install
 
@@ -10,44 +10,46 @@ Powered by [headroom-ai](https://github.com/chopratejas/headroom). Runs entirely
 glrs headroom init
 ```
 
-Installs headroom-ai if missing, starts the compression proxy, and configures OpenCode to route through it. One command.
+Installs headroom-ai, starts the compression service, persists across reboots.
 
 ## How it works
 
 ```
-OpenCode → headroom proxy (localhost:8787) → Anthropic/Bedrock/OpenAI
-                    ↓
-            SmartCrusher (JSON)
-            CodeCompressor (AST)
-            Kompress-base (text)
-            CacheAligner (prefix stability)
+Tool produces output (10,000 tokens)
+    ↓
+Harness tool-hooks sub-plugin
+    ↓ POST localhost:8787/v1/compress
+Headroom compresses (SmartCrusher / CodeCompressor / Kompress)
+    ↓
+Compressed output (2,000 tokens) enters conversation
+    ↓
+OpenCode sends to your provider normally
 ```
 
-The proxy intercepts all LLM traffic, compresses the context, and forwards to the provider. Originals are stored locally — the LLM can retrieve them on demand (CCR).
+The harness automatically compresses large tool outputs through headroom's local compression service. LLM traffic never touches headroom — only tool outputs do. If headroom isn't running, the harness falls back to its built-in truncation.
+
+## What gets compressed
+
+- Bash output above the backpressure threshold
+- Large file reads
+- Grep/glob results
+- Any tool output the harness would normally truncate
+
+## What doesn't change
+
+- Your provider, API keys, and model selection are untouched
+- Small outputs pass through uncompressed
+- Error outputs are never compressed (failures need full context)
+- Read deduplication and post-edit verification still run before compression
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `glrs headroom init` | Install, start proxy, configure OpenCode |
-| `glrs headroom start` | Start the proxy |
-| `glrs headroom stop` | Stop the proxy, restore direct provider access |
-| `glrs headroom status` | Proxy health, token savings, compression ratio |
-
-Any other arguments are passed through to the `headroom` CLI directly.
-
-## What gets compressed
-
-- Tool outputs (bash, read, grep results)
-- Large file contents
-- Conversation history (older turns)
-- RAG chunks and search results
-
-## What doesn't change
-
-- Your API keys stay in your environment — the proxy forwards them
-- Model selection, temperature, and other parameters pass through unchanged
-- The LLM sees compressed content but can retrieve originals via CCR if it needs the full text
+| `glrs headroom init` | Install headroom-ai, start service, persist via launchd |
+| `glrs headroom start` | Start the compression service |
+| `glrs headroom stop` | Stop the service |
+| `glrs headroom status` | Service health, compression stats |
 
 ## Disabling
 
@@ -55,4 +57,4 @@ Any other arguments are passed through to the `headroom` CLI directly.
 glrs headroom stop
 ```
 
-Stops the proxy and removes the provider redirect from `opencode.json`. Traffic goes direct to the provider again.
+The harness falls back to built-in truncation (head + tail) when headroom isn't running.
