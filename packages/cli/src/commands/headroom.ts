@@ -311,19 +311,23 @@ export async function headroomCmd(args: string[]): Promise<void> {
 
     if (proxyRunning()) {
       process.stderr.write(`proxy: running on port ${PROXY_PORT}\n`);
-      // Fetch stats
       try {
-        const stats = execSync(
+        const raw = execSync(
           `curl -s http://localhost:${PROXY_PORT}/stats`,
           { encoding: "utf8" },
         );
-        const parsed = JSON.parse(stats);
-        if (parsed.tokens_saved) {
-          process.stderr.write(`tokens saved: ${parsed.tokens_saved.toLocaleString()}\n`);
+        const s = JSON.parse(raw);
+        const reqs = s.summary?.api_requests ?? s.requests?.total ?? 0;
+        const saved = s.tokens?.saved ?? s.summary?.compression?.total_tokens_saved ?? 0;
+        const pct = s.tokens?.savings_percent ?? s.summary?.compression?.avg_compression_pct ?? 0;
+        const costSaved = s.cost?.savings_usd ?? s.summary?.cost?.total_saved_usd ?? 0;
+        process.stderr.write(`requests: ${reqs}\n`);
+        process.stderr.write(`tokens saved: ${saved.toLocaleString()}\n`);
+        if (pct > 0) {
+          process.stderr.write(`compression: ${Math.round(pct)}% reduction\n`);
         }
-        if (parsed.compression_ratio) {
-          const pct = Math.round((1 - parsed.compression_ratio) * 100);
-          process.stderr.write(`compression: ${pct}% reduction\n`);
+        if (costSaved > 0) {
+          process.stderr.write(`cost saved: $${costSaved.toFixed(2)}\n`);
         }
       } catch {
         // Stats endpoint might not exist in all versions
