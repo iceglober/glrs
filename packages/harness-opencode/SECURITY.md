@@ -4,14 +4,13 @@ Thank you for helping keep `@glrs-dev/harness-plugin-opencode` and the people wh
 
 ## Supported versions
 
-We publish fixes for the **latest minor** during the 0.x cadence. Older minors do not receive backports.
+We publish fixes for the **latest minor** on the current major. Older minors do not receive backports.
 
 | Version | Supported |
 | ------- | --------- |
-| 0.x (latest minor) | ✅ |
-| 0.x (older minors) | ❌ |
-
-Once 1.0 ships, this table will track supported major lines instead.
+| 2.x (latest minor) | ✅ |
+| 2.x (older minors) | ❌ |
+| 1.x and earlier | ❌ |
 
 ## Reporting a vulnerability
 
@@ -44,7 +43,7 @@ If a vulnerability is confirmed and fixed, we will publish a GitHub security adv
 **In scope:**
 
 - The published npm tarball (`@glrs-dev/harness-plugin-opencode`).
-- CLI subcommands (`glrs-oc`, `harness-opencode`): `install`, `uninstall`, `doctor`, `pilot`.
+- CLI subcommands (`glrs harness`): `install`, `uninstall`, `doctor`, `configure`.
 - Plugin hooks registered via the OpenCode plugin API (`config`, `tool.execute.before/after`, `session.idle`, etc.).
 - The MCP config writer (`src/cli/install.ts`, `src/mcp/index.ts`) and the `opencode.json` merge logic (`src/cli/merge-config.ts`).
 - Outbound network calls the plugin makes on its own:
@@ -53,9 +52,8 @@ If a vulnerability is confirmed and fixed, we will publish a GitHub security adv
 
 **Out of scope (will not be treated as vulnerabilities in this package):**
 
-- User-authored `pilot.yaml` files: the pilot verify-runner executes user-supplied shell commands by design. Malicious `pilot.yaml` contents are the user's responsibility to review.
 - **Third-party MCP upstreams** the plugin configures (Serena, mcp-server-git, `@playwright/mcp`, `@modelcontextprotocol/server-memory`, Linear MCP): these run in the user's MCP shell and are outside this package's boundary. Report issues to their respective maintainers.
-- **Agent bash permission patterns** (`CORE_DESTRUCTIVE_BASH_DENIES` in `src/agents/index.ts`): the deny-list is a safety rail for common mistakes, not a sandbox. An agent (or prompt injection that reaches one) can exfiltrate files, call network endpoints, or mutate the shell via constructs the deny-list does not match (shell expansion, piping to curl, etc.). This is a documented property of the threat model; see `docs/THREAT_MODEL.md` (when published) or the README's Threat boundaries section.
+- **Agent bash permission patterns** (`CORE_DESTRUCTIVE_BASH_DENIES` in `src/agents/index.ts`): the deny-list is a safety rail for common mistakes, not a sandbox. An agent (or prompt injection that reaches one) can exfiltrate files, call network endpoints, or mutate the shell via constructs the deny-list does not match (shell expansion, piping to curl, etc.). This is a documented property of the threat model; see the README's "What is NOT a sandbox" section.
 - Decisions made by the underlying LLM. If a model follows a malicious instruction, that's a model/prompt issue, not a plugin issue. Defense-in-depth against prompt injection is welcome via the private reporting channel but will typically be triaged as a feature request.
 - Vulnerabilities in Node.js, Bun, npm, git, `uvx`, `npx`, or other tools the plugin invokes via `execFile`/subprocess. Report to their maintainers; we will update our pinned/required versions if a fix affects us.
 

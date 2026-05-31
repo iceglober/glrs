@@ -75,7 +75,7 @@ Agent and command prompts are read at runtime via `readFileSync` (not static imp
 
 ## Permission resolution: why `bash` uses object-form allow-lists
 
-**Core finding (v0.7.0):** agent-level scalar `bash: "allow"` does NOT win against OpenCode's upstream defaults. An upstream layer — suspected to be the built-in subagent mode's permission defaults — injects `{permission: "bash", pattern: "*", action: "ask"}` into the effective ruleset. Because `Permission.evaluate` in `packages/opencode/src/permission/index.ts` walks the merged ruleset top-to-bottom and the LAST matching rule wins, and because our scalar `bash: "allow"` expands to `{bash, *, allow}` (the same wildcard pattern as upstream's ask), the merge-position of the two rules determines the winner. The live log trace at `~/.local/share/opencode/log/2026-04-24T014426.log` lines 40292–40293 (ruleset) and 46605–46606 (evaluated rule) shows the upstream `{bash, *, ask}` landing AFTER our agent's scalar allow and winning.
+**Core finding:** agent-level scalar `bash: "allow"` does NOT win against OpenCode's upstream defaults. An upstream layer — suspected to be the built-in subagent mode's permission defaults — injects `{permission: "bash", pattern: "*", action: "ask"}` into the effective ruleset. Because `Permission.evaluate` in `packages/opencode/src/permission/index.ts` walks the merged ruleset top-to-bottom and the LAST matching rule wins, and because our scalar `bash: "allow"` expands to `{bash, *, allow}` (the same wildcard pattern as upstream's ask), the merge-position of the two rules determines the winner. The live log trace at `~/.local/share/opencode/log/2026-04-24T014426.log` lines 40292–40293 (ruleset) and 46605–46606 (evaluated rule) shows the upstream `{bash, *, ask}` landing AFTER our agent's scalar allow and winning.
 
 **Why specific-pattern allows win.** `Permission.fromConfig` sorts top-level permission keys so wildcard-in-name entries (`"*": ...`) come first and specific-name entries (`"bash": ...`) come second. Within a single permission block (e.g. inside our agent's `bash:` object), the flattened rules end up in the order Object.entries emits them — specific patterns sort later than the `"*"` key because they have non-wildcard content. The upstream rule is a wildcard; our specific patterns like `"git merge-base *"` sort AFTER it in the merged ruleset and win via last-match-wins for the commands they cover.
 
@@ -84,7 +84,7 @@ Agent and command prompts are read at runtime via `readFileSync` (not static imp
 - `CORE_BASH_ALLOW_LIST` — ~50 non-destructive command patterns (`ls *`, `tail *`, `pnpm lint *`, `git merge-base *`, `bunx *`, etc.) that cover the reported pain points. Every entry is specific enough to beat the wildcard upstream.
 - `CORE_DESTRUCTIVE_BASH_DENIES` — non-negotiable denies (`rm -rf /*`, `chmod *`, `sudo *`, `git push --force*` + explicit re-allow of `--force-with-lease`). Every bash-capable agent carries these.
 
-Applied to: `prime`, `build`, `qa-reviewer`, `qa-thorough`. Deny-everything agents (`plan-reviewer`, `code-searcher`, `gap-analyzer`, `architecture-advisor`, `lib-reader`) keep `bash: "deny"` scalar — that shape DOES win because `deny` stops evaluation regardless of ordering. `agents-md-writer` keeps `bash: "ask"` scalar since explicit confirmation is the intent.
+Applied to: `prime`, `build`, `code-reviewer`, `code-reviewer-thorough`, and other bash-capable agents. Deny-everything agents (`plan-reviewer`, `code-searcher`, `gap-analyzer`, `architecture-advisor`, `lib-reader`) keep `bash: "deny"` scalar — that shape DOES win because `deny` stops evaluation regardless of ordering. `agents-md-writer` keeps `bash: "ask"` scalar since explicit confirmation is the intent.
 
 **Do NOT simplify back to scalar `allow` without reading the logs.** Two prior fixes (commits `c9a288d`, `3483448`) tried the scalar form and shipped regressions. If you're tempted to clean up the enumerated allow-list as "redundant" with `"*": "allow"`, STOP — run the `HARNESS_OPENCODE_PERM_DEBUG=1` probe to capture the live ruleset OpenCode sees, then convince yourself the specific patterns are actually redundant before removing them. They almost certainly aren't.
 
@@ -97,10 +97,10 @@ Payload shape:
 ```json
 {
   "timestamp": "2026-04-24T...Z",
-  "pluginVersion": "0.7.0",
-  "agents": ["prime", "plan", "build", "qa-reviewer", ...],
+  "pluginVersion": "2.x.x",
+  "agents": ["prime", "plan", "build", "code-reviewer", ...],
   "agentPermissions": {
-    "qa-reviewer": { "edit": "deny", "bash": { "*": "allow", "tail *": "allow", ... }, ... },
+    "code-reviewer": { "edit": "deny", "bash": { "*": "allow", "tail *": "allow", ... }, ... },
     ...
   },
   "globalPermission": { "external_directory": { "~/.glorious/worktrees/**": "allow", ... } }

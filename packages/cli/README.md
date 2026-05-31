@@ -1,6 +1,6 @@
 # `@glrs-dev/cli`
 
-Unified CLI for the [@glrs-dev](https://www.npmjs.com/org/glrs-dev) ecosystem. One binary, two subcommands:
+Unified CLI for the [@glrs-dev](https://www.npmjs.com/org/glrs-dev) ecosystem. One binary, six subcommands:
 
 ```bash
 npm i -g @glrs-dev/cli
@@ -8,42 +8,69 @@ npm i -g @glrs-dev/cli
 
 Requires [Bun](https://bun.sh) ≥ 1.2.0 on PATH at runtime.
 
-## `glrs oc` — OpenCode agent harness
+## `glrs harness` — OpenCode agent harness
 
-Dispatches to [`@glrs-dev/harness-plugin-opencode`](https://www.npmjs.com/package/@glrs-dev/harness-plugin-opencode) (bundled as a dependency). Resolves the bin via `require.resolve` → reads the `bin` field → spawns with argv forwarded.
+Plugin management for [`@glrs-dev/harness-plugin-opencode`](https://www.npmjs.com/package/@glrs-dev/harness-plugin-opencode) (bundled as a dependency).
 
 ```bash
-glrs oc install       # install the OpenCode harness
-glrs oc --help        # full harness help
+glrs harness install      # register the harness in opencode.json
+glrs harness configure    # interactive configuration
+glrs harness doctor       # check installation health
+glrs harness uninstall    # remove from opencode.json
 ```
-
-The `harness-opencode` bin remains available directly for power users who prefer the untagged entry point.
 
 ## `glrs wt` — worktree management
 
-Five named subcommands:
-
 ```bash
-glrs wt new <name>    # create a new git worktree
-glrs wt list          # list all worktrees for this repo
-glrs wt switch        # switch to a worktree by name
-glrs wt delete <name> # delete a worktree
-glrs wt cleanup       # remove stale worktrees
+glrs wt new               # create a new worktree (auto-named)
+glrs wt list              # list all worktrees across repos
+glrs wt switch            # interactively select and switch
+glrs wt delete            # remove worktrees (interactive or by name)
+glrs wt cleanup           # delete merged/stale worktrees
 ```
 
-**Bare invocation:** running `glrs wt` with no arguments in a TTY drops into an interactive picker — select a worktree to switch to without typing its name.
+**Bare invocation:** running `glrs wt` with no arguments in a TTY drops into an interactive picker.
 
-Worktrees are stored in `~/.glorious/worktrees/<repo>/<name>/`.
+## `glrs autopilot` — autonomous orchestrator
+
+Three-phase scope → plan → execute orchestrator with self-assessment.
+
+```bash
+glrs autopilot --plan docs/plans/my-plan/
+```
+
+## `glrs loop` — raw prompt loop
+
+Runs PRIME in a loop with a raw prompt. Exits on `<autopilot-done>` sentinel or budget limits.
+
+```bash
+glrs loop "implement the auth middleware"
+```
+
+## `glrs dashboard` — live TUI
+
+Real-time dashboard for all running autopilot sessions.
+
+```bash
+glrs dashboard
+```
+
+## `glrs upgrade` — self-update
+
+```bash
+glrs upgrade
+```
+
+Auto-update also runs on every CLI invocation (rate-limited to once per hour).
 
 ## Philosophy
 
-- **Don't duplicate CLI logic.** `glrs oc` is a thin spawn wrapper around `harness-opencode`.
-- **One install, one thing to remember** for the harness + worktree workflow.
+- **One install, one thing to remember** for the harness + worktree + autopilot workflow.
 - **Separate concerns stay separate.** The SSO credential tool [`@glrs-dev/assume`](https://www.npmjs.com/package/@glrs-dev/assume) is a standalone Rust binary installed separately.
 
 ## Docs
 
-Full docs at [glrs.dev/cli/](https://glrs.dev/cli/) — generated from this README via the docs-site custom content loader.
+Full docs at [glrs.dev/cli/](https://glrs.dev/cli/).
 
 ## License
 

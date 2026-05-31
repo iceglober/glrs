@@ -8,29 +8,38 @@ Docs: **[glrs.dev](https://glrs.dev)**
 
 | Package | npm | What it is |
 |---|---|---|
-| [`@glrs-dev/cli`](./packages/cli) | `@glrs-dev/cli` | Single `glrs` binary. Dispatches to harness-opencode and provides worktree management. |
+| [`@glrs-dev/cli`](./packages/cli) | `@glrs-dev/cli` | Single `glrs` binary. Dispatches to the agent harness and provides worktree management. |
 | [`@glrs-dev/harness-plugin-opencode`](./packages/harness-opencode) | `@glrs-dev/harness-plugin-opencode` | OpenCode agent harness — PRIME, plan, build, QA, skills, MCP wiring. |
-| [`@glrs-dev/assume`](./packages/assume) | `@glrs-dev/assume` (+ [crates.io](https://crates.io/crates/glrs-assume)) | Rust-based SSO credential manager for AWS/GCP. Bins: `gs-assume`, `gsa`. |
+| [`@glrs-dev/assume`](./packages/assume) | `@glrs-dev/assume` (+ [crates.io](https://crates.io/crates/glrs-assume)) | Rust-based SSO credential manager for AWS/GCP. Bins: `glrs-assume`, `gsa`. |
 
 ## Quick start
 
 ```bash
-# Install the unified CLI
+# Install the unified CLI (includes the OpenCode harness)
 npm i -g @glrs-dev/cli
 
-# Use subcommands
-glrs oc install
-glrs wt new my-feature
+# Set up the harness in your OpenCode config
+glrs harness install
 
-# Install assume separately (standalone Rust package)
-npm i -g @glrs-dev/assume
-gsa login aws
+# Launch OpenCode — agents, commands, tools, and skills load automatically
+opencode
 ```
 
-Each package still ships its own bin for direct use:
+Other CLI subcommands:
 
 ```bash
-harness-opencode install
+glrs wt new                      # create a worktree (auto-named)
+glrs wt list                     # list all worktrees
+glrs autopilot --plan docs/...   # run the autopilot orchestrator
+glrs loop "implement feature X"  # raw prompt loop
+glrs dashboard                   # live TUI for autopilot sessions
+glrs upgrade                     # self-update to latest version
+```
+
+Install assume separately (standalone Rust binary):
+
+```bash
+npm i -g @glrs-dev/assume
 gsa login aws
 ```
 
@@ -43,7 +52,7 @@ bun test
 bun run typecheck
 ```
 
-This repo uses **Bun workspaces**, **Changesets** for versioning + publishing. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+This repo uses **Bun workspaces** and **Changesets** for versioning + publishing. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## Releases
 

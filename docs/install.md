@@ -10,14 +10,18 @@ npm i -g @glrs-dev/cli
 ```
 
 This installs the unified `glrs` dispatcher with:
-- `glrs oc <args>` — OpenCode agent harness (`harness-opencode`)
+- `glrs harness <args>` — OpenCode agent harness management
 - `glrs wt <args>` — worktree management
+- `glrs autopilot` — autonomous scope → plan → execute orchestrator
+- `glrs loop` — raw prompt loop runner
+- `glrs dashboard` — live TUI for autopilot sessions
+- `glrs upgrade` — self-update
 
 Verify:
 
 ```bash
 glrs --help
-glrs oc --help
+glrs harness --help
 glrs wt --help
 ```
 
