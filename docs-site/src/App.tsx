@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { Home } from "./pages/Home";
 import { Install } from "./pages/Install";
 import { Doc } from "./pages/Doc";
+import { Changelog } from "./pages/Changelog";
 
 import quickstartMd from "./content/quickstart.md?raw";
 import harnessMd from "./content/harness.md?raw";
@@ -34,6 +35,7 @@ export function App() {
             <Route path="headroom" element={<Doc md={headroomMd} title="headroom" />} />
             <Route path="cli" element={<Doc md={cliMd} title="cli" />} />
             <Route path="assume" element={<Doc md={assumeMd} title="assume" />} />
+            <Route path="changelog" element={<Changelog />} />
           </Route>
         </Routes>
       </BrowserRouter>
