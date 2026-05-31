@@ -184,7 +184,15 @@ function doUpdate(currentVersion: string, latestVersion: string): boolean {
   );
 
   try {
-    execFileSync("bun", ["add", "-g", `${PACKAGE_NAME}@${latestVersion}`], {
+    // Use the same package manager that installed us. npm installs go
+    // to ~/.nvm or /usr/local; bun installs go to ~/.bun. Using the
+    // wrong one leaves the old binary on PATH.
+    const resolvedDir = realpathSync(import.meta.dir);
+    const useNpm = resolvedDir.includes(".nvm") || resolvedDir.includes("/usr/");
+    const [cmd, ...cmdArgs] = useNpm
+      ? ["npm", "install", "-g", `${PACKAGE_NAME}@${latestVersion}`]
+      : ["bun", "add", "-g", `${PACKAGE_NAME}@${latestVersion}`];
+    execFileSync(cmd, cmdArgs, {
       stdio: ["ignore", "ignore", "pipe"],
       timeout: 30_000,
       env: { ...process.env, GLRS_UPDATING: "1" },
