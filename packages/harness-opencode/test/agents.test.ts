@@ -18,7 +18,7 @@ describe("createAgents", () => {
     // code-reviewer, code-reviewer-thorough, plan-reviewer, code-searcher,
     // gap-analyzer, architecture-advisor, docs-maintainer, lib-reader,
     // agents-md-writer), plus debriefer (mode:subagent — post-run summary agent).
-    expect(Object.keys(agents).length).toBe(28);
+    expect(Object.keys(agents).length).toBe(30);
   });
 
   it("has 3 primary-capable agents besides plan (prime, scoper, build; mode=primary or mode=all)", () => {
@@ -240,7 +240,7 @@ describe("createAgents", () => {
 
   it("agent count is correct", () => {
     // Alias for the "returns exactly 24 agents" test — used by changeset a9.
-    expect(Object.keys(agents).length).toBe(28);
+    expect(Object.keys(agents).length).toBe(30);
   });
 
   it("plan agent has hallucination-defense clause", () => {

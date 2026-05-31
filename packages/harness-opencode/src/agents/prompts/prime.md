@@ -162,14 +162,23 @@ For reference, the plan structure (written by `@plan`, not by you):
 
 ## Dispatch tiers
 
-For `@build` and `@plan` dispatches, two active tiers:
+For `@build` and `@plan` dispatches, three active tiers:
 
 | Tier | Build agent | Plan agent | Default model |
 |---|---|---|---|
-| Standard | `@build` | `@plan` | Sonnet (build) / Opus (plan) |
+| Cheap (default) | `@build-cheap` | `@plan-cheap` | GLM via Bedrock |
+| Standard (escalation) | `@build` | `@plan` | Sonnet (build) / Opus (plan) |
 | Deep (escalation) | `@build-deep` | (use `@plan`) | Opus |
 
-**Default dispatch:** Always use `@build` and `@plan` (standard tier). Do NOT use `@build-cheap` or `@plan-cheap` — cheap-tier cascading is disabled pending decomposition improvements.
+**Default dispatch:** Use `@build-cheap` and `@plan-cheap` (cheap tier) for the first attempt. Cascade decomposition rules (see below) MUST be applied before dispatching to cheap tier — decompose multi-package tasks into per-file subtasks so cheap models can handle the scope. Escalate to `@build` on BLOCKED, FAIL_SPEC, or empty/truncated output.
+
+**Skip cheap tier** and dispatch directly to `@build` (standard) when ANY of:
+- Task spans multiple packages (cross-package scope) AND cannot be decomposed into single-file subtasks
+- 10+ files in a single dispatch
+- Risk is flagged as high for any file in the dispatch
+- Touches security-sensitive paths (auth, crypto, billing)
+- A cascade failure in this dispatch would trigger an expensive downstream wave of re-work
+- Previous cheap-tier attempt returned BLOCKED, FAIL_SPEC, or empty/truncated output
 
 **Escalation to deep tier** — re-dispatch the SAME work to `@build-deep` when:
 - `@build` returns `BLOCKED` with a capability signal
@@ -179,31 +188,6 @@ For `@build` and `@plan` dispatches, two active tiers:
 **Do NOT escalate for:**
 - Real blockers (missing dependency, broken environment, design ambiguity) — route to user
 - Scope expansion requests — pass to user
-
-## Task decomposition — mandatory before dispatch
-
-Do NOT dispatch an entire plan phase as a single `@build` call. A phase that spans multiple packages or touches >3 files MUST be decomposed into atomic per-file subtasks first.
-
-**Rule:** Each `@build` dispatch should target ONE file (or a tightly coupled pair in the same package). If a phase's file-level changes list has 6 entries across 4 packages, that's 4-6 separate `@build` dispatches — not one monolithic call.
-
-**Anti-pattern (caused production failures):**
-```
-BAD:  @build("Execute Phase 1 — the entire unbilled appointments feature")
-      → agent touches 6 files across core/contracts/api-server/web-app
-      → git conflicts, scope confusion, truncated output
-```
-
-**Correct decomposition:**
-```
-GOOD: @build("Add listUnbilledEncounters method to encounter/model.ts")
-      @build("Create rcm-unbilled.contract.ts in api-contracts")
-      then: @build("Add unbilled route to rcm.router.ts")  ← depends on contract
-      then: @build("Create unbilled page.tsx in web-app")
-```
-
-**When a phase spans multiple packages** (e.g., `@kn/core` + `@kn/api-contracts` + `@kn/api-server` + `@kn/web-app`), decompose along package boundaries at minimum. Cross-package dispatches fail because the agent can't hold the full dependency context.
-
-**When parallel lanes share a worktree:** dispatch sequentially (one `@build` at a time) or use worktree isolation per lane. Never run parallel code-writing agents on the same working tree — they corrupt each other's git state.
 
 ## Execute supplements
 
@@ -223,6 +207,33 @@ Before calling the task tool, read the plan and apply these rules:
 
 **If you are about to dispatch a single `@build` for a plan with 2+ phases or 4+ items, STOP.** State the specific reason (shared files, ordering dependency) in your response before proceeding. "I'll handle these sequentially" without a reason is not acceptable.
 
+**Write out the execution plan** in your response before dispatching. Include full file paths, state each dependency explicitly, and label the decomposition approach:
+```
+Execution plan (one file per @build dispatch, split at package boundaries):
+Phase 1: packages/shared/src/types/billing.ts — no dependencies
+Phase 2: packages/api/src/routes/users.ts — depends on Phase 1
+```
+
+### Cascade decomposition (mandatory for cross-package dispatches)
+
+When a task spans multiple packages or touches 4+ files, decompose into atomic per-file subtasks before dispatching to `@build`. Never send an entire phase as a single monolithic dispatch — this causes git conflicts, scope confusion, and truncated output.
+
+**Decomposition rules — state these explicitly in your dispatch output:**
+
+1. **One file per @build dispatch** when crossing package boundaries. Each file gets its own separate @build call. Example: instead of dispatching "implement the caching feature" as one call, decompose to: "add caching method to model.ts", "create cache contract in types.ts", "add route to router.ts" — each file as a separate @build call.
+2. **Split at package boundaries.** A single `@build` call must never write to files in multiple packages.
+3. **Sequential dispatch in a shared worktree** — decomposed subtasks that modify overlapping files must run one at a time. For parallel execution across packages, use worktree isolation per lane.
+
+**Cascade failure prevention:**
+
+A monolithic dispatch that fails triggers an expensive downstream wave of re-work across all dependent waves. By decomposing early, cascade failures stay local — re-dispatch cost drops from "entire phase" to "one file."
+
+**Skip cheap tier** (`@build-cheap`) and dispatch to `@build` directly when ANY of:
+- Task spans multiple packages (cross-package scope)
+- Risk is flagged as high for any file in the dispatch
+- Touches security-sensitive paths (auth, crypto, billing)
+- `@build` previously returned BLOCKED, FAIL_SPEC, or empty/truncated output for this scope
+
 ### How to dispatch (parallel — the default path)
 
 Make multiple task tool calls in ONE response message. Each `@build` call gets:
@@ -230,16 +241,21 @@ Make multiple task tool calls in ONE response message. Each `@build` call gets:
 - Which items/phases this build owns (explicit scope restriction)
 - The structured context block scoped to its items only (files, verify commands, non-goals)
 
-Example — 3 parallel builds, all dispatched in ONE message:
+Example — parallel builds with one file per @build, all dispatched in ONE message:
 ```
-[Task 1] @build — phase_1.md (items a1, a2, a3). Plan: /path/to/plan.
-Structured context: [only phase_1 files and verify commands]
+Execution plan (one file per @build dispatch, split at package boundaries):
+Phase 1: packages/db/migrations/001.sql — no dependencies
+Phase 2: packages/api/src/routes/users.ts — depends on Phase 1 (requires migration)
+Phase 3: packages/frontend/src/components/UserList.tsx — depends on Phase 2 (imports from API)
 
-[Task 2] @build — phase_2.md (items b1, b2). Plan: /path/to/plan.
-Structured context: [only phase_2 files and verify commands]
+Dispatching Phase 1 (each file as a separate @build):
+@build — packages/db/migrations/001.sql. Plan: /path/to/plan.
 
-[Task 3] @build — phase_3.md (items c1, c2). Plan: /path/to/plan.
-Structured context: [only phase_3 files and verify commands]
+Dispatching Phase 2 (depends on Phase 1, one file per @build):
+@build — packages/api/src/routes/users.ts. Plan: /path/to/plan.
+
+Dispatching Phase 3 (depends on Phase 2, one file per @build):
+@build — packages/frontend/src/components/UserList.tsx. Plan: /path/to/plan.
 ```
 
 **After parallel builds return:**

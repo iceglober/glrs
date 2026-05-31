@@ -32,6 +32,9 @@ const AUTOPILOT_GENERATED_DIRS = [
   "src/routes/analytics.ts",
 ];
 
+const ENRICH_MODEL = process.env.EVAL_ENRICH_MODEL ?? "claude-opus-4-7";
+const EXECUTE_MODEL = process.env.EVAL_EXECUTE_MODEL ?? "claude-sonnet-4-6";
+
 async function createAdapter() {
   const { ClaudeCodeCliAdapter } = await import(
     "../../../packages/adapter-claude-code/src/claude-code-adapter.js"
@@ -39,8 +42,8 @@ async function createAdapter() {
   return new ClaudeCodeCliAdapter({
     dangerouslySkipPermissions: true,
     models: {
-      enrich: "claude-opus-4-7",
-      execute: "claude-sonnet-4-6",
+      enrich: ENRICH_MODEL,
+      execute: EXECUTE_MODEL,
     },
   });
 }
@@ -127,8 +130,8 @@ async function runAutopilot(): Promise<{ durationS: number; costUsd: number }> {
     config: {
       adapter: "claude-code-cli",
       models: {
-        enrichment: "claude-opus-4-7",
-        execution: "claude-sonnet-4-6",
+        enrichment: ENRICH_MODEL,
+        execution: EXECUTE_MODEL,
       },
     },
   });

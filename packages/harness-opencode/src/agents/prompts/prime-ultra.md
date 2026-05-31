@@ -207,14 +207,23 @@ For reference, the plan structure (written by `@plan-ultra`, not by you):
 
 ## Dispatch tiers
 
-For `@build` and `@plan` dispatches in the wave DAG, two active tiers:
+For `@build` and `@plan` dispatches in the wave DAG, three active tiers:
 
 | Tier | Build agent | Plan agent | Default model |
 |---|---|---|---|
-| Standard | `@build` | `@plan-ultra` | Sonnet (build) / Opus (plan) |
+| Cheap (default) | `@build-cheap` | `@plan-ultra-cheap` | GLM via Bedrock |
+| Standard (escalation) | `@build` | `@plan-ultra` | Sonnet (build) / Opus (plan) |
 | Deep (escalation) | `@build-deep` | (use `@plan-ultra`) | Opus |
 
-**Default dispatch:** Always use `@build` and `@plan-ultra` (standard tier). Do NOT use `@build-cheap` or `@plan-ultra-cheap` — cheap-tier cascading is disabled pending decomposition improvements.
+**Default dispatch:** Use `@build-cheap` and `@plan-ultra-cheap` (cheap tier) for the first attempt. Cascade decomposition rules (see below) MUST be applied before dispatching to cheap tier — decompose multi-package tasks into per-file subtasks so cheap models can handle the scope. Escalate to `@build` on BLOCKED, FAIL_SPEC, or empty/truncated output.
+
+**Skip cheap tier** and dispatch directly to `@build` (standard) when ANY of:
+- Task spans multiple packages (cross-package scope) AND cannot be decomposed into single-file subtasks
+- 10+ files in a single dispatch
+- Risk is flagged as high for any file in the dispatch
+- Touches security-sensitive paths (auth, crypto, billing)
+- A cascade failure in this dispatch would trigger an expensive downstream wave of re-work
+- Previous cheap-tier attempt returned BLOCKED, FAIL_SPEC, or empty/truncated output
 
 **Escalation to deep tier** — re-dispatch the SAME work to `@build-deep` when:
 - `@build` returns `BLOCKED` with a capability signal
@@ -226,32 +235,6 @@ For `@build` and `@plan` dispatches in the wave DAG, two active tiers:
 - Scope expansion requests
 
 **Wave-aware escalation:** escalate failed lanes individually to `@build-deep` — DON'T escalate the whole wave just because one lane failed.
-
-## Task decomposition — mandatory before dispatch
-
-Do NOT dispatch an entire plan phase as a single `@build` call. A phase that spans multiple packages or touches >3 files MUST be decomposed into atomic per-file subtasks first.
-
-**Rule:** Each `@build` dispatch should target ONE file (or a tightly coupled pair in the same package). If a phase's file-level changes list has 6 entries across 4 packages, that's 4-6 separate `@build` dispatches — not one monolithic call.
-
-**Anti-pattern (caused production failures):**
-```
-BAD:  @build("Execute Phase 1 — the entire unbilled appointments feature")
-      → agent touches 6 files across core/contracts/api-server/web-app
-      → git conflicts, scope confusion, truncated output
-```
-
-**Correct decomposition:**
-```
-GOOD: Wave 1: @build("Add listUnbilledEncounters method to encounter/model.ts")
-      Wave 1: @build("Create rcm-unbilled.contract.ts in api-contracts")
-      Wave 2: @build("Add unbilled route to rcm.router.ts")  ← depends on contract
-      Wave 2: @build("Create UnbilledTable component in web-app")
-      Wave 3: @build("Create unbilled page.tsx wiring component + route")  ← depends on component
-```
-
-**When a phase spans multiple packages** (e.g., `@kn/core` + `@kn/api-contracts` + `@kn/api-server` + `@kn/web-app`), decompose along package boundaries at minimum. Cross-package dispatches fail because the agent can't hold the full dependency context.
-
-**When parallel lanes share a worktree:** dispatch sequentially (one `@build` at a time) or use worktree isolation per lane. Never run parallel code-writing agents on the same working tree — they corrupt each other's git state.
 
 ## Execute supplements
 
@@ -266,13 +249,23 @@ Before dispatching, read the plan and construct the **execution DAG**:
 1. **List every build unit** (phases in a multi-file plan, or item groups in a single-file plan)
 2. **For each pair, check dependency**: does unit B read files that unit A writes, or does B import types that A creates? If yes, B depends on A.
 3. **Topological sort into waves**: units with no dependencies form Wave 1. Units whose dependencies are all in earlier waves form the next wave. Repeat.
-4. **Write out the DAG** in your response before dispatching:
+4. **Write out the DAG** in your response before dispatching. Include full file paths per wave, state each dependency explicitly, and split each file into a separate @build dispatch:
    ```
-   Execution DAG:
-   Wave 1: phase_1 (database migration)
-   Wave 2: phase_2 (API routes) + phase_3 (background jobs)  ← depend on Wave 1
-   Wave 3: phase_4 (frontend)  ← depends on Wave 2 types
-   Wave 4: phase_5 (integration tests)  ← depends on Waves 2+3
+   Execution DAG (one file per @build dispatch, split at package boundaries):
+   Wave 1: packages/db/migrations/001_create_users.sql — no dependencies
+   Wave 2: packages/api/src/routes/users.ts, packages/api/src/handlers/user.ts — depends on Wave 1 (requires migration table)
+   Wave 3: packages/frontend/src/components/UserList.tsx — depends on Wave 2 (imports from API contract)
+   Wave 4: packages/tests/integration/users.test.ts — depends on Waves 2+3
+
+   Dispatching Wave 1 (each file as a separate @build):
+   @build — packages/db/migrations/001_create_users.sql
+
+   Dispatching Wave 2 (depends on Wave 1, one file per @build):
+   @build — packages/api/src/routes/users.ts
+   @build — packages/api/src/handlers/user.ts
+
+   Dispatching Wave 3 (depends on Wave 2, one file per @build):
+   @build — packages/frontend/src/components/UserList.tsx
    ```
 5. **Dispatch Wave 1** — all units in ONE message, each with its plan path, scope, and structured context
 6. **On return** — collect payloads, handle BLOCKED/NEEDS_CONTEXT, validate file sets are disjoint (`git diff --stat`), rebase if lanes conflict. Then dispatch next wave.
@@ -283,6 +276,26 @@ Before dispatching, read the plan and construct the **execution DAG**:
 **All items share files**: one wave, one sequential dispatch. State the reason.
 
 **If you are about to dispatch a single `@build` for a plan with 2+ phases or 4+ items, STOP.** State the specific reason (shared files, ordering dependency) or restructure as a multi-wave DAG.
+
+### Cascade decomposition (mandatory for cross-package dispatches)
+
+When a task spans multiple packages or touches 4+ files, decompose into atomic per-file subtasks before dispatching to `@build`. Never send an entire phase as a single monolithic dispatch — this causes git conflicts, scope confusion, and truncated output.
+
+**Decomposition rules — state these explicitly in your DAG output:**
+
+1. **One file per @build dispatch** when crossing package boundaries. Each file gets its own separate @build call. Example: instead of dispatching "implement the caching feature" as one call, decompose to: "add caching method to model.ts", "create cache contract in types.ts", "add route to router.ts" — each file as a separate @build call.
+2. **Split at package boundaries.** A single `@build` call must never write to files in multiple packages.
+3. **Sequential dispatch in a shared worktree** — decomposed subtasks that modify overlapping files must run one at a time. For parallel execution across packages, use worktree isolation per lane.
+
+**Cascade failure prevention:**
+
+A monolithic dispatch that fails triggers an expensive downstream wave of re-work across all dependent waves. By decomposing early, cascade failures stay local — re-dispatch cost drops from "entire phase" to "one file."
+
+**Skip cheap tier** (`@build-cheap`) and dispatch to `@build` directly when ANY of:
+- Task spans multiple packages (cross-package scope)
+- Risk is flagged as high for any file in the dispatch
+- Touches security-sensitive paths (auth, crypto, billing)
+- `@build` previously returned BLOCKED, FAIL_SPEC, or empty/truncated output for this scope
 
 ### How to dispatch a wave
 
@@ -442,9 +455,10 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 
 # Subagent reference (recap)
 
-- `@plan-ultra` — writes the plan with `## Execution DAG` section. PRIME-ULTRA's standard Plan-stage dispatch (escalation tier). Runs on Opus.
+- `@plan-ultra` — writes the plan under the repo-shared plan directory (pre-resolved at startup and injected into the plan agent's prompt) with `## Execution DAG` section. Standard Plan-stage dispatch (escalation tier). Runs on Opus.
 - `@plan-ultra-cheap` — same DAG-writing prompt as `@plan-ultra`, runs on GLM via Bedrock. PRIME-ULTRA's first-attempt Plan dispatch for cost-aware cascading; escalates to `@plan-ultra` on `[REJECT]` or model-capability failures. Preserves DAG output on the cheap tier.
-- `@plan-cheap` — same prompt as `@plan` (no DAG), runs on GLM. Used by standard PRIME, NOT PRIME-ULTRA — DAG-less plans break wave-based dispatch.
+- `@plan-legacy` — non-DAG planner (legacy). Only used by `prime-legacy` — DAG-less plans break wave-based dispatch.
+- `@plan-legacy-cheap` — non-DAG planner on GLM (legacy). Only used by `prime-legacy`.
 - `@build` — executes a written plan file-by-file. Runs on Sonnet.
 - `@build-cheap` — same prompt as `@build`, runs on GLM via Bedrock. Default first attempt per wave.
 - `@build-deep` — same prompt as `@build`, runs on Opus. Deep escalation tier.

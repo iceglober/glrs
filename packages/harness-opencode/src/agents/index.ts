@@ -655,13 +655,21 @@ export type ModelTier = "deep" | "mid" | "mid-execute" | "autopilot-execute" | "
  * the AGENT_TIERS completeness test — that's intentional.
  */
 export const AGENT_TIERS: Record<string, ModelTier> = {
+  // Standard series — Opus orchestration (promoted from former ultra)
   prime: "deep",
-  "prime-ultra": "deep",
+  plan: "deep",
+  // Ultra series — cost-optimized (Sonnet orchestration, Opus for planning only)
+  "prime-ultra": "mid-execute",
   "plan-ultra": "deep",
+  "plan-ultra-cheap": "cheap",
+  // Legacy series — non-DAG originals (kept for fallback)
+  "prime-legacy": "deep",
+  "plan-legacy": "deep",
+  "plan-legacy-cheap": "cheap",
+  // Shared agents
   scoper: "deep",
   "autopilot-prime": "deep",
   "autopilot-fast": "autopilot-execute",
-  plan: "deep",
   "architecture-advisor": "deep",
   "plan-reviewer": "mid",
   "gap-analyzer": "mid",
@@ -672,8 +680,6 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
   build: "mid-execute",
   "build-cheap": "cheap",
   "build-deep": "deep",
-  "plan-cheap": "cheap",
-  "plan-ultra-cheap": "cheap",
   "spec-reviewer": "mid-execute",
   "code-reviewer": "mid-execute",
   "code-reviewer-thorough": "deep",
@@ -689,17 +695,27 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
 
 export function createAgents(): Record<string, AgentConfig> {
   return {
-    // Primary agents
-    prime: agentFromPrompt(primePrompt, {
-      description: "End-to-end PRIME (Primary Routing and Intelligence Management Entity). Takes a request from intent to ready-to-ship in one session. Default primary agent.",
+    // Primary agents — standard series (Opus orchestration, wave-based DAG)
+    prime: agentFromPrompt(primeUltraPrompt, {
+      description: "End-to-end PRIME with wave-based DAG execution. Opus orchestrator — decomposes work into dependency waves and dispatches each wave in parallel. Default primary agent.",
       mode: "primary",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.2,
       tools: { task: true },
       permission: PRIME_PERMISSIONS as AgentConfig["permission"],
     }),
+    // Ultra series — cost-optimized (Sonnet orchestration, delegates planning to Opus)
     "prime-ultra": agentFromPrompt(primeUltraPrompt, {
-      description: "Enhanced PRIME with wave-based DAG execution. Decomposes work into dependency waves and dispatches each wave in parallel. Use instead of `prime` for complex multi-phase tasks. Falls back to standard PRIME behavior for simple tasks.",
+      description: "Cost-optimized PRIME. Sonnet orchestrator with wave-based DAG execution — same prompt as standard prime but runs on Sonnet (~5x cheaper). Delegates planning to @plan-ultra (Opus) and execution to @build-cheap (GLM). Use for cost-sensitive workflows where orchestration is rule-following, not reasoning.",
+      mode: "primary",
+      model: "anthropic/claude-sonnet-4-6",
+      temperature: 0.2,
+      tools: { task: true },
+      permission: PRIME_PERMISSIONS as AgentConfig["permission"],
+    }),
+    // Legacy series — non-DAG originals (fallback)
+    "prime-legacy": agentFromPrompt(primePrompt, {
+      description: "Legacy PRIME without wave-based DAG execution. Kept as fallback for workflows that don't need parallel wave dispatch.",
       mode: "primary",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.2,
@@ -714,8 +730,8 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: SCOPER_PERMISSIONS as AgentConfig["permission"],
       tools: SCOPER_DISABLED_TOOLS as AgentConfig["tools"],
     }),
-    "autopilot-prime": agentFromPrompt(primePrompt, {
-      description: "PRIME for unattended autopilot sessions. Identical to `prime` except the `question` tool is disabled — autopilot has no user to answer interactive prompts, and a blocking question deadlocks the session. Not user-selectable; invoked by the Ralph loop.",
+    "autopilot-prime": agentFromPrompt(primeUltraPrompt, {
+      description: "PRIME for unattended autopilot sessions. Uses the standard (DAG) prime prompt with the `question` tool disabled — autopilot has no user to answer interactive prompts. Not user-selectable; invoked by the Ralph loop.",
       mode: "subagent",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.2,
@@ -729,8 +745,8 @@ export function createAgents(): Record<string, AgentConfig> {
       } as AgentConfig["permission"],
       tools: { ...AUTOPILOT_PRIME_DISABLED_TOOLS, task: true } as AgentConfig["tools"],
     }),
-    "autopilot-fast": agentFromPrompt(primePrompt, {
-      description: "Fast executor for autopilot sessions. Same prompt as autopilot-prime but runs on the mid-execute tier (Kimi 2.5/2.6, GLM-5). Used when --fast is passed. Plans must be enriched with mirror refs and code pointers before using this agent.",
+    "autopilot-fast": agentFromPrompt(primeUltraPrompt, {
+      description: "Fast executor for autopilot sessions. Same prompt as autopilot-prime but runs on the mid-execute tier. Used when --fast is passed. Plans must be enriched with mirror refs and code pointers before using this agent.",
       mode: "subagent",
       model: "anthropic/claude-sonnet-4-6",
       temperature: 0.1,
@@ -744,20 +760,28 @@ export function createAgents(): Record<string, AgentConfig> {
       } as AgentConfig["permission"],
       tools: { ...AUTOPILOT_PRIME_DISABLED_TOOLS, task: true } as AgentConfig["tools"],
     }),
-    plan: agentFromPrompt(planPrompt, {
-      description: "Interactive planner. Orchestrates gap analysis and adversarial review. Produces a written plan in the repo-shared plan directory (resolved at config time and injected into the prompt).",
+    // Standard plan — Opus planner with DAG output (promoted from former plan-ultra)
+    plan: agentFromPrompt(planUltraPrompt, {
+      description: "Interactive planner with execution DAG output. Opus planner — writes plans to the repo-shared plan directory, orchestrates gap analysis, adversarial review, and produces multi-file plans with explicit phase dependency graphs.",
       mode: "all",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
-      // @plan dispatches @gap-analyzer, @code-searcher, and @plan-reviewer
-      // as subagents. OpenCode strips the `task` tool from subagent contexts
-      // by default; explicit opt-in re-enables it.
       tools: { task: true },
       permission: PLAN_PERMISSIONS as AgentConfig["permission"],
     }),
+    // Ultra plan — same Opus planner (planning is where Opus earns its keep)
     "plan-ultra": agentFromPrompt(planUltraPrompt, {
-      description: "Enhanced planner that produces execution DAGs for wave-based dispatch. Used by prime-ultra. Outputs multi-file plans with explicit phase dependency graphs.",
+      description: "Opus planner for the ultra (cost-optimized) series. Same as standard plan — planning always runs on Opus because architectural reasoning is high-value.",
       mode: "subagent",
+      model: "anthropic/claude-opus-4-7",
+      temperature: 0.3,
+      tools: { task: true },
+      permission: PLAN_PERMISSIONS as AgentConfig["permission"],
+    }),
+    // Legacy plan — non-DAG original
+    "plan-legacy": agentFromPrompt(planPrompt, {
+      description: "Legacy planner without DAG output. Kept as fallback.",
+      mode: "all",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
       tools: { task: true },
@@ -784,16 +808,17 @@ export function createAgents(): Record<string, AgentConfig> {
       temperature: 0.1,
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
-    "plan-cheap": agentFromPrompt(planPrompt, {
-      description: "Cheap-tier @plan variant. Same prompt, runs on GLM 4.7 Flash via Bedrock (~12x cheaper than Haiku). PRIME dispatches @plan-cheap for trivial/medium plans; escalates to @plan for substantial work or when @plan-reviewer rejects.",
+    // Cheap plan tiers — GLM for cost-cascading
+    "plan-ultra-cheap": agentFromPrompt(planUltraPrompt, {
+      description: "Cheap-tier planner. Same DAG-writing prompt, runs on GLM 4.7 Flash via Bedrock. Ultra series dispatches this first for cost-aware cascading. Escalates to @plan-ultra on [REJECT] or model-capability failures.",
       mode: "subagent",
       model: "amazon-bedrock/zai.glm-4.7-flash",
       temperature: 0.3,
       tools: { task: true },
       permission: PLAN_PERMISSIONS as AgentConfig["permission"],
     }),
-    "plan-ultra-cheap": agentFromPrompt(planUltraPrompt, {
-      description: "Cheap-tier @plan-ultra variant. Same DAG-writing prompt as @plan-ultra, runs on GLM 4.7 Flash via Bedrock. PRIME-ULTRA dispatches this first for cost-aware cascading. Escalates to @plan-ultra on [REJECT] from @plan-reviewer or model-capability failures.",
+    "plan-legacy-cheap": agentFromPrompt(planPrompt, {
+      description: "Cheap-tier legacy planner. Non-DAG prompt on GLM. Used by prime-legacy for cost-cascading.",
       mode: "subagent",
       model: "amazon-bedrock/zai.glm-4.7-flash",
       temperature: 0.3,
