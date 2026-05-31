@@ -25,7 +25,7 @@ The plugin's `config` hook runs at OpenCode startup. It registers everything fro
 
 ## Workflow
 
-The default workflow is SPEAR: **scope → plan → execute → assess → resolve.** The [`prime`](/harness/agents) agent drives it end-to-end.
+The default workflow is [SPEAR](https://www.edge.ceo/p/introducing-spear-the-management): **scope → plan → execute → assess → resolve.** The [`prime`](/harness/agents) agent drives it end-to-end.
 
 ```
 /fresh add rate limiting to the upload endpoint

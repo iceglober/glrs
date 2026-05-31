@@ -8,7 +8,7 @@ Pick these via Tab in OpenCode.
 
 | Agent | Tier | Role |
 |-------|------|------|
-| `prime` | deep | [SPEAR](/harness) end-to-end workflow (default). Uses wave-based DAG execution for complex tasks. |
+| `prime` | deep | [SPEAR](https://www.edge.ceo/p/introducing-spear-the-management) end-to-end workflow (default). Uses wave-based DAG execution for complex tasks. |
 | `prime-ultra` | mid | Cost-optimized PRIME variant for fast execution |
 | `plan` | deep | Interactive planner with gap analysis. Uses DAG-based planning by default. |
 | `build` | mid | Plan executor |

@@ -29,7 +29,7 @@ Or just ask:
 fix the null pointer in UserService.getProfile
 ```
 
-[`/fresh`](/harness/commands) creates a branch, scopes the work, and starts the SPEAR workflow.
+[`/fresh`](/harness/commands) creates a branch, scopes the work, and starts the [SPEAR](https://www.edge.ceo/p/introducing-spear-the-management) workflow.
 
 ## Ship your work
 
