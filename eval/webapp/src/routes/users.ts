@@ -4,96 +4,79 @@ import { requireAuth } from "../middleware/auth.js";
 
 export const usersRouter = Router();
 
-// GET /api/users — paginated list
 usersRouter.get("/", async (req: Request, res: Response) => {
-  const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 10), 100);
-  const cursorParam = req.query.cursor as string | undefined;
+  const limitParam = req.query.limit as string | undefined;
+  const cursor = req.query.cursor as string | undefined;
 
-  let rows: Record<string, unknown>[];
-  if (cursorParam) {
-    let cursor: { id: number };
+  let limit = 10;
+  if (limitParam) {
+    const parsed = parseInt(limitParam, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      limit = Math.min(parsed, 100);
+    }
+  }
+
+  // Fetch one extra to determine has_more
+  const fetchLimit = limit + 1;
+
+  let rows: any[];
+  if (cursor) {
     try {
-      cursor = JSON.parse(Buffer.from(cursorParam, "base64url").toString());
-      if (!cursor.id) throw new Error("invalid");
+      const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+      const { rows: result } = await pool.query(
+        `SELECT * FROM users
+         WHERE (created_at, id) < ($1::timestamp, $2)
+         ORDER BY created_at DESC, id DESC
+         LIMIT $3`,
+        [decoded.created_at, decoded.id, fetchLimit]
+      );
+      rows = result;
     } catch {
-      res.status(400).json({ error: "invalid cursor" });
+      res.status(400).json({ error: "Invalid cursor" });
       return;
     }
-    ({ rows } = await pool.query(
-      "SELECT * FROM users WHERE id < $1 ORDER BY id DESC LIMIT $2",
-      [cursor.id, limit + 1],
-    ));
   } else {
-    ({ rows } = await pool.query(
-      "SELECT * FROM users ORDER BY id DESC LIMIT $1",
-      [limit + 1],
-    ));
+    const { rows: result } = await pool.query(
+      `SELECT * FROM users ORDER BY created_at DESC, id DESC LIMIT $1`,
+      [fetchLimit]
+    );
+    rows = result;
   }
 
-  const has_more = rows.length > limit;
-  if (has_more) rows = rows.slice(0, limit);
-  const last = rows[rows.length - 1] as { id: number } | undefined;
-  const next_cursor = has_more && last
-    ? Buffer.from(JSON.stringify({ id: last.id })).toString("base64url")
-    : null;
+  const hasMore = rows.length > limit;
+  const data = hasMore ? rows.slice(0, limit) : rows;
 
-  res.json({ data: rows, next_cursor, has_more });
+  let nextCursor: string | null = null;
+  if (hasMore && data.length > 0) {
+    const lastItem = data[data.length - 1];
+    nextCursor = Buffer.from(
+      JSON.stringify({ id: lastItem.id, created_at: lastItem.created_at })
+    ).toString("base64url");
+  }
+
+  res.json({ data, next_cursor: nextCursor, has_more: hasMore });
 });
 
-// GET /api/users/:id — get by id
 usersRouter.get("/:id", async (req: Request, res: Response) => {
-  const { rows } = await pool.query("SELECT * FROM users WHERE id = $1", [
-    req.params.id,
-  ]);
-  if (rows.length === 0) {
-    res.status(404).json({ error: "User not found" });
-    return;
-  }
+  const { rows } = await pool.query("SELECT * FROM users WHERE id = $1", [req.params.id]);
+  if (rows.length === 0) { res.status(404).json({ error: "User not found" }); return; }
   res.json(rows[0]);
 });
 
-// POST /api/users — create
 usersRouter.post("/", requireAuth, async (req: Request, res: Response) => {
   const { name, email } = req.body;
-  if (!name || !email) {
-    res.status(400).json({ error: "name and email are required" });
-    return;
-  }
-  const { rows } = await pool.query(
-    "INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *",
-    [name, email],
-  );
+  if (!name || !email) { res.status(400).json({ error: "name and email are required" }); return; }
+  const { rows } = await pool.query("INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *", [name, email]);
   res.status(201).json(rows[0]);
 });
 
-// PUT /api/users/:id — update
-usersRouter.put("/:id", requireAuth, async (req: Request, res: Response) => {
-  const { name, email } = req.body;
-  const { rows } = await pool.query(
-    "UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email) WHERE id = $3 RETURNING *",
-    [name ?? null, email ?? null, req.params.id],
-  );
-  if (rows.length === 0) {
-    res.status(404).json({ error: "User not found" });
-    return;
-  }
-  res.json(rows[0]);
-});
-
-// DELETE /api/users/:id — delete (self or admin only)
 usersRouter.delete("/:id", requireAuth, async (req: Request, res: Response) => {
-  const targetId = Number(req.params.id);
-  if (req.user!.userId !== targetId && req.user!.role !== "admin") {
+  const id = parseInt(req.params.id, 10);
+  if (req.user!.userId !== id && req.user!.role !== "admin") {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
-  const { rows } = await pool.query(
-    "DELETE FROM users WHERE id = $1 RETURNING *",
-    [req.params.id],
-  );
-  if (rows.length === 0) {
-    res.status(404).json({ error: "User not found" });
-    return;
-  }
+  const { rows } = await pool.query("DELETE FROM users WHERE id = $1 RETURNING *", [req.params.id]);
+  if (rows.length === 0) { res.status(404).json({ error: "User not found" }); return; }
   res.status(204).send();
 });

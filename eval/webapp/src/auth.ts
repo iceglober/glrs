@@ -1,72 +1,41 @@
-import { scryptSync, randomBytes, createHmac, timingSafeEqual } from "crypto";
+import { createHmac, randomBytes, scrypt } from "crypto";
+import { promisify } from "util";
 
-const TOKEN_SECRET = process.env.TOKEN_SECRET || "dev-secret-change-in-production";
-const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+const scryptAsync = promisify(scrypt);
 
-// --- Password hashing (scrypt) ---
+const AUTH_SECRET = process.env.AUTH_SECRET ?? "dev-secret";
 
-export function hashPassword(password: string): string {
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
-  const hash = scryptSync(password, salt, 64).toString("hex");
-  return `${salt}:${hash}`;
+  const derivedKey = await scryptAsync(password, salt, 64) as Buffer;
+  return `${salt}:${derivedKey.toString("hex")}`;
 }
 
-export function verifyPassword(password: string, stored: string): boolean {
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [salt, hash] = stored.split(":");
   if (!salt || !hash) return false;
-  const derivedHash = scryptSync(password, salt, 64).toString("hex");
-  const hashBuf = Buffer.from(hash, "hex");
-  const derivedBuf = Buffer.from(derivedHash, "hex");
-  if (hashBuf.length !== derivedBuf.length) return false;
-  return timingSafeEqual(hashBuf, derivedBuf);
+  const derivedKey = await scryptAsync(password, salt, 64) as Buffer;
+  return derivedKey.toString("hex") === hash;
 }
 
-// --- Token generation/verification (HMAC-SHA256 signed JSON) ---
-
-export interface TokenPayload {
-  userId: number;
-  role: string;
-  exp: number;
+export function generateToken(userId: number): string {
+  const payload = { userId, exp: Date.now() + 24 * 60 * 60 * 1000 };
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = createHmac("sha256", AUTH_SECRET).update(payloadB64).digest("base64url");
+  return `${payloadB64}.${signature}`;
 }
 
-export function generateToken(userId: number, role: string): string {
-  const payload: TokenPayload = {
-    userId,
-    role,
-    exp: Date.now() + TOKEN_EXPIRY_MS,
-  };
-  const payloadStr = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const signature = createHmac("sha256", TOKEN_SECRET)
-    .update(payloadStr)
-    .digest("base64url");
-  return `${payloadStr}.${signature}`;
-}
+export function verifyToken(token: string): { userId: number } | null {
+  const [payloadB64, signature] = token.split(".");
+  if (!payloadB64 || !signature) return null;
 
-export function verifyToken(token: string): TokenPayload | null {
-  const parts = token.split(".");
-  if (parts.length !== 2) return null;
-  const [payloadStr, signature] = parts;
+  const expectedSignature = createHmac("sha256", AUTH_SECRET).update(payloadB64).digest("base64url");
+  if (signature !== expectedSignature) return null;
 
-  // Verify signature
-  const expectedSig = createHmac("sha256", TOKEN_SECRET)
-    .update(payloadStr)
-    .digest("base64url");
-
-  const sigBuf = Buffer.from(signature, "base64url");
-  const expectedBuf = Buffer.from(expectedSig, "base64url");
-  if (sigBuf.length !== expectedBuf.length) return null;
-  if (!timingSafeEqual(sigBuf, expectedBuf)) return null;
-
-  // Decode payload
   try {
-    const payload = JSON.parse(
-      Buffer.from(payloadStr, "base64url").toString(),
-    ) as TokenPayload;
-
-    // Check expiration
+    const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf-8"));
     if (payload.exp < Date.now()) return null;
-
-    return payload;
+    return { userId: payload.userId };
   } catch {
     return null;
   }
