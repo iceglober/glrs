@@ -36,6 +36,7 @@ export function Home() {
         <Link to="/harness/tools">tools</Link>
         <Link to="/harness/config">configuration</Link>
         <Link to="/autopilot">autopilot</Link>
+        <Link to="/headroom">headroom (compression)</Link>
         <Link to="/cli">cli</Link>
         <Link to="/assume">assume (sso)</Link>
       </div>

@@ -103,6 +103,13 @@ if (sub === "harness") {
   process.exit(0);
 }
 
+// Handle headroom subcommand — context compression proxy
+if (sub === "headroom") {
+  const { headroomCmd } = await import("./commands/headroom.js");
+  await headroomCmd(args.slice(1));
+  process.exit(0);
+}
+
 // Handle assume subcommand — installs @glrs-dev/assume if missing, then dispatches to gsa
 if (sub === "assume") {
   // Check if gsa is on PATH

@@ -20,6 +20,7 @@ USAGE
 SUBCOMMANDS
   harness    Harness plugin management (install, configure, uninstall, doctor)
   assume     Cloud credentials (login, contexts, agent MCP setup)
+  headroom   Context compression proxy (60-95% token savings)
   wt         Worktree management (create, list, switch, delete, cleanup)
   autopilot  Run the autopilot orchestrator (scope → plan → execute)
   loop       Run the Ralph loop with a raw prompt

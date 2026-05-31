@@ -14,6 +14,7 @@ import toolsMd from "./content/tools.md?raw";
 import autopilotMd from "./content/autopilot.md?raw";
 import cliMd from "./content/cli.md?raw";
 import assumeMd from "./content/assume.md?raw";
+import headroomMd from "./content/headroom.md?raw";
 
 export function App() {
   return (
@@ -30,6 +31,7 @@ export function App() {
             <Route path="harness/commands" element={<Doc md={commandsMd} title="commands" />} />
             <Route path="harness/tools" element={<Doc md={toolsMd} title="tools" />} />
             <Route path="autopilot" element={<Doc md={autopilotMd} title="autopilot" />} />
+            <Route path="headroom" element={<Doc md={headroomMd} title="headroom" />} />
             <Route path="cli" element={<Doc md={cliMd} title="cli" />} />
             <Route path="assume" element={<Doc md={assumeMd} title="assume" />} />
           </Route>
