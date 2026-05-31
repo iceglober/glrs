@@ -1,75 +1,40 @@
 # glrs
 
-**Unified [@glrs-dev](https://www.npmjs.com/org/glrs-dev) ecosystem.** One monorepo, one release cadence, one docs site.
+glorious tools for tomorrow
 
-Docs: **[glrs.dev](https://glrs.dev)**
+**[glrs.dev](https://glrs.dev)**
+
+## Install
+
+```bash
+curl -fsSL https://glrs.dev/install.sh | bash
+```
+
+Or: `npm i -g @glrs-dev/cli && glrs harness install`
 
 ## Packages
 
-| Package | npm | What it is |
-|---|---|---|
-| [`@glrs-dev/cli`](./packages/cli) | `@glrs-dev/cli` | Single `glrs` binary. Dispatches to the agent harness and provides worktree management. |
-| [`@glrs-dev/harness-plugin-opencode`](./packages/harness-opencode) | `@glrs-dev/harness-plugin-opencode` | OpenCode agent harness — PRIME, plan, build, QA, skills, MCP wiring. |
-| [`@glrs-dev/assume`](./packages/assume) | `@glrs-dev/assume` (+ [crates.io](https://crates.io/crates/glrs-assume)) | Rust-based SSO credential manager for AWS/GCP. Bins: `glrs-assume`, `gsa`. |
+| Package | What it is |
+|---|---|
+| [`@glrs-dev/cli`](./packages/cli) | `glrs` binary — harness, worktrees, autopilot |
+| [`@glrs-dev/harness-plugin-opencode`](./packages/harness-opencode) | OpenCode agent harness — agents, commands, tools, skills |
+| [`@glrs-dev/assume`](./packages/assume) | SSO credential manager for AWS/GCP (Rust, standalone) |
 
-## Quick start
-
-```bash
-# Install the unified CLI (includes the OpenCode harness)
-npm i -g @glrs-dev/cli
-
-# Set up the harness in your OpenCode config
-glrs harness install
-
-# Launch OpenCode — agents, commands, tools, and skills load automatically
-opencode
-```
-
-Other CLI subcommands:
+## Usage
 
 ```bash
-glrs wt new                      # create a worktree (auto-named)
-glrs wt list                     # list all worktrees
-glrs autopilot --plan docs/...   # run the autopilot orchestrator
-glrs loop "implement feature X"  # raw prompt loop
-glrs dashboard                   # live TUI for autopilot sessions
-glrs upgrade                     # self-update to latest version
-```
-
-Install assume separately (standalone Rust binary):
-
-```bash
-npm i -g @glrs-dev/assume
-gsa login aws
+glrs harness install         # register harness plugin
+glrs wt new                  # create a worktree
+glrs loop "ship ENG-1234"    # hands-off autopilot
+glrs upgrade                 # self-update
 ```
 
 ## Development
 
 ```bash
-bun install
-bun run build
-bun test
-bun run typecheck
+bun install && bun run build && bun test
 ```
-
-This repo uses **Bun workspaces** and **Changesets** for versioning + publishing. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
-
-## Releases
-
-Automated via [Changesets](https://github.com/changesets/changesets):
-
-1. Include a changeset in every user-visible PR: `bun run changeset`
-2. On merge to `main`, a "Version Packages" PR opens / updates
-3. Merging the Version Packages PR publishes to npm and tags releases
-
-Branch protection on `main` is the gate — merging the Version Packages PR is the publish approval.
-
-## History
-
-This monorepo consolidates two archived repos:
-- [`iceglober/harness-opencode`](https://github.com/iceglober/harness-opencode) → `packages/harness-opencode/` (history preserved)
-- [`iceglober/glorious`](https://github.com/iceglober/glorious) → `packages/assume/` (history preserved)
 
 ## License
 
-MIT — see [`LICENSE`](./LICENSE).
+MIT
