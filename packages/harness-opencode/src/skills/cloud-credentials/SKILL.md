@@ -22,7 +22,7 @@ The gsa MCP server isn't configured. To enable cloud credentials for agents:
 
 2. Add the MCP server to your config:
 
-   For Claude Code (~/.claude/settings.json):
+   For Claude Code (settings.json):
    {
      "mcpServers": {
        "gsa": { "command": "gsa", "args": ["agent", "mcp"] }
