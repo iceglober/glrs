@@ -55,11 +55,10 @@ Inter-package dependencies bump automatically via Changesets' `updateInternalDep
 
 ## Package-specific contributing
 
-Each package has its own `AGENTS.md` (for AI agents) and may have its own `CONTRIBUTING.md`:
-
-- `packages/harness-opencode/AGENTS.md` — OpenCode plugin invariants
-- `packages/assume/` — Rust toolchain + build matrix notes
-- `packages/cli/` — dispatcher conventions
+- `packages/harness-opencode/AGENTS.md` — OpenCode plugin invariants, agent/skill/command rules
+- `packages/harness-opencode/CONTRIBUTING.md` — changeset conventions for the harness
+- `packages/assume/` — Rust crate, build with `cargo build` / `cargo test`
+- `packages/cli/` — CLI dispatcher, shares version with harness-opencode via changesets `fixed` group
 
 ## Running a single package's tests
 
