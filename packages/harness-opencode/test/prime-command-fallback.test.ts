@@ -70,7 +70,7 @@ describe("prime slash-command fallback section", () => {
 
   it("section does NOT list /autopilot (removed — CLI-only feature)", () => {
     // /autopilot was removed as a TUI slash command when autopilot became
-    // CLI-only (`glrs oc autopilot <prompt>`). The section must not reinstate
+    // CLI-only (`glrs loop`). The section must not reinstate
     // it in the allowlist.
     const body = extractSection();
     // Guard against resurrection in the allowlist sentence.

@@ -32,9 +32,8 @@ const FORBIDDEN_PATTERNS = [
   "@glorious/",
   // Removed CLI bins — prompts must not assume these are installed.
   // The @glrs-dev/agentic package was deleted; gs-agentic/gsag no longer exist.
-  // gs-assume/gsa are a separate SSO tool and prompts should not prescribe
-  // them to users — if credential-refresh is needed, describe the goal
-  // and let the user pick their own tool.
+  // gs-assume was renamed to glrs-assume. Prompts should reference `gsa`
+  // (the current alias) if they need to mention the tool at all.
   "gs-agentic",
   "gsag",
   "gs-assume",
