@@ -132,16 +132,16 @@ pub fn print_context_exports(selected: &Context, cfg: &config::Config) {
     };
 
     println!(
-        "export GS_ASSUME_CONTEXT=\"{}\"",
+        "export GLRS_ASSUME_CONTEXT=\"{}\"",
         shell_escape(&prompt_label)
     );
-    println!("export GS_ASSUME_CONTEXT_COLOR=\"{}\"", shell_escape(color));
+    println!("export GLRS_ASSUME_CONTEXT_COLOR=\"{}\"", shell_escape(color));
     println!(
-        "export GS_ASSUME_CONTEXT_ID=\"{}\"",
+        "export GLRS_ASSUME_CONTEXT_ID=\"{}\"",
         shell_escape(&selected.id)
     );
     println!(
-        "export GS_ASSUME_CONTEXT_PROVIDER=\"{}\"",
+        "export GLRS_ASSUME_CONTEXT_PROVIDER=\"{}\"",
         shell_escape(&selected.provider_id)
     );
 

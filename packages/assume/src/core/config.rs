@@ -84,25 +84,25 @@ fn default_prompt_format() -> String {
     "[{provider}:{alias}]".to_string()
 }
 fn default_log_path() -> String {
-    "~/.config/gs-assume/audit.log".to_string()
+    "~/.config/glrs-assume/audit.log".to_string()
 }
 fn default_retention_days() -> u64 {
     90
 }
 
-/// Config directory: $GS_ASSUME_CONFIG_DIR or ~/.config/gs-assume/
+/// Config directory: $GLRS_ASSUME_CONFIG_DIR or ~/.config/glrs-assume/
 pub fn config_dir() -> PathBuf {
-    if let Ok(p) = std::env::var("GS_ASSUME_CONFIG_DIR") {
+    if let Ok(p) = std::env::var("GLRS_ASSUME_CONFIG_DIR") {
         return PathBuf::from(p);
     }
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "~".into())))
-        .join("gs-assume")
+        .join("glrs-assume")
 }
 
-/// Config file path: $GS_ASSUME_CONFIG or ~/.config/gs-assume/config.toml
+/// Config file path: $GLRS_ASSUME_CONFIG or ~/.config/glrs-assume/config.toml
 pub fn config_path() -> PathBuf {
-    if let Ok(p) = std::env::var("GS_ASSUME_CONFIG") {
+    if let Ok(p) = std::env::var("GLRS_ASSUME_CONFIG") {
         return PathBuf::from(p);
     }
     config_dir().join("config.toml")
@@ -150,13 +150,13 @@ pub fn load_config() -> Result<Config> {
     Ok(config)
 }
 
-/// Search upward from CWD for gs-assume.team.toml
+/// Search upward from CWD for glrs-assume.team.toml
 fn find_and_load_team_config() -> Result<Option<Config>> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let mut dir = cwd.as_path();
 
     loop {
-        let team_path = dir.join("gs-assume.team.toml");
+        let team_path = dir.join("glrs-assume.team.toml");
         if team_path.exists() {
             let content = std::fs::read_to_string(&team_path).with_context(|| {
                 format!("Failed to read team config from {}", team_path.display())
@@ -351,13 +351,13 @@ region = "us-west-2"
 
     #[test]
     fn test_resolve_log_path_tilde() {
-        let path = resolve_log_path("~/.config/gs-assume/audit.log");
+        let path = resolve_log_path("~/.config/glrs-assume/audit.log");
         assert!(!path.to_string_lossy().starts_with("~"));
     }
 
     #[test]
     fn test_resolve_log_path_absolute() {
-        let path = resolve_log_path("/var/log/gs-assume.log");
-        assert_eq!(path, PathBuf::from("/var/log/gs-assume.log"));
+        let path = resolve_log_path("/var/log/glrs-assume.log");
+        assert_eq!(path, PathBuf::from("/var/log/glrs-assume.log"));
     }
 }

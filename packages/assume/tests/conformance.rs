@@ -342,5 +342,52 @@ mod command_conformance {
             "credential_process must use BackgroundEnsure — it is called repeatedly \
              by AWS CLI/SDK and must not block on daemon startup"
         );
+
+        assert_eq!(
+            assume::cli::status::REQUIREMENT,
+            DaemonRequirement::BackgroundEnsure,
+            "status must use BackgroundEnsure — running status should restart \
+             a dead daemon so ongoing refresh resumes"
+        );
+
+        assert_eq!(
+            assume::cli::shell_init::REQUIREMENT,
+            DaemonRequirement::BackgroundEnsure,
+            "shell_init must use BackgroundEnsure — every new terminal should \
+             ensure the daemon is running for background token refresh"
+        );
+    }
+
+    #[test]
+    fn launchd_plist_uses_glrs_assume_label() {
+        let plist = assume::core::daemon::generate_launchd_plist("/usr/local/bin/glrs-assume");
+        assert!(
+            plist.contains("com.glorious.glrs-assume"),
+            "launchd plist label must be com.glorious.glrs-assume"
+        );
+        assert!(
+            !plist.contains("gs-assume"),
+            "launchd plist must not contain old gs-assume name"
+        );
+    }
+
+    #[test]
+    fn launchd_plist_prevents_app_nap() {
+        let plist = assume::core::daemon::generate_launchd_plist("/usr/local/bin/glrs-assume");
+        assert!(
+            plist.contains("<key>ProcessType</key>") && plist.contains("Background"),
+            "launchd plist must set ProcessType=Background to prevent App Nap \
+             from suspending the refresh loop"
+        );
+    }
+
+    #[test]
+    fn launchd_plist_only_restarts_on_crash() {
+        let plist = assume::core::daemon::generate_launchd_plist("/usr/local/bin/glrs-assume");
+        assert!(
+            plist.contains("<key>SuccessfulExit</key>"),
+            "launchd plist must use KeepAlive.SuccessfulExit=false instead of \
+             blanket KeepAlive=true to avoid the 10-second respawn polling loop"
+        );
     }
 }

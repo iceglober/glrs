@@ -4,7 +4,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "description": "Prebuilt gs-assume binary for macOS arm64 (Apple Silicon). Installed automatically as an optional dependency of @glrs-dev/assume.",
+  "description": "Prebuilt glrs-assume binary for macOS arm64 (Apple Silicon). Installed automatically as an optional dependency of @glrs-dev/assume.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -25,7 +25,7 @@
     "bin"
   ],
   "bin": {
-    "gs-assume-bin": "./bin/gs-assume"
+    "glrs-assume-bin": "./bin/glrs-assume"
   },
   "engines": {
     "node": ">=20.10"

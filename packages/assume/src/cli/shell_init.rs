@@ -4,7 +4,7 @@ use crate::plugin::registry::PluginRegistry;
 use anyhow::{bail, Result};
 use clap::Args;
 
-pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::BackgroundEnsure;
 
 #[derive(Args, Debug)]
 pub struct ShellInitArgs {
@@ -18,7 +18,7 @@ fn binary_path() -> String {
         .ok()
         .and_then(|p| p.canonicalize().ok())
         .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| "gs-assume".to_string())
+        .unwrap_or_else(|| "glrs-assume".to_string())
 }
 
 pub async fn run(
@@ -33,7 +33,7 @@ pub async fn run(
         bail!("Unsupported shell: {shell}. Supported: bash, zsh, fish");
     }
 
-    println!("# gs-assume shell integration for {shell}");
+    println!("# glrs-assume shell integration for {shell}");
     println!();
 
     // Environment variables for each provider's credential endpoint
@@ -86,7 +86,7 @@ gsa() {{
         command {bin} "$@"
     fi
 }}
-gs-assume() {{ gsa "$@"; }}"#
+glrs-assume() {{ gsa "$@"; }}"#
     );
     println!();
 
@@ -101,16 +101,16 @@ gs-assume() {{ gsa "$@"; }}"#
     } else {
         ("\\[", "\\]")
     };
-    println!(r#"# Prompt: reads $GS_ASSUME_CONTEXT (instant, no subprocess)"#);
-    println!(r#"_gs_assume_prompt() {{"#);
-    println!(r#"    if [[ -n "$GS_ASSUME_CONTEXT" ]]; then"#);
+    println!(r#"# Prompt: reads $GLRS_ASSUME_CONTEXT (instant, no subprocess)"#);
+    println!(r#"_glrs_assume_prompt() {{"#);
+    println!(r#"    if [[ -n "$GLRS_ASSUME_CONTEXT" ]]; then"#);
     println!(r#"        local color reset"#);
     println!(
         "        reset=\"{zw_open}\\033[0m{zw_close}\"",
         zw_open = zw_open,
         zw_close = zw_close
     );
-    println!(r#"        case "$GS_ASSUME_CONTEXT_COLOR" in"#);
+    println!(r#"        case "$GLRS_ASSUME_CONTEXT_COLOR" in"#);
     println!(
         "            red)    color=\"{zw_open}\\033[31m{zw_close}\" ;;",
         zw_open = zw_open,
@@ -127,14 +127,14 @@ gs-assume() {{ gsa "$@"; }}"#
         zw_close = zw_close
     );
     println!(r#"        esac"#);
-    println!(r#"        echo "${{color}}[$GS_ASSUME_CONTEXT]${{reset}} ""#);
+    println!(r#"        echo "${{color}}[$GLRS_ASSUME_CONTEXT]${{reset}} ""#);
     println!(r#"    fi"#);
     println!(r#"}}"#);
     println!(
-        "if [[ \"${pv}\" != *'$(_gs_assume_prompt)'* ]]; then",
+        "if [[ \"${pv}\" != *'$(_glrs_assume_prompt)'* ]]; then",
         pv = pv
     );
-    println!("    {pv}='$(_gs_assume_prompt)'\"${pv}\"", pv = pv);
+    println!("    {pv}='$(_glrs_assume_prompt)'\"${pv}\"", pv = pv);
     println!(r#"fi"#);
 }
 
@@ -161,21 +161,21 @@ function gsa
         command {bin} $argv
     end
 end
-function gs-assume; gsa $argv; end"#
+function glrs-assume; gsa $argv; end"#
     );
     println!();
     println!(
-        r#"# Prompt: reads $GS_ASSUME_CONTEXT (instant, no subprocess)
+        r#"# Prompt: reads $GLRS_ASSUME_CONTEXT (instant, no subprocess)
 if not functions -q _original_fish_prompt
     functions -c fish_prompt _original_fish_prompt
     function fish_prompt
-        if test -n "$GS_ASSUME_CONTEXT"
+        if test -n "$GLRS_ASSUME_CONTEXT"
             set -l color green
-            if test "$GS_ASSUME_CONTEXT_COLOR" = "red"
+            if test "$GLRS_ASSUME_CONTEXT_COLOR" = "red"
                 set color red
             end
             set_color $color
-            echo -n "[$GS_ASSUME_CONTEXT] "
+            echo -n "[$GLRS_ASSUME_CONTEXT] "
             set_color normal
         end
         _original_fish_prompt

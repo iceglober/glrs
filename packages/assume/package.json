@@ -18,7 +18,7 @@
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "gs-assume": "./dist/cli.js",
+    "glrs-assume": "./dist/cli.js",
     "gsa": "./dist/cli.js"
   },
   "files": [

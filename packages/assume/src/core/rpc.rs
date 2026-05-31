@@ -271,7 +271,7 @@ async fn handle_refresh(req: &RpcRequest, state: &SharedDaemonState) -> RpcRespo
             .and_then(|ps| ps.tokens.clone())
         {
             Some(t) => t,
-            None => return RpcResponse::err("No tokens available — run gs-assume login"),
+            None => return RpcResponse::err("No tokens available — run glrs-assume login"),
         };
         (provider, tokens)
     };
@@ -347,7 +347,7 @@ pub async fn rpc_call(method: &str, params: Value) -> Result<Value> {
         .await
         .with_context(|| {
             format!(
-                "Failed to connect to daemon at {}. Is it running? Try: gs-assume serve",
+                "Failed to connect to daemon at {}. Is it running? Try: glrs-assume serve",
                 socket_path.display()
             )
         })?;

@@ -211,12 +211,12 @@ async fn run_exec(
 
     // Common env vars
     env_vars.push((
-        "GS_ASSUME_CONTEXT".into(),
+        "GLRS_ASSUME_CONTEXT".into(),
         format!("{}:{}", context.provider_id, context.display_name),
     ));
-    env_vars.push(("GS_ASSUME_CONTEXT_ID".into(), context.id.clone()));
+    env_vars.push(("GLRS_ASSUME_CONTEXT_ID".into(), context.id.clone()));
     env_vars.push((
-        "GS_ASSUME_CONTEXT_PROVIDER".into(),
+        "GLRS_ASSUME_CONTEXT_PROVIDER".into(),
         context.provider_id.clone(),
     ));
 

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(
-    name = "gs-assume",
+    name = "glrs-assume",
     version,
     about = "Unified credential assume manager for AWS and GCP — authenticate once, work all day",
     after_help = "\x1b[1mQuick start:\x1b[0m
@@ -62,7 +62,7 @@ enum Commands {
     Console(cli::console::ConsoleArgs),
     /// Output credentials for AWS credential_process
     CredentialProcess(cli::credential_process::CredentialProcessArgs),
-    /// Update gs-assume to the latest version
+    /// Update glrs-assume to the latest version
     Upgrade(cli::upgrade::UpgradeArgs),
 }
 
@@ -97,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(true)
     {
         eprintln!(
-            "\x1b[2m[gs-assume] migrate to the npm package: npm i -g @glrs-dev/assume\x1b[0m"
+            "\x1b[2m[glrs-assume] migrate to the npm package: npm i -g @glrs-dev/assume\x1b[0m"
         );
     }
 
@@ -143,6 +143,35 @@ async fn main() -> anyhow::Result<()> {
         DaemonRequirement::Daemon => assume::core::daemon::ensure_daemon_running(),
         DaemonRequirement::BackgroundEnsure => assume::core::daemon::spawn_daemon_if_dead(),
         DaemonRequirement::None => {}
+    }
+
+    // Inline refresh: if any provider has an expired session but a valid refresh
+    // token (and the daemon isn't running to handle it), refresh now so the
+    // current command gets fresh tokens instead of failing.
+    if !assume::core::daemon::is_daemon_running() {
+        let now = chrono::Utc::now();
+        for provider_id in registry.ids() {
+            if let Ok(Some(tokens)) = assume::core::keychain::load_tokens(&provider_id) {
+                if tokens.session_expires_at <= now && tokens.refresh_expires_at > now {
+                    if let Some(provider) = registry.get(&provider_id) {
+                        match provider.refresh(&tokens).await {
+                            Ok(new_tokens) => {
+                                let _ =
+                                    assume::core::keychain::store_tokens(&provider_id, &new_tokens);
+                                tracing::info!(
+                                    "Inline refresh succeeded for {provider_id} (daemon not running)"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::debug!(
+                                    "Inline refresh failed for {provider_id}: {e}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     match cli.command {

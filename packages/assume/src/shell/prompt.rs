@@ -33,38 +33,38 @@ fn color_to_ansi(color: &str) -> &'static str {
 }
 
 /// Generate the shell function that produces the prompt string.
-/// Called by `gs-assume shell-init`.
+/// Called by `glrs-assume shell-init`.
 pub fn prompt_function(shell: &str) -> String {
     match shell {
         "bash" => r#"
-_gs_assume_prompt() {
+_glrs_assume_prompt() {
     local segments
-    segments=$(gs-assume status --prompt 2>/dev/null)
+    segments=$(glrs-assume status --prompt 2>/dev/null)
     if [ -n "$segments" ]; then
         echo "$segments "
     fi
 }
-if [[ "$PS1" != *'$(_gs_assume_prompt)'* ]]; then
-    PS1='$(_gs_assume_prompt)'"$PS1"
+if [[ "$PS1" != *'$(_glrs_assume_prompt)'* ]]; then
+    PS1='$(_glrs_assume_prompt)'"$PS1"
 fi
 "#
         .to_string(),
         "zsh" => r#"
-_gs_assume_prompt() {
+_glrs_assume_prompt() {
     local segments
-    segments=$(gs-assume status --prompt 2>/dev/null)
+    segments=$(glrs-assume status --prompt 2>/dev/null)
     if [[ -n "$segments" ]]; then
         echo "$segments "
     fi
 }
-if [[ "$PROMPT" != *'$(_gs_assume_prompt)'* ]]; then
-    PROMPT='$(_gs_assume_prompt)'"$PROMPT"
+if [[ "$PROMPT" != *'$(_glrs_assume_prompt)'* ]]; then
+    PROMPT='$(_glrs_assume_prompt)'"$PROMPT"
 fi
 "#
         .to_string(),
         "fish" => r#"
-function _gs_assume_prompt
-    set -l segments (gs-assume status --prompt 2>/dev/null)
+function _glrs_assume_prompt
+    set -l segments (glrs-assume status --prompt 2>/dev/null)
     if test -n "$segments"
         echo -n "$segments "
     end
@@ -72,7 +72,7 @@ end
 if not functions -q _original_fish_prompt
     functions -c fish_prompt _original_fish_prompt
     function fish_prompt
-        _gs_assume_prompt
+        _glrs_assume_prompt
         _original_fish_prompt
     end
 end

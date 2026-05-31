@@ -5,7 +5,7 @@ use crate::shell::prompt;
 use anyhow::Result;
 use chrono::Utc;
 
-pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
+pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::BackgroundEnsure;
 use clap::Args;
 
 #[derive(Args, Debug)]
