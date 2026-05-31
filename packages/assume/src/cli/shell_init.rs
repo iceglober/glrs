@@ -76,14 +76,14 @@ fn print_posix_integration(bin: &str, shell: &str) {
 gsa() {{
     if [[ "$1" == "use" || "$1" == "login" ]]; then
         local output
-        output=$(command {bin} "$@")
+        output=$(GLRS_CLI_DISPATCHED=1 command {bin} "$@")
         local rc=$?
         if [[ $rc -eq 0 && "$output" == *"export "* ]]; then
             eval "$output"
         fi
         return $rc
     else
-        command {bin} "$@"
+        GLRS_CLI_DISPATCHED=1 command {bin} "$@"
     fi
 }}
 glrs-assume() {{ gsa "$@"; }}"#
@@ -144,7 +144,7 @@ fn print_fish_integration(bin: &str) {
 function gsa
     if test "$argv[1]" = "use"; or test "$argv[1]" = "login"
         set -l tmpfile (mktemp)
-        command {bin} $argv 2>/dev/stderr >$tmpfile
+        GLRS_CLI_DISPATCHED=1 command {bin} $argv 2>/dev/stderr >$tmpfile
         set -l rc $status
         if test $rc -eq 0
             for line in (cat $tmpfile)
@@ -158,7 +158,7 @@ function gsa
         rm -f $tmpfile
         return $rc
     else
-        command {bin} $argv
+        GLRS_CLI_DISPATCHED=1 command {bin} $argv
     end
 end
 function glrs-assume; gsa $argv; end"#
