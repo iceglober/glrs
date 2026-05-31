@@ -1,5 +1,14 @@
 # @glrs-dev/cli
 
+## 2.29.1
+
+### Patch Changes
+
+- [#238](https://github.com/iceglober/glrs/pull/238) [`bff2816`](https://github.com/iceglober/glrs/commit/bff2816144a57ddad4c283be86a60caf4f20f2ee) Thanks [@iceglober](https://github.com/iceglober)! - fix(cli): headroom install uses uv with Python 3.13 + auto-installs uv if missing
+
+- Updated dependencies []:
+  - @glrs-dev/harness-plugin-opencode@2.29.1
+
 ## 2.29.0
 
 ### Minor Changes
