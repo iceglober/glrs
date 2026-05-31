@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.28.2
+
+### Patch Changes
+
+- [#233](https://github.com/iceglober/glrs/pull/233) [`468560c`](https://github.com/iceglober/glrs/commit/468560c8a0109aea43c336cb075679525bc3557c) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): repeated-failure escalation rule for prime-ultra
+  fix(docs): SPA routing on GCS (404 → index.html)
+
 ## 2.28.1
 
 ### Patch Changes
