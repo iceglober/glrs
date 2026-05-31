@@ -20,7 +20,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   server.close();
-  await pool.end();
 });
 
 beforeEach(async () => {

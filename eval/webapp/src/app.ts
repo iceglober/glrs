@@ -3,6 +3,7 @@ import { join } from "path";
 import { usersRouter } from "./routes/users.js";
 import { postsRouter } from "./routes/posts.js";
 import { authRouter } from "./routes/auth.js";
+import { analyticsRouter } from "./routes/analytics.js";
 
 export const app = express();
 
@@ -11,6 +12,7 @@ app.use(express.static(join(import.meta.dir, "..", "public")));
 app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/posts", postsRouter);
+app.use("/api/analytics", analyticsRouter);
 
 app.use(
   (
