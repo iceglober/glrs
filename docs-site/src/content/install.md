@@ -23,19 +23,19 @@ opencode
 | Command | What it does |
 |---------|-------------|
 | `glrs harness` | Plugin management (install, configure, uninstall, doctor) |
+| `glrs assume` | Cloud credentials (init, login, contexts, agent MCP) |
 | `glrs wt` | Worktree management (create, list, switch, delete, cleanup) |
 | `glrs autopilot` | Autonomous scope → plan → execute orchestrator |
 | `glrs loop` | Raw prompt loop runner |
 | `glrs upgrade` | Self-update to latest version |
 
-## Assume (optional, separate)
-
-`@glrs-dev/assume` is a standalone Rust binary for AWS/GCP SSO. Install it separately:
+## Cloud credentials (optional)
 
 ```bash
-npm i -g @glrs-dev/assume
-gsa login aws
+glrs assume init
 ```
+
+Installs `@glrs-dev/assume` if missing, runs login, approves agent contexts, configures MCP.
 
 ## Requirements
 
