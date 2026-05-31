@@ -868,6 +868,11 @@ fn notify_session_expired(provider_display_name: &str) {
 /// Ensure the daemon is running and healthy. If not, restart it.
 /// Called automatically by CLI commands that need the daemon.
 pub fn ensure_daemon_running() {
+    // One-time migration: remove the old gs-assume launchd agent if present.
+    // It holds ports 9911/9912 and prevents glrs-assume from binding them.
+    #[cfg(target_os = "macos")]
+    migrate_remove_old_launchd_agent();
+
     if is_daemon_running() && is_daemon_healthy() {
         return;
     }
@@ -875,6 +880,28 @@ pub fn ensure_daemon_running() {
     // Daemon is down or unhealthy — full restart
     stop_daemon();
     start_daemon_background();
+}
+
+#[cfg(target_os = "macos")]
+fn migrate_remove_old_launchd_agent() {
+    let old_plist = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("Library/LaunchAgents/com.glorious.gs-assume.plist");
+
+    if !old_plist.exists() {
+        return;
+    }
+
+    tracing::info!("Migrating: removing old gs-assume launchd agent");
+    let uid = unsafe { nix::libc::getuid() };
+    let _ = std::process::Command::new("launchctl")
+        .args([
+            "bootout",
+            &format!("gui/{uid}"),
+            old_plist.to_str().unwrap_or(""),
+        ])
+        .output();
+    let _ = std::fs::remove_file(&old_plist);
 }
 
 /// Check if the daemon is actually responding on its port.
@@ -1370,18 +1397,20 @@ fn stop_daemon() {
         }
     }
 
-    // Also kill any orphaned glrs-assume serve processes
-    if let Ok(output) = std::process::Command::new("pgrep")
-        .args(["-f", "glrs-assume serve"])
-        .output()
-    {
-        if let Ok(pids) = String::from_utf8(output.stdout) {
-            let my_pid = std::process::id() as i32;
-            for line in pids.lines() {
-                if let Ok(pid) = line.trim().parse::<i32>() {
-                    if pid != my_pid {
-                        unsafe {
-                            nix::libc::kill(pid, nix::libc::SIGTERM);
+    // Also kill any orphaned glrs-assume or gs-assume (pre-rename) serve processes
+    for pattern in &["glrs-assume serve", "gs-assume serve"] {
+        if let Ok(output) = std::process::Command::new("pgrep")
+            .args(["-f", pattern])
+            .output()
+        {
+            if let Ok(pids) = String::from_utf8(output.stdout) {
+                let my_pid = std::process::id() as i32;
+                for line in pids.lines() {
+                    if let Ok(pid) = line.trim().parse::<i32>() {
+                        if pid != my_pid {
+                            unsafe {
+                                nix::libc::kill(pid, nix::libc::SIGTERM);
+                            }
                         }
                     }
                 }
