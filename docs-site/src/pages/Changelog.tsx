@@ -9,11 +9,20 @@ const PACKAGES = [
   { key: "assume", label: "assume", file: "assume" },
 ];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MdLink({ href, children }: { href?: string; children?: any }) {
   if (href && href.startsWith("/")) {
     return <Link to={href}>{children}</Link>;
   }
   return <a href={href}>{children}</a>;
+}
+
+function cleanChangelog(raw: string): string {
+  return raw
+    // Strip the h1 title line (e.g. "# @glrs-dev/harness-plugin-opencode")
+    .replace(/^#\s+@glrs-dev\/.*\n+/, "")
+    // Remove empty version sections (just "## X.Y.Z" with no content before next heading)
+    .replace(/^(## \d+\.\d+\.\d+)\n+(## )/gm, "$2");
 }
 
 export function Changelog() {
@@ -35,7 +44,7 @@ export function Changelog() {
     )
       .then((r) => r.text())
       .then((text) => {
-        setChangelogs((prev) => ({ ...prev, [active]: text }));
+        setChangelogs((prev) => ({ ...prev, [active]: cleanChangelog(text) }));
       })
       .catch(() => {
         setChangelogs((prev) => ({
