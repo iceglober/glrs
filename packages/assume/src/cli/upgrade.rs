@@ -109,7 +109,7 @@ async fn fetch_from_api() -> anyhow::Result<Option<Release>> {
             "https://api.github.com/repos/{REPO}/releases?per_page=20"
         ))
         .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "gs-assume-cli")
+        .header("User-Agent", "glrs-assume-cli")
         .header("X-GitHub-Api-Version", "2022-11-28");
 
     if let Some(ref tok) = token {
@@ -123,7 +123,7 @@ async fn fetch_from_api() -> anyhow::Result<Option<Release>> {
 
     let releases: Vec<serde_json::Value> = resp.json().await?;
     let platform = detect_platform();
-    let asset_name = format!("gs-assume-{platform}");
+    let asset_name = format!("glrs-assume-{platform}");
 
     for release in &releases {
         let tag = match release.get("tag_name").and_then(|t| t.as_str()) {
@@ -161,7 +161,7 @@ async fn fetch_from_api() -> anyhow::Result<Option<Release>> {
 
 async fn download_binary(release: &Release, dest: &str) -> anyhow::Result<bool> {
     let platform = detect_platform();
-    let asset_name = format!("gs-assume-{platform}");
+    let asset_name = format!("glrs-assume-{platform}");
 
     // Try gh CLI first
     let tmp = format!("{dest}.tmp");
@@ -201,7 +201,7 @@ async fn download_binary(release: &Release, dest: &str) -> anyhow::Result<bool> 
     let client = reqwest::Client::new();
     let mut req = client
         .get(&release.asset_url)
-        .header("User-Agent", "gs-assume-cli")
+        .header("User-Agent", "glrs-assume-cli")
         .header("Accept", "application/octet-stream");
 
     if let Some(ref tok) = token {
@@ -265,7 +265,7 @@ pub async fn run(_args: UpgradeArgs) -> anyhow::Result<()> {
         .unwrap_or(true)
     {
         // Try writing a test file
-        let test_path = install_dir.join(".gs-assume-write-test");
+        let test_path = install_dir.join(".glrs-assume-write-test");
         if fs::write(&test_path, "test").is_err() {
             eprintln!(
                 "\x1b[31merror:\x1b[0m no write permission to {} — try with sudo",

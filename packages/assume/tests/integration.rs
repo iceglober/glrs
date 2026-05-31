@@ -1,30 +1,30 @@
-//! Integration tests for gs-assume CLI.
+//! Integration tests for glrs-assume CLI.
 //! These test the CLI binary itself via assert_cmd.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
 
-/// Build a Command for gs-assume with GLRS_CLI_DISPATCHED=1 pre-set.
+/// Build a Command for glrs-assume with GLRS_CLI_DISPATCHED=1 pre-set.
 /// All pre-existing tests use this helper so they continue to work after
 /// the standalone-redirect guard was added to main().
-fn gs_assume() -> Command {
-    let mut cmd = Command::cargo_bin("gs-assume").unwrap();
+fn glrs_assume() -> Command {
+    let mut cmd = Command::cargo_bin("glrs-assume").unwrap();
     cmd.env("GLRS_CLI_DISPATCHED", "1");
     cmd
 }
 
 #[test]
 fn test_version() {
-    gs_assume()
+    glrs_assume()
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("gs-assume"));
+        .stdout(predicate::str::contains("glrs-assume"));
 }
 
 #[test]
 fn test_help() {
-    gs_assume()
+    glrs_assume()
         .arg("--help")
         .assert()
         .success()
@@ -35,7 +35,7 @@ fn test_help() {
 
 #[test]
 fn test_login_help() {
-    gs_assume()
+    glrs_assume()
         .args(["login", "--help"])
         .assert()
         .success()
@@ -45,17 +45,17 @@ fn test_login_help() {
 #[test]
 fn test_status_no_auth() {
     // Status should work even with no authentication
-    gs_assume().arg("status").assert().success();
+    glrs_assume().arg("status").assert().success();
 }
 
 #[test]
 fn test_profiles_no_auth() {
-    gs_assume().arg("profiles").assert().success();
+    glrs_assume().arg("profiles").assert().success();
 }
 
 #[test]
 fn test_shell_init_bash() {
-    gs_assume()
+    glrs_assume()
         .args(["shell-init", "bash"])
         .assert()
         .success()
@@ -64,7 +64,7 @@ fn test_shell_init_bash() {
 
 #[test]
 fn test_shell_init_zsh() {
-    gs_assume()
+    glrs_assume()
         .args(["shell-init", "zsh"])
         .assert()
         .success()
@@ -73,7 +73,7 @@ fn test_shell_init_zsh() {
 
 #[test]
 fn test_shell_init_fish() {
-    gs_assume()
+    glrs_assume()
         .args(["shell-init", "fish"])
         .assert()
         .success()
@@ -82,7 +82,7 @@ fn test_shell_init_fish() {
 
 #[test]
 fn test_shell_init_invalid() {
-    gs_assume()
+    glrs_assume()
         .args(["shell-init", "powershell"])
         .assert()
         .failure();
@@ -91,12 +91,12 @@ fn test_shell_init_invalid() {
 #[test]
 fn test_logout_no_auth() {
     // Logout should succeed even with nothing to logout from
-    gs_assume().args(["logout", "aws"]).assert().success();
+    glrs_assume().args(["logout", "aws"]).assert().success();
 }
 
 #[test]
 fn test_exec_no_args() {
-    gs_assume().arg("exec").assert().failure();
+    glrs_assume().arg("exec").assert().failure();
 }
 
 // -- Shell wrapper safety tests --
@@ -104,7 +104,7 @@ fn test_exec_no_args() {
 #[test]
 fn test_use_help_does_not_output_export() {
     // `gsa use --help` should NOT output export lines (the shell wrapper evals stdout)
-    let output = gs_assume().args(["use", "--help"]).assert().success();
+    let output = glrs_assume().args(["use", "--help"]).assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout);
     assert!(
         !stdout.contains("export "),
@@ -115,7 +115,7 @@ fn test_use_help_does_not_output_export() {
 #[test]
 fn test_shell_init_contains_bearer_token() {
     // shell-init must set AWS_CONTAINER_AUTHORIZATION_TOKEN for credential auth
-    gs_assume()
+    glrs_assume()
         .args(["shell-init", "zsh"])
         .assert()
         .success()
@@ -130,7 +130,7 @@ fn test_shell_init_contains_bearer_token() {
 #[test]
 fn test_shell_init_zsh_prompt_uses_zero_width_markers() {
     // ANSI codes in prompts must be wrapped in %{...%} for zsh
-    let output = gs_assume().args(["shell-init", "zsh"]).assert().success();
+    let output = glrs_assume().args(["shell-init", "zsh"]).assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout);
     assert!(
         stdout.contains("%{") && stdout.contains("%}"),
@@ -141,7 +141,7 @@ fn test_shell_init_zsh_prompt_uses_zero_width_markers() {
 #[test]
 fn test_shell_init_bash_prompt_uses_zero_width_markers() {
     // ANSI codes in prompts must be wrapped in \[...\] for bash
-    let output = gs_assume().args(["shell-init", "bash"]).assert().success();
+    let output = glrs_assume().args(["shell-init", "bash"]).assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout);
     assert!(
         stdout.contains("\\[") && stdout.contains("\\]"),
@@ -152,7 +152,7 @@ fn test_shell_init_bash_prompt_uses_zero_width_markers() {
 #[test]
 fn test_shell_init_wrapper_only_evals_exports() {
     // The shell wrapper should check for 'export ' before evaling
-    let output = gs_assume().args(["shell-init", "zsh"]).assert().success();
+    let output = glrs_assume().args(["shell-init", "zsh"]).assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout);
     assert!(
         stdout.contains(r#"*"export "*"#),
@@ -163,10 +163,10 @@ fn test_shell_init_wrapper_only_evals_exports() {
 #[test]
 fn test_session_token_is_persistent() {
     // Two invocations of shell-init should produce the same session token
-    let output1 = gs_assume().args(["shell-init", "zsh"]).output().unwrap();
+    let output1 = glrs_assume().args(["shell-init", "zsh"]).output().unwrap();
     let stdout1 = String::from_utf8_lossy(&output1.stdout);
 
-    let output2 = gs_assume().args(["shell-init", "zsh"]).output().unwrap();
+    let output2 = glrs_assume().args(["shell-init", "zsh"]).output().unwrap();
     let stdout2 = String::from_utf8_lossy(&output2.stdout);
 
     // Extract the token value from both outputs
@@ -189,7 +189,7 @@ fn test_session_token_is_persistent() {
 fn test_shell_init_bearer_prefix() {
     // AWS_CONTAINER_AUTHORIZATION_TOKEN must include Bearer prefix
     // because AWS SDKs send this value as-is in the Authorization header
-    let output = gs_assume().args(["shell-init", "zsh"]).output().unwrap();
+    let output = glrs_assume().args(["shell-init", "zsh"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let token_line = stdout
         .lines()
@@ -205,7 +205,7 @@ fn test_shell_init_bearer_prefix() {
 fn test_shell_init_and_use_share_same_credential_uri_base() {
     // shell-init outputs the base credential URI
     // gsa use should output an updated URI with context ID appended
-    let output = gs_assume().args(["shell-init", "zsh"]).output().unwrap();
+    let output = glrs_assume().args(["shell-init", "zsh"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Must contain the base URI
@@ -231,7 +231,7 @@ fn test_use_outputs_credential_uri_with_context_id() {
     // AWS_CONTAINER_CREDENTIALS_FULL_URI with the context ID in the path.
     // We can't test with a real context in CI, but we CAN verify that
     // when use fails (no contexts), it doesn't output export lines.
-    let output = gs_assume()
+    let output = glrs_assume()
         .args(["use", "nonexistent-context-12345"])
         .output()
         .unwrap();
@@ -246,11 +246,11 @@ fn test_use_outputs_credential_uri_with_context_id() {
 
 // ── Standalone nudge tests ───────────────────────────────────────────────────
 
-/// gs-assume prints a migration nudge when GLRS_CLI_DISPATCHED is unset,
+/// glrs-assume prints a migration nudge when GLRS_CLI_DISPATCHED is unset,
 /// but still runs the command successfully.
 #[test]
 fn test_nudge_when_not_dispatched() {
-    Command::cargo_bin("gs-assume")
+    Command::cargo_bin("glrs-assume")
         .unwrap()
         .env_remove("GLRS_CLI_DISPATCHED")
         .arg("--version")
@@ -271,15 +271,66 @@ fn test_gsa_nudge_when_not_dispatched() {
         .stderr(predicate::str::contains("npm i -g @glrs-dev/assume"));
 }
 
-/// gs-assume suppresses the nudge when GLRS_CLI_DISPATCHED=1.
+/// glrs-assume suppresses the nudge when GLRS_CLI_DISPATCHED=1.
 #[test]
 fn test_no_nudge_when_dispatched() {
-    Command::cargo_bin("gs-assume")
+    Command::cargo_bin("glrs-assume")
         .unwrap()
         .env("GLRS_CLI_DISPATCHED", "1")
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("gs-assume"))
+        .stdout(predicate::str::contains("glrs-assume"))
         .stderr(predicate::str::contains("npm i -g").not());
+}
+
+// ── Shell-init stdout safety ────────────────────────────────────────────────
+
+/// shell-init's stdout MUST contain only valid shell code, nothing else.
+/// BackgroundEnsure calls spawn_daemon_if_dead() which could theoretically
+/// leak output. If anything non-shell lands in stdout, `eval "$(glrs-assume
+/// shell-init zsh)"` will error and break the user's terminal.
+#[test]
+fn test_shell_init_stdout_is_clean_shell_code() {
+    let output = glrs_assume()
+        .args(["shell-init", "zsh"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Every non-empty, non-comment line should be valid shell syntax:
+    // export, function, if, fi, echo, set, etc. — not tracing output or errors.
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        // Tracing output looks like: "2024-01-01T00:00:00Z INFO ..."
+        // or "  at src/core/daemon.rs:123"
+        assert!(
+            !trimmed.contains(" INFO ") && !trimmed.contains(" WARN ") && !trimmed.contains(" ERROR ") && !trimmed.starts_with("at "),
+            "shell-init stdout contains tracing/log output which would corrupt eval: {trimmed}"
+        );
+    }
+}
+
+/// shell-init for all shells should produce parseable output, not crash.
+#[test]
+fn test_shell_init_all_shells_succeed() {
+    for shell in &["bash", "zsh", "fish"] {
+        let output = glrs_assume()
+            .args(["shell-init", shell])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "shell-init {shell} failed with status {}",
+            output.status
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            !stdout.is_empty(),
+            "shell-init {shell} produced empty stdout"
+        );
+    }
 }

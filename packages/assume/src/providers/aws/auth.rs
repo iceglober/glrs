@@ -4,7 +4,7 @@ use aws_sdk_ssooidc::Client as OidcClient;
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
 
-const CLIENT_NAME: &str = "gs-assume";
+const CLIENT_NAME: &str = "glrs-assume";
 const CLIENT_TYPE: &str = "public";
 const GRANT_TYPE_DEVICE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 

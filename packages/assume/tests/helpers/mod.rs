@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tempfile::TempDir;
 
-/// Global mutex to serialize tests that mutate `GS_ASSUME_CONFIG_DIR`.
+/// Global mutex to serialize tests that mutate `GLRS_ASSUME_CONFIG_DIR`.
 /// Without this, parallel tests would clobber each other's env var.
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-/// A temporary config directory that sets `GS_ASSUME_CONFIG_DIR` for the duration
+/// A temporary config directory that sets `GLRS_ASSUME_CONFIG_DIR` for the duration
 /// of the test. Drop this to clean up.
 pub struct TestVault {
     /// Kept alive so the temp directory isn't deleted until the test finishes.
@@ -28,7 +28,7 @@ impl TestVault {
         let dir = TempDir::new().expect("failed to create temp dir");
         // Create the vault subdirectory so keychain can write files.
         std::fs::create_dir_all(dir.path().join("vault")).expect("failed to create vault dir");
-        std::env::set_var("GS_ASSUME_CONFIG_DIR", dir.path());
+        std::env::set_var("GLRS_ASSUME_CONFIG_DIR", dir.path());
         Self { dir, _guard: guard }
     }
 
@@ -47,7 +47,7 @@ impl TestVault {
 impl Drop for TestVault {
     fn drop(&mut self) {
         // Remove the env var so subsequent tests start clean.
-        std::env::remove_var("GS_ASSUME_CONFIG_DIR");
+        std::env::remove_var("GLRS_ASSUME_CONFIG_DIR");
         // _guard is dropped here, releasing the lock.
     }
 }
@@ -94,4 +94,37 @@ pub fn make_tokens_relative(
         now + Duration::seconds(session_secs),
         now + Duration::days(refresh_days),
     )
+}
+
+/// Simple mock OIDC client for token rotation tests.
+/// Returns a single pre-configured response every time.
+pub struct MockOidcClientForRotation {
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_in: i32,
+}
+
+impl MockOidcClientForRotation {
+    pub fn new(access_token: String, refresh_token: Option<String>, expires_in: i32) -> Self {
+        Self { access_token, refresh_token, expires_in }
+    }
+}
+
+#[async_trait::async_trait]
+impl assume::providers::aws::oidc_client::OidcTokenClient for MockOidcClientForRotation {
+    async fn create_token_refresh(
+        &self,
+        _client_id: &str,
+        _client_secret: &str,
+        _refresh_token: &str,
+    ) -> Result<
+        assume::providers::aws::oidc_client::CreateTokenResponse,
+        assume::providers::aws::oidc_client::OidcError,
+    > {
+        Ok(assume::providers::aws::oidc_client::CreateTokenResponse {
+            access_token: Some(self.access_token.clone()),
+            refresh_token: self.refresh_token.clone(),
+            expires_in: self.expires_in,
+        })
+    }
 }

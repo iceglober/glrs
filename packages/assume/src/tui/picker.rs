@@ -102,7 +102,7 @@ fn render_picker(
 
     // Title block
     let block = Block::default()
-        .title(" gs-assume ")
+        .title(" glrs-assume ")
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded);

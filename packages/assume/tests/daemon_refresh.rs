@@ -653,7 +653,7 @@ async fn daemon_dies_session_expired_but_refresh_valid_recovers() {
 /// signal 0), `spawn_daemon_if_dead()` returns immediately without spawning.
 /// We test this by writing the current process's PID to the PID file — the
 /// current process is definitely alive and `ps` will show it as the test binary
-/// (not gs-assume), so `is_daemon_running()` returns false for a non-gs-assume
+/// (not glrs-assume), so `is_daemon_running()` returns false for a non-glrs-assume
 /// PID. Instead, we verify the no-op path by confirming the function completes
 /// without error when the daemon is already running (PID file absent → function
 /// calls start_daemon_background, which is a best-effort fire-and-forget).
@@ -670,8 +670,8 @@ fn spawn_daemon_if_dead_is_noop_when_running() {
     // Serialize env-var mutation (same pattern as daemon.rs unit tests)
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let old = std::env::var("GS_ASSUME_CONFIG_DIR").ok();
-    std::env::set_var("GS_ASSUME_CONFIG_DIR", temp_dir.path());
+    let old = std::env::var("GLRS_ASSUME_CONFIG_DIR").ok();
+    std::env::set_var("GLRS_ASSUME_CONFIG_DIR", temp_dir.path());
 
     // No PID file → is_daemon_running() returns false
     assert!(!is_daemon_running(), "No PID file → daemon not running");
@@ -683,8 +683,8 @@ fn spawn_daemon_if_dead_is_noop_when_running() {
 
     // Restore env
     match old {
-        Some(v) => std::env::set_var("GS_ASSUME_CONFIG_DIR", v),
-        None => std::env::remove_var("GS_ASSUME_CONFIG_DIR"),
+        Some(v) => std::env::set_var("GLRS_ASSUME_CONFIG_DIR", v),
+        None => std::env::remove_var("GLRS_ASSUME_CONFIG_DIR"),
     }
 }
 
@@ -739,5 +739,89 @@ fn expired_client_registration_triggers_reregistration() {
     assert!(
         !is_client_registration_valid(&epoch_expiry),
         "Registration with epoch expires_at must not be considered valid"
+    );
+}
+
+// ─── Inline refresh: session expired + refresh valid → refresh succeeds ─────
+
+/// The inline refresh path in main.rs detects expired sessions with valid
+/// refresh tokens and calls `provider.refresh()`. This test validates the
+/// underlying `refresh_with()` works correctly when the session token has
+/// already expired — the refresh should succeed purely based on the refresh
+/// token, not the session token.
+#[tokio::test]
+async fn inline_refresh_succeeds_with_expired_session_and_valid_refresh() {
+    let now = Utc::now();
+
+    // Session expired 2 hours ago, refresh has ~4 days remaining
+    let login_time = now - Duration::hours(3);
+    let tokens = make_tokens_relative(login_time, 3600, 7);
+
+    // Precondition: this is exactly the condition main.rs checks
+    assert!(tokens.session_expires_at < now, "session must be expired");
+    assert!(tokens.refresh_expires_at > now, "refresh must be valid");
+    let should_inline_refresh =
+        tokens.session_expires_at <= now && tokens.refresh_expires_at > now;
+    assert!(should_inline_refresh);
+
+    // Refresh succeeds without needing a valid session token
+    let clock = MockClock::new(now);
+    let mock_client = MockOidcClient::new(vec![MockOidcResponse::Success {
+        access_token: "inline-refreshed-token".to_string(),
+        refresh_token: Some("rotated-refresh-token".to_string()),
+        expires_in: 3600,
+    }]);
+
+    let new_tokens = refresh_with(&tokens, &mock_client, &clock)
+        .await
+        .expect("inline refresh must succeed when refresh token is valid");
+
+    // New session is valid
+    assert!(new_tokens.session_expires_at > now);
+    assert_eq!(
+        new_tokens.secrets.get("access_token").unwrap(),
+        "inline-refreshed-token"
+    );
+
+    // Rotation extended refresh expiry
+    let expected_refresh_expiry = now + Duration::days(7);
+    let delta = (new_tokens.refresh_expires_at - expected_refresh_expiry)
+        .num_seconds()
+        .abs();
+    assert!(delta < 2, "refresh expiry should be extended by 7 days");
+
+    // Rotated refresh token is stored
+    assert_eq!(
+        new_tokens.secrets.get("refresh_token").unwrap(),
+        "rotated-refresh-token"
+    );
+}
+
+/// When both session AND refresh tokens are expired, inline refresh should
+/// return RefreshTokenExpired — not panic or hang.
+#[tokio::test]
+async fn inline_refresh_fails_gracefully_when_refresh_token_expired() {
+    let now = Utc::now();
+
+    // Both expired: session 2h ago, refresh 1h ago
+    let login_time = now - Duration::days(8);
+    let tokens = make_tokens_relative(login_time, 3600, 7);
+
+    assert!(tokens.session_expires_at < now);
+    assert!(tokens.refresh_expires_at < now);
+
+    let clock = MockClock::new(now);
+    let mock_client = MockOidcClient::new(vec![]);
+
+    let result = refresh_with(&tokens, &mock_client, &clock).await;
+    assert!(
+        matches!(result, Err(ProviderError::RefreshTokenExpired)),
+        "must return RefreshTokenExpired when refresh token is expired"
+    );
+
+    // Mock client should not have been called (early return before API call)
+    assert!(
+        mock_client.calls().is_empty(),
+        "should not call OIDC API when refresh token is already expired"
     );
 }

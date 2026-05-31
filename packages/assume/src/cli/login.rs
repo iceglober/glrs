@@ -31,11 +31,11 @@ fn print_provider_prompt(provider_id: &str) {
     } else {
         "green"
     };
-    println!("export GS_ASSUME_CONTEXT=\"{}\"", shell_escape(&label));
-    println!("export GS_ASSUME_CONTEXT_COLOR=\"{}\"", color);
-    println!("export GS_ASSUME_CONTEXT_ID=\"\"");
+    println!("export GLRS_ASSUME_CONTEXT=\"{}\"", shell_escape(&label));
+    println!("export GLRS_ASSUME_CONTEXT_COLOR=\"{}\"", color);
+    println!("export GLRS_ASSUME_CONTEXT_ID=\"\"");
     println!(
-        "export GS_ASSUME_CONTEXT_PROVIDER=\"{}\"",
+        "export GLRS_ASSUME_CONTEXT_PROVIDER=\"{}\"",
         shell_escape(provider_id)
     );
 }
@@ -285,6 +285,9 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
 
     let expires = tokens.session_expires_at.format("%Y-%m-%d %H:%M UTC");
     eprintln!("Session valid until {expires}");
+
+    // Ensure launchd agent is installed so the daemon survives reboots
+    crate::core::daemon::ensure_launchd_agent();
 
     // Restart daemon so it picks up the fresh tokens from vault
     crate::core::daemon::restart_daemon();

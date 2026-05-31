@@ -37,7 +37,7 @@ function detectPlatform(): Platform {
   );
 }
 
-const BIN_NAME = "gs-assume";
+const BIN_NAME = "glrs-assume";
 
 /**
  * Resolve the path to the prebuilt binary for this platform.

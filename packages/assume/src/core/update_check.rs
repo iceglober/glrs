@@ -4,7 +4,7 @@ use std::path::PathBuf;
 // Post-monorepo (Apr 2026): releases cut by Changesets on iceglober/glrs
 // with per-package tags like "@glrs-dev/assume@0.6.4". The pre-monorepo
 // tag format "assume-v0.6.3" on iceglober/glorious is frozen — any
-// gs-assume installed before the monorepo migration hits this path on
+// glrs-assume installed before the monorepo migration hits this path on
 // its next run and auto-migrates to the new update channel.
 const REPO: &str = "iceglober/glrs";
 const TAG_PREFIX: &str = "@glrs-dev/assume@";
@@ -19,7 +19,7 @@ struct CachedVersion {
 fn cache_path() -> PathBuf {
     let cache_dir = dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join("gs-assume");
+        .join("glrs-assume");
     cache_dir.join("latest-version.json")
 }
 
@@ -67,7 +67,7 @@ fn fetch_latest_version() -> Option<String> {
             "-H",
             "Accept: application/vnd.github+json",
             "-H",
-            "User-Agent: gs-assume-cli",
+            "User-Agent: glrs-assume-cli",
             "-H",
             "X-GitHub-Api-Version: 2022-11-28",
         ])
@@ -184,7 +184,7 @@ fn try_auto_upgrade(tag: &str) -> bool {
     };
 
     // Check write permission
-    let test_path = install_dir.join(".gs-assume-write-test");
+    let test_path = install_dir.join(".glrs-assume-write-test");
     if fs::write(&test_path, "test").is_err() {
         tracing::debug!(
             "auto-upgrade: no write permission to {}",
@@ -195,7 +195,7 @@ fn try_auto_upgrade(tag: &str) -> bool {
     let _ = fs::remove_file(&test_path);
 
     let platform = detect_platform();
-    let asset_name = format!("gs-assume-{platform}");
+    let asset_name = format!("glrs-assume-{platform}");
     let tmp = format!("{}.tmp", exe_path.to_string_lossy());
 
     // Percent-encode the tag for the URL path. Changesets tags include '@'
@@ -317,21 +317,21 @@ pub fn check_for_update() {
 
         if is_major_bump(current, &latest) {
             eprintln!(
-                "\x1b[33mwarning:\x1b[0m gs-assume v{latest} available (major update) — run `gsa upgrade` to update"
+                "\x1b[33mwarning:\x1b[0m glrs-assume v{latest} available (major update) — run `gsa upgrade` to update"
             );
             return;
         }
 
         // Auto-upgrade for minor/patch
         let tag = format!("{TAG_PREFIX}{latest}");
-        eprintln!("\x1b[36m▸\x1b[0m updating gs-assume v{current} → v{latest}...");
+        eprintln!("\x1b[36m▸\x1b[0m updating glrs-assume v{current} → v{latest}...");
         if try_auto_upgrade(&tag) {
             eprintln!("\x1b[32m✓\x1b[0m updated to v{latest}");
             write_cache(&latest);
             re_exec();
         } else {
             eprintln!(
-                "\x1b[33mwarning:\x1b[0m gs-assume v{latest} available — run `gsa upgrade` to update"
+                "\x1b[33mwarning:\x1b[0m glrs-assume v{latest} available — run `gsa upgrade` to update"
             );
         }
     });

@@ -2,10 +2,10 @@ use clap::Command;
 use clap_complete::{generate, Shell};
 use std::io;
 
-/// Generate shell completions for the gs-assume CLI and write to stdout.
+/// Generate shell completions for the glrs-assume CLI and write to stdout.
 #[allow(dead_code)]
 pub fn generate_completions(cmd: &mut Command, shell: Shell) {
-    generate(shell, cmd, "gs-assume", &mut io::stdout());
+    generate(shell, cmd, "glrs-assume", &mut io::stdout());
 }
 
 /// Parse shell name string into clap_complete::Shell

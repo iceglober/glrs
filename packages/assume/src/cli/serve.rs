@@ -14,11 +14,11 @@ pub struct ServeArgs {
     #[arg(long)]
     pub foreground: bool,
 
-    /// Install gs-assume to PATH and start daemon on login
+    /// Install glrs-assume to PATH and start daemon on login
     #[arg(long)]
     pub install: bool,
 
-    /// Uninstall gs-assume and remove login service
+    /// Uninstall glrs-assume and remove login service
     #[arg(long)]
     pub uninstall: bool,
 }
@@ -43,7 +43,7 @@ pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config)
             eprintln!("  {action}");
         }
         eprintln!();
-        eprintln!("Restart your shell, then `gs-assume` and `gsa` will be available everywhere.");
+        eprintln!("Restart your shell, then `glrs-assume` and `gsa` will be available everywhere.");
         return Ok(());
     }
 
@@ -51,11 +51,11 @@ pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config)
     let action = daemon::serve_action_for_current_state();
     match action {
         daemon::ServeAction::NoopHealthy => {
-            eprintln!("gs-assume daemon already running and healthy; exiting 0.");
+            eprintln!("glrs-assume daemon already running and healthy; exiting 0.");
             return Ok(());
         }
         daemon::ServeAction::RemoveStalePidAndStart => {
-            tracing::warn!("Removing stale PID file (process not gs-assume or not healthy)");
+            tracing::warn!("Removing stale PID file (process not glrs-assume or not healthy)");
             daemon::remove_pid_file();
         }
         daemon::ServeAction::StartFresh => {
@@ -71,7 +71,7 @@ pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config)
 
     config::ensure_config_dir()?;
 
-    eprintln!("Starting gs-assume daemon...");
+    eprintln!("Starting glrs-assume daemon...");
 
     // Write PID file
     daemon::write_pid_file()?;
@@ -106,8 +106,13 @@ pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config)
 
     eprintln!("Daemon ready. Press Ctrl+C to stop.");
 
-    // Wait for shutdown signal
-    tokio::signal::ctrl_c().await?;
+    // Wait for SIGINT or SIGTERM (launchd sends SIGTERM on shutdown)
+    let mut sigterm =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = sigterm.recv() => {}
+    }
 
     eprintln!("\nShutting down...");
     audit::log_event(audit::AuditEvent::DaemonStop, "daemon", "stopped");

@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 pub enum PluginStatus {
     /// Healthy, tokens loaded, may or may not have active context
     Active,
-    /// Needs user to run `gs-assume login <provider>`
+    /// Needs user to run `glrs-assume login <provider>`
     NeedsLogin,
     /// Plugin failed validation or is in a broken state
     #[allow(dead_code)]
@@ -100,11 +100,11 @@ impl DaemonState {
     }
 }
 
-/// Check if a PID belongs to a gs-assume process by examining the process name.
+/// Check if a PID belongs to a glrs-assume process by examining the process name.
 /// Uses `ps -p <pid> -o comm=` which works on both macOS and Linux.
 /// On Linux, comm is truncated to 15 chars (kernel TASK_COMM_LEN limit),
-/// which is fine for "gs-assume" (9 chars).
-fn pid_belongs_to_gs_assume(pid: i32) -> bool {
+/// which is fine for "glrs-assume" (11 chars).
+fn pid_belongs_to_glrs_assume(pid: i32) -> bool {
     let output = std::process::Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "comm="])
         .output();
@@ -113,8 +113,8 @@ fn pid_belongs_to_gs_assume(pid: i32) -> bool {
         Ok(out) if out.status.success() => {
             let comm = String::from_utf8_lossy(&out.stdout);
             let comm = comm.trim();
-            // Accept both "gs-assume" and "gsa" (symlinked binary name)
-            comm == "gs-assume" || comm == "gsa"
+            // Accept both "glrs-assume" and "gsa" (symlinked binary name)
+            comm == "glrs-assume" || comm == "gsa"
         }
         _ => {
             // If ps fails, be conservative and return false
@@ -137,7 +137,7 @@ pub fn is_daemon_running() -> bool {
                 use nix::unistd::Pid;
                 let signal_ok = signal::kill(Pid::from_raw(pid), None).is_ok();
                 // Also verify process identity to avoid recycled PID issues
-                signal_ok && pid_belongs_to_gs_assume(pid)
+                signal_ok && pid_belongs_to_glrs_assume(pid)
             } else {
                 false
             }
@@ -151,13 +151,13 @@ pub fn is_daemon_running() -> bool {
 pub enum ServeAction {
     /// Daemon is running and healthy — exit 0, no-op
     NoopHealthy,
-    /// PID file exists but process is not gs-assume or not healthy — remove stale PID and start
+    /// PID file exists but process is not glrs-assume or not healthy — remove stale PID and start
     RemoveStalePidAndStart,
     /// No PID file — start fresh
     StartFresh,
 }
 
-/// Determine the action to take when `gs-assume serve` is invoked.
+/// Determine the action to take when `glrs-assume serve` is invoked.
 /// This is extracted as a pure function for testability.
 pub fn serve_action_for_current_state() -> ServeAction {
     let pid_file = config::pid_path();
@@ -175,9 +175,9 @@ pub fn serve_action_for_current_state() -> ServeAction {
                 let signal_ok = signal::kill(Pid::from_raw(pid), None).is_ok();
 
                 if signal_ok {
-                    // Process exists — verify it's actually gs-assume
-                    if pid_belongs_to_gs_assume(pid) {
-                        // It's gs-assume — check if healthy
+                    // Process exists — verify it's actually glrs-assume
+                    if pid_belongs_to_glrs_assume(pid) {
+                        // It's glrs-assume — check if healthy
                         if is_daemon_healthy() {
                             ServeAction::NoopHealthy
                         } else {
@@ -711,12 +711,6 @@ async fn serve_credential_endpoint(
                             }
                         };
 
-                        // Note: tokens/ctx are cloned from a read lock. If the refresh
-                        // loop updates tokens between lock release and get_credentials,
-                        // the provider will return AccessTokenExpired and we'll get a
-                        // retry on next request. This is acceptable because holding the
-                        // lock across the network call would block all other credential
-                        // requests.
                         match fetch_result {
                             (Some(ctx), Some(tokens), Some(provider)) => {
                                 let fetch_timeout = std::time::Duration::from_secs(15);
@@ -733,6 +727,79 @@ async fn serve_credential_endpoint(
                                             .header("content-type", "application/json")
                                             .body(Full::new(Bytes::from(payload)))
                                             .unwrap()
+                                    }
+                                    Ok(Err(ProviderError::AccessTokenExpired)) => {
+                                        // Session expired — refresh inline and retry once.
+                                        // This handles the window between the refresh loop
+                                        // tick and the actual expiry, and the case where
+                                        // the daemon just started with stale tokens.
+                                        tracing::info!(
+                                            "Session expired on credential request for {provider_id} — refreshing inline"
+                                        );
+                                        let refresh_timeout = std::time::Duration::from_secs(15);
+                                        let refresh_result = tokio::time::timeout(
+                                            refresh_timeout,
+                                            provider.refresh(&tokens),
+                                        )
+                                        .await;
+                                        match refresh_result {
+                                            Ok(Ok(new_tokens)) => {
+                                                // Persist and update daemon state
+                                                let _ = keychain::store_tokens(&provider_id, &new_tokens);
+                                                {
+                                                    let mut s = state.write().await;
+                                                    if let Some(ps) = s.plugin_states.get_mut(&provider_id) {
+                                                        ps.tokens = Some(new_tokens.clone());
+                                                    }
+                                                }
+                                                // Retry credential fetch with fresh token
+                                                let retry_future =
+                                                    provider.get_credentials(&new_tokens, &ctx);
+                                                match tokio::time::timeout(
+                                                    fetch_timeout,
+                                                    retry_future,
+                                                )
+                                                .await
+                                                {
+                                                    Ok(Ok(creds)) => {
+                                                        let payload = creds.payload.clone();
+                                                        let mut s = state.write().await;
+                                                        if let Some(ps) =
+                                                            s.plugin_states.get_mut(&provider_id)
+                                                        {
+                                                            ps.credential_cache
+                                                                .insert(ctx.id.clone(), creds);
+                                                        }
+                                                        Response::builder()
+                                                            .status(StatusCode::OK)
+                                                            .header(
+                                                                "content-type",
+                                                                "application/json",
+                                                            )
+                                                            .body(Full::new(Bytes::from(payload)))
+                                                            .unwrap()
+                                                    }
+                                                    Ok(Err(e)) => Response::builder()
+                                                        .status(StatusCode::SERVICE_UNAVAILABLE)
+                                                        .body(Full::new(Bytes::from(format!(
+                                                            "Retry after refresh failed: {e}"
+                                                        ))))
+                                                        .unwrap(),
+                                                    Err(_) => Response::builder()
+                                                        .status(StatusCode::GATEWAY_TIMEOUT)
+                                                        .body(Full::new(Bytes::from(
+                                                            "Credential retry timed out",
+                                                        )))
+                                                        .unwrap(),
+                                                }
+                                            }
+                                            _ => Response::builder()
+                                                .status(StatusCode::SERVICE_UNAVAILABLE)
+                                                .body(Full::new(Bytes::from(
+                                                    "Session expired and refresh failed. Run: gsa login",
+                                                )))
+                                                .unwrap(),
+                                        }
                                     }
                                     Ok(Err(e)) => Response::builder()
                                         .status(StatusCode::SERVICE_UNAVAILABLE)
@@ -789,7 +856,7 @@ fn notify_session_expired(provider_display_name: &str) {
         format!("{provider_display_name} session has expired. Run `gsa login` to re-authenticate.");
     tokio::task::spawn_blocking(move || {
         if let Err(e) = notify_rust::Notification::new()
-            .summary("gs-assume: Session Expired")
+            .summary("glrs-assume: Session Expired")
             .body(&msg)
             .icon("dialog-warning")
             .timeout(notify_rust::Timeout::Milliseconds(10_000))
@@ -981,13 +1048,13 @@ mod tests {
 
     // ── serve_action_for_current_state tests (a1) ────────────────────
     // Note: These tests use serial_test or similar isolation because
-    // they modify the GS_ASSUME_CONFIG_DIR environment variable.
+    // they modify the GLRS_ASSUME_CONFIG_DIR environment variable.
 
     #[test]
     fn serve_action_exits_ok_when_daemon_already_healthy() {
         // Test: No PID file → StartFresh
         let temp_dir = tempfile::TempDir::new().unwrap();
-        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+        let _guard = env_var_guard("GLRS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
         let action = serve_action_for_current_state();
         assert_eq!(action, ServeAction::StartFresh);
     }
@@ -995,7 +1062,7 @@ mod tests {
     #[test]
     fn serve_action_remove_stale_pid_when_file_invalid() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+        let _guard = env_var_guard("GLRS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
 
         // Write an invalid PID (nonexistent process)
         let pid_file = temp_dir.path().join("daemon.pid");
@@ -1007,9 +1074,9 @@ mod tests {
 
     #[test]
     fn serve_action_remove_stale_pid_when_pid_is_init() {
-        // PID 1 is init/launchd — guaranteed to exist and NOT be gs-assume
+        // PID 1 is init/launchd — guaranteed to exist and NOT be glrs-assume
         let temp_dir = tempfile::TempDir::new().unwrap();
-        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+        let _guard = env_var_guard("GLRS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
 
         let pid_file = temp_dir.path().join("daemon.pid");
         std::fs::write(&pid_file, "1\n").unwrap();
@@ -1023,7 +1090,7 @@ mod tests {
     #[test]
     fn is_daemon_running_false_when_pid_file_missing() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+        let _guard = env_var_guard("GLRS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
 
         assert!(!is_daemon_running());
     }
@@ -1031,7 +1098,7 @@ mod tests {
     #[test]
     fn is_daemon_running_false_when_pid_nonexistent() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+        let _guard = env_var_guard("GLRS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
 
         // Write a PID that is extremely unlikely to exist
         let pid_file = temp_dir.path().join("daemon.pid");
@@ -1042,14 +1109,14 @@ mod tests {
 
     #[test]
     fn is_daemon_running_rejects_pid_owned_by_other_process() {
-        // PID 1 is init/launchd — guaranteed to exist and NOT be gs-assume
+        // PID 1 is init/launchd — guaranteed to exist and NOT be glrs-assume
         let temp_dir = tempfile::TempDir::new().unwrap();
-        let _guard = env_var_guard("GS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+        let _guard = env_var_guard("GLRS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
 
         let pid_file = temp_dir.path().join("daemon.pid");
         std::fs::write(&pid_file, "1\n").unwrap();
 
-        // Should return false because PID 1 is not gs-assume
+        // Should return false because PID 1 is not glrs-assume
         assert!(!is_daemon_running());
     }
 
@@ -1153,7 +1220,7 @@ mod tests {
 
     #[test]
     fn generated_launchd_plist_includes_default_rust_log() {
-        let plist = generate_launchd_plist("/usr/local/bin/gs-assume");
+        let plist = generate_launchd_plist("/usr/local/bin/glrs-assume");
 
         // Check for RUST_LOG environment variable
         assert!(
@@ -1168,7 +1235,7 @@ mod tests {
 
     #[test]
     fn generated_launchd_plist_includes_throttle_interval() {
-        let plist = generate_launchd_plist("/usr/local/bin/gs-assume");
+        let plist = generate_launchd_plist("/usr/local/bin/glrs-assume");
 
         // Check for ThrottleInterval key
         assert!(
@@ -1305,9 +1372,9 @@ fn stop_daemon() {
         }
     }
 
-    // Also kill any orphaned gs-assume serve processes
+    // Also kill any orphaned glrs-assume serve processes
     if let Ok(output) = std::process::Command::new("pgrep")
-        .args(["-f", "gs-assume serve"])
+        .args(["-f", "glrs-assume serve"])
         .output()
     {
         if let Ok(pids) = String::from_utf8(output.stdout) {
@@ -1375,7 +1442,7 @@ fn install_dir() -> std::path::PathBuf {
 fn launchd_plist_path() -> std::path::PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("Library/LaunchAgents/com.glorious.gs-assume.plist")
+        .join("Library/LaunchAgents/com.glorious.glrs-assume.plist")
 }
 
 /// Full install: copy binary to ~/.local/bin, create gsa symlink,
@@ -1395,12 +1462,12 @@ pub fn install() -> Result<Vec<String>> {
         .and_then(|p| p.canonicalize().ok())
         .with_context(|| "Cannot resolve binary path")?;
 
-    // 2. Copy to ~/.local/bin/gs-assume (skip if already there — self-copy truncates the file)
+    // 2. Copy to ~/.local/bin/glrs-assume (skip if already there — self-copy truncates the file)
     let dest_dir = install_dir();
     std::fs::create_dir_all(&dest_dir)
         .with_context(|| format!("Failed to create {}", dest_dir.display()))?;
 
-    let dest = dest_dir.join("gs-assume");
+    let dest = dest_dir.join("glrs-assume");
     let already_installed = dest.canonicalize().ok().map(|d| d == src).unwrap_or(false);
 
     if already_installed {
@@ -1473,8 +1540,8 @@ pub fn install() -> Result<Vec<String>> {
             let rc_path = home.join(rc);
             if rc_path.exists() {
                 let content = std::fs::read_to_string(&rc_path).unwrap_or_default();
-                if !content.contains("gs-assume shell-init")
-                    && !content.contains("_gs_assume_prompt")
+                if !content.contains("glrs-assume shell-init")
+                    && !content.contains("_glrs_assume_prompt")
                 {
                     let shell_eval = format!(
                         "\neval \"$({} shell-init {_shell})\"\n",
@@ -1582,7 +1649,7 @@ pub fn uninstall() -> Result<Vec<String>> {
 
     // Remove binary and symlink
     let dest_dir = install_dir();
-    for name in ["gs-assume", "gsa"] {
+    for name in ["glrs-assume", "gsa"] {
         let path = dest_dir.join(name);
         if path.exists() {
             std::fs::remove_file(&path)?;
@@ -1599,6 +1666,61 @@ pub fn uninstall() -> Result<Vec<String>> {
     Ok(actions)
 }
 
+/// Ensure the launchd agent is installed on macOS. Installs the plist and
+/// bootstraps the agent if it's missing or points at a different binary.
+/// No-op on non-macOS platforms.
+#[cfg(target_os = "macos")]
+pub fn ensure_launchd_agent() {
+    let bin = match std::env::current_exe()
+        .ok()
+        .and_then(|p| p.canonicalize().ok())
+    {
+        Some(p) => p,
+        None => return,
+    };
+    let bin_str = bin.to_string_lossy();
+
+    let plist_path = launchd_plist_path();
+
+    // Already installed and pointing at the current binary — nothing to do
+    if plist_path.exists() {
+        if let Ok(existing) = std::fs::read_to_string(&plist_path) {
+            if existing.contains(bin_str.as_ref()) {
+                return;
+            }
+        }
+    }
+
+    // Write the plist
+    let plist_dir = plist_path.parent().unwrap();
+    if std::fs::create_dir_all(plist_dir).is_err() {
+        return;
+    }
+    let plist = generate_launchd_plist(&bin_str);
+    if std::fs::write(&plist_path, &plist).is_err() {
+        return;
+    }
+
+    // Unload any stale version, then bootstrap the new one
+    let uid = unsafe { nix::libc::getuid() };
+    let domain = format!("gui/{uid}");
+    let _ = std::process::Command::new("launchctl")
+        .args(["bootout", &domain])
+        .arg(&plist_path)
+        .stderr(std::process::Stdio::null())
+        .status();
+    let _ = std::process::Command::new("launchctl")
+        .args(["bootstrap", &domain])
+        .arg(&plist_path)
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    tracing::info!("Installed launchd agent: {}", plist_path.display());
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn ensure_launchd_agent() {}
+
 /// Generate a launchd plist for auto-starting the daemon on macOS
 pub fn generate_launchd_plist(binary_path: &str) -> String {
     format!(
@@ -1607,7 +1729,7 @@ pub fn generate_launchd_plist(binary_path: &str) -> String {
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.glorious.gs-assume</string>
+    <string>com.glorious.glrs-assume</string>
     <key>ProgramArguments</key>
     <array>
         <string>{binary_path}</string>
@@ -1617,9 +1739,16 @@ pub fn generate_launchd_plist(binary_path: &str) -> String {
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
     <key>ThrottleInterval</key>
     <integer>10</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>AbandonProcessGroup</key>
+    <true/>
     <key>EnvironmentVariables</key>
     <dict>
         <key>RUST_LOG</key>

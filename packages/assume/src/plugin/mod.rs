@@ -107,7 +107,7 @@ pub enum ProviderError {
     Other(String),
 }
 
-/// The gs-assume plugin contract. Every method is required.
+/// The glrs-assume plugin contract. Every method is required.
 /// Every return type is concrete. No optionality.
 ///
 /// TRAIT VERSION: 1
