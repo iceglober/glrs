@@ -8,7 +8,7 @@ import { describe, test, expect } from "bun:test";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
+
 
 function findRepoRoot(start: string): string {
   let dir = start;
@@ -32,26 +32,11 @@ const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 describe("docs-site exists and docs is not the site root", () => {
   test("docs-site exists and docs is not the site root", () => {
     expect(existsSync(resolve(repoRoot, "docs-site"))).toBe(true);
-    expect(existsSync(resolve(repoRoot, "docs-site/astro.config.mjs"))).toBe(true);
+    expect(existsSync(resolve(repoRoot, "docs-site/vite.config.ts"))).toBe(true);
     expect(existsSync(resolve(repoRoot, "docs-site/package.json"))).toBe(true);
-    // The old docs/ should not contain astro.config.mjs (it's now docs-site/)
+    // The old docs/ should not contain site config (it's now docs-site/)
     expect(existsSync(resolve(repoRoot, "docs/astro.config.mjs"))).toBe(false);
-  });
-
-  test("docs-site/astro.config.mjs is a git-tracked rename of the old docs/astro.config.mjs", () => {
-    // git log --follow should return at least 2 commits (the rename + original)
-    // Skip gracefully if shallow clone
-    try {
-      const out = execSync(
-        "git log --follow --oneline docs-site/astro.config.mjs",
-        { cwd: repoRoot, encoding: "utf8" },
-      ).trim();
-      const lines = out.split("\n").filter(Boolean);
-      expect(lines.length).toBeGreaterThanOrEqual(2);
-    } catch {
-      // Shallow clone — skip
-      console.log("Skipping git-follow check (shallow clone or git error)");
-    }
+    expect(existsSync(resolve(repoRoot, "docs/vite.config.ts"))).toBe(false);
   });
 });
 
