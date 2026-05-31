@@ -14,18 +14,18 @@ use std::sync::Arc;
     after_help = "\x1b[1mQuick start:\x1b[0m
   gsa login aws                              # Authenticate with AWS (browser SSO)
   gsa login gcp                              # Authenticate with GCP (browser OAuth)
-  gsa use aws <profile>                      # Switch AWS context (interactive shell)
+  gsa use aws <context>                       # Switch AWS context (interactive shell)
   gsa use gcp <project>                      # Switch GCP context (interactive shell)
 
 \x1b[1mFor scripts and AI agents (non-interactive):\x1b[0m
   gsa exec -- <command>                      # Run with active context credentials
-  gsa exec -p prod/admin -- <command>        # Run with a specific profile
-  gsa exec -p gcp:my-project -- <command>    # Shorthand for --provider gcp --profile
+  gsa exec -c prod/admin -- <command>        # Run with a specific context
+  gsa exec -c gcp:my-project -- <command>    # Shorthand for --provider gcp --context
 
 \x1b[1mExamples:\x1b[0m
   gsa exec -- terraform apply                # Uses active context
-  gsa exec -p prod/admin -- aws sts get-caller-identity
-  gsa exec -p gcp:my-project -- gcloud projects list
+  gsa exec -c prod/admin -- aws sts get-caller-identity
+  gsa exec -c gcp:my-project -- gcloud projects list
   gsa exec --provider aws -- aws s3 ls       # Active context, narrowed to AWS"
 )]
 struct Cli {
@@ -44,8 +44,9 @@ enum Commands {
     Use(cli::use_cmd::UseArgs),
     /// Show current authentication status
     Status(cli::status::StatusArgs),
-    /// List available profiles/contexts
-    Profiles(cli::profiles::ProfilesArgs),
+    /// List available contexts
+    #[command(name = "contexts")]
+    Contexts(cli::contexts::ContextsArgs),
     /// Re-fetch contexts from providers
     Sync(cli::sync::SyncArgs),
     /// Run a command with injected credentials (best for scripts and AI agents)
@@ -132,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Login(_) => cli::login::REQUIREMENT,
         Commands::Logout(_) => cli::logout::REQUIREMENT,
         Commands::Status(_) => cli::status::REQUIREMENT,
-        Commands::Profiles(_) => cli::profiles::REQUIREMENT,
+        Commands::Contexts(_) => cli::contexts::REQUIREMENT,
         Commands::Sync(_) => cli::sync::REQUIREMENT,
         Commands::Config(_) => cli::config_cmd::REQUIREMENT,
         Commands::Console(_) => cli::console::REQUIREMENT,
@@ -178,7 +179,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Login(args) => cli::login::run(args, &registry, &cfg).await,
         Commands::Use(args) => cli::use_cmd::run(args, &registry, &cfg).await,
         Commands::Status(args) => cli::status::run(args, &registry, &cfg).await,
-        Commands::Profiles(args) => cli::profiles::run(args, &registry, &cfg).await,
+        Commands::Contexts(args) => cli::contexts::run(args, &registry, &cfg).await,
         Commands::Sync(args) => cli::sync::run(args, &registry, &cfg).await,
         Commands::Exec(args) => cli::exec::run(args, &registry, &cfg).await,
         Commands::Serve(args) => cli::serve::run(args, registry, cfg).await,

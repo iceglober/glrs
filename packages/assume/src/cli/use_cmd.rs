@@ -24,8 +24,9 @@ pub struct UseArgs {
     /// Provider to switch context for (e.g., "aws", "gcp")
     pub provider: String,
 
-    /// Profile/context pattern to match (e.g., "dev", "prod/admin", "my-project")
-    pub profile: Option<String>,
+    /// Context pattern to match (e.g., "dev", "prod/admin", "my-project")
+    #[arg(alias = "profile")]
+    pub context: Option<String>,
 
     /// Pin this context to the current terminal only
     #[arg(long)]
@@ -240,7 +241,7 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
         bail!("No contexts available for {provider_id}. Run: gsa login {provider_id}");
     }
 
-    let selected = match args.profile {
+    let selected = match args.context {
         Some(ref pattern) => {
             let matches = fuzzy::match_contexts(pattern, &contexts);
             match matches.len() {
@@ -276,7 +277,7 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
             }
         }
         None => {
-            // No profile — launch TUI picker filtered to this provider
+            // No context — launch TUI picker filtered to this provider
             match picker::run(&contexts, active_context_id.as_deref())? {
                 PickerResult::Selected(ctx) => ctx,
                 PickerResult::Cancelled => {
