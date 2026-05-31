@@ -1,5 +1,21 @@
 # @glrs-dev/cli
 
+## 2.30.0
+
+### Patch Changes
+
+- [#247](https://github.com/iceglober/glrs/pull/247) [`67f2f2b`](https://github.com/iceglober/glrs/commit/67f2f2b064eee92578385eb5e5d16668bb5b0528) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): headroom tool-output compression — provider-agnostic
+
+  The harness now compresses large tool outputs through headroom's local compression
+  service (if running). Works with any LLM provider (Bedrock, Anthropic, OpenAI).
+  Falls back to built-in truncation when headroom isn't available.
+
+  Also removes the old proxy-redirect approach from `glrs headroom init` — headroom
+  is now a compression service, not an API proxy.
+
+- Updated dependencies [[`67f2f2b`](https://github.com/iceglober/glrs/commit/67f2f2b064eee92578385eb5e5d16668bb5b0528)]:
+  - @glrs-dev/harness-plugin-opencode@2.30.0
+
 ## 2.29.3
 
 ### Patch Changes
