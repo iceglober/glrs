@@ -83,8 +83,8 @@ User-selectable agents (available via Tab in OpenCode):
 
 | Agent | Tier | Role |
 |-------|------|------|
-| `prime` | deep | SPEAR end-to-end workflow (default agent) |
-| `prime-ultra` | deep | Wave-based DAG execution for complex multi-phase tasks |
+| `prime` | deep | SPEAR end-to-end workflow with wave-based DAG execution (default agent) |
+| `prime-ultra` | mid | Cost-optimized PRIME variant for fast execution |
 | `plan` | deep | Interactive planner with gap analysis and adversarial review |
 | `build` | mid | Plan executor |
 | `scoper` | deep | Codebase scoping and context gathering |
@@ -116,7 +116,9 @@ Autopilot-only agents (used by the Ralph loop):
 | `autopilot-prime` | deep | PRIME without the question tool (no user to answer) |
 | `autopilot-fast` | mid | Fast executor for `--fast` autopilot sessions |
 
-Cost-optimized variants: `build-cheap`, `build-deep`, `plan-cheap`, `plan-ultra-cheap` — used for automatic cost cascading.
+Legacy agents: `prime-legacy`, `plan-legacy` — previous-generation prompts, available as fallbacks.
+
+Cost-optimized variants: `build-cheap`, `build-deep`, `plan-ultra-cheap`, `plan-legacy-cheap` — used for automatic cost cascading.
 
 Tiers: **deep** = opus-class, **mid** = sonnet-class, **fast** = haiku-class. Override with [`harness.models`](#model-overrides).
 
