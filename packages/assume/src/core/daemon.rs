@@ -113,13 +113,11 @@ fn pid_belongs_to_glrs_assume(pid: i32) -> bool {
         Ok(out) if out.status.success() => {
             let comm = String::from_utf8_lossy(&out.stdout);
             let comm = comm.trim();
-            // Accept both "glrs-assume" and "gsa" (symlinked binary name)
-            comm == "glrs-assume" || comm == "gsa"
+            // macOS `ps -o comm=` returns the full path; extract the basename.
+            let name = comm.rsplit('/').next().unwrap_or(comm);
+            name == "glrs-assume" || name == "gsa" || name == "gs-assume"
         }
-        _ => {
-            // If ps fails, be conservative and return false
-            false
-        }
+        _ => false,
     }
 }
 
