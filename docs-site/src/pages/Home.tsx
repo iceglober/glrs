@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { PkgSwitcher, Cmd } from "~/components/PkgManager";
+import { NpmVersions } from "~/components/NpmVersions";
 
 export function Home() {
   const copyBash = () =>
@@ -11,6 +12,8 @@ export function Home() {
         <h1>glrs</h1>
         <p className="tagline">glorious tools for tomorrow</p>
       </div>
+
+      <NpmVersions />
 
       <div className="install-block">
         <div className="install-cmd" onClick={copyBash} title="copy to clipboard">
@@ -42,6 +45,8 @@ export function Home() {
       </div>
 
       <div className="external">
+        <Link to="/changelog">changelog</Link>
+        {" · "}
         <a href="https://github.com/iceglober/glrs">github</a>
       </div>
     </main>

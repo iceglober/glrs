@@ -243,6 +243,74 @@ body {
   border-color: var(--red);
 }
 
+/* ── NPM VERSION BADGES ────────────────────────────────────────── */
+
+.npm-versions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+.npm-badge {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  text-decoration: none;
+  color: var(--black);
+  transition: border-color 0.1s;
+}
+
+.npm-badge:hover {
+  border-color: var(--red);
+}
+
+.npm-label {
+  padding: 0.2rem 0.4rem;
+  background: var(--bg-code);
+  color: var(--gray);
+}
+
+.npm-version {
+  padding: 0.2rem 0.4rem;
+  font-weight: 700;
+}
+
+/* ── CHANGELOG TABS ────────────────────────────────────────────── */
+
+.changelog-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 2rem;
+  border: 1px solid var(--border);
+  width: fit-content;
+}
+
+.changelog-tabs button {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  padding: 0.35rem 0.75rem;
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--gray);
+  transition: color 0.1s, background 0.1s;
+}
+
+.changelog-tabs button:last-child {
+  border-right: none;
+}
+
+.changelog-tabs button:hover {
+  color: var(--black);
+}
+
+.changelog-tabs button.active {
+  color: var(--white);
+  background: var(--black);
+}
+
 .home hr {
   border: none;
   border-top: 1px solid var(--border);
