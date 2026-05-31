@@ -38,23 +38,41 @@ function proxyRunning(): boolean {
   }
 }
 
+async function ensureUv(): Promise<boolean> {
+  if (Bun.spawnSync(["which", "uv"]).exitCode === 0) return true;
+
+  process.stderr.write("[glrs] uv not found — installing...\n");
+  const install = spawn("sh", ["-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"], {
+    stdio: "inherit",
+  });
+  const code = await new Promise<number>((resolve) => {
+    install.on("exit", (c) => resolve(c ?? 1));
+    install.on("error", () => resolve(1));
+  });
+  if (code !== 0) return false;
+
+  const uvBin = resolve(process.env.HOME ?? "~", ".local/bin");
+  process.env.PATH = `${uvBin}:${process.env.PATH}`;
+  return Bun.spawnSync(["which", "uv"]).exitCode === 0;
+}
+
 async function installHeadroom(): Promise<boolean> {
   process.stderr.write("[glrs] headroom not found — installing headroom-ai...\n");
 
-  // Try uvx first (faster, no venv), fall back to pip
-  const uvxCheck = Bun.spawnSync(["which", "uvx"]);
-  if (uvxCheck.exitCode === 0) {
-    process.stderr.write("[glrs] Installing via uvx...\n");
-    const result = Bun.spawnSync(["uvx", "--install", "headroom-ai"]);
-    if (result.exitCode === 0) return true;
+  if (!(await ensureUv())) {
+    process.stderr.write("[glrs] Failed to install uv. Install manually: https://docs.astral.sh/uv/\n");
+    return false;
   }
 
-  // Fall back to pip
-  process.stderr.write("[glrs] Installing via pip...\n");
-  const pip = spawn("pip", ["install", "headroom-ai"], { stdio: "inherit" });
+  process.stderr.write("[glrs] Installing via uv tool install...\n");
+  const uv = spawn(
+    "uv",
+    ["tool", "install", "--python", "3.13", "headroom-ai[proxy]"],
+    { stdio: "inherit" },
+  );
   const code = await new Promise<number>((resolve) => {
-    pip.on("exit", (c) => resolve(c ?? 1));
-    pip.on("error", () => resolve(1));
+    uv.on("exit", (c) => resolve(c ?? 1));
+    uv.on("error", () => resolve(1));
   });
   return code === 0;
 }
