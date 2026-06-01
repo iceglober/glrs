@@ -112,23 +112,40 @@ if (sub === "headroom") {
 
 // Handle assume subcommand — installs @glrs-dev/assume if missing, then dispatches to gsa
 if (sub === "assume") {
-  // Check if gsa is on PATH
-  const which = Bun.spawnSync(["which", "gsa"]);
-  if (which.exitCode !== 0) {
-    process.stderr.write("[glrs] gsa not found — installing @glrs-dev/assume...\n");
-    const install = spawn("npm", ["i", "-g", "@glrs-dev/assume"], { stdio: "inherit" });
-    const installCode = await new Promise<number>((resolve) => {
-      install.on("exit", (code) => resolve(code ?? 1));
-      install.on("error", () => resolve(1));
-    });
-    if (installCode !== 0) {
-      process.stderr.write("[glrs] Failed to install @glrs-dev/assume\n");
+  const gsaArgs = args.slice(1);
+
+  if (gsaArgs[0] === "init") {
+    // `init` is the canonical repair entry point: remove deprecated packages
+    // whose stale `gsa`/`gs-assume` bins shadow the current install, then
+    // install the latest version. The Rust `gsa init` then migrates legacy
+    // config forward. This un-breaks machines left half-migrated by the old
+    // `@glorious/assume` → `@glrs-dev/assume` rename.
+    const { repairAssumeInstall } = await import("./lib/assume-install.js");
+    try {
+      await repairAssumeInstall();
+    } catch (err) {
+      process.stderr.write(String((err as Error).message) + "\n");
       process.exit(1);
     }
     process.stderr.write("\n");
+  } else {
+    // Other subcommands: lazy-install on first use only.
+    const which = Bun.spawnSync(["which", "gsa"]);
+    if (which.exitCode !== 0) {
+      process.stderr.write("[glrs] gsa not found — installing @glrs-dev/assume...\n");
+      const install = spawn("npm", ["i", "-g", "@glrs-dev/assume"], { stdio: "inherit" });
+      const installCode = await new Promise<number>((resolve) => {
+        install.on("exit", (code) => resolve(code ?? 1));
+        install.on("error", () => resolve(1));
+      });
+      if (installCode !== 0) {
+        process.stderr.write("[glrs] Failed to install @glrs-dev/assume\n");
+        process.exit(1);
+      }
+      process.stderr.write("\n");
+    }
   }
 
-  const gsaArgs = args.slice(1);
   const child = spawn("gsa", gsaArgs, { stdio: "inherit" });
   child.on("exit", (code, signal) => {
     if (signal) { process.kill(process.pid, signal); return; }

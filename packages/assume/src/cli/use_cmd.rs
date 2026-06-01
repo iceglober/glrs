@@ -118,6 +118,21 @@ async fn collect_contexts(
     })
 }
 
+/// Gather contexts for a single provider for non-`use` callers (init's
+/// default-context picker). Returns an empty vec on a missing/expired session
+/// or any collection error, so a caller can aggregate across providers where
+/// some may be unauthenticated without the whole call failing.
+pub async fn gather_contexts(
+    registry: &PluginRegistry,
+    cfg: &config::Config,
+    provider_id: &str,
+) -> Vec<Context> {
+    match collect_contexts(registry, cfg, provider_id).await {
+        Ok(result) => result.contexts,
+        Err(_) => Vec::new(),
+    }
+}
+
 /// Output environment variable exports for the selected context.
 /// This is what the shell wrapper evals to make context per-shell.
 pub fn print_context_exports(selected: &Context, cfg: &config::Config) {
