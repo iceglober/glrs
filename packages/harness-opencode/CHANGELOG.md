@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.0
+
+### Major Changes
+
+- [#251](https://github.com/iceglober/glrs/pull/251) [`58c9b49`](https://github.com/iceglober/glrs/commit/58c9b4979606ab9d071420b0dbcd0fa960e188ec) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): prime-ultra is now the default `prime` agent
+
+  Breaking: `prime` is now the Sonnet orchestrator (was Opus). Opus orchestration is available as `prime-heavy`. Legacy agents removed: `prime-legacy`, `plan-legacy`, `plan-legacy-cheap`.
+
 ## 2.31.0
 
 ### Minor Changes
