@@ -21,12 +21,13 @@ export const AGENTS = {
   // User-selectable (mode primary or all)
   PRIME: "prime",
   PRIME_HEAVY: "prime-heavy",
+  DESIGNER: "designer",
+  RESEARCH: "research",
+  // Subagents (dispatched, not user-picked). plan/build/scoper lead this group:
+  // they're prominent, directly @mentionable, but no longer in the primary picker.
   PLAN: "plan",
   BUILD: "build",
   SCOPER: "scoper",
-  DESIGNER: "designer",
-  RESEARCH: "research",
-  // Subagents (dispatched, not user-picked)
   CODE_REVIEWER: "code-reviewer",
   CODE_REVIEWER_THOROUGH: "code-reviewer-thorough",
   SPEC_REVIEWER: "spec-reviewer",
@@ -159,13 +160,16 @@ export const AGENT_DOC_META: Record<AgentName, AgentDocMeta> = {
     role: "PRIME on Opus. Use when the task itself needs deep reasoning at the orchestration level.",
   },
   plan: {
-    category: "user-selectable",
-    role: "Interactive planner with gap analysis. Uses DAG-based planning by default.",
+    category: "subagent",
+    role: "Interactive planner with gap analysis (DAG-based). Dispatched by @prime; invoke directly via @plan.",
   },
-  build: { category: "user-selectable", role: "Plan executor" },
+  build: {
+    category: "subagent",
+    role: "Plan executor. @prime's Execute stage delegates here; invoke directly via @build.",
+  },
   scoper: {
-    category: "user-selectable",
-    role: "Codebase scoping and context gathering",
+    category: "subagent",
+    role: "Codebase scoping and context gathering. Dispatched by @prime / the scoper wizard; invoke via @scoper.",
   },
   designer: { category: "user-selectable", role: "UI/UX design" },
   research: {

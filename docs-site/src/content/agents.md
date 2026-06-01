@@ -1,6 +1,6 @@
 # Agents
 
-27 agents. 7 user-selectable, the rest are subagents dispatched automatically.
+27 agents. 4 user-selectable, the rest are subagents dispatched automatically.
 
 ## User-selectable
 
@@ -10,9 +10,6 @@ Pick these via Tab in OpenCode.
 |-------|------|------|
 | `prime` | mid | [SPEAR](https://www.edge.ceo/p/introducing-spear-the-management) end-to-end workflow (default). Sonnet orchestrator — delegates planning to Opus and hard problems to @build-deep. |
 | `prime-heavy` | deep | PRIME on Opus. Use when the task itself needs deep reasoning at the orchestration level. |
-| `plan` | deep | Interactive planner with gap analysis. Uses DAG-based planning by default. |
-| `build` | mid | Plan executor |
-| `scoper` | deep | Codebase scoping and context gathering |
 | `designer` | mid | UI/UX design |
 | `research` | deep | Multi-workstream research orchestrator |
 
@@ -22,6 +19,9 @@ Dispatched by user-selectable agents. You don't pick these directly.
 
 | Agent | Tier | Role |
 |-------|------|------|
+| `plan` | deep | Interactive planner with gap analysis (DAG-based). Dispatched by @prime; invoke directly via @plan. |
+| `build` | mid | Plan executor. @prime's Execute stage delegates here; invoke directly via @build. |
+| `scoper` | deep | Codebase scoping and context gathering. Dispatched by @prime / the scoper wizard; invoke via @scoper. |
 | `code-reviewer` | mid | Adversarial code review |
 | `code-reviewer-thorough` | deep | Full-suite adversarial review |
 | `spec-reviewer` | mid | Spec and requirements review |
