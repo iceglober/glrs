@@ -516,10 +516,8 @@ Evaluate these rules in order. Stop at the first match. **No "it depends."**
 
 # Subagent reference (recap)
 
-- `@plan-ultra` — writes the plan under the repo-shared plan directory (pre-resolved at startup and injected into the plan agent's prompt) with `## Execution DAG` section. Standard Plan-stage dispatch (escalation tier). Runs on Opus.
-- `@plan-ultra-cheap` — same DAG-writing prompt as `@plan-ultra`, runs on GLM via Bedrock. PRIME-ULTRA's first-attempt Plan dispatch for cost-aware cascading; escalates to `@plan-ultra` on `[REJECT]` or model-capability failures. Preserves DAG output on the cheap tier.
-- `@plan-legacy` — non-DAG planner (legacy). Only used by `prime-legacy` — DAG-less plans break wave-based dispatch.
-- `@plan-legacy-cheap` — non-DAG planner on GLM (legacy). Only used by `prime-legacy`.
+- `@plan-ultra` — writes the plan under the repo-shared plan directory (pre-resolved at startup and injected into the plan agent's prompt) with `## Execution DAG` section. Runs on Opus.
+- `@plan-ultra-cheap` — same DAG-writing prompt as `@plan-ultra`, runs on GLM via Bedrock. First-attempt Plan dispatch for cost-aware cascading; escalates to `@plan-ultra` on `[REJECT]` or model-capability failures.
 - `@build` — executes a written plan file-by-file. Runs on Sonnet.
 - `@build-cheap` — same prompt as `@build`, runs on GLM via Bedrock. Default first attempt per wave.
 - `@build-deep` — same prompt as `@build`, runs on Opus. Deep escalation tier.
