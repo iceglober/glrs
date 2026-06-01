@@ -12,6 +12,7 @@
  */
 
 import { EventEmitter } from "node:events";
+import { AGENTS } from "@glrs-dev/agent-core";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { EventStreamWriter } from "./event-stream.js";
@@ -321,7 +322,7 @@ export class SessionRunner {
             const opts2 = entry[1] as Record<string, unknown>;
             const models = opts2?.models as Record<string, string[]> | undefined;
             if (models) {
-              const deepArr = models["deep"] ?? models["prime"];
+              const deepArr = models["deep"] ?? models[AGENTS.PRIME];
               if (Array.isArray(deepArr) && deepArr[0]) enrichModel = deepArr[0];
               const execArr = models["autopilot-execute"] ?? models["mid-execute"] ?? models["mid"];
               if (Array.isArray(execArr) && execArr[0]) executeModel = execArr[0];

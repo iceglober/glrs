@@ -13,6 +13,7 @@
  *   - Unchanged behavior: single runRalphLoop call with a direct prompt
  */
 
+import { AGENTS } from "@glrs-dev/agent-core";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import pino from "pino";
@@ -388,7 +389,7 @@ export async function runLoopSession(
     return _runRalphLoop({
       prompt,
       cwd: opts.cwd,
-      agentName: "autopilot-fast",
+      agentName: AGENTS.AUTOPILOT_FAST,
       model: executionModel,
       stallMs: singleFileStallMs,
       config: opts.config,
@@ -633,7 +634,7 @@ export async function runLoopSession(
       return args.runRalphLoop({
         prompt,
         cwd: runCwd,
-        agentName: args.escalateToDeep ? undefined : "autopilot-fast",
+        agentName: args.escalateToDeep ? undefined : AGENTS.AUTOPILOT_FAST,
         model: executionModel,
         maxIterations: maxIterationsPerPhase,
         ...(args.stallMs ? { stallMs: args.stallMs } : {}),
@@ -777,7 +778,7 @@ export async function runLoopSession(
       const itemResult = await args.runRalphLoop({
         prompt: itemPrompt,
         cwd: runCwd,
-        agentName: args.escalateToDeep ? undefined : "autopilot-fast",
+        agentName: args.escalateToDeep ? undefined : AGENTS.AUTOPILOT_FAST,
         model: executionModel,
         maxIterations: perItemCap,
         ...(args.stallMs ? { stallMs: args.stallMs } : {}),

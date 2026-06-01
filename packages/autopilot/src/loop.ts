@@ -14,6 +14,7 @@
  */
 
 import { execFile as execFileCb } from "node:child_process";
+import { AGENTS } from "@glrs-dev/agent-core";
 import { promisify } from "node:util";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -330,7 +331,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   // share the same tier. Resolution order: opts.stallMs (CLI/caller) >
   // config.stall_timeout > tier default.
   const tier: keyof typeof STALL_MS_BY_TIER =
-    opts.agentName === "autopilot-fast" ? "autopilot-execute" : "deep";
+    opts.agentName === AGENTS.AUTOPILOT_FAST ? "autopilot-execute" : "deep";
   const cfgObj = opts.config as Record<string, unknown> | undefined;
   const cfgStallMs = cfgObj?.stall_timeout as number | undefined;
   const stallMs = opts.stallMs ?? cfgStallMs ?? STALL_MS_BY_TIER[tier];
@@ -420,7 +421,7 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   }
 
   // Print the run header.
-  const agentLabel = opts.agentName === "autopilot-fast" ? "fast executor" : "deep";
+  const agentLabel = opts.agentName === AGENTS.AUTOPILOT_FAST ? "fast executor" : "deep";
   log.info(`${lanePrefix}Autopilot loop — ${agentLabel} (${modelName})`);
   log.info(`${lanePrefix}Prompt: ${opts.prompt.length > 80 ? opts.prompt.slice(0, 80) + "…" : opts.prompt}`);
   log.info(`${lanePrefix}Max iterations: ${maxIterations}, timeout: ${(timeoutMs / 3_600_000).toFixed(1)}h`);
@@ -490,8 +491,8 @@ export async function runRalphLoop(opts: RalphLoopOptions): Promise<LoopResult> 
   try {
     // Create a session with the configured agent (autopilot-prime for deep,
     // autopilot-fast for autopilot-execute tier when --fast is used).
-    const agentName = opts.agentName ?? "autopilot-prime";
-    const tierLabel = agentName === "autopilot-fast" ? "autopilot-execute tier" : "deep tier";
+    const agentName = opts.agentName ?? AGENTS.AUTOPILOT_PRIME;
+    const tierLabel = agentName === AGENTS.AUTOPILOT_FAST ? "autopilot-execute tier" : "deep tier";
     sessionId = await adapter.createSession(handle, { agentName, model: opts.model });
     log.info({ sessionId, agentName, tier: tierLabel }, `Session created with ${agentName} (${tierLabel})`);
 

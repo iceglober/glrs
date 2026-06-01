@@ -18,6 +18,7 @@
  * agent level, but we defend in depth.
  */
 
+import { AGENTS } from "@glrs-dev/agent-core";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -180,7 +181,7 @@ export async function runScoperSession(
   try {
     const sessionId = await _createSession(server.client, {
       cwd: opts.planDir,
-      agentName: "scoper",
+      agentName: AGENTS.SCOPER,
     });
 
     // Build the initial prompt embedding the user's goal
@@ -218,7 +219,7 @@ export async function runScoperSession(
     const firstResult = await _sendAndWait(server.client, {
       sessionId,
       message: initialPrompt,
-      agentName: "scoper",
+      agentName: AGENTS.SCOPER,
       stallMs: timeoutMs,
       autoRejectPermissions: true,
     });

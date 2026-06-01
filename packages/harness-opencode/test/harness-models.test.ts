@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { createAgents, AGENT_TIERS } from "../src/agents/index.js";
+import { AGENTS } from "@glrs-dev/agent-core";
 import { resolveHarnessModels, applyConfig } from "../src/config-hook.js";
 
 describe("AGENT_TIERS", () => {
@@ -35,45 +36,45 @@ describe("AGENT_TIERS", () => {
       .sort();
 
     expect(deep).toEqual([
-      "architecture-advisor",
-      "autopilot-prime",
-      "build-deep",
-      "code-reviewer-thorough",
-      "plan",
-      "plan-ultra",
-      "prime-heavy",
-      "research",
-      "research-auto",
-      "research-local",
-      "research-web",
-      "scoper",
+      AGENTS.ARCHITECTURE_ADVISOR,
+      AGENTS.AUTOPILOT_PRIME,
+      AGENTS.BUILD_DEEP,
+      AGENTS.CODE_REVIEWER_THOROUGH,
+      AGENTS.PLAN,
+      AGENTS.PLAN_ULTRA,
+      AGENTS.PRIME_HEAVY,
+      AGENTS.RESEARCH,
+      AGENTS.RESEARCH_AUTO,
+      AGENTS.RESEARCH_LOCAL,
+      AGENTS.RESEARCH_WEB,
+      AGENTS.SCOPER,
     ]);
     expect(mid).toEqual([
-      "agents-md-writer",
-      "debriefer",
-      "designer",
-      "docs-maintainer",
-      "gap-analyzer",
-      "lib-reader",
-      "plan-reviewer",
+      AGENTS.AGENTS_MD_WRITER,
+      AGENTS.DEBRIEFER,
+      AGENTS.DESIGNER,
+      AGENTS.DOCS_MAINTAINER,
+      AGENTS.GAP_ANALYZER,
+      AGENTS.LIB_READER,
+      AGENTS.PLAN_REVIEWER,
     ]);
     expect(midExecute).toEqual([
-      "build",
-      "code-reviewer",
-      "prime",
-      "spec-reviewer",
+      AGENTS.BUILD,
+      AGENTS.CODE_REVIEWER,
+      AGENTS.PRIME,
+      AGENTS.SPEC_REVIEWER,
     ]);
     const autopilotExecute = Object.entries(AGENT_TIERS)
       .filter(([, t]) => t === "autopilot-execute")
       .map(([n]) => n)
       .sort();
-    expect(autopilotExecute).toEqual(["autopilot-fast"]);
-    expect(fast).toEqual(["code-searcher"]);
+    expect(autopilotExecute).toEqual([AGENTS.AUTOPILOT_FAST]);
+    expect(fast).toEqual([AGENTS.CODE_SEARCHER]);
     const cheap = Object.entries(AGENT_TIERS)
       .filter(([, t]) => t === "cheap")
       .map(([n]) => n)
       .sort();
-    expect(cheap).toEqual(["build-cheap", "plan-ultra-cheap"]);
+    expect(cheap).toEqual([AGENTS.BUILD_CHEAP, AGENTS.PLAN_ULTRA_CHEAP]);
   });
 });
 
@@ -102,36 +103,36 @@ describe("resolveHarnessModels", () => {
 
     // Deep tier agents
     for (const name of [
-      "prime-heavy",
-      "scoper",
-      "plan",
-      "code-reviewer-thorough",
-      "architecture-advisor",
-      "research",
-      "research-web",
-      "research-local",
-      "research-auto",
+      AGENTS.PRIME_HEAVY,
+      AGENTS.SCOPER,
+      AGENTS.PLAN,
+      AGENTS.CODE_REVIEWER_THOROUGH,
+      AGENTS.ARCHITECTURE_ADVISOR,
+      AGENTS.RESEARCH,
+      AGENTS.RESEARCH_WEB,
+      AGENTS.RESEARCH_LOCAL,
+      AGENTS.RESEARCH_AUTO,
     ]) {
       expect(agents[name]!.model).toBe("deep-model-1");
     }
 
     // Mid tier agents (mid-execute falls back to mid when mid-execute not configured)
     for (const name of [
-      "prime",
-      "build",
-      "spec-reviewer",
-      "code-reviewer",
-      "docs-maintainer",
-      "lib-reader",
-      "agents-md-writer",
-      "gap-analyzer",
-      "plan-reviewer",
+      AGENTS.PRIME,
+      AGENTS.BUILD,
+      AGENTS.SPEC_REVIEWER,
+      AGENTS.CODE_REVIEWER,
+      AGENTS.DOCS_MAINTAINER,
+      AGENTS.LIB_READER,
+      AGENTS.AGENTS_MD_WRITER,
+      AGENTS.GAP_ANALYZER,
+      AGENTS.PLAN_REVIEWER,
     ]) {
       expect(agents[name]!.model).toBe("mid-model-1");
     }
 
     // Fast tier agents
-    expect(agents["code-searcher"]!.model).toBe("fast-model-1");
+    expect(agents[AGENTS.CODE_SEARCHER]!.model).toBe("fast-model-1");
   });
 
   it("per-agent override wins over tier", () => {
@@ -140,15 +141,15 @@ describe("resolveHarnessModels", () => {
     const pluginOptions = {
       models: {
         deep: ["tier-model"],
-        prime: ["agent-model"],
+        [AGENTS.PRIME]: ["agent-model"],
       },
     };
 
     resolveHarnessModels(agents as any, config, pluginOptions);
 
-    expect(agents["prime"]!.model).toBe("agent-model");
+    expect(agents[AGENTS.PRIME]!.model).toBe("agent-model");
     // Other deep agents still get tier model
-    expect(agents["plan"]!.model).toBe("tier-model");
+    expect(agents[AGENTS.PLAN]!.model).toBe("tier-model");
   });
 
   it("single string values are normalized (not arrays)", () => {
@@ -159,19 +160,19 @@ describe("resolveHarnessModels", () => {
 
     resolveHarnessModels(agents as any, {} as any, pluginOptions);
 
-    expect(agents["prime-heavy"]!.model).toBe("single-string-model");
-    expect(agents["plan"]!.model).toBe("single-string-model");
+    expect(agents[AGENTS.PRIME_HEAVY]!.model).toBe("single-string-model");
+    expect(agents[AGENTS.PLAN]!.model).toBe("single-string-model");
   });
 
   it("single string per-agent override works", () => {
     const agents = makeAgents();
     const pluginOptions = {
-      models: { prime: "direct-string" },
+      models: { [AGENTS.PRIME]: "direct-string" },
     };
 
     resolveHarnessModels(agents as any, {} as any, pluginOptions);
 
-    expect(agents["prime"]!.model).toBe("direct-string");
+    expect(agents[AGENTS.PRIME]!.model).toBe("direct-string");
   });
 
   it("no plugin options and no legacy config: all agents keep defaults", () => {
@@ -194,14 +195,14 @@ describe("resolveHarnessModels", () => {
     const agents = makeAgents();
     const config = { harness: { models: { deep: "legacy-model" } } } as any;
     resolveHarnessModels(agents as any, config);
-    expect(agents["prime-heavy"]!.model).toBe("legacy-model");
+    expect(agents[AGENTS.PRIME_HEAVY]!.model).toBe("legacy-model");
   });
 
   it("plugin options win over legacy harness.models", () => {
     const agents = makeAgents();
     const config = { harness: { models: { deep: "legacy" } } } as any;
     resolveHarnessModels(agents as any, config, { models: { deep: "new" } });
-    expect(agents["prime-heavy"]!.model).toBe("new");
+    expect(agents[AGENTS.PRIME_HEAVY]!.model).toBe("new");
   });
 
   it("unknown agent names in plugin options are silently ignored", () => {
@@ -223,13 +224,13 @@ describe("resolveHarnessModels", () => {
     resolveHarnessModels(agents as any, {} as any, pluginOptions);
 
     // Deep agents overridden
-    expect(agents["prime-heavy"]!.model).toBe("deep-override");
+    expect(agents[AGENTS.PRIME_HEAVY]!.model).toBe("deep-override");
     // Mid-execute agents keep defaults (deep override doesn't apply)
-    expect(agents["prime"]!.model).toBe("default-prime");
+    expect(agents[AGENTS.PRIME]!.model).toBe("default-prime");
     // Mid agents keep defaults
-    expect(agents["build"]!.model).toBe("default-build");
+    expect(agents[AGENTS.BUILD]!.model).toBe("default-build");
     // Fast agents keep defaults
-    expect(agents["code-searcher"]!.model).toBe("default-code-searcher");
+    expect(agents[AGENTS.CODE_SEARCHER]!.model).toBe("default-code-searcher");
   });
 
   it("uses first element of array (v1 behavior)", () => {
@@ -240,7 +241,7 @@ describe("resolveHarnessModels", () => {
 
     resolveHarnessModels(agents as any, {} as any, pluginOptions);
 
-    expect(agents["prime-heavy"]!.model).toBe("primary-model");
+    expect(agents[AGENTS.PRIME_HEAVY]!.model).toBe("primary-model");
   });
 });
 
@@ -248,7 +249,7 @@ describe("applyConfig — plugin options integration", () => {
   it("user-wins: agent.prime.model in config wins over tier resolution", () => {
     const config: any = {
       agent: {
-        prime: {
+        [AGENTS.PRIME]: {
           model: "user-direct-model",
           prompt: "user prompt",
           mode: "primary",
@@ -261,7 +262,7 @@ describe("applyConfig — plugin options integration", () => {
 
     // User's direct agent override wins (applied AFTER tier resolution
     // via the user-wins spread).
-    expect(config.agent.prime.model).toBe("user-direct-model");
+    expect(config.agent[AGENTS.PRIME].model).toBe("user-direct-model");
   });
 
   it("tier resolution applies when no user agent override exists", () => {
@@ -270,12 +271,12 @@ describe("applyConfig — plugin options integration", () => {
 
     applyConfig(config, pluginOptions);
 
-    expect(config.agent["prime-heavy"].model).toBe("bedrock/claude-opus-4");
-    expect(config.agent.plan.model).toBe("bedrock/claude-opus-4");
+    expect(config.agent[AGENTS.PRIME_HEAVY].model).toBe("bedrock/claude-opus-4");
+    expect(config.agent[AGENTS.PLAN].model).toBe("bedrock/claude-opus-4");
     // prime is mid-execute, falls back to mid — no deep or mid override → keeps default
-    expect(config.agent.prime.model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent[AGENTS.PRIME].model).toBe("anthropic/claude-sonnet-4-6");
     // Mid/fast agents keep plugin defaults (no tier override specified)
-    expect(config.agent.build.model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent[AGENTS.BUILD].model).toBe("anthropic/claude-sonnet-4-6");
   });
 
   it("no plugin options: plugin defaults preserved through applyConfig", () => {
@@ -283,8 +284,8 @@ describe("applyConfig — plugin options integration", () => {
 
     applyConfig(config);
 
-    expect(config.agent.prime.model).toBe("anthropic/claude-sonnet-4-6");
-    expect(config.agent.build.model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent[AGENTS.PRIME].model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent[AGENTS.BUILD].model).toBe("anthropic/claude-sonnet-4-6");
   });
 });
 
@@ -334,8 +335,8 @@ describe("resolveHarnessModels — legacy-ID warning", () => {
 
     // All deep-tier agents still got the bad value written (user intent
     // preserved; warn is advisory).
-    expect(agents["prime-heavy"]!.model).toBe("bedrock/claude-opus-4");
-    expect(agents["plan"]!.model).toBe("bedrock/claude-opus-4");
+    expect(agents[AGENTS.PRIME_HEAVY]!.model).toBe("bedrock/claude-opus-4");
+    expect(agents[AGENTS.PLAN]!.model).toBe("bedrock/claude-opus-4");
   });
 
   it("warns separately for per-agent vs per-tier sources even for the same bad ID", () => {
@@ -345,7 +346,7 @@ describe("resolveHarnessModels — legacy-ID warning", () => {
     const { warnings } = capturingWarn(() =>
       resolveHarnessModels(agents as any, {} as any, {
         models: {
-          "plan": ["bedrock/claude-opus-4"],
+          [AGENTS.PLAN]: ["bedrock/claude-opus-4"],
           deep: ["bedrock/claude-sonnet-4"],
         },
       } as any),

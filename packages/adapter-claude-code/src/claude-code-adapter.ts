@@ -22,6 +22,7 @@ import {
   sendMessage,
 } from "./claude-code-cli.js";
 import type { ClaudeCodeAdapterOptions } from "./claude-code-cli.js";
+import { AGENTS } from "@glrs-dev/agent-core";
 import { randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
@@ -87,7 +88,7 @@ export class ClaudeCodeCliAdapter implements AgentAdapter {
   private resolveModel(agentName?: string): string | undefined {
     const { models, model } = this.opts;
     if (!models) return model;
-    if (agentName === "autopilot-fast") return models.execute ?? model;
+    if (agentName === AGENTS.AUTOPILOT_FAST) return models.execute ?? model;
     // "prime", "autopilot-prime", or undefined → enrichment/deep tier
     return models.enrich ?? model;
   }

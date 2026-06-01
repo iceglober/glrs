@@ -17,6 +17,7 @@
     "zod": "4.1.8"
   },
   "devDependencies": {
+    "@glrs-dev/agent-core": "workspace:*",
     "@types/bun": "latest",
     "@types/node": "^22",
     "tsup": "^8",

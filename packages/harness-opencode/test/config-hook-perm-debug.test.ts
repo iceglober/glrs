@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { applyConfig, writePermDebugSnapshot } from "../src/config-hook.js";
+import { AGENTS } from "@glrs-dev/agent-core";
 
 describe("HARNESS_OPENCODE_PERM_DEBUG probe", () => {
   let tempStateDir: string;
@@ -94,9 +95,9 @@ describe("HARNESS_OPENCODE_PERM_DEBUG probe", () => {
       "perm-debug.json",
     );
     const parsed = JSON.parse(fs.readFileSync(expected, "utf8"));
-    expect(parsed.agents).toContain("spec-reviewer");
-    expect(parsed.agents).toContain("code-reviewer");
-    const srPerm = parsed.agentPermissions["spec-reviewer"];
+    expect(parsed.agents).toContain(AGENTS.SPEC_REVIEWER);
+    expect(parsed.agents).toContain(AGENTS.CODE_REVIEWER);
+    const srPerm = parsed.agentPermissions[AGENTS.SPEC_REVIEWER];
     expect(srPerm).toBeDefined();
     expect(srPerm).not.toBeNull();
     expect(typeof srPerm.bash).toBe("object");
@@ -109,8 +110,8 @@ describe("HARNESS_OPENCODE_PERM_DEBUG probe", () => {
     expect(srPerm.bash["rm -rf /*"]).toBe("deny");
     expect(srPerm.bash["sudo *"]).toBe("deny");
     // EXECUTOR_AGENTS includes spec-reviewer and code-reviewer
-    expect(parsed.agents).toContain("spec-reviewer");
-    expect(parsed.agents).toContain("code-reviewer");
+    expect(parsed.agents).toContain(AGENTS.SPEC_REVIEWER);
+    expect(parsed.agents).toContain(AGENTS.CODE_REVIEWER);
   });
 
   it("perm-debug snapshot includes prime with bash object-form", () => {
@@ -123,8 +124,8 @@ describe("HARNESS_OPENCODE_PERM_DEBUG probe", () => {
         "utf8",
       ),
     );
-    expect(parsed.agents).toContain("prime");
-    const orchPerm = parsed.agentPermissions["prime"];
+    expect(parsed.agents).toContain(AGENTS.PRIME);
+    const orchPerm = parsed.agentPermissions[AGENTS.PRIME];
     expect(typeof orchPerm.bash).toBe("object");
     expect(orchPerm.bash["*"]).toBe("allow");
     expect(orchPerm.bash["git diff *"]).toBe("allow");

@@ -66,6 +66,7 @@
     "zod": "4.1.8"
   },
   "devDependencies": {
+    "@glrs-dev/agent-core": "workspace:*",
     "@glrs-dev/autopilot": "workspace:*",
     "@glrs-dev/adapter-opencode": "workspace:*",
     "@types/bun": "latest",

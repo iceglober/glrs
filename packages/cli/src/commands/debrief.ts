@@ -10,6 +10,7 @@
  */
 
 import type { LoopResult, AgentAdapter, AgentHandle, AdapterName } from "@glrs-dev/autopilot";
+import { AGENTS } from "@glrs-dev/agent-core";
 import { resolveModel } from "@glrs-dev/autopilot";
 
 // ---------------------------------------------------------------------------
@@ -227,7 +228,7 @@ export async function runDebrief(opts: DebriefOptions): Promise<void> {
       ? resolveModel(debriefSpecifier, adapterName)
       : undefined;
     const sessionId = await adapter.createSession(handle, {
-      agentName: "debriefer",
+      agentName: AGENTS.DEBRIEFER,
       model: debriefModel,
     });
 

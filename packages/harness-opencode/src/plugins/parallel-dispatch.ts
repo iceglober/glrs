@@ -12,6 +12,7 @@
  */
 
 import type { Plugin } from "@opencode-ai/plugin";
+import { AGENTS } from "@glrs-dev/agent-core";
 
 const BUILD_PARALLEL_GUIDANCE = [
   "",
@@ -58,8 +59,8 @@ function isTaskBuild(args: unknown): boolean {
   const prompt = (a.prompt ?? a.message ?? a.content ?? "") as string;
   const agent = (a.agent ?? a.agentName ?? "") as string;
   return (
-    agent === "build" ||
-    agent === "@build" ||
+    agent === AGENTS.BUILD ||
+    agent === `@${AGENTS.BUILD}` ||
     /(?:^|\s)@build\b/i.test(prompt)
   );
 }
