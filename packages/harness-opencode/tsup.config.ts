@@ -41,20 +41,34 @@ export default defineConfig({
     ".md": "text",
     ".sh": "text",
   },
-  // Bundle everything except peer deps and bun's builtin modules. The
-  // pilot subsystem imports `bun:sqlite`, which is a bun-provided
-  // builtin (resolved at runtime); esbuild can't bundle it. Marking it
-  // external preserves the import literal and bun resolves it at runtime.
+  // Bundle everything except bun's builtin modules. `bun:sqlite`/`bun:test`
+  // are bun-provided builtins (resolved at runtime); esbuild can't bundle them.
+  //
+  // NOTE: `@opencode-ai/plugin` is intentionally NOT external. Five custom-tool
+  // modules do a runtime VALUE import (`import { tool }`), and the package is
+  // ESM-only with its own `zod` dependency. Left external, opencode could not
+  // resolve it from the plugin's cache dir (`Cannot find module
+  // '@opencode-ai/plugin'`), so the entire harness failed to load. Bundling
+  // inlines the stateless `tool` helper, so the published dist needs zero
+  // runtime resolution of the opencode plugin SDK. `@opencode-ai/sdk` stays
+  // external because every import of it is type-only (erased at build).
   external: [
-    "@opencode-ai/plugin",
     "@opencode-ai/sdk",
     "bun:sqlite",
     "bun:test",
   ],
-  // Inline the shared agent-identity package into the published bundle.
-  // It's a private, source-only workspace package (not on npm), so it must
-  // be bundled rather than left as an unresolvable runtime dependency.
-  noExternal: ["@glrs-dev/agent-core"],
+  // Force-bundle these. tsup auto-externalizes everything in `dependencies`
+  // and `peerDependencies`, so listing them here is required to override that.
+  //   - @glrs-dev/agent-core: private source-only workspace pkg (not on npm).
+  //   - @opencode-ai/plugin: peer dep, but five custom-tool modules import the
+  //     runtime `tool` helper from it; opencode can't resolve it from the
+  //     plugin's cache dir, so it must be inlined (see `external` note above).
+  // `zod` is the only third-party runtime value-dep the plugin entry pulls in
+  // (custom tools define schemas with it). Bundle it so `dist/index.js` has
+  // ZERO third-party runtime deps — opencode loads the plugin even when its
+  // cache dep-install fails (e.g. the historical `workspace:*` leak), which it
+  // can't if the entry needs to resolve an uninstalled package.
+  noExternal: ["@glrs-dev/agent-core", "@opencode-ai/plugin", "zod"],
   // After build: copy skills tree and bin scripts
   async onSuccess() {
     // Copy skills
