@@ -48,6 +48,7 @@
         "execa": "^9.5.0",
       },
       "devDependencies": {
+        "@glrs-dev/agent-core": "workspace:*",
         "@types/bun": "latest",
         "tsup": "^8",
         "typescript": "^5.8.3",
@@ -65,6 +66,15 @@
         "@types/node": "^22",
         "tsup": "^8",
         "typescript": "^5.8.3",
+      },
+    },
+    "packages/agent-core": {
+      "name": "@glrs-dev/agent-core",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@types/node": "^22",
+        "typescript": "^5",
       },
     },
     "packages/assume": {
@@ -124,6 +134,7 @@
         "zod": "4.1.8",
       },
       "devDependencies": {
+        "@glrs-dev/agent-core": "workspace:*",
         "@types/bun": "latest",
         "@types/node": "^22",
         "tsup": "^8",
@@ -157,6 +168,7 @@
       },
       "devDependencies": {
         "@glrs-dev/adapter-opencode": "workspace:*",
+        "@glrs-dev/agent-core": "workspace:*",
         "@glrs-dev/autopilot": "workspace:*",
         "@types/bun": "latest",
         "@types/node": "^22",
@@ -179,6 +191,7 @@
         "zod": "4.1.8",
       },
       "devDependencies": {
+        "@glrs-dev/agent-core": "workspace:*",
         "@opencode-ai/plugin": "^1.15",
         "@opencode-ai/sdk": "^1.15",
         "@types/bun": "latest",
@@ -338,6 +351,8 @@
     "@glrs-dev/adapter-claude-code": ["@glrs-dev/adapter-claude-code@workspace:packages/adapter-claude-code"],
 
     "@glrs-dev/adapter-opencode": ["@glrs-dev/adapter-opencode@workspace:packages/adapter-opencode"],
+
+    "@glrs-dev/agent-core": ["@glrs-dev/agent-core@workspace:packages/agent-core"],
 
     "@glrs-dev/assume": ["@glrs-dev/assume@workspace:packages/assume"],
 

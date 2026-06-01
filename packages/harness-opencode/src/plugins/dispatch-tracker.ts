@@ -18,6 +18,7 @@ import type { Plugin } from "@opencode-ai/plugin";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
+import { AGENT_TIERS, type AgentName } from "@glrs-dev/agent-core";
 
 type DispatchLine = {
   ts: string;
@@ -51,18 +52,12 @@ function extractAgentName(args: unknown): string | undefined {
 }
 
 function tierFromAgentName(agent: string): string | undefined {
+  // Authoritative: a registered agent's tier comes straight from the map.
+  const known = AGENT_TIERS[agent as AgentName];
+  if (known) return known;
+  // Heuristics for unregistered (e.g. user-custom) agents by name suffix.
   if (agent.endsWith("-cheap")) return "cheap";
   if (agent.endsWith("-deep") || agent.endsWith("-thorough")) return "deep";
-  // Known mid-execute agents
-  if (
-    agent === "build" ||
-    agent === "spec-reviewer" ||
-    agent === "code-reviewer"
-  ) {
-    return "mid-execute";
-  }
-  // Known fast agents
-  if (agent === "code-searcher") return "fast";
   // Default: don't guess
   return undefined;
 }

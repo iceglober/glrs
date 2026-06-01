@@ -45,6 +45,22 @@ type CommandConfig = {
   agent?: string;
 };
 
+/**
+ * Display order for the docs-site command reference (scripts/gen-docs.ts).
+ * `/fresh` leads because it's the usual entry point. The generator asserts
+ * this list covers exactly the commands returned by `createCommands()`, so
+ * adding or renaming a command without updating docs fails the doc check.
+ */
+export const COMMAND_DOC_ORDER = [
+  "fresh",
+  "ship",
+  "review",
+  "research",
+  "init-deep",
+  "costs",
+  "dispatches",
+] as const;
+
 export function createCommands(cwd?: string): Record<string, CommandConfig> {
   const dir = cwd ?? process.cwd();
   return {

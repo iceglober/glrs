@@ -11,6 +11,7 @@ import harnessMd from "./content/harness.md?raw";
 import agentsMd from "./content/agents.md?raw";
 import configMd from "./content/config.md?raw";
 import commandsMd from "./content/commands.md?raw";
+import skillsMd from "./content/skills.md?raw";
 import toolsMd from "./content/tools.md?raw";
 import autopilotMd from "./content/autopilot.md?raw";
 import cliMd from "./content/cli.md?raw";
@@ -30,6 +31,7 @@ export function App() {
             <Route path="harness/agents" element={<Doc md={agentsMd} title="agents" />} />
             <Route path="harness/config" element={<Doc md={configMd} title="config" />} />
             <Route path="harness/commands" element={<Doc md={commandsMd} title="commands" />} />
+            <Route path="harness/skills" element={<Doc md={skillsMd} title="skills" />} />
             <Route path="harness/tools" element={<Doc md={toolsMd} title="tools" />} />
             <Route path="autopilot" element={<Doc md={autopilotMd} title="autopilot" />} />
             <Route path="headroom" element={<Doc md={headroomMd} title="headroom" />} />

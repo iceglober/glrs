@@ -31,6 +31,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 
 import { createAgents, AGENT_TIERS, getStrictPrompt, applyAgentOverrides } from "./agents/index.js";
+import { AGENTS, EXECUTOR_VARIANT_AGENT_NAMES, type ModelTier } from "@glrs-dev/agent-core";
 import type { AgentConfig } from "@opencode-ai/sdk";
 import { createCommands } from "./commands/index.js";
 import { createMcpConfig } from "./mcp/index.js";
@@ -192,8 +193,9 @@ export function resolveHarnessModels(
       continue;
     }
 
-    // 2. Tier override (with fallback chains)
-    const tier = AGENT_TIERS[agentName];
+    // 2. Tier override (with fallback chains). `agents` may carry
+    // user-defined agent names too, so index defensively.
+    const tier = (AGENT_TIERS as Record<string, ModelTier | undefined>)[agentName];
     if (tier) {
       let perTier = modelsConfig[tier];
       // autopilot-execute fallback: autopilot-execute → mid-execute → mid
@@ -222,8 +224,7 @@ export function resolveHarnessModels(
   // agents IF the mid-execute tier is explicitly configured. When mid-execute
   // is not configured (agents fell back to mid), they keep the reasoning prompt.
   if (midExecuteConfigured) {
-    const EXECUTOR_AGENTS = ["build", "spec-reviewer", "code-reviewer"];
-    for (const agentName of EXECUTOR_AGENTS) {
+    for (const agentName of EXECUTOR_VARIANT_AGENT_NAMES) {
       const agentCfg = agents[agentName];
       if (!agentCfg) continue;
       try {
@@ -249,7 +250,7 @@ export function applyConfig(config: Config, pluginOptions?: PluginOptions): void
   // block compound commands, so agents couldn't execute the snippet.
   const planDir = resolvePlanDirSync(process.cwd());
   if (planDir) {
-    for (const agentName of ["plan", "scoper"]) {
+    for (const agentName of [AGENTS.PLAN, AGENTS.SCOPER]) {
       const agent = ourAgents[agentName];
       if (agent?.prompt) {
         agent.prompt = agent.prompt.replaceAll("{{PLAN_DIR}}", planDir);
@@ -314,7 +315,7 @@ export function applyConfig(config: Config, pluginOptions?: PluginOptions): void
 
   // Default agent
   if (!(config as any).default_agent) {
-    (config as any).default_agent = "prime";
+    (config as any).default_agent = AGENTS.PRIME;
   }
 
   // Permission: global defaults (non-destructive merge, user-wins)

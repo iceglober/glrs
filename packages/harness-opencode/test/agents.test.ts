@@ -2,6 +2,7 @@ import { describe, it, test, expect } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createAgents } from "../src/agents/index.js";
+import { AGENTS } from "@glrs-dev/agent-core";
 import { createCommands } from "../src/commands/index.js";
 import { applyConfig } from "../src/config-hook.js";
 
@@ -26,9 +27,9 @@ describe("createAgents", () => {
     // AND task-tool-dispatchable). plan is also mode:all but tested separately
     // below — this test is the "always-primary-capable" cohort.
     for (const name of [
-      "prime",
-      "scoper",
-      "build",
+      AGENTS.PRIME,
+      AGENTS.SCOPER,
+      AGENTS.BUILD,
     ]) {
       expect(agents[name]).toBeDefined();
       expect(["primary", "all"]).toContain(agents[name]!.mode);
@@ -36,18 +37,18 @@ describe("createAgents", () => {
   });
 
   it("createAgents includes scoper agent", () => {
-    expect(agents["scoper"]).toBeDefined();
+    expect(agents[AGENTS.SCOPER]).toBeDefined();
   });
 
   it("scoper agent has all mode", () => {
-    expect(agents["scoper"]!.mode).toBe("all");
+    expect(agents[AGENTS.SCOPER]!.mode).toBe("all");
   });
 
   it("scoper agent disables question tool (wizard handles user input via inquirer)", () => {
     // The @scoper wizard loop drives user interaction via inquirer — the
     // question tool is not wired to any TUI in this context. Disabling it
     // prevents the agent from accidentally calling it and deadlocking.
-    const tools = (agents["scoper"] as any).tools;
+    const tools = (agents[AGENTS.SCOPER] as any).tools;
     expect(tools?.question).toBe(false);
   });
 
@@ -59,25 +60,25 @@ describe("createAgents", () => {
     // autopilot-prime, autopilot-fast, and debriefer have mode:"subagent"
     // — NOT user-selectable as primary. The other 10 are also mode:"subagent" only.
     const subagentCapable = [
-      "plan",
-      "build",
-      "research",
-      "research-web",
-      "research-local",
-      "research-auto",
-      "autopilot-prime",
-      "autopilot-fast",
-      "debriefer",
-      "spec-reviewer",
-      "code-reviewer",
-      "code-reviewer-thorough",
-      "plan-reviewer",
-      "code-searcher",
-      "gap-analyzer",
-      "architecture-advisor",
-      "docs-maintainer",
-      "lib-reader",
-      "agents-md-writer",
+      AGENTS.PLAN,
+      AGENTS.BUILD,
+      AGENTS.RESEARCH,
+      AGENTS.RESEARCH_WEB,
+      AGENTS.RESEARCH_LOCAL,
+      AGENTS.RESEARCH_AUTO,
+      AGENTS.AUTOPILOT_PRIME,
+      AGENTS.AUTOPILOT_FAST,
+      AGENTS.DEBRIEFER,
+      AGENTS.SPEC_REVIEWER,
+      AGENTS.CODE_REVIEWER,
+      AGENTS.CODE_REVIEWER_THOROUGH,
+      AGENTS.PLAN_REVIEWER,
+      AGENTS.CODE_SEARCHER,
+      AGENTS.GAP_ANALYZER,
+      AGENTS.ARCHITECTURE_ADVISOR,
+      AGENTS.DOCS_MAINTAINER,
+      AGENTS.LIB_READER,
+      AGENTS.AGENTS_MD_WRITER,
     ];
     for (const name of subagentCapable) {
       expect(agents[name]).toBeDefined();
@@ -92,18 +93,18 @@ describe("createAgents", () => {
     // point for research work. Flipping any of these to mode:"all" or
     // mode:"primary" re-introduces the agent-picker clutter this test
     // guards against.
-    for (const name of ["research-web", "research-local", "research-auto"]) {
+    for (const name of [AGENTS.RESEARCH_WEB, AGENTS.RESEARCH_LOCAL, AGENTS.RESEARCH_AUTO]) {
       expect(agents[name]!.mode).toBe("subagent");
     }
   });
 
   it("plan agent is task-tool-dispatchable (not mode:primary)", () => {
-    expect(agents["plan"]).toBeDefined();
-    expect(agents["plan"]!.mode).not.toBe("primary");
+    expect(agents[AGENTS.PLAN]).toBeDefined();
+    expect(agents[AGENTS.PLAN]!.mode).not.toBe("primary");
   });
 
   it("plan agent has write: allow", () => {
-    expect((agents["plan"] as any).permission.write).toBe("allow");
+    expect((agents[AGENTS.PLAN] as any).permission.write).toBe("allow");
   });
 
   it("build agent is task-tool-dispatchable (not mode:primary)", () => {
@@ -112,8 +113,8 @@ describe("createAgents", () => {
     // also preserves top-level @build invocation for users who want
     // to run against a plan directly. Reverting to mode:"primary"
     // silently kills the Execute stage delegation path.
-    expect(agents["build"]).toBeDefined();
-    expect(agents["build"]!.mode).not.toBe("primary");
+    expect(agents[AGENTS.BUILD]).toBeDefined();
+    expect(agents[AGENTS.BUILD]!.mode).not.toBe("primary");
   });
 
   it("prime prompt delegates Execute to @build", () => {
@@ -121,7 +122,7 @@ describe("createAgents", () => {
     // explicitly instruct delegation to @build. Falling back to the
     // old inline file-edit loop re-concentrates Opus tokens on
     // mechanical work — defeats the whole purpose of the @build split.
-    const prime = agents["prime"]!.prompt as string;
+    const prime = agents[AGENTS.PRIME]!.prompt as string;
     expect(prime).toContain("Delegate to `@build`");
     expect(prime).not.toContain("For each item in the plan's `## File-level changes`:");
   });
@@ -131,18 +132,18 @@ describe("createAgents", () => {
     // @code-reviewer / @code-reviewer-thorough. @build running the full suite
     // too duplicates that work. Per-file tests during execution (build.md
     // section 3) are fine and expected. Final full-suite runs belong to Assess.
-    const build = agents["build"]!.prompt as string;
+    const build = agents[AGENTS.BUILD]!.prompt as string;
     expect(build).not.toContain("Run the full test suite. It must pass.");
     expect(build).not.toContain("Run lint. It must pass.");
   });
 
   it("build prompt contains DONE_WITH_CONCERNS status", () => {
-    const build = agents["build"]!.prompt as string;
+    const build = agents[AGENTS.BUILD]!.prompt as string;
     expect(build).toContain("DONE_WITH_CONCERNS");
   });
 
   it("build prompt enforces TDD order", () => {
-    const build = agents["build"]!.prompt as string;
+    const build = agents[AGENTS.BUILD]!.prompt as string;
     expect(build).toContain("TDD order");
     expect(build).toContain("tests:");
   });
@@ -162,45 +163,45 @@ describe("createAgents", () => {
   });
 
   it("spec-reviewer agent exists with correct permissions", () => {
-    expect(agents["spec-reviewer"]).toBeDefined();
-    expect(agents["spec-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
-    const bash = (agents["spec-reviewer"] as any).permission.bash;
+    expect(agents[AGENTS.SPEC_REVIEWER]).toBeDefined();
+    expect(agents[AGENTS.SPEC_REVIEWER]!.model).toBe("anthropic/claude-sonnet-4-6");
+    const bash = (agents[AGENTS.SPEC_REVIEWER] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash["*"]).toBe("allow");
     expect(bash["rm -rf /*"]).toBe("deny");
   });
 
   it("code-reviewer agent exists with correct permissions", () => {
-    expect(agents["code-reviewer"]).toBeDefined();
-    expect(agents["code-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
-    const bash = (agents["code-reviewer"] as any).permission.bash;
+    expect(agents[AGENTS.CODE_REVIEWER]).toBeDefined();
+    expect(agents[AGENTS.CODE_REVIEWER]!.model).toBe("anthropic/claude-sonnet-4-6");
+    const bash = (agents[AGENTS.CODE_REVIEWER] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash["*"]).toBe("allow");
     expect(bash["rm -rf /*"]).toBe("deny");
   });
 
   it("code-reviewer-thorough agent exists with correct model", () => {
-    expect(agents["code-reviewer-thorough"]).toBeDefined();
-    expect(agents["code-reviewer-thorough"]!.model).toBe("anthropic/claude-opus-4-7");
-    expect(agents["code-reviewer-thorough"]!.mode).toBe("subagent");
+    expect(agents[AGENTS.CODE_REVIEWER_THOROUGH]).toBeDefined();
+    expect(agents[AGENTS.CODE_REVIEWER_THOROUGH]!.model).toBe("anthropic/claude-opus-4-7");
+    expect(agents[AGENTS.CODE_REVIEWER_THOROUGH]!.mode).toBe("subagent");
   });
 
   it("prime prompt contains Assess loop semantics", () => {
     // Guard the new Assess → Plan loop. PRIME's prompt must specify
     // the LOOP-TO-PLAN token so the loop can be detected and acted on.
-    const prime = agents["prime"]!.prompt as string;
+    const prime = agents[AGENTS.PRIME]!.prompt as string;
     expect(prime).toContain("LOOP-TO-PLAN");
   });
 
   it("prime prompt contains Resolve auto-ship", () => {
     // Guard the Resolve stage auto-ship behavior. PRIME's prompt must
     // instruct opening a PR via gh pr create after Assess passes.
-    const prime = agents["prime"]!.prompt as string;
+    const prime = agents[AGENTS.PRIME]!.prompt as string;
     expect(prime).toContain("gh pr create");
   });
 
   it("prime has correct model and temperature", () => {
-    const orch = agents["prime"]!;
+    const orch = agents[AGENTS.PRIME]!;
     expect(orch.model).toBe("anthropic/claude-sonnet-4-6");
     expect(orch.temperature).toBe(0.2);
   });
@@ -211,7 +212,7 @@ describe("createAgents", () => {
     // dismissed a subagent's self-reported violation as "meta-confusion"
     // and proceeded silently. The hard rule must instruct PRIME to halt
     // and surface the report.
-    const prime = agents["prime"]!.prompt as string;
+    const prime = agents[AGENTS.PRIME]!.prompt as string;
     expect(prime).toContain("Subagent self-reported constraint violations halt the arc");
     expect(prime).toContain("surface the full subagent report to the user");
     // Negative assertion — the dismissal vocabulary must be explicitly
@@ -221,19 +222,19 @@ describe("createAgents", () => {
   });
 
   it("plan prompt contains multi-file decision step", () => {
-    const plan = agents["plan"]!.prompt as string;
+    const plan = agents[AGENTS.PLAN]!.prompt as string;
     expect(plan).toContain("Multi-file decision");
     expect(plan).toContain("multi-file plan");
   });
 
   it("build prompt contains multi-file plan handling", () => {
-    const build = agents["build"]!.prompt as string;
+    const build = agents[AGENTS.BUILD]!.prompt as string;
     expect(build).toContain("Multi-file plan handling");
     expect(build).toContain("multi-file plan");
   });
 
   it("plan-reviewer prompt contains multi-file validation", () => {
-    const planReviewer = agents["plan-reviewer"]!.prompt as string;
+    const planReviewer = agents[AGENTS.PLAN_REVIEWER]!.prompt as string;
     expect(planReviewer).toContain("Multi-file consistency");
     expect(planReviewer.toLowerCase()).toContain("multi-file");
   });
@@ -248,7 +249,7 @@ describe("createAgents", () => {
     // the JSONLogic session, where the subagent hallucinated an OpenCode
     // "plan mode" system-reminder and apologized for violating it despite
     // having write permissions. The prompt must pre-empt this pattern.
-    const plan = agents["plan"]!.prompt as string;
+    const plan = agents[AGENTS.PLAN]!.prompt as string;
     expect(plan).toContain("Defensive posture");
     expect(plan).toContain("write permission");
     expect(plan).toMatch(/ignore it|Ignore it|ignore\s+it\b|Ignore those|ignore those/);
@@ -264,13 +265,13 @@ describe("createAgents", () => {
   });
 
   it("build has correct model and temperature", () => {
-    const build = agents["build"]!;
+    const build = agents[AGENTS.BUILD]!;
     expect(build.model).toBe("anthropic/claude-sonnet-4-6");
     expect(build.temperature).toBe(0.1);
   });
 
   it("code-reviewer-thorough subagent is registered with opus model", () => {
-    const qt = agents["code-reviewer-thorough"]!;
+    const qt = agents[AGENTS.CODE_REVIEWER_THOROUGH]!;
     expect(qt).toBeDefined();
     expect(qt.model).toBe("anthropic/claude-opus-4-7");
     expect(qt.mode).toBe("subagent");
@@ -295,17 +296,17 @@ describe("createAgents", () => {
   it("user-wins precedence: user agent overrides plugin agent", () => {
     // Simulate what src/index.ts does: { ...ourAgents, ...(input.agent ?? {}) }
     const userOverride = {
-      prime: {
+      [AGENTS.PRIME]: {
         model: "anthropic/claude-haiku-4-5",
         prompt: "custom prompt",
         mode: "primary" as const,
       },
     };
     const merged = { ...agents, ...userOverride };
-    expect(merged["prime"]!.model).toBe("anthropic/claude-haiku-4-5");
-    expect(merged["prime"]!.prompt).toBe("custom prompt");
+    expect(merged[AGENTS.PRIME]!.model).toBe("anthropic/claude-haiku-4-5");
+    expect(merged[AGENTS.PRIME]!.prompt).toBe("custom prompt");
     // Other agents unaffected
-    expect(merged["plan"]).toEqual(agents["plan"]);
+    expect(merged[AGENTS.PLAN]).toEqual(agents[AGENTS.PLAN]);
   });
 });
 
@@ -313,17 +314,17 @@ describe("playwright permissions", () => {
   const agents = createAgents();
 
   it("plan agent has playwright allow", () => {
-    const perm = (agents["plan"] as any).permission;
+    const perm = (agents[AGENTS.PLAN] as any).permission;
     expect(perm.playwright).toBe("allow");
   });
 
   it("research agent has playwright allow", () => {
-    const perm = (agents["research"] as any).permission;
+    const perm = (agents[AGENTS.RESEARCH] as any).permission;
     expect(perm.playwright).toBe("allow");
   });
 
   it("gap-analyzer agent has playwright allow", () => {
-    const perm = (agents["gap-analyzer"] as any).permission;
+    const perm = (agents[AGENTS.GAP_ANALYZER] as any).permission;
     expect(perm.playwright).toBe("allow");
   });
 });
@@ -333,12 +334,12 @@ describe("UI evaluation ladder", () => {
 
   it("visual-capable agents contain UI evaluation ladder", () => {
     const visualCapable = [
-      "prime",
-      "plan",
-      "build",
-      "code-reviewer",
-      "code-reviewer-thorough",
-      "research",
+      AGENTS.PRIME,
+      AGENTS.PLAN,
+      AGENTS.BUILD,
+      AGENTS.CODE_REVIEWER,
+      AGENTS.CODE_REVIEWER_THOROUGH,
+      AGENTS.RESEARCH,
     ];
     for (const name of visualCapable) {
       const prompt = agents[name]!.prompt as string;
@@ -352,7 +353,7 @@ describe("research agent", () => {
   const agents = createAgents();
 
   it("research agent registered with mode=all, opus model, temperature 0.3", () => {
-    const research = agents["research"]!;
+    const research = agents[AGENTS.RESEARCH]!;
     expect(research).toBeDefined();
     expect(research.mode).toBe("all");
     expect(research.model).toBe("anthropic/claude-opus-4-7");
@@ -360,12 +361,12 @@ describe("research agent", () => {
   });
 
   it("research agent description leads with 'Research orchestrator'", () => {
-    const desc = (agents["research"]!.description ?? "") as string;
+    const desc = (agents[AGENTS.RESEARCH]!.description ?? "") as string;
     expect(desc.toLowerCase().startsWith("research orchestrator")).toBe(true);
   });
 
   it("research agent uses allow-by-default bash with shared denies", () => {
-    const perm = agents["research"]!.permission as Record<string, unknown>;
+    const perm = agents[AGENTS.RESEARCH]!.permission as Record<string, unknown>;
     const bash = perm.bash as Record<string, string>;
     expect(bash["*"]).toBe("allow");
     expect(bash["rm -rf /*"]).toBe("deny");
@@ -374,7 +375,7 @@ describe("research agent", () => {
   });
 
   it("research agent webfetch and edit are allow, tsc_check and eslint_check are deny", () => {
-    const perm = agents["research"]!.permission as Record<string, unknown>;
+    const perm = agents[AGENTS.RESEARCH]!.permission as Record<string, unknown>;
     expect(perm.webfetch).toBe("allow");
     expect(perm.edit).toBe("allow");
     expect(perm.tsc_check).toBe("deny");
@@ -382,21 +383,21 @@ describe("research agent", () => {
   });
 
   it("research agent mode is not primary", () => {
-    expect(agents["research"]!.mode).not.toBe("primary");
+    expect(agents[AGENTS.RESEARCH]!.mode).not.toBe("primary");
   });
 
   it("AGENT_TIERS contains research as deep tier", async () => {
     const { AGENT_TIERS } = await import("../src/agents/index.js");
-    expect(AGENT_TIERS["research"]).toBe("deep");
+    expect(AGENT_TIERS[AGENTS.RESEARCH]).toBe("deep");
   });
 
   it("prime subagent reference lists @research", () => {
-    const prime = agents["prime"]!.prompt as string;
+    const prime = agents[AGENTS.PRIME]!.prompt as string;
     expect(prime).toContain("`@research`");
   });
 
   it("research prompt Phase 2 dispatches to @research-web / @research-local / @research-auto by name", () => {
-    const research = agents["research"]!.prompt as string;
+    const research = agents[AGENTS.RESEARCH]!.prompt as string;
     // Positive assertions: @-names must appear
     expect(research).toContain("@research-web");
     expect(research).toContain("@research-local");
@@ -415,7 +416,7 @@ describe("research-* orchestrator agents", () => {
   const agents = createAgents();
 
   test("research-web agent registered with mode=subagent, opus model, temperature 0.3", () => {
-    const a = agents["research-web"];
+    const a = agents[AGENTS.RESEARCH_WEB];
     expect(a).toBeDefined();
     expect(a!.mode).toBe("subagent");
     expect(a!.model).toBe("anthropic/claude-opus-4-7");
@@ -423,7 +424,7 @@ describe("research-* orchestrator agents", () => {
   });
 
   test("research-local agent registered with mode=subagent, opus model, temperature 0.3", () => {
-    const a = agents["research-local"];
+    const a = agents[AGENTS.RESEARCH_LOCAL];
     expect(a).toBeDefined();
     expect(a!.mode).toBe("subagent");
     expect(a!.model).toBe("anthropic/claude-opus-4-7");
@@ -431,7 +432,7 @@ describe("research-* orchestrator agents", () => {
   });
 
   test("research-auto agent registered with mode=subagent, opus model, temperature 0.3", () => {
-    const a = agents["research-auto"];
+    const a = agents[AGENTS.RESEARCH_AUTO];
     expect(a).toBeDefined();
     expect(a!.mode).toBe("subagent");
     expect(a!.model).toBe("anthropic/claude-opus-4-7");
@@ -439,15 +440,15 @@ describe("research-* orchestrator agents", () => {
   });
 
   test("research-* agents have descriptions starting with 'Research orchestrator subagent'", () => {
-    for (const name of ["research-web", "research-local", "research-auto"]) {
+    for (const name of [AGENTS.RESEARCH_WEB, AGENTS.RESEARCH_LOCAL, AGENTS.RESEARCH_AUTO]) {
       const desc = (agents[name]!.description ?? "") as string;
       expect(desc.toLowerCase().startsWith("research orchestrator subagent")).toBe(true);
     }
   });
 
   test("research-* permission shapes match the RESEARCH_PERMISSIONS template", () => {
-    const researchPerm = agents["research"]!.permission as Record<string, unknown>;
-    for (const name of ["research-web", "research-local", "research-auto"]) {
+    const researchPerm = agents[AGENTS.RESEARCH]!.permission as Record<string, unknown>;
+    for (const name of [AGENTS.RESEARCH_WEB, AGENTS.RESEARCH_LOCAL, AGENTS.RESEARCH_AUTO]) {
       const perm = agents[name]!.permission as Record<string, unknown>;
       expect(perm.edit).toBe(researchPerm.edit);
       expect(perm.webfetch).toBe(researchPerm.webfetch);
@@ -461,7 +462,7 @@ describe("research-* orchestrator agents", () => {
   });
 
   test("research-* bash object form denies destructive commands", () => {
-    for (const name of ["research-web", "research-local", "research-auto"]) {
+    for (const name of [AGENTS.RESEARCH_WEB, AGENTS.RESEARCH_LOCAL, AGENTS.RESEARCH_AUTO]) {
       const perm = agents[name]!.permission as Record<string, unknown>;
       const bash = perm.bash as Record<string, string>;
       expect(bash["rm -rf /*"]).toBe("deny");
@@ -471,36 +472,36 @@ describe("research-* orchestrator agents", () => {
   });
 
   test("research-web agent prompt references the research-web skill", () => {
-    const prompt = agents["research-web"]!.prompt as string;
+    const prompt = agents[AGENTS.RESEARCH_WEB]!.prompt as string;
     expect(prompt).toMatch(/research-web/);
     expect(prompt.toLowerCase()).toMatch(/skill tool/);
   });
 
   test("research-local agent prompt references the research-local skill", () => {
-    const prompt = agents["research-local"]!.prompt as string;
+    const prompt = agents[AGENTS.RESEARCH_LOCAL]!.prompt as string;
     expect(prompt).toMatch(/research-local/);
     expect(prompt.toLowerCase()).toMatch(/skill tool/);
   });
 
   test("research-auto agent prompt references the research-auto skill", () => {
-    const prompt = agents["research-auto"]!.prompt as string;
+    const prompt = agents[AGENTS.RESEARCH_AUTO]!.prompt as string;
     expect(prompt).toMatch(/research-auto/);
     expect(prompt.toLowerCase()).toMatch(/skill tool/);
   });
 
   test("AGENT_TIERS contains research-web as deep tier", async () => {
     const { AGENT_TIERS } = await import("../src/agents/index.js");
-    expect(AGENT_TIERS["research-web"]).toBe("deep");
+    expect(AGENT_TIERS[AGENTS.RESEARCH_WEB]).toBe("deep");
   });
 
   test("AGENT_TIERS contains research-local as deep tier", async () => {
     const { AGENT_TIERS } = await import("../src/agents/index.js");
-    expect(AGENT_TIERS["research-local"]).toBe("deep");
+    expect(AGENT_TIERS[AGENTS.RESEARCH_LOCAL]).toBe("deep");
   });
 
   test("AGENT_TIERS contains research-auto as deep tier", async () => {
     const { AGENT_TIERS } = await import("../src/agents/index.js");
-    expect(AGENT_TIERS["research-auto"]).toBe("deep");
+    expect(AGENT_TIERS[AGENTS.RESEARCH_AUTO]).toBe("deep");
   });
 });
 
@@ -508,7 +509,7 @@ describe("autopilot-prime agent (question tool denied)", () => {
   const agents = createAgents();
 
   it("autopilot-prime agent exists and is mode:subagent", () => {
-    const agent = agents["autopilot-prime"];
+    const agent = agents[AGENTS.AUTOPILOT_PRIME];
     expect(agent).toBeDefined();
     expect(agent!.mode).toBe("subagent");
   });
@@ -517,8 +518,8 @@ describe("autopilot-prime agent (question tool denied)", () => {
     // The autopilot variant reuses the same prompt as prime — the
     // autopilot-specific advisory lives in src/autopilot/prompt-template.md
     // which is prepended by the Ralph loop at session-creation time.
-    const primePrompt = agents["prime"]!.prompt as string;
-    const autopilotPrompt = agents["autopilot-prime"]!.prompt as string;
+    const primePrompt = agents[AGENTS.PRIME]!.prompt as string;
+    const autopilotPrompt = agents[AGENTS.AUTOPILOT_PRIME]!.prompt as string;
     expect(autopilotPrompt).toBe(primePrompt);
   });
 
@@ -530,13 +531,13 @@ describe("autopilot-prime agent (question tool denied)", () => {
     // keys edit/bash/webfetch/doom_loop/external_directory; `question`
     // in the permission map is a silent no-op. Tool disabling happens
     // via `tools: { [name]: false }`.
-    const tools = agents["autopilot-prime"]!.tools as Record<string, boolean>;
+    const tools = agents[AGENTS.AUTOPILOT_PRIME]!.tools as Record<string, boolean>;
     expect(tools["question"]).toBe(false);
   });
 
   it("autopilot-prime inherits PRIME's permissions", () => {
-    const primePerms = agents["prime"]!.permission as Record<string, unknown>;
-    const autopilotPerms = agents["autopilot-prime"]!.permission as Record<string, unknown>;
+    const primePerms = agents[AGENTS.PRIME]!.permission as Record<string, unknown>;
+    const autopilotPerms = agents[AGENTS.AUTOPILOT_PRIME]!.permission as Record<string, unknown>;
 
     // Spot-check a few permissions that should carry over from PRIME.
     // If these drift, the autopilot variant would lose capabilities
@@ -551,15 +552,15 @@ describe("subagent permissions", () => {
   const agents = createAgents();
 
   const subagentsWithPerms = [
-    "spec-reviewer",
-    "code-reviewer",
-    "code-reviewer-thorough",
-    "plan-reviewer",
-    "code-searcher",
-    "gap-analyzer",
-    "architecture-advisor",
-    "lib-reader",
-    "agents-md-writer",
+    AGENTS.SPEC_REVIEWER,
+    AGENTS.CODE_REVIEWER,
+    AGENTS.CODE_REVIEWER_THOROUGH,
+    AGENTS.PLAN_REVIEWER,
+    AGENTS.CODE_SEARCHER,
+    AGENTS.GAP_ANALYZER,
+    AGENTS.ARCHITECTURE_ADVISOR,
+    AGENTS.LIB_READER,
+    AGENTS.AGENTS_MD_WRITER,
   ];
 
   it("subagents with perms have a non-empty permission block", () => {
@@ -574,7 +575,7 @@ describe("subagent permissions", () => {
   it("docs-maintainer has no permission override", () => {
     // Explicitly unchanged — it never had frontmatter perms, so overrides
     // pass nothing, and the AgentConfig has no permission key set.
-    const cfg = agents["docs-maintainer"];
+    const cfg = agents[AGENTS.DOCS_MAINTAINER];
     expect(cfg).toBeDefined();
     expect((cfg as any).permission).toBeUndefined();
   });
@@ -682,7 +683,7 @@ describe("subagent permissions", () => {
   }
 
   it("spec-reviewer bash is object-form with enumerated allow-list", () => {
-    const bash = (agents["spec-reviewer"] as any).permission.bash;
+    const bash = (agents[AGENTS.SPEC_REVIEWER] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash).not.toBeNull();
     expect(bash["*"]).toBe("allow");
@@ -702,7 +703,7 @@ describe("subagent permissions", () => {
   });
 
   it("spec-reviewer bash object form allows all reported pain-point commands", () => {
-    const bash = (agents["spec-reviewer"] as any).permission.bash;
+    const bash = (agents[AGENTS.SPEC_REVIEWER] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of PAIN_POINT_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -718,7 +719,7 @@ describe("subagent permissions", () => {
   });
 
   it("spec-reviewer bash object form denies destructive commands", () => {
-    const bash = (agents["spec-reviewer"] as any).permission.bash;
+    const bash = (agents[AGENTS.SPEC_REVIEWER] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of DESTRUCTIVE_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -736,7 +737,7 @@ describe("subagent permissions", () => {
   });
 
   it("code-reviewer bash is object-form with enumerated allow-list", () => {
-    const bash = (agents["code-reviewer"] as any).permission.bash;
+    const bash = (agents[AGENTS.CODE_REVIEWER] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash).not.toBeNull();
     expect(bash["*"]).toBe("allow");
@@ -747,7 +748,7 @@ describe("subagent permissions", () => {
   });
 
   it("code-reviewer bash object form allows all reported pain-point commands", () => {
-    const bash = (agents["code-reviewer"] as any).permission.bash;
+    const bash = (agents[AGENTS.CODE_REVIEWER] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of PAIN_POINT_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -763,7 +764,7 @@ describe("subagent permissions", () => {
   });
 
   it("code-reviewer-thorough bash is object-form with enumerated allow-list", () => {
-    const bash = (agents["code-reviewer-thorough"] as any).permission.bash;
+    const bash = (agents[AGENTS.CODE_REVIEWER_THOROUGH] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash).not.toBeNull();
     expect(bash["*"]).toBe("allow");
@@ -778,14 +779,14 @@ describe("subagent permissions", () => {
     // would cause the fast/thorough dispatch to have different
     // allowlists — a foot-gun. Fail noisily if someone drifts one
     // without the other.
-    const cr = (agents["code-reviewer"] as any).permission.bash;
-    const crt = (agents["code-reviewer-thorough"] as any).permission.bash;
+    const cr = (agents[AGENTS.CODE_REVIEWER] as any).permission.bash;
+    const crt = (agents[AGENTS.CODE_REVIEWER_THOROUGH] as any).permission.bash;
     expect(crt).toEqual(cr);
   });
 
   it("code-reviewer-thorough permission block matches code-reviewer shape (non-bash keys)", () => {
-    const cr = (agents["code-reviewer"] as any).permission;
-    const crt = (agents["code-reviewer-thorough"] as any).permission;
+    const cr = (agents[AGENTS.CODE_REVIEWER] as any).permission;
+    const crt = (agents[AGENTS.CODE_REVIEWER_THOROUGH] as any).permission;
     for (const key of [
       "edit",
       "webfetch",
@@ -806,7 +807,7 @@ describe("subagent permissions", () => {
   });
 
   it("prime bash object-form includes enumerated allow-list", () => {
-    const bash = (agents["prime"] as any).permission.bash;
+    const bash = (agents[AGENTS.PRIME] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of PAIN_POINT_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -822,7 +823,7 @@ describe("subagent permissions", () => {
   });
 
   it("prime bash object-form keeps destructive denies", () => {
-    const bash = (agents["prime"] as any).permission.bash;
+    const bash = (agents[AGENTS.PRIME] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of DESTRUCTIVE_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -839,7 +840,7 @@ describe("subagent permissions", () => {
   });
 
   it("build bash object-form includes enumerated allow-list", () => {
-    const bash = (agents["build"] as any).permission.bash;
+    const bash = (agents[AGENTS.BUILD] as any).permission.bash;
     const mismatches: string[] = [];
     for (const cmd of PAIN_POINT_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -855,7 +856,7 @@ describe("subagent permissions", () => {
   });
 
   it("build bash object-form keeps destructive denies and build-specific deny/ask rules", () => {
-    const bash = (agents["build"] as any).permission.bash;
+    const bash = (agents[AGENTS.BUILD] as any).permission.bash;
     // Standard destructive denies.
     for (const cmd of DESTRUCTIVE_COMMANDS) {
       const action = evaluateBash(bash, cmd);
@@ -885,11 +886,11 @@ describe("subagent permissions", () => {
 
   it("read-only subagents have bash: deny", () => {
     for (const name of [
-      "plan-reviewer",
-      "gap-analyzer",
-      "code-searcher",
-      "architecture-advisor",
-      "lib-reader",
+      AGENTS.PLAN_REVIEWER,
+      AGENTS.GAP_ANALYZER,
+      AGENTS.CODE_SEARCHER,
+      AGENTS.ARCHITECTURE_ADVISOR,
+      AGENTS.LIB_READER,
     ]) {
       const perm = (agents[name] as any).permission;
       expect(perm.bash).toBe("deny");
@@ -897,19 +898,19 @@ describe("subagent permissions", () => {
   });
 
   it("plan agent bash is fully denied (plan dir is injected at config time)", () => {
-    const bash = (agents["plan"] as any).permission.bash;
+    const bash = (agents[AGENTS.PLAN] as any).permission.bash;
     expect(bash).toBe("deny");
   });
 
   it("plan agent description references the repo-shared plan directory (not .agent/plans)", () => {
-    const desc = (agents["plan"] as any).description as string;
+    const desc = (agents[AGENTS.PLAN] as any).description as string;
     expect(desc).toContain("plan directory");
     // Legacy path reference must not linger in the description.
     expect(desc).not.toContain(".agent/plans");
   });
 
   it("agents-md-writer preserves bash: ask and edit: allow", () => {
-    const perm = (agents["agents-md-writer"] as any).permission;
+    const perm = (agents[AGENTS.AGENTS_MD_WRITER] as any).permission;
     expect(perm.bash).toBe("ask");
     expect(perm.edit).toBe("allow");
   });
@@ -940,16 +941,16 @@ describe("subagent permissions", () => {
 
 describe("prompt content assertions", () => {
   const agents = createAgents();
-  const specReviewer = agents["spec-reviewer"]!.prompt as string;
-  const codeReviewer = agents["code-reviewer"]!.prompt as string;
-  const codeReviewerThorough = agents["code-reviewer-thorough"]!.prompt as string;
-  const prime = agents["prime"]!.prompt as string;
+  const specReviewer = agents[AGENTS.SPEC_REVIEWER]!.prompt as string;
+  const codeReviewer = agents[AGENTS.CODE_REVIEWER]!.prompt as string;
+  const codeReviewerThorough = agents[AGENTS.CODE_REVIEWER_THOROUGH]!.prompt as string;
+  const prime = agents[AGENTS.PRIME]!.prompt as string;
 
   // ---- spec-reviewer ----
 
   it("spec-reviewer agent exists with correct permissions", () => {
-    expect(agents["spec-reviewer"]).toBeDefined();
-    expect(agents["spec-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
+    expect(agents[AGENTS.SPEC_REVIEWER]).toBeDefined();
+    expect(agents[AGENTS.SPEC_REVIEWER]!.model).toBe("anthropic/claude-sonnet-4-6");
   });
 
   it("spec-reviewer prompt returns PASS_SPEC or FAIL_SPEC tokens", () => {
@@ -975,8 +976,8 @@ describe("prompt content assertions", () => {
   // ---- code-reviewer (fast variant) ----
 
   it("code-reviewer agent exists with correct permissions", () => {
-    expect(agents["code-reviewer"]).toBeDefined();
-    expect(agents["code-reviewer"]!.model).toBe("anthropic/claude-sonnet-4-6");
+    expect(agents[AGENTS.CODE_REVIEWER]).toBeDefined();
+    expect(agents[AGENTS.CODE_REVIEWER]!.model).toBe("anthropic/claude-sonnet-4-6");
   });
 
   it("code-reviewer prompt contains trust-recent-green clause", () => {
@@ -1000,9 +1001,9 @@ describe("prompt content assertions", () => {
   // ---- code-reviewer-thorough (opus variant) ----
 
   it("code-reviewer-thorough agent exists with correct model", () => {
-    expect(agents["code-reviewer-thorough"]).toBeDefined();
-    expect(agents["code-reviewer-thorough"]!.model).toBe("anthropic/claude-opus-4-7");
-    expect(agents["code-reviewer-thorough"]!.mode).toBe("subagent");
+    expect(agents[AGENTS.CODE_REVIEWER_THOROUGH]).toBeDefined();
+    expect(agents[AGENTS.CODE_REVIEWER_THOROUGH]!.model).toBe("anthropic/claude-opus-4-7");
+    expect(agents[AGENTS.CODE_REVIEWER_THOROUGH]!.mode).toBe("subagent");
   });
 
   it("code-reviewer-thorough prompt contains strengthened scope and plan-drift rules", () => {
@@ -1093,7 +1094,7 @@ describe("prompt content assertions", () => {
 
   // ---- Plan-storage migration regression guards ----
 
-  const planPrompt = agents["plan"]!.prompt as string;
+  const planPrompt = agents[AGENTS.PLAN]!.prompt as string;
 
   it("plan agent prompt body uses {{PLAN_DIR}} placeholder (injected at config time)", () => {
     expect(planPrompt).toContain("{{PLAN_DIR}}");
@@ -1142,11 +1143,11 @@ describe("prompt content assertions", () => {
 
 describe("pre-existing escape hatch ban", () => {
   const agents = createAgents();
-  const build = agents["build"]!.prompt as string;
-  const specReviewer = agents["spec-reviewer"]!.prompt as string;
-  const codeReviewer = agents["code-reviewer"]!.prompt as string;
-  const codeReviewerThorough = agents["code-reviewer-thorough"]!.prompt as string;
-  const prime = agents["prime"]!.prompt as string;
+  const build = agents[AGENTS.BUILD]!.prompt as string;
+  const specReviewer = agents[AGENTS.SPEC_REVIEWER]!.prompt as string;
+  const codeReviewer = agents[AGENTS.CODE_REVIEWER]!.prompt as string;
+  const codeReviewerThorough = agents[AGENTS.CODE_REVIEWER_THOROUGH]!.prompt as string;
+  const prime = agents[AGENTS.PRIME]!.prompt as string;
 
   const spearSkillPath = path.join(
     __dirname,
@@ -1315,7 +1316,7 @@ describe("pre-existing escape hatch ban", () => {
       models: { "mid-execute": "moonshotai/kimi-k2-6", mid: "anthropic/claude-sonnet-4-6" },
     };
     applyConfig(config, pluginOptions);
-    const buildOpen = config.agent["build"].prompt as string;
+    const buildOpen = config.agent[AGENTS.BUILD].prompt as string;
     expect(buildOpen).toContain("root-cause-diagnosis");
   });
 
@@ -1326,7 +1327,7 @@ describe("pre-existing escape hatch ban", () => {
     applyConfig(config, {
       models: { "mid-execute": "moonshotai/kimi-k2-6", mid: "anthropic/claude-sonnet-4-6" },
     });
-    const srStrict = config.agent["spec-reviewer"].prompt as string;
+    const srStrict = config.agent[AGENTS.SPEC_REVIEWER].prompt as string;
     expect(srStrict).toContain("adversarial-review-rubric");
   });
 
@@ -1338,15 +1339,15 @@ describe("pre-existing escape hatch ban", () => {
     applyConfig(config, {
       models: { "mid-execute": "moonshotai/kimi-k2-6", mid: "anthropic/claude-sonnet-4-6" },
     });
-    const crStrict = config.agent["code-reviewer"].prompt as string;
+    const crStrict = config.agent[AGENTS.CODE_REVIEWER].prompt as string;
     expect(crStrict).toContain("adversarial-review-rubric");
   });
 });
 
 describe("guidance-deviation reporting contract", () => {
   const agents = createAgents();
-  const build = agents["build"]!.prompt as string;
-  const prime = agents["prime"]!.prompt as string;
+  const build = agents[AGENTS.BUILD]!.prompt as string;
+  const prime = agents[AGENTS.PRIME]!.prompt as string;
 
   const buildOpenPath = path.join(
     __dirname,
@@ -1398,7 +1399,7 @@ describe("mid-tier prompt variant selection", () => {
       models: { "mid-execute": "moonshotai/kimi-k2-6", mid: "anthropic/claude-sonnet-4-6" },
     };
     applyConfig(config, pluginOptions);
-    const buildPrompt = config.agent["build"].prompt as string;
+    const buildPrompt = config.agent[AGENTS.BUILD].prompt as string;
     expect(buildPrompt).toContain("STRICT_EXECUTOR_VARIANT");
     expect(buildPrompt).toContain("Zero out-of-plan files");
   });
@@ -1407,7 +1408,7 @@ describe("mid-tier prompt variant selection", () => {
     const config: any = {};
     const pluginOptions = { models: { mid: "anthropic/claude-sonnet-4-6" } };
     applyConfig(config, pluginOptions);
-    const buildPrompt = config.agent["build"].prompt as string;
+    const buildPrompt = config.agent[AGENTS.BUILD].prompt as string;
     expect(buildPrompt).not.toContain("STRICT_EXECUTOR_VARIANT");
     expect(buildPrompt).toContain("Fenced plans");
   });
@@ -1418,7 +1419,7 @@ describe("mid-tier prompt variant selection", () => {
       models: { "mid-execute": "qwen/qwen3-coder-480b", mid: "anthropic/claude-sonnet-4-6" },
     };
     applyConfig(config, pluginOptions);
-    const srPrompt = config.agent["spec-reviewer"].prompt as string;
+    const srPrompt = config.agent[AGENTS.SPEC_REVIEWER].prompt as string;
     expect(srPrompt).toContain("STRICT_EXECUTOR_VARIANT");
   });
 
@@ -1428,7 +1429,7 @@ describe("mid-tier prompt variant selection", () => {
       models: { "mid-execute": "qwen/qwen3-coder-480b", mid: "anthropic/claude-sonnet-4-6" },
     };
     applyConfig(config, pluginOptions);
-    const crPrompt = config.agent["code-reviewer"].prompt as string;
+    const crPrompt = config.agent[AGENTS.CODE_REVIEWER].prompt as string;
     expect(crPrompt).toContain("STRICT_EXECUTOR_VARIANT");
     expect(crPrompt).not.toContain("trust-recent-green");
   });
@@ -1437,15 +1438,15 @@ describe("mid-tier prompt variant selection", () => {
     const config: any = {};
     const pluginOptions = { models: { mid: "anthropic/claude-sonnet-4-6" } };
     applyConfig(config, pluginOptions);
-    expect(config.agent["build"].model).toBe("anthropic/claude-sonnet-4-6");
-    expect(config.agent["spec-reviewer"].model).toBe("anthropic/claude-sonnet-4-6");
-    expect(config.agent["code-reviewer"].model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent[AGENTS.BUILD].model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent[AGENTS.SPEC_REVIEWER].model).toBe("anthropic/claude-sonnet-4-6");
+    expect(config.agent[AGENTS.CODE_REVIEWER].model).toBe("anthropic/claude-sonnet-4-6");
   });
 
   it("user-wins: user agent override is not clobbered by tier resolution", () => {
     const config: any = {
       agent: {
-        build: {
+        [AGENTS.BUILD]: {
           prompt: "user custom prompt",
           model: "moonshotai/kimi-k2-6",
           mode: "all",
@@ -1457,7 +1458,7 @@ describe("mid-tier prompt variant selection", () => {
     };
     applyConfig(config, pluginOptions);
     // User-wins: their override takes final precedence.
-    expect(config.agent["build"].prompt).toBe("user custom prompt");
+    expect(config.agent[AGENTS.BUILD].prompt).toBe("user custom prompt");
   });
 });
 
@@ -1504,7 +1505,7 @@ describe("applyConfig — permission.bash behavior", () => {
     // Lock in the critical denies here so they can't be removed without
     // touching a test that explicitly names them.
     const agents = createAgents();
-    const bash = (agents["prime"] as any).permission.bash;
+    const bash = (agents[AGENTS.PRIME] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash["*"]).toBe("allow");
     expect(bash["git push --force*"]).toBe("deny");
@@ -1520,7 +1521,7 @@ describe("applyConfig — permission.bash behavior", () => {
 
   it("build agent keeps object-form destructive denies (primary-agent safety net)", () => {
     const agents = createAgents();
-    const bash = (agents["build"] as any).permission.bash;
+    const bash = (agents[AGENTS.BUILD] as any).permission.bash;
     expect(typeof bash).toBe("object");
     expect(bash["*"]).toBe("allow");
     expect(bash["git push --force*"]).toBe("deny");

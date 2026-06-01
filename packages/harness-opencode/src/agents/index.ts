@@ -1,5 +1,29 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 import { WORKFLOW_MECHANICS_RULE, UI_EVALUATION_LADDER } from "./shared/index.js";
+import {
+  AGENTS,
+  AGENT_TIERS,
+  EXECUTOR_VARIANT_AGENT_NAMES,
+  type AgentName,
+  type ModelTier,
+} from "@glrs-dev/agent-core";
+
+// Re-export the agent-identity surface so existing importers
+// (config-hook, tests) keep working against `agents/index.js`.
+export {
+  AGENTS,
+  AGENT_TIERS,
+  AGENT_NAMES,
+  EXECUTOR_VARIANT_AGENT_NAMES,
+  AGENT_DOC_META,
+  displayTier,
+} from "@glrs-dev/agent-core";
+export type {
+  AgentName,
+  ModelTier,
+  AgentCategory,
+  AgentDocMeta,
+} from "@glrs-dev/agent-core";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as path from "node:path";
@@ -62,9 +86,9 @@ const planUltraPrompt = readPrompt("plan-ultra.md");
  * when the agent falls back to the `mid` tier (no `mid-execute` configured).
  */
 const EXECUTOR_VARIANT_AGENTS: Record<string, { reasoning: string; strict: string }> = {
-  build: { reasoning: buildPrompt, strict: buildOpenPrompt },
-  "spec-reviewer": { reasoning: specReviewerPrompt, strict: specReviewerOpenPrompt },
-  "code-reviewer": { reasoning: codeReviewerPrompt, strict: codeReviewerOpenPrompt },
+  [AGENTS.BUILD]: { reasoning: buildPrompt, strict: buildOpenPrompt },
+  [AGENTS.SPEC_REVIEWER]: { reasoning: specReviewerPrompt, strict: specReviewerOpenPrompt },
+  [AGENTS.CODE_REVIEWER]: { reasoning: codeReviewerPrompt, strict: codeReviewerOpenPrompt },
 };
 
 /**
@@ -629,71 +653,14 @@ const DEBRIEFER_PERMISSIONS = {
   linear: "deny",
 };
 
-
-// ---- Tier map ----
-
-export type ModelTier = "deep" | "mid" | "mid-execute" | "autopilot-execute" | "fast" | "cheap";
-
-/**
- * Maps every agent name to its model tier. Used by the harness.models
- * config resolution in src/config-hook.ts.
- *
- * - deep:        expensive, high-capability models (opus-class)
- * - mid:         balanced cost/capability, reasoning builder (sonnet-class)
- * - mid-execute: optional strict executor tier — narrower prompts, no
- *                self-correction, escalation-first. Falls back to `mid`
- *                if not configured. Use for Kimi K2.x, Qwen3-Coder, or
- *                any model the user wants to run as a strict executor.
- * - fast:        cheap, low-latency (haiku-class)
- * - cheap:       very cheap cascading tier (GLM 4.7 Flash via Bedrock,
- *                ~12x cheaper than Haiku). Used by @build-cheap,
- *                @plan-cheap, etc. for the first pass of cost-cascading.
- *                PRIME escalates from cheap → mid-execute → deep on
- *                failure signals. Falls back to fast if not configured.
- *
- * Adding an agent to createAgents() without adding it here will fail
- * the AGENT_TIERS completeness test — that's intentional.
- */
-export const AGENT_TIERS: Record<string, ModelTier> = {
-  // Standard series — Opus orchestration (promoted from former ultra)
-  prime: "mid-execute",
-  plan: "deep",
-  // Ultra series — cost-optimized (Sonnet orchestration, Opus for planning only)
-  "prime-heavy": "deep",
-  "plan-ultra": "deep",
-  "plan-ultra-cheap": "cheap",
-  // Legacy series — non-DAG originals (kept for fallback)
-  // Shared agents
-  scoper: "deep",
-  "autopilot-prime": "deep",
-  "autopilot-fast": "autopilot-execute",
-  "architecture-advisor": "deep",
-  "plan-reviewer": "mid",
-  "gap-analyzer": "mid",
-  research: "deep",
-  "research-web": "deep",
-  "research-local": "deep",
-  "research-auto": "deep",
-  build: "mid-execute",
-  "build-cheap": "cheap",
-  "build-deep": "deep",
-  "spec-reviewer": "mid-execute",
-  "code-reviewer": "mid-execute",
-  "code-reviewer-thorough": "deep",
-  "docs-maintainer": "mid",
-  "lib-reader": "mid",
-  "agents-md-writer": "mid",
-  debriefer: "mid",
-  designer: "mid",
-  "code-searcher": "fast",
-};
-
 // ---- Public API ----
+// `ModelTier` and `AGENT_TIERS` now live in ./names.ts (side-effect-free)
+// and are re-exported at the top of this file for backward compatibility.
 
-export function createAgents(): Record<string, AgentConfig> {
+export function createAgents(): Record<AgentName, AgentConfig> {
   return {
     // Default agent — Sonnet orchestrator, delegates deep reasoning to Opus
-    prime: agentFromPrompt(primeUltraPrompt, {
+    [AGENTS.PRIME]: agentFromPrompt(primeUltraPrompt, {
       description: "PRIME with wave-based DAG execution. Sonnet orchestrator — delegates planning to @plan-ultra (Opus) and hard problems to @build-deep (Opus). Default primary agent.",
       mode: "primary",
       model: "anthropic/claude-sonnet-4-6",
@@ -702,7 +669,7 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: PRIME_PERMISSIONS as AgentConfig["permission"],
     }),
     // Opus variant — for when you want Opus orchestration directly
-    "prime-heavy": agentFromPrompt(primeUltraPrompt, {
+    [AGENTS.PRIME_HEAVY]: agentFromPrompt(primeUltraPrompt, {
       description: "PRIME on Opus. Same prompt as standard prime but runs on Opus for direct heavyweight orchestration. Use when the task itself requires deep reasoning at the orchestration level, not just at the build level.",
       mode: "primary",
       model: "anthropic/claude-opus-4-7",
@@ -710,7 +677,7 @@ export function createAgents(): Record<string, AgentConfig> {
       tools: { task: true },
       permission: PRIME_PERMISSIONS as AgentConfig["permission"],
     }),
-    scoper: agentFromPrompt(scoperPrompt, {
+    [AGENTS.SCOPER]: agentFromPrompt(scoperPrompt, {
       description: "Interactive scoping agent. Runs an inquirer-driven wizard loop — asks short questions via assistant text, collects answers via inquirer, then writes scope.md. Use at the start of a new feature to align on intent, constraints, and acceptance criteria before planning.",
       mode: "all",
       model: "anthropic/claude-opus-4-7",
@@ -718,7 +685,7 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: SCOPER_PERMISSIONS as AgentConfig["permission"],
       tools: SCOPER_DISABLED_TOOLS as AgentConfig["tools"],
     }),
-    "autopilot-prime": agentFromPrompt(primeUltraPrompt, {
+    [AGENTS.AUTOPILOT_PRIME]: agentFromPrompt(primeUltraPrompt, {
       description: "PRIME for unattended autopilot sessions. Uses the standard (DAG) prime prompt with the `question` tool disabled — autopilot has no user to answer interactive prompts. Not user-selectable; invoked by the Ralph loop.",
       mode: "subagent",
       model: "anthropic/claude-opus-4-7",
@@ -733,7 +700,7 @@ export function createAgents(): Record<string, AgentConfig> {
       } as AgentConfig["permission"],
       tools: { ...AUTOPILOT_PRIME_DISABLED_TOOLS, task: true } as AgentConfig["tools"],
     }),
-    "autopilot-fast": agentFromPrompt(primeUltraPrompt, {
+    [AGENTS.AUTOPILOT_FAST]: agentFromPrompt(primeUltraPrompt, {
       description: "Fast executor for autopilot sessions. Same prompt as autopilot-prime but runs on the mid-execute tier. Used when --fast is passed. Plans must be enriched with mirror refs and code pointers before using this agent.",
       mode: "subagent",
       model: "anthropic/claude-sonnet-4-6",
@@ -749,7 +716,7 @@ export function createAgents(): Record<string, AgentConfig> {
       tools: { ...AUTOPILOT_PRIME_DISABLED_TOOLS, task: true } as AgentConfig["tools"],
     }),
     // Standard plan — Opus planner with DAG output (promoted from former plan-ultra)
-    plan: agentFromPrompt(planUltraPrompt, {
+    [AGENTS.PLAN]: agentFromPrompt(planUltraPrompt, {
       description: "Interactive planner with execution DAG output. Opus planner — writes plans to the repo-shared plan directory, orchestrates gap analysis, adversarial review, and produces multi-file plans with explicit phase dependency graphs.",
       mode: "all",
       model: "anthropic/claude-opus-4-7",
@@ -758,7 +725,7 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: PLAN_PERMISSIONS as AgentConfig["permission"],
     }),
     // Ultra plan — same Opus planner (planning is where Opus earns its keep)
-    "plan-ultra": agentFromPrompt(planUltraPrompt, {
+    [AGENTS.PLAN_ULTRA]: agentFromPrompt(planUltraPrompt, {
       description: "Opus planner for the ultra (cost-optimized) series. Same as standard plan — planning always runs on Opus because architectural reasoning is high-value.",
       mode: "subagent",
       model: "anthropic/claude-opus-4-7",
@@ -766,21 +733,21 @@ export function createAgents(): Record<string, AgentConfig> {
       tools: { task: true },
       permission: PLAN_PERMISSIONS as AgentConfig["permission"],
     }),
-    build: agentFromPrompt(buildPrompt, {
+    [AGENTS.BUILD]: agentFromPrompt(buildPrompt, {
       description: "Executes a written plan. Runs tests inline, gates completion on QA review.",
       mode: "all",
       model: "anthropic/claude-sonnet-4-6",
       temperature: 0.1,
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
-    "build-cheap": agentFromPrompt(buildPrompt, {
+    [AGENTS.BUILD_CHEAP]: agentFromPrompt(buildPrompt, {
       description: "Cheap-tier @build variant. Same prompt, runs on GLM 4.7 Flash via Bedrock (~12x cheaper than Haiku). PRIME dispatches @build-cheap first for cost savings; escalates to @build on BLOCKED or [FAIL_SPEC].",
       mode: "subagent",
       model: "amazon-bedrock/zai.glm-4.7-flash",
       temperature: 0.1,
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
-    "build-deep": agentFromPrompt(buildPrompt, {
+    [AGENTS.BUILD_DEEP]: agentFromPrompt(buildPrompt, {
       description: "Deep-tier @build variant. Same prompt, runs on Opus. PRIME escalates to @build-deep after @build also returns BLOCKED/[FAIL_SPEC].",
       mode: "subagent",
       model: "anthropic/claude-opus-4-7",
@@ -788,7 +755,7 @@ export function createAgents(): Record<string, AgentConfig> {
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
     // Cheap plan tiers — GLM for cost-cascading
-    "plan-ultra-cheap": agentFromPrompt(planUltraPrompt, {
+    [AGENTS.PLAN_ULTRA_CHEAP]: agentFromPrompt(planUltraPrompt, {
       description: "Cheap-tier planner. Same DAG-writing prompt, runs on GLM 4.7 Flash via Bedrock. Ultra series dispatches this first for cost-aware cascading. Escalates to @plan-ultra on [REJECT] or model-capability failures.",
       mode: "subagent",
       model: "amazon-bedrock/zai.glm-4.7-flash",
@@ -799,41 +766,41 @@ export function createAgents(): Record<string, AgentConfig> {
     // Subagents — model/mode/description from frontmatter, permissions
     // via overrides (see permission blocks above). docs-maintainer has no
     // frontmatter permission declaration and keeps that behavior.
-    "spec-reviewer": agentFromPrompt(specReviewerPrompt, {
+    [AGENTS.SPEC_REVIEWER]: agentFromPrompt(specReviewerPrompt, {
       permission: REVIEWER_PERMISSIONS as AgentConfig["permission"],
     }),
-    "code-reviewer": agentFromPrompt(codeReviewerPrompt, {
+    [AGENTS.CODE_REVIEWER]: agentFromPrompt(codeReviewerPrompt, {
       permission: REVIEWER_PERMISSIONS as AgentConfig["permission"],
     }),
-    "code-reviewer-thorough": agentFromPrompt(codeReviewerThoroughPrompt, {
+    [AGENTS.CODE_REVIEWER_THOROUGH]: agentFromPrompt(codeReviewerThoroughPrompt, {
       permission: REVIEWER_PERMISSIONS as AgentConfig["permission"],
     }),
-    "plan-reviewer": agentFromPrompt(planReviewerPrompt, {
+    [AGENTS.PLAN_REVIEWER]: agentFromPrompt(planReviewerPrompt, {
       permission: PLAN_REVIEWER_PERMISSIONS as AgentConfig["permission"],
     }),
-    "code-searcher": agentFromPrompt(codeSearcherPrompt, {
+    [AGENTS.CODE_SEARCHER]: agentFromPrompt(codeSearcherPrompt, {
       permission: CODE_SEARCHER_PERMISSIONS as AgentConfig["permission"],
     }),
-    "gap-analyzer": agentFromPrompt(gapAnalyzerPrompt, {
+    [AGENTS.GAP_ANALYZER]: agentFromPrompt(gapAnalyzerPrompt, {
       permission: GAP_ANALYZER_PERMISSIONS as AgentConfig["permission"],
     }),
-    "architecture-advisor": agentFromPrompt(architectureAdvisorPrompt, {
+    [AGENTS.ARCHITECTURE_ADVISOR]: agentFromPrompt(architectureAdvisorPrompt, {
       permission: ARCHITECTURE_ADVISOR_PERMISSIONS as AgentConfig["permission"],
     }),
-    "docs-maintainer": agentFromPrompt(docsMaintainerPrompt),
-    "lib-reader": agentFromPrompt(libReaderPrompt, {
+    [AGENTS.DOCS_MAINTAINER]: agentFromPrompt(docsMaintainerPrompt),
+    [AGENTS.LIB_READER]: agentFromPrompt(libReaderPrompt, {
       permission: LIB_READER_PERMISSIONS as AgentConfig["permission"],
     }),
-    "agents-md-writer": agentFromPrompt(agentsMdWriterPrompt, {
+    [AGENTS.AGENTS_MD_WRITER]: agentFromPrompt(agentsMdWriterPrompt, {
       permission: AGENTS_MD_WRITER_PERMISSIONS as AgentConfig["permission"],
     }),
-    designer: agentFromPrompt(designerPrompt, {
+    [AGENTS.DESIGNER]: agentFromPrompt(designerPrompt, {
       mode: "primary",
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
 
     // Research agent — mode:all for both primary invocation and task-tool dispatch
-    research: agentFromPrompt(researchPrompt, {
+    [AGENTS.RESEARCH]: agentFromPrompt(researchPrompt, {
       description: "Research orchestrator — decomposes a research query into parallel workstreams, dispatches research skills (research / research-web / research-local / research-auto) as subagents, reviews findings for gaps, iterates, and synthesizes. Use when the user asks to investigate, explore, deep-dive, or understand a complex topic that needs multiple workstreams.",
       mode: "all",
       model: "anthropic/claude-opus-4-7",
@@ -847,7 +814,7 @@ export function createAgents(): Record<string, AgentConfig> {
     // mode: "subagent" — these are internal implementation details of
     // @research's orchestration; users should invoke @research (mode:all)
     // as the primary entry point, not these directly.
-    "research-web": agentFromPrompt(researchWebPrompt, {
+    [AGENTS.RESEARCH_WEB]: agentFromPrompt(researchWebPrompt, {
       description: "Research orchestrator subagent — Multi-agent web research orchestrator. Decomposes a research question into parallel agent workstreams, launches them, monitors progress, and synthesizes results. Use when user says 'research this topic', 'I need to understand', 'deep dive into', 'investigate the market for', 'what do we know about'. Provide the research topic and context.",
       mode: "subagent",
       model: "anthropic/claude-opus-4-7",
@@ -856,7 +823,7 @@ export function createAgents(): Record<string, AgentConfig> {
       tools: { task: true },
       permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
     }),
-    "research-local": agentFromPrompt(researchLocalPrompt, {
+    [AGENTS.RESEARCH_LOCAL]: agentFromPrompt(researchLocalPrompt, {
       description: "Research orchestrator subagent — Deep codebase research using parallel Explore subagents. Decomposes a question about the local codebase into research tasks, launches parallel explorations, reviews for gaps, iterates, and synthesizes findings with specific file paths and line numbers. Use when user says 'how does X work in this codebase', 'where is Y implemented', 'trace the data flow for Z', 'what patterns does this repo use', 'explain the architecture of'. Provide the research topic as arguments.",
       mode: "subagent",
       model: "anthropic/claude-opus-4-7",
@@ -865,7 +832,7 @@ export function createAgents(): Record<string, AgentConfig> {
       tools: { task: true },
       permission: RESEARCH_PERMISSIONS as AgentConfig["permission"],
     }),
-    "research-auto": agentFromPrompt(researchAutoPrompt, {
+    [AGENTS.RESEARCH_AUTO]: agentFromPrompt(researchAutoPrompt, {
       description: "Research orchestrator subagent — Autonomous experimentation skill. Agent interviews the user, sets up a lab, then explores freely (think, test, reflect) until stopped or a target is hit. Works for any domain where you can measure or evaluate a result. Use when user says 'optimize this', 'experiment with', 'find the best approach', 'iterate on', 'research mode'. Do NOT use for binary validation tests (use /spec-lab instead). Based on ResearcherSkill v1.4.4 by krzysztofdudek.",
       mode: "subagent",
       model: "anthropic/claude-opus-4-7",
@@ -874,7 +841,7 @@ export function createAgents(): Record<string, AgentConfig> {
     }),
 
     // Debriefer — post-run summary agent for the autopilot CLI
-    debriefer: agentFromPrompt(debrieferPrompt, {
+    [AGENTS.DEBRIEFER]: agentFromPrompt(debrieferPrompt, {
       permission: DEBRIEFER_PERMISSIONS as AgentConfig["permission"],
     }),
 

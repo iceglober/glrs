@@ -22,6 +22,7 @@
  * already-enriched plan.
  */
 
+import { AGENTS } from "@glrs-dev/agent-core";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
@@ -471,7 +472,7 @@ async function runEnrichmentPass(
         ? resolveModel(enrichmentSpecifier, adapterName ?? "opencode")
         : undefined;
       sessionId = await adapter.createSession(handle, {
-        agentName: "prime",
+        agentName: AGENTS.PRIME,
         model: resolvedModel,
       });
     } catch (err) {
@@ -725,7 +726,7 @@ async function validateAndRepairSpec(
         ? resolveModel(enrichmentSpecifier, adapterName ?? "opencode")
         : undefined;
       sessionId = await adapter.createSession(handle, {
-        agentName: "prime",
+        agentName: AGENTS.PRIME,
         model: resolvedModel,
       });
     } catch (err) {
@@ -1025,7 +1026,7 @@ async function runUnifiedEnrichment(
         : undefined;
 
       const sessionId = await adapter.createSession(handle, {
-        agentName: "prime",
+        agentName: AGENTS.PRIME,
         model: resolvedModel,
       });
 

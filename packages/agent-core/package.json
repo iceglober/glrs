@@ -1,0 +1,25 @@
+{
+  "name": "@glrs-dev/agent-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Framework-agnostic agent identity: names, tiers, and doc metadata shared across harness plugins (opencode, claude-code) and adapters.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "echo 'agent-core is source-only; consumers bundle it'",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "lint": "echo 'no linter configured yet'"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22",
+    "typescript": "^5"
+  },
+  "license": "MIT"
+}

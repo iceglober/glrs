@@ -6,6 +6,7 @@
  * the filesystem (multi-file directory or single-file .md).
  */
 
+import { AGENTS } from "@glrs-dev/agent-core";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PlanSessionOptions, PlanSessionResult } from "./loop-session-types.js";
@@ -46,7 +47,7 @@ export async function runPlanSession(
 
   try {
     const sessionId = await adapter.createSession(handle, {
-      agentName: "plan",
+      agentName: AGENTS.PLAN,
     });
 
     const multiFileDir = path.join(opts.planDir, opts.slug);

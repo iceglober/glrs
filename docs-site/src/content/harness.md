@@ -12,11 +12,11 @@ Or manually: `npm i -g @glrs-dev/cli && glrs harness install && opencode`
 
 ## What's in the box
 
-- **30 [agents](/harness/agents)** — from the primary `prime` agent to specialized subagents for code review, research, planning, and architecture
+- **27 [agents](/harness/agents)** — from the primary `prime` agent to specialized subagents for code review, research, planning, and architecture
 - **7 [slash commands](/harness/commands)** — `/fresh`, `/ship`, `/review`, `/research`, `/init-deep`, `/costs`, `/dispatches`
 - **5 [tools](/harness/tools)** — `ast_grep`, `tsc_check`, `eslint_check`, `todo_scan`, `comment_check`
 - **5 MCP servers** — serena, memory, git (enabled), playwright, linear (disabled)
-- **17 skills** — code quality, design, research, review, React best practices, and more
+- **18 [skills](/harness/skills)** — code quality, design, research, review, React best practices, and more
 - **7 sub-plugins** — cost tracking, dispatch logging, stall detection, tool hooks, notifications
 
 ## How it works

@@ -51,6 +51,10 @@ export default defineConfig({
     "bun:sqlite",
     "bun:test",
   ],
+  // Inline the shared agent-identity package into the published bundle.
+  // It's a private, source-only workspace package (not on npm), so it must
+  // be bundled rather than left as an unresolvable runtime dependency.
+  noExternal: ["@glrs-dev/agent-core"],
   // After build: copy skills tree and bin scripts
   async onSuccess() {
     // Copy skills

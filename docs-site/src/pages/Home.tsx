@@ -36,6 +36,7 @@ export function Home() {
         <Link to="/harness">agent harness</Link>
         <Link to="/harness/agents">agents</Link>
         <Link to="/harness/commands">commands</Link>
+        <Link to="/harness/skills">skills</Link>
         <Link to="/harness/tools">tools</Link>
         <Link to="/harness/config">configuration</Link>
         <Link to="/autopilot">autopilot</Link>
