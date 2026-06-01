@@ -1,0 +1,30 @@
+{
+  "_note": "Dev-only harness presets, hidden from regular users. Each preset is a named GLRS_AGENT_OVERRIDES payload (per-agent {model, prompt}) plus an id that tags telemetry (GLRS_DEV_PRESET) so cost/speed/outcomes can be correlated per preset. Override or add presets in ~/.glrs/dev-presets.json (same shape) to iterate without republishing. `prompt` is a path relative to the repo root.",
+  "presets": [
+    {
+      "id": "baseline",
+      "label": "Baseline (plugin defaults)",
+      "description": "Control group — no overrides; only tags telemetry so other presets can be compared against the shipped defaults.",
+      "agents": {}
+    },
+    {
+      "id": "1",
+      "label": "Opus orchestration",
+      "description": "Prime + plan on Opus 4.8 for heavier reasoning at the orchestration layer.",
+      "agents": {
+        "prime": { "model": "anthropic/claude-opus-4-8" },
+        "plan": { "model": "anthropic/claude-opus-4-8" }
+      }
+    },
+    {
+      "id": "2",
+      "label": "All-Sonnet (cheap/fast)",
+      "description": "Prime/plan/build on Sonnet 4.6 to measure the cost/speed delta against Opus orchestration.",
+      "agents": {
+        "prime": { "model": "anthropic/claude-sonnet-4-6" },
+        "plan": { "model": "anthropic/claude-sonnet-4-6" },
+        "build": { "model": "anthropic/claude-sonnet-4-6" }
+      }
+    }
+  ]
+}

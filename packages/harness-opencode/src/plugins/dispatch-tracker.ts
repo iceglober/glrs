@@ -25,6 +25,8 @@ type DispatchLine = {
   sessionID?: string;
   agent: string;
   tier: string | undefined;
+  /** Active dev preset id (GLRS_DEV_PRESET), present only during preset runs. */
+  preset?: string;
 };
 
 type DispatchRollup = {
@@ -87,6 +89,10 @@ const plugin: Plugin = async () => {
   const dataDir = resolveDataDir();
   const jsonlPath = path.join(dataDir, "dispatches.jsonl");
   const rollupPath = path.join(dataDir, "dispatches.json");
+
+  // Tag each dispatch with the active dev preset (if any) so analytics can
+  // correlate which agents ran with a given model/prompt configuration.
+  const devPreset = process.env["GLRS_DEV_PRESET"] || undefined;
 
   const rollup: DispatchRollup = emptyRollup();
 
@@ -199,6 +205,7 @@ const plugin: Plugin = async () => {
         ...(input.sessionID ? { sessionID: input.sessionID } : {}),
         agent,
         tier,
+        ...(devPreset ? { preset: devPreset } : {}),
       };
 
       applyToRollup(agent, tier);
