@@ -1,8 +1,9 @@
 use crate::core::config;
 use crate::core::daemon::DaemonRequirement;
-use crate::core::keychain;
+use crate::core::{fuzzy, keychain};
 use crate::plugin::registry::PluginRegistry;
 use crate::tui::multiselect::{self, Item, SelectResult};
+use crate::tui::picker::{self, PickerResult};
 use anyhow::{anyhow, Result};
 use clap::Args;
 use std::path::{Path, PathBuf};
@@ -14,6 +15,11 @@ pub struct InitArgs {
     /// Skip interactive login (assume already authenticated)
     #[arg(long)]
     pub skip_login: bool,
+
+    /// Default context to set non-interactively (fuzzy pattern, e.g. "dev",
+    /// "prod/admin", "gcp:my-project"). Omit to pick one interactively.
+    #[arg(long)]
+    pub default_context: Option<String>,
 }
 
 pub async fn run(args: InitArgs, registry: &PluginRegistry, cfg: &config::Config) -> Result<()> {
@@ -47,11 +53,74 @@ pub async fn run(args: InitArgs, registry: &PluginRegistry, cfg: &config::Config
     };
     super::agent::run(allow_args, registry, cfg).await?;
 
-    // 3. Pick which agent tools to wire the gsa MCP server into.
+    // 3. Choose the default context. Required: it's what the bare credential
+    //    endpoint and `gsa exec`/agents resolve to when no context is pinned.
+    //    Without it, a running daemon still has nothing to serve.
+    if !select_default_context(&args, registry, cfg).await? {
+        eprintln!(
+            "\nNo default context selected — setup is incomplete. \
+             Re-run `gsa init` to finish."
+        );
+        return Ok(());
+    }
+
+    // 4. Pick which agent tools to wire the gsa MCP server into.
     configure_mcp_tools()?;
+
+    // Mark init complete only after every required step succeeded. Until this
+    // marker exists, the init gate in main.rs keeps gsa non-functional.
+    config::mark_initialized()?;
 
     eprintln!("\n✓ Done. Restart your agent session to pick up the MCP server.");
     Ok(())
+}
+
+/// Select and persist the default (active) context. Returns `Ok(true)` when a
+/// context was set, `Ok(false)` when the user cancelled the interactive
+/// picker, and `Err` when no contexts are available at all.
+async fn select_default_context(
+    args: &InitArgs,
+    registry: &PluginRegistry,
+    cfg: &config::Config,
+) -> Result<bool> {
+    // Gather contexts across every authenticated provider.
+    let mut all = Vec::new();
+    for provider_id in registry.ids() {
+        all.extend(super::use_cmd::gather_contexts(registry, cfg, &provider_id).await);
+    }
+    if all.is_empty() {
+        return Err(anyhow!(
+            "No contexts available to set as a default. Authenticate first with `gsa login`, then re-run `gsa init`."
+        ));
+    }
+
+    let active_id = crate::core::cache::load_active_context().map(|c| c.id);
+
+    let selected = match &args.default_context {
+        Some(pattern) => {
+            let matches = fuzzy::match_contexts(pattern, &all);
+            match matches.first() {
+                Some(m) => m.context.clone(),
+                None => return Err(anyhow!("No context matching '{pattern}'")),
+            }
+        }
+        None => {
+            eprintln!(
+                "\nChoose a default context (used by agents and `gsa exec` when no context is given):\n"
+            );
+            match picker::run(&all, active_id.as_deref())? {
+                PickerResult::Selected(ctx) => ctx,
+                PickerResult::Cancelled => return Ok(false),
+            }
+        }
+    };
+
+    crate::core::cache::save_active_context(&selected)?;
+    eprintln!(
+        "✓ Default context: [{}] {}",
+        selected.provider_id, selected.display_name
+    );
+    Ok(true)
 }
 
 // ---- Agent-tool MCP wiring ----

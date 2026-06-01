@@ -37,7 +37,7 @@ struct Cli {
 enum Commands {
     /// Agent access management and MCP server
     Agent(cli::agent::AgentArgs),
-    /// Set up agent cloud credentials (login + approve contexts + configure MCP)
+    /// Set up agent cloud credentials (login + approve contexts + default context + configure MCP)
     Init(cli::init::InitArgs),
     /// Authenticate with a cloud provider (opens browser)
     Login(cli::login::LoginArgs),
@@ -114,12 +114,63 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+
+    // Migrate a pre-rebrand `gs-assume` config dir forward before loading, so
+    // both the load below and `gsa init` see the user's existing providers,
+    // contexts, and credentials. Init-only: it's the explicit setup command,
+    // and we don't want other commands silently relocating config.
+    if matches!(cli.command, Commands::Init(_)) {
+        match config::migrate_legacy_config() {
+            Ok(Some(legacy)) => {
+                eprintln!(
+                    "✓ Migrated config from legacy location ({})",
+                    legacy.display()
+                )
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("⚠ Could not migrate legacy config: {e}"),
+        }
+    }
+
     let cfg = config::load_config()?;
     let registry = build_registry(&cfg)?;
 
     // Check for updates (skip if running upgrade itself)
     if !matches!(cli.command, Commands::Upgrade(_)) {
         assume::core::update_check::check_for_update();
+    }
+
+    // Centralized init gate: until `gsa init` completes, only a small
+    // bootstrap/inspection allowlist runs. Everything else refuses, so a
+    // freshly-installed-but-unconfigured gsa can't silently start a daemon or
+    // serve broken credentials (the failure mode where the daemon is up but no
+    // default context exists). The exhaustive match forces every new Commands
+    // variant to be classified — the compiler rejects unhandled variants.
+    enum InitGate {
+        AllowedPreInit,
+        RequiresInit,
+    }
+    let gate = match &cli.command {
+        Commands::Init(_)
+        | Commands::Upgrade(_)
+        | Commands::ShellInit(_)
+        | Commands::Status(_)
+        | Commands::Config(_) => InitGate::AllowedPreInit,
+        Commands::Login(_)
+        | Commands::Use(_)
+        | Commands::Exec(_)
+        | Commands::Sync(_)
+        | Commands::Contexts(_)
+        | Commands::Serve(_)
+        | Commands::Logout(_)
+        | Commands::Console(_)
+        | Commands::CredentialProcess(_)
+        | Commands::Agent(_) => InitGate::RequiresInit,
+    };
+    if matches!(gate, InitGate::RequiresInit) && !config::is_initialized() {
+        anyhow::bail!(
+            "glrs-assume isn't set up yet. Run `gsa init` to authenticate, approve agent contexts, and pick a default context."
+        );
     }
 
     // Centralized pre-dispatch: ensure daemon is running for commands that need it.

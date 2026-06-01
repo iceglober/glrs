@@ -2,7 +2,7 @@ use crate::plugin::ProviderConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Top-level configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -217,6 +217,125 @@ pub fn ensure_config_dir() -> Result<()> {
     Ok(())
 }
 
+/// Path to the init-completion marker file.
+pub fn initialized_marker_path() -> PathBuf {
+    config_dir().join("initialized.json")
+}
+
+/// Whether `gsa init` has completed successfully at least once.
+///
+/// The marker is written only at the very end of a successful init (after a
+/// default context is chosen), so a half-configured state — `config.toml`
+/// auto-created, daemon running, but no default context — still reads as
+/// uninitialized. Everything except a small bootstrap allowlist refuses to
+/// run until this returns true (see the init gate in `main.rs`).
+pub fn is_initialized() -> bool {
+    initialized_marker_path().exists()
+}
+
+/// Record that init completed. The body (version + timestamp) is for
+/// diagnostics only; the file's existence is the load-bearing signal.
+pub fn mark_initialized() -> Result<()> {
+    ensure_config_dir()?;
+    let path = initialized_marker_path();
+    let body = serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "initialized_at": chrono::Utc::now().to_rfc3339(),
+    });
+    std::fs::write(&path, serde_json::to_string_pretty(&body)? + "\n")
+        .with_context(|| format!("Failed to write init marker to {}", path.display()))?;
+    Ok(())
+}
+
+// ---- Legacy (pre-rebrand) config migration ----
+//
+// The tool first shipped as `gs-assume` (npm `@glorious/assume`) and stored
+// config in `dirs::config_dir()/gs-assume`. The rebrand to `glrs-assume`
+// (#220) moved it to `dirs::config_dir()/glrs-assume`. A user upgrading from
+// the old package would otherwise start from scratch — losing their provider
+// config, discovered contexts, and stored credentials. `gsa init` migrates the
+// old directory forward once.
+
+/// Pre-rebrand config directory: `dirs::config_dir()/gs-assume`.
+fn legacy_config_dir() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("gs-assume"))
+}
+
+/// Decide whether to migrate, given the relevant state. Pure, so the policy is
+/// unit-testable without touching the real filesystem or environment.
+///
+/// Migrate only when: no explicit config-dir override is set (custom layouts
+/// are the user's business), the current dir doesn't exist yet, and a legacy
+/// dir is present.
+fn migration_source(
+    has_env_override: bool,
+    current_exists: bool,
+    legacy: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if has_env_override || current_exists {
+        return None;
+    }
+    legacy.filter(|p| p.exists())
+}
+
+/// One-time migration of the pre-rebrand `gs-assume` config directory to the
+/// current `glrs-assume` location. Copies (never deletes) the legacy contents
+/// so the user keeps their providers, contexts, and credentials. Returns the
+/// legacy path when a migration actually happened, `None` otherwise.
+pub fn migrate_legacy_config() -> Result<Option<PathBuf>> {
+    let source = migration_source(
+        std::env::var_os("GLRS_ASSUME_CONFIG_DIR").is_some(),
+        config_dir().exists(),
+        legacy_config_dir(),
+    );
+    let Some(legacy) = source else {
+        return Ok(None);
+    };
+    let current = config_dir();
+    copy_dir_recursive(&legacy, &current).with_context(|| {
+        format!(
+            "Failed to migrate config from {} to {}",
+            legacy.display(),
+            current.display()
+        )
+    })?;
+    Ok(Some(legacy))
+}
+
+/// Recursively copy `src` into `dst`, creating `dst` as needed. Skips symlinks
+/// and ephemeral daemon runtime files (the socket, pidfile, and logs) — those
+/// belong to a running daemon and must not be carried across. Regular files
+/// land at `0600` to match how the vault stores secrets.
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str == "daemon.sock" || name_str == "daemon.pid" || name_str.ends_with(".log") {
+            continue;
+        }
+        let from = entry.path();
+        let to = dst.join(&name);
+        if file_type.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else if file_type.is_file() {
+            std::fs::copy(&from, &to)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o600));
+            }
+        }
+        // Sockets/FIFOs/etc. are skipped.
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,5 +478,62 @@ region = "us-west-2"
     fn test_resolve_log_path_absolute() {
         let path = resolve_log_path("/var/log/glrs-assume.log");
         assert_eq!(path, PathBuf::from("/var/log/glrs-assume.log"));
+    }
+
+    #[test]
+    fn migration_source_skips_when_env_override_set() {
+        // A custom config dir means the user controls layout — don't migrate.
+        let legacy = std::env::temp_dir();
+        assert_eq!(migration_source(true, false, Some(legacy)), None);
+    }
+
+    #[test]
+    fn migration_source_skips_when_current_exists() {
+        let legacy = std::env::temp_dir();
+        assert_eq!(migration_source(false, true, Some(legacy)), None);
+    }
+
+    #[test]
+    fn migration_source_skips_when_no_legacy_dir() {
+        assert_eq!(migration_source(false, false, None), None);
+        let absent = std::env::temp_dir().join("gsa-legacy-does-not-exist-xyz");
+        assert_eq!(migration_source(false, false, Some(absent)), None);
+    }
+
+    #[test]
+    fn migration_source_migrates_when_legacy_present_and_current_absent() {
+        // temp_dir() always exists, standing in for a present legacy dir.
+        let legacy = std::env::temp_dir();
+        assert_eq!(
+            migration_source(false, false, Some(legacy.clone())),
+            Some(legacy)
+        );
+    }
+
+    #[test]
+    fn copy_dir_recursive_copies_files_recurses_and_skips_ephemeral() {
+        let root = std::env::temp_dir().join(format!("gsa-copy-test-{}", std::process::id()));
+        let src = root.join("src");
+        let dst = root.join("dst");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(src.join("vault")).unwrap();
+
+        std::fs::write(src.join("config.toml"), "x = 1").unwrap();
+        std::fs::write(src.join("vault").join("creds.json"), "{}").unwrap();
+        // Ephemeral runtime files that must NOT be carried across.
+        std::fs::write(src.join("daemon.pid"), "123").unwrap();
+        std::fs::write(src.join("audit.log"), "log").unwrap();
+
+        copy_dir_recursive(&src, &dst).unwrap();
+
+        assert!(dst.join("config.toml").exists(), "config.toml copied");
+        assert!(
+            dst.join("vault").join("creds.json").exists(),
+            "nested vault file copied"
+        );
+        assert!(!dst.join("daemon.pid").exists(), "pidfile skipped");
+        assert!(!dst.join("audit.log").exists(), "log skipped");
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

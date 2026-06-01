@@ -8,7 +8,16 @@ SSO credential manager for AWS and GCP. Authenticate once, switch contexts per-s
 glrs assume init
 ```
 
-Installs `@glrs-dev/assume` if missing, runs login, lets you approve contexts for agent access, and configures the MCP server. One command.
+One command. It:
+
+1. Installs the latest `@glrs-dev/assume` (and removes the deprecated `@glorious/assume`, whose stale `gsa`/`gs-assume` bins can shadow the current one).
+2. Migrates a pre-rebrand `gs-assume` config directory forward, so you keep your providers, contexts, and credentials.
+3. Runs login, lets you approve contexts for agent access, and **requires you to choose a default context** (what agents and `gsa exec` use when no context is pinned).
+4. Configures the MCP server for your agent tools.
+
+Until `gsa init` completes, gsa is inert — every command except `init`, `upgrade`, `shell-init`, `status`, and `config` refuses and points you back to `gsa init`. This prevents a half-configured state where the daemon runs but no default context exists.
+
+Re-run `gsa init` any time to repair a broken install or change your default context. Pass `--default-context <pattern>` to set it non-interactively.
 
 Or install standalone: `npm i -g @glrs-dev/assume`
 
@@ -143,6 +152,8 @@ eval "$(glrs-assume shell-init zsh)"
 ## Configuration
 
 `~/Library/Application Support/glrs-assume/config.toml` (macOS) or `~/.config/glrs-assume/config.toml` (Linux)
+
+Upgrading from the old `gs-assume`? `gsa init` copies the legacy `gs-assume` config directory to this location automatically (it never deletes the old one).
 
 ```toml
 [providers.aws]

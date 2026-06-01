@@ -29,7 +29,7 @@ glrs --help
 glrs assume init
 ```
 
-Installs `@glrs-dev/assume` if missing, runs login, approves agent contexts, configures MCP.
+Installs the latest `@glrs-dev/assume` (clearing the deprecated `@glorious/assume`), migrates any legacy `gs-assume` config forward, runs login, approves agent contexts, requires a default context, and configures MCP. Re-run any time to repair a broken install.
 
 ## Requirements
 

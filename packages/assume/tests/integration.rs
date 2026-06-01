@@ -3,6 +3,7 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use tempfile::TempDir;
 
 /// Build a Command for glrs-assume with GLRS_CLI_DISPATCHED=1 pre-set.
 /// All pre-existing tests use this helper so they continue to work after
@@ -11,6 +12,17 @@ fn glrs_assume() -> Command {
     let mut cmd = Command::cargo_bin("glrs-assume").unwrap();
     cmd.env("GLRS_CLI_DISPATCHED", "1");
     cmd
+}
+
+/// A glrs-assume Command bound to a fresh, already-initialized config dir.
+/// Use for commands that the init gate would otherwise block. The returned
+/// `TempDir` must be kept alive for the command's lifetime (drop deletes it).
+fn glrs_assume_initialized() -> (Command, TempDir) {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("initialized.json"), "{}\n").unwrap();
+    let mut cmd = glrs_assume();
+    cmd.env("GLRS_ASSUME_CONFIG_DIR", dir.path());
+    (cmd, dir)
 }
 
 #[test]
@@ -50,7 +62,10 @@ fn test_status_no_auth() {
 
 #[test]
 fn test_contexts_no_auth() {
-    glrs_assume().arg("contexts").assert().success();
+    // Runs in an initialized config dir so the init gate doesn't block it —
+    // this test is about contexts tolerating no auth, not the gate.
+    let (mut cmd, _dir) = glrs_assume_initialized();
+    cmd.arg("contexts").assert().success();
 }
 
 #[test]
@@ -90,8 +105,10 @@ fn test_shell_init_invalid() {
 
 #[test]
 fn test_logout_no_auth() {
-    // Logout should succeed even with nothing to logout from
-    glrs_assume().args(["logout", "aws"]).assert().success();
+    // Logout should succeed even with nothing to logout from. Initialized dir
+    // so the gate doesn't block the gated `logout` command.
+    let (mut cmd, _dir) = glrs_assume_initialized();
+    cmd.args(["logout", "aws"]).assert().success();
 }
 
 #[test]
@@ -315,6 +332,52 @@ fn test_shell_init_stdout_is_clean_shell_code() {
             "shell-init stdout contains tracing/log output which would corrupt eval: {trimmed}"
         );
     }
+}
+
+// ── Init gate tests ──────────────────────────────────────────────────────────
+
+/// Before `gsa init`, a gated command refuses and points the user at `gsa init`.
+#[test]
+fn test_gate_blocks_command_before_init() {
+    let dir = TempDir::new().unwrap();
+    glrs_assume()
+        .env("GLRS_ASSUME_CONFIG_DIR", dir.path())
+        .arg("contexts")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("gsa init"));
+}
+
+/// `gsa exec` (an agent-facing command) is also gated before init.
+#[test]
+fn test_gate_blocks_exec_before_init() {
+    let dir = TempDir::new().unwrap();
+    glrs_assume()
+        .env("GLRS_ASSUME_CONFIG_DIR", dir.path())
+        .args(["exec", "--", "true"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("gsa init"));
+}
+
+/// Allowlisted commands (here `config`) run before init — no gate message.
+#[test]
+fn test_gate_allows_config_before_init() {
+    let dir = TempDir::new().unwrap();
+    glrs_assume()
+        .env("GLRS_ASSUME_CONFIG_DIR", dir.path())
+        .args(["config", "get", "providers.aws.start_url"])
+        .assert()
+        .stderr(predicate::str::contains("gsa init").not());
+}
+
+/// Once the init marker exists, gated commands clear the gate.
+#[test]
+fn test_gate_passes_after_marker() {
+    let (mut cmd, _dir) = glrs_assume_initialized();
+    cmd.arg("contexts")
+        .assert()
+        .stderr(predicate::str::contains("gsa init").not());
 }
 
 /// shell-init for all shells should produce parseable output, not crash.
