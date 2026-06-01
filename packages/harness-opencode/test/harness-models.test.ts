@@ -40,10 +40,8 @@ describe("AGENT_TIERS", () => {
       "build-deep",
       "code-reviewer-thorough",
       "plan",
-      "plan-legacy",
       "plan-ultra",
-      "prime",
-      "prime-legacy",
+      "prime-heavy",
       "research",
       "research-auto",
       "research-local",
@@ -62,7 +60,7 @@ describe("AGENT_TIERS", () => {
     expect(midExecute).toEqual([
       "build",
       "code-reviewer",
-      "prime-ultra",
+      "prime",
       "spec-reviewer",
     ]);
     const autopilotExecute = Object.entries(AGENT_TIERS)
@@ -75,7 +73,7 @@ describe("AGENT_TIERS", () => {
       .filter(([, t]) => t === "cheap")
       .map(([n]) => n)
       .sort();
-    expect(cheap).toEqual(["build-cheap", "plan-legacy-cheap", "plan-ultra-cheap"]);
+    expect(cheap).toEqual(["build-cheap", "plan-ultra-cheap"]);
   });
 });
 
@@ -104,7 +102,7 @@ describe("resolveHarnessModels", () => {
 
     // Deep tier agents
     for (const name of [
-      "prime",
+      "prime-heavy",
       "scoper",
       "plan",
       "code-reviewer-thorough",
@@ -119,6 +117,7 @@ describe("resolveHarnessModels", () => {
 
     // Mid tier agents (mid-execute falls back to mid when mid-execute not configured)
     for (const name of [
+      "prime",
       "build",
       "spec-reviewer",
       "code-reviewer",
@@ -160,7 +159,7 @@ describe("resolveHarnessModels", () => {
 
     resolveHarnessModels(agents as any, {} as any, pluginOptions);
 
-    expect(agents["prime"]!.model).toBe("single-string-model");
+    expect(agents["prime-heavy"]!.model).toBe("single-string-model");
     expect(agents["plan"]!.model).toBe("single-string-model");
   });
 
@@ -195,14 +194,14 @@ describe("resolveHarnessModels", () => {
     const agents = makeAgents();
     const config = { harness: { models: { deep: "legacy-model" } } } as any;
     resolveHarnessModels(agents as any, config);
-    expect(agents["prime"]!.model).toBe("legacy-model");
+    expect(agents["prime-heavy"]!.model).toBe("legacy-model");
   });
 
   it("plugin options win over legacy harness.models", () => {
     const agents = makeAgents();
     const config = { harness: { models: { deep: "legacy" } } } as any;
     resolveHarnessModels(agents as any, config, { models: { deep: "new" } });
-    expect(agents["prime"]!.model).toBe("new");
+    expect(agents["prime-heavy"]!.model).toBe("new");
   });
 
   it("unknown agent names in plugin options are silently ignored", () => {
@@ -224,7 +223,9 @@ describe("resolveHarnessModels", () => {
     resolveHarnessModels(agents as any, {} as any, pluginOptions);
 
     // Deep agents overridden
-    expect(agents["prime"]!.model).toBe("deep-override");
+    expect(agents["prime-heavy"]!.model).toBe("deep-override");
+    // Mid-execute agents keep defaults (deep override doesn't apply)
+    expect(agents["prime"]!.model).toBe("default-prime");
     // Mid agents keep defaults
     expect(agents["build"]!.model).toBe("default-build");
     // Fast agents keep defaults
@@ -239,7 +240,7 @@ describe("resolveHarnessModels", () => {
 
     resolveHarnessModels(agents as any, {} as any, pluginOptions);
 
-    expect(agents["prime"]!.model).toBe("primary-model");
+    expect(agents["prime-heavy"]!.model).toBe("primary-model");
   });
 });
 
@@ -269,8 +270,10 @@ describe("applyConfig — plugin options integration", () => {
 
     applyConfig(config, pluginOptions);
 
-    expect(config.agent.prime.model).toBe("bedrock/claude-opus-4");
+    expect(config.agent["prime-heavy"].model).toBe("bedrock/claude-opus-4");
     expect(config.agent.plan.model).toBe("bedrock/claude-opus-4");
+    // prime is mid-execute, falls back to mid — no deep or mid override → keeps default
+    expect(config.agent.prime.model).toBe("anthropic/claude-sonnet-4-6");
     // Mid/fast agents keep plugin defaults (no tier override specified)
     expect(config.agent.build.model).toBe("anthropic/claude-sonnet-4-6");
   });
@@ -280,7 +283,7 @@ describe("applyConfig — plugin options integration", () => {
 
     applyConfig(config);
 
-    expect(config.agent.prime.model).toBe("anthropic/claude-opus-4-7");
+    expect(config.agent.prime.model).toBe("anthropic/claude-sonnet-4-6");
     expect(config.agent.build.model).toBe("anthropic/claude-sonnet-4-6");
   });
 });
@@ -331,7 +334,7 @@ describe("resolveHarnessModels — legacy-ID warning", () => {
 
     // All deep-tier agents still got the bad value written (user intent
     // preserved; warn is advisory).
-    expect(agents["prime"]!.model).toBe("bedrock/claude-opus-4");
+    expect(agents["prime-heavy"]!.model).toBe("bedrock/claude-opus-4");
     expect(agents["plan"]!.model).toBe("bedrock/claude-opus-4");
   });
 

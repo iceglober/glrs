@@ -1,6 +1,6 @@
 # Agents
 
-30 agents. 7 user-selectable, the rest are subagents dispatched automatically.
+27 agents. 7 user-selectable, the rest are subagents dispatched automatically.
 
 ## User-selectable
 
@@ -8,8 +8,8 @@ Pick these via Tab in OpenCode.
 
 | Agent | Tier | Role |
 |-------|------|------|
-| `prime` | deep | [SPEAR](https://www.edge.ceo/p/introducing-spear-the-management) end-to-end workflow (default). Uses wave-based DAG execution for complex tasks. |
-| `prime-ultra` | mid | Cost-optimized PRIME variant for fast execution |
+| `prime` | mid | [SPEAR](https://www.edge.ceo/p/introducing-spear-the-management) end-to-end workflow (default). Sonnet orchestrator — delegates planning to Opus and hard problems to @build-deep. |
+| `prime-heavy` | deep | PRIME on Opus. Use when the task itself needs deep reasoning at the orchestration level. |
 | `plan` | deep | Interactive planner with gap analysis. Uses DAG-based planning by default. |
 | `build` | mid | Plan executor |
 | `scoper` | deep | Codebase scoping and context gathering |
@@ -38,15 +38,6 @@ Dispatched by user-selectable agents. You don't pick these directly.
 | `research-local` | deep | Local codebase exploration subagent |
 | `research-auto` | deep | Auto-selecting research subagent |
 
-## Legacy agents
-
-Previous-generation prompts, available as fallbacks.
-
-| Agent | Tier | Role |
-|-------|------|------|
-| `prime-legacy` | deep | Pre-ultra PRIME prompt |
-| `plan-legacy` | deep | Pre-ultra plan prompt |
-
 ## Autopilot-only
 
 Used by [`glrs loop`](/autopilot). Not user-selectable.
@@ -65,7 +56,6 @@ Automatic cost cascading — try cheap first, escalate on failure.
 | `build-cheap` | cheap | `build` |
 | `build-deep` | deep | `build` |
 | `plan-ultra-cheap` | cheap | `plan-ultra` |
-| `plan-legacy-cheap` | cheap | `plan-legacy` |
 
 ## Tiers
 
