@@ -679,7 +679,10 @@ export function createAgents(): Record<AgentName, AgentConfig> {
     }),
     [AGENTS.SCOPER]: agentFromPrompt(scoperPrompt, {
       description: "Interactive scoping agent. Runs an inquirer-driven wizard loop — asks short questions via assistant text, collects answers via inquirer, then writes scope.md. Use at the start of a new feature to align on intent, constraints, and acceptance criteria before planning.",
-      mode: "all",
+      // Non-primary: dispatched (by @prime / the scoper wizard / @mention), not
+      // shown in the interactive primary-agent picker. Programmatic agent
+      // selection (opencode `agent` field) works regardless of mode.
+      mode: "subagent",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
       permission: SCOPER_PERMISSIONS as AgentConfig["permission"],
@@ -718,7 +721,9 @@ export function createAgents(): Record<AgentName, AgentConfig> {
     // Standard plan — Opus planner with DAG output (promoted from former plan-ultra)
     [AGENTS.PLAN]: agentFromPrompt(planUltraPrompt, {
       description: "Interactive planner with execution DAG output. Opus planner — writes plans to the repo-shared plan directory, orchestrates gap analysis, adversarial review, and produces multi-file plans with explicit phase dependency graphs.",
-      mode: "all",
+      // Non-primary: @prime dispatches planning; users reach it via @plan. Not
+      // shown in the interactive primary-agent picker.
+      mode: "subagent",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.3,
       tools: { task: true },
@@ -735,7 +740,9 @@ export function createAgents(): Record<AgentName, AgentConfig> {
     }),
     [AGENTS.BUILD]: agentFromPrompt(buildPrompt, {
       description: "Executes a written plan. Runs tests inline, gates completion on QA review.",
-      mode: "all",
+      // Non-primary: @prime's Execute stage delegates here via the task tool;
+      // users reach it via @build. Not shown in the interactive primary picker.
+      mode: "subagent",
       model: "anthropic/claude-sonnet-4-6",
       temperature: 0.1,
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],

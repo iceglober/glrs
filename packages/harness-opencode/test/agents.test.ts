@@ -10,26 +10,21 @@ describe("createAgents", () => {
   const agents = createAgents();
 
   it("returns exactly 27 agents", () => {
-    // 20 agents total: prime (mode:primary), scoper (mode:primary),
-    // autopilot-prime (mode:subagent — PRIME variant with question tool
-    // denied for lights-out runs), plan + build + research (mode:all —
-    // primary AND task-tool-dispatchable), research-web + research-local
-    // + research-auto (mode:subagent — internal to @research's
-    // orchestration), plus 10 other pure subagents (spec-reviewer,
-    // code-reviewer, code-reviewer-thorough, plan-reviewer, code-searcher,
-    // gap-analyzer, architecture-advisor, docs-maintainer, lib-reader,
-    // agents-md-writer), plus debriefer (mode:subagent — post-run summary agent).
+    // Primary-capable (mode:primary or mode:all): prime, prime-heavy, designer,
+    // research. plan/build/scoper are mode:"subagent" — dispatched by @prime
+    // (or the scoper wizard) and directly @mentionable, but NOT in the primary
+    // picker. autopilot-prime/autopilot-fast and the research-* variants are
+    // also mode:"subagent", plus the pure-subagent reviewers/analyzers and
+    // debriefer.
     expect(Object.keys(agents).length).toBe(27);
   });
 
-  it("has 3 primary-capable agents besides plan (prime, scoper, build; mode=primary or mode=all)", () => {
-    // prime and scoper are mode:primary. build is mode:all (primary-invocable
-    // AND task-tool-dispatchable). plan is also mode:all but tested separately
-    // below — this test is the "always-primary-capable" cohort.
+  it("has primary-capable agents (prime, prime-heavy, designer, research; mode=primary or mode=all)", () => {
     for (const name of [
       AGENTS.PRIME,
-      AGENTS.SCOPER,
-      AGENTS.BUILD,
+      AGENTS.PRIME_HEAVY,
+      AGENTS.DESIGNER,
+      AGENTS.RESEARCH,
     ]) {
       expect(agents[name]).toBeDefined();
       expect(["primary", "all"]).toContain(agents[name]!.mode);
@@ -40,8 +35,13 @@ describe("createAgents", () => {
     expect(agents[AGENTS.SCOPER]).toBeDefined();
   });
 
-  it("scoper agent has all mode", () => {
-    expect(agents[AGENTS.SCOPER]!.mode).toBe("all");
+  it("scoper/plan/build are non-primary (mode:subagent)", () => {
+    // Demoted from mode:"all" to keep the primary-agent picker uncluttered.
+    // They stay dispatchable (by @prime, the scoper wizard, autopilot, or a
+    // direct @mention) — programmatic agent selection works regardless of mode.
+    for (const name of [AGENTS.SCOPER, AGENTS.PLAN, AGENTS.BUILD]) {
+      expect(agents[name]!.mode).toBe("subagent");
+    }
   });
 
   it("scoper agent disables question tool (wizard handles user input via inquirer)", () => {
@@ -52,16 +52,17 @@ describe("createAgents", () => {
     expect(tools?.question).toBe(false);
   });
 
-  it("has 19 subagent-capable agents (mode=subagent or mode=all)", () => {
+  it("has 20 subagent-capable agents (mode=subagent or mode=all)", () => {
     // "Subagent-capable" means the agent appears in other agents'
     // task-tool picker. mode: "subagent" and mode: "all" both qualify.
-    // plan, build, research have mode:"all" — user-invocable AND
-    // task-dispatchable. research-web, research-local, research-auto,
-    // autopilot-prime, autopilot-fast, and debriefer have mode:"subagent"
-    // — NOT user-selectable as primary. The other 10 are also mode:"subagent" only.
+    // research has mode:"all" — user-invocable AND task-dispatchable.
+    // plan/build/scoper are now mode:"subagent" (non-primary). research-web,
+    // research-local, research-auto, autopilot-prime, autopilot-fast, and
+    // debriefer are mode:"subagent" too, as are the pure-subagent reviewers.
     const subagentCapable = [
       AGENTS.PLAN,
       AGENTS.BUILD,
+      AGENTS.SCOPER,
       AGENTS.RESEARCH,
       AGENTS.RESEARCH_WEB,
       AGENTS.RESEARCH_LOCAL,
@@ -109,10 +110,8 @@ describe("createAgents", () => {
 
   it("build agent is task-tool-dispatchable (not mode:primary)", () => {
     // Same guard as @plan. PRIME's Execute stage delegates execution to
-    // @build via the task tool; @build must be reachable. mode:"all"
-    // also preserves top-level @build invocation for users who want
-    // to run against a plan directly. Reverting to mode:"primary"
-    // silently kills the Execute stage delegation path.
+    // @build via the task tool; @build must be reachable as a subagent.
+    // Reverting to mode:"primary" silently kills the Execute delegation path.
     expect(agents[AGENTS.BUILD]).toBeDefined();
     expect(agents[AGENTS.BUILD]!.mode).not.toBe("primary");
   });
