@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.2.0
+
+### Minor Changes
+
+- [#260](https://github.com/iceglober/glrs/pull/260) [`97f9637`](https://github.com/iceglober/glrs/commit/97f9637e8a01f41b3d71f65924c594862e1f49b3) Thanks [@iceglober](https://github.com/iceglober)! - feat(harness): internal dev presets for A/B-ing per-agent models/prompts
+
+  Adds `glrs harness dev-preset <id> -- <command>` (internal/dev — hidden from
+  `glrs harness --help`). A preset is a named set of per-agent `{model, prompt}`
+  overrides; the command exports it as `GLRS_AGENT_OVERRIDES` plus a
+  `GLRS_DEV_PRESET=<id>` tag and runs the given command, e.g.
+  `glrs harness dev-preset 1 -- opencode`.
+
+  Presets are bundled in the package and overridable/extendable via
+  `~/.glrs/dev-presets.json`. The cost-tracker and dispatch-tracker now stamp a
+  `preset` field into their JSONL logs, so spend, speed, and dispatch counts can
+  be correlated per preset by a downstream analytics tool.
+
 ## 3.1.0
 
 ## 3.0.1
