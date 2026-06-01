@@ -217,9 +217,18 @@ jobs:
       - name: Strip workspace refs from cli/package.json (prepare-publish)
         run: bun run --cwd packages/cli prepare-publish
 
-      # Fail fast if any workspace: ref survived the strip.
+      # Same strip for harness-opencode: it carries a private `@glrs-dev/agent-core`
+      # workspace:* devDependency that changesets does NOT rewrite (private pkg), so
+      # it would otherwise leak into the published manifest and break opencode's
+      # plugin-cache install (EUNSUPPORTEDPROTOCOL). Reuses the cli script via --pkg-path.
+      - name: Strip workspace refs from harness-opencode/package.json (prepare-publish)
+        run: bun run --cwd packages/cli prepare-publish -- --pkg-path ../harness-opencode/package.json
+
+      # Fail fast if any workspace: ref survived the strip (both published TS packages).
       - name: Verify cli/package.json is publishable
         run: bun run --cwd packages/cli verify-publishable
+      - name: Verify harness-opencode/package.json is publishable
+        run: bun run --cwd packages/cli verify-publishable -- --pkg-path ../harness-opencode/package.json
 
       # Publish all packages. NPM_CONFIG_DRY_RUN=true when workflow_dispatch dry_run is true.
       - name: Publish to npm
@@ -231,11 +240,14 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || '' }}
 
-      # Restore cli/package.json from backup. Runs even if publish fails so the
-      # tracked file is never left in the mutated state.
+      # Restore both package.jsons from backup. Runs even if publish fails so the
+      # tracked files are never left in the mutated state.
       - name: Restore cli/package.json
         if: always()
         run: bun run --cwd packages/cli restore-publish
+      - name: Restore harness-opencode/package.json
+        if: always()
+        run: bun run --cwd packages/cli restore-publish -- --pkg-path ../harness-opencode/package.json
 
       # Create a GitHub release for the main package and attach platform
       # binaries as release assets. Auto-upgrade in glrs-assume (update_check.rs)
