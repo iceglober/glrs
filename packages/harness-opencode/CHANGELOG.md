@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.3.1
+
+### Patch Changes
+
+- [#264](https://github.com/iceglober/glrs/pull/264) [`f48ef1c`](https://github.com/iceglober/glrs/commit/f48ef1c27a6c76f5a3d4d422190b7f5d6297d5c4) Thanks [@iceglober](https://github.com/iceglober)! - fix(harness): plugin failed to load in opencode ("Cannot find module '@opencode-ai/plugin'")
+
+  The published plugin's `dist/index.js` did runtime imports of `@opencode-ai/plugin`
+  (the `tool` helper used by the custom tools) and `zod`, both left external. opencode
+  installs each plugin into its own cache, but a `@glrs-dev/agent-core: "workspace:*"`
+  spec leaking into the published `devDependencies` made that install abort
+  (`EUNSUPPORTEDPROTOCOL workspace:`), so no deps — including `zod` — were present at
+  load time. The whole harness then failed to load: no agents, commands, or MCPs.
+
+  Fix: bundle `@opencode-ai/plugin` and `zod` into the plugin entry (tsup `noExternal`),
+  so `dist/index.js` has zero third-party runtime dependencies and loads even when
+  opencode's cache dep-install fails. (`@opencode-ai/sdk` stays external — every import
+  of it is type-only and erased at build.)
+
+  This makes the published plugin self-contained and robust to the dep-install failure;
+  the `workspace:*` leak is now harmless to loading. (Removing the leak itself requires a
+  publish-time manifest fix — `agent-core` is a build-time-only workspace dep — tracked
+  separately so it doesn't risk this hotfix.)
+
 ## 3.3.0
 
 ### Minor Changes
