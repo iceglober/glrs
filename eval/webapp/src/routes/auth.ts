@@ -4,88 +4,61 @@ import { hashPassword, verifyPassword, generateToken } from "../auth.js";
 
 export const authRouter = Router();
 
-// POST /api/auth/register
 authRouter.post("/register", async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
 
-  if (!name || !email || !password) {
-    res.status(400).json({ error: "name, email, and password are required" });
+  if (!password || password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
     return;
   }
 
-  if (password.length < 8) {
-    res.status(400).json({ error: "password must be at least 8 characters" });
-    return;
-  }
-
-  const passwordHash = hashPassword(password);
+  const passwordHash = await hashPassword(password);
 
   try {
     const { rows } = await pool.query(
-      "INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email, role, created_at",
-      [name, email, passwordHash],
+      "INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role",
+      [name, email, passwordHash, "user"]
     );
-
     const user = rows[0];
-    const token = generateToken(user.id, user.role);
-
-    // Insert session
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await pool.query(
-      "INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, $3)",
-      [user.id, token, expiresAt],
-    );
-
+    const token = generateToken(user.id);
     res.status(201).json({ user, token });
-  } catch (err: unknown) {
-    if (
-      err instanceof Error &&
-      err.message.includes("duplicate key") &&
-      err.message.includes("email")
-    ) {
-      res.status(409).json({ error: "email already registered" });
+  } catch (err: any) {
+    if (err.code === "23505") {
+      res.status(409).json({ error: "Email already registered" });
       return;
     }
     throw err;
   }
 });
 
-// POST /api/auth/login
 authRouter.post("/login", async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
-  if (!email || !password) {
-    res.status(400).json({ error: "email and password are required" });
-    return;
-  }
-
   const { rows } = await pool.query(
     "SELECT id, name, email, role, password_hash FROM users WHERE email = $1",
-    [email],
+    [email]
   );
 
   if (rows.length === 0) {
-    res.status(401).json({ error: "invalid credentials" });
+    res.status(401).json({ error: "Invalid credentials" });
     return;
   }
 
   const user = rows[0];
+  const valid = await verifyPassword(password, user.password_hash);
 
-  if (!user.password_hash || !verifyPassword(password, user.password_hash)) {
-    res.status(401).json({ error: "invalid credentials" });
+  if (!valid) {
+    res.status(401).json({ error: "Invalid credentials" });
     return;
   }
 
-  const token = generateToken(user.id, user.role);
-
-  // Insert session
+  const token = generateToken(user.id);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
   await pool.query(
     "INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, $3)",
-    [user.id, token, expiresAt],
+    [user.id, token, expiresAt]
   );
 
-  // Don't return password_hash
-  const { password_hash: _, ...safeUser } = user;
-  res.json({ user: safeUser, token });
+  res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role }, token });
 });

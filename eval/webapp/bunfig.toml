@@ -1,5 +1,0 @@
-[test]
-# Patch pool.end() before any test file runs so that auth.test.ts and
-# auth-protected.test.ts cannot terminate the shared pg.Pool singleton
-# for files that are still in flight.
-preload = ["./test/preload.ts"]
