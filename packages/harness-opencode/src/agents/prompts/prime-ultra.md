@@ -225,14 +225,34 @@ For `@build` and `@plan` dispatches in the wave DAG, three active tiers:
 - A cascade failure in this dispatch would trigger an expensive downstream wave of re-work
 - Previous cheap-tier attempt returned BLOCKED, FAIL_SPEC, or empty/truncated output
 
-**Escalation to deep tier** — re-dispatch the SAME work to `@build-deep` when:
+**Escalation to deep tier** — dispatch to `@build-deep` (Opus) when ANY of:
+
+Reactive (after failure):
 - `@build` returns `BLOCKED` with a capability signal
 - `@spec-reviewer` returns `[FAIL_SPEC]` after a standard-tier attempt
 - `@code-reviewer` returns `[LOOP-TO-PLAN]` → escalate the next @plan dispatch to `@plan-ultra` (Opus)
+- Repeated-failure rule triggers (see Assess supplements)
 
-**Do NOT escalate for:**
-- Real blockers (missing dependency, broken environment, design ambiguity)
+Proactive (before first attempt) — dispatch directly to `@build-deep`, skipping cheap and standard tiers, when the task requires **reasoning depth that Sonnet predictably lacks**:
+- **Concurrency / race conditions** — code that manages shared mutable state across threads, processes, or async boundaries. Subtle interleavings produce bugs that Sonnet generates plausible-but-wrong fixes for.
+- **Deep dependency chains** — fixing or mocking code where the root cause is 3+ layers of abstraction away from the symptom (e.g., `functionA` → `wrapperB` → `db.transaction` — the fix isn't in `functionA`).
+- **State machine / protocol logic** — code that must maintain invariants across a sequence of transitions where violating an invariant causes silent corruption, not an error.
+- **Correctness proofs** — changes where "it works in my test" is insufficient — you need to reason about why it's correct in all cases (crypto, financial calculations, permission checks with edge cases).
+
+**The reasoning-depth test (mandatory before every @build dispatch):**
+
+Before dispatching, ask yourself: *"Can I articulate the root cause and the fix in one sentence?"*
+- **Yes, clearly** → dispatch at the appropriate cost tier (cheap/standard)
+- **Yes, but I'm pattern-matching, not reasoning** → dispatch at standard tier. If it fails once, escalate to deep.
+- **No — I'd need to read more code to understand why this happens** → dispatch to `@build-deep`. You are about to guess, and guessing burns cycles.
+
+This test is fast (one sentence of thought) and catches the failure mode from the delegate-more session: the agent kept trying mock configurations without understanding why `db.transaction` was being called in the first place.
+
+**Do NOT escalate to deep for:**
+- Real blockers (missing dependency, broken environment, design ambiguity) — these need user input, not a smarter model
 - Scope expansion requests
+- Straightforward multi-file changes where each step is individually clear
+- Any task where you can state the root cause and the fix confidently
 
 **Wave-aware escalation:** escalate failed lanes individually to `@build-deep` — DON'T escalate the whole wave just because one lane failed.
 
@@ -402,11 +422,7 @@ When you attempt a fix and CI/tests produce the **same error** (same error messa
 
 1. **First retry:** acceptable. Your fix might have been incomplete.
 2. **Second retry with same error:** you are stuck. **STOP fixing inline.** You lack the reasoning depth to solve this.
-3. **Escalate to `@build-deep` (Opus):** re-dispatch the failing unit to `@build-deep` with full context:
-   - The original error
-   - What you tried (all attempts)
-   - Why each attempt failed
-   - The relevant source files
+3. **Escalate to `@build-deep` (Opus)** with the deep-dispatch context block (see below).
 
 **Detection:** two consecutive CI runs that produce the same error class (same exception type + same call site OR same test name failing) after two different fix attempts = stuck. Don't wait for a third.
 
@@ -418,8 +434,28 @@ When you attempt a fix and CI/tests produce the **same error** (same error messa
 - Grep for more context to feed into another Sonnet attempt
 
 **DO:**
-- Package everything you learned into the `@build-deep` prompt
+- Package everything you learned into the `@build-deep` prompt using the deep-dispatch context block
 - Let Opus read the full dependency chain and solve it in one pass
+
+### Deep-dispatch context block (mandatory for every @build-deep call)
+
+When dispatching to `@build-deep`, include ALL of these in the prompt:
+
+```
+## Deep dispatch context
+Escalation reason: [proactive: <problem-class> | reactive: <N> failed attempts]
+Symptom: <the error, failing test, or incorrect behavior>
+Root cause (if known): <what you traced so far, or "not yet identified">
+Call chain: <A → B → C → root — the dependency path from symptom to cause>
+Prior attempts: <what was tried and why it didn't work — omit if proactive>
+Relevant files: <file paths the deep model needs to read>
+Hypothesis: <your best guess at the fix, if you have one>
+Constraint: <what must NOT change, what invariant must hold>
+```
+
+**Why this matters:** Opus is expensive. A well-packaged dispatch succeeds in one pass. A vague dispatch ("fix this test") forces Opus to spend tokens rediscovering context you already have. The context block is the difference between a $0.50 Opus call and a $2.00 one.
+
+**For proactive escalation** (no prior failures): omit "Prior attempts." Include your reasoning for why this needs deeper reasoning — the problem class, the specific complexity, what makes cheap/standard insufficient.
 
 ## Resolve supplements
 
