@@ -98,8 +98,18 @@ if (sub === "autopilot") {
 
 // Handle harness subcommand
 if (sub === "harness") {
+  const harnessArgs = args.slice(1);
+
+  // Internal/dev: `glrs harness dev-preset <id> -- <command>`. Dispatched here
+  // (not via cmd-ts) so it stays out of `glrs harness --help`.
+  if (harnessArgs[0] === "dev-preset") {
+    const { runDevPreset } = await import("./commands/harness-dev-preset.js");
+    await runDevPreset(harnessArgs.slice(1));
+    process.exit(0);
+  }
+
   const { harnessCmd } = await import("./commands/harness.js");
-  await run(harnessCmd, args.slice(1));
+  await run(harnessCmd, harnessArgs);
   process.exit(0);
 }
 

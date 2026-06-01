@@ -64,6 +64,24 @@ glrs/
 
 9. **Philosophy.** This is meant to feel inevitable, not clever. If you're tempted to add a "cool" feature, ask: does it reduce the friction of the published packages? If no, leave it out.
 
+## Dev presets (internal, not user-facing)
+
+`glrs harness dev-preset <id> -- <command>` runs a coding tool under a named set
+of per-agent model/prompt overrides, for A/B experiments. Hidden by design —
+dispatched directly in `cli.ts`, NOT registered in the cmd-ts `harness`
+subcommands map, so it never appears in `glrs harness --help`. Don't add it to
+user docs.
+
+- Presets: bundled `packages/cli/src/dev-presets.json`, overridable/extendable
+  via `~/.glrs/dev-presets.json` (or `$GLRS_DEV_PRESETS_FILE`). A preset is a
+  `{id, label, agents: {<agent>: {model?, prompt?}}}` bundle.
+- Mechanism: the command exports `GLRS_AGENT_OVERRIDES` (the override channel
+  `config-hook.ts` already reads) and `GLRS_DEV_PRESET=<id>`, then spawns the
+  command. `prompt` is a repo-relative path (same rules as `applyAgentOverrides`).
+- Analytics: the cost-tracker (`costs.jsonl`) and dispatch-tracker
+  (`dispatches.jsonl`) stamp a `preset` field from `GLRS_DEV_PRESET`, so spend
+  and dispatches can be grouped by preset and correlated with outcomes.
+
 ## Per-directory AGENTS.md
 
 - `packages/harness-opencode/AGENTS.md` — OpenCode plugin invariants (most complex set)

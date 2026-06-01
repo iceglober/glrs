@@ -62,6 +62,8 @@ type JsonlLine = {
   costTotal: number;
   tokensTotal: Tokens;
   finalized: boolean;
+  /** Active dev preset id (GLRS_DEV_PRESET), present only during preset runs. */
+  preset?: string;
 };
 
 type ModelBucket = { cost: number; tokens: Tokens; messages: number };
@@ -189,6 +191,10 @@ const plugin: Plugin = async () => {
   const dataDir = resolveDataDir();
   const jsonlPath = path.join(dataDir, "costs.jsonl");
   const rollupPath = path.join(dataDir, "costs.json");
+
+  // Tag each event with the active dev preset (if any) so analytics can
+  // correlate cost/speed with a given model/prompt configuration.
+  const devPreset = process.env["GLRS_DEV_PRESET"] || undefined;
 
   // ---- in-memory state ----
   // Keyed by messageID. Holds the last-seen cumulative values so we can
@@ -513,6 +519,7 @@ const plugin: Plugin = async () => {
         costTotal: costNow,
         tokensTotal: tokensNow,
         finalized,
+        ...(devPreset ? { preset: devPreset } : {}),
       };
       await appendJsonl(line);
 
