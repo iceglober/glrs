@@ -38,11 +38,11 @@ The default workflow is [SPEAR](https://www.edge.ceo/p/introducing-spear-the-man
 5. [`@code-reviewer`](/harness/agents) checks the output
 6. [`/ship`](/harness/commands) squashes, pushes, and opens a PR
 
-For complex tasks, [`prime-ultra`](/harness/agents) decomposes into dependency waves and dispatches them in parallel.
+For tasks that need heavyweight orchestration, use [`prime-heavy`](/harness/agents) (Opus).
 
 ## Pages
 
-- [Agents](/harness/agents) — full reference of all 28 agents
+- [Agents](/harness/agents) — full reference of all 27 agents
 - [Commands](/harness/commands) — the 7 slash commands
 - [Tools](/harness/tools) — the 5 custom tools
 - [Configuration](/harness/config) — model overrides, MCP servers, environment variables

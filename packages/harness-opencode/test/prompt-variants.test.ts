@@ -46,8 +46,8 @@ describe("AGENT_TIERS", () => {
     expect(AGENT_TIERS["lib-reader"]).toBe("mid");
   });
 
-  it("assigns prime to deep tier", () => {
-    expect(AGENT_TIERS["prime"]).toBe("deep");
+  it("assigns prime to mid-execute tier", () => {
+    expect(AGENT_TIERS["prime"]).toBe("mid-execute");
   });
 
   it("assigns code-searcher to fast tier", () => {

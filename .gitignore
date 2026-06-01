@@ -43,3 +43,4 @@ docs-site/dist/
 *.tfstate.*
 *.tfplan
 Pulumi.*.yaml.bak
+.lab/

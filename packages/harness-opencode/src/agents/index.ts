@@ -656,16 +656,13 @@ export type ModelTier = "deep" | "mid" | "mid-execute" | "autopilot-execute" | "
  */
 export const AGENT_TIERS: Record<string, ModelTier> = {
   // Standard series — Opus orchestration (promoted from former ultra)
-  prime: "deep",
+  prime: "mid-execute",
   plan: "deep",
   // Ultra series — cost-optimized (Sonnet orchestration, Opus for planning only)
-  "prime-ultra": "mid-execute",
+  "prime-heavy": "deep",
   "plan-ultra": "deep",
   "plan-ultra-cheap": "cheap",
   // Legacy series — non-DAG originals (kept for fallback)
-  "prime-legacy": "deep",
-  "plan-legacy": "deep",
-  "plan-legacy-cheap": "cheap",
   // Shared agents
   scoper: "deep",
   "autopilot-prime": "deep",
@@ -695,27 +692,18 @@ export const AGENT_TIERS: Record<string, ModelTier> = {
 
 export function createAgents(): Record<string, AgentConfig> {
   return {
-    // Primary agents — standard series (Opus orchestration, wave-based DAG)
+    // Default agent — Sonnet orchestrator, delegates deep reasoning to Opus
     prime: agentFromPrompt(primeUltraPrompt, {
-      description: "End-to-end PRIME with wave-based DAG execution. Opus orchestrator — decomposes work into dependency waves and dispatches each wave in parallel. Default primary agent.",
-      mode: "primary",
-      model: "anthropic/claude-opus-4-7",
-      temperature: 0.2,
-      tools: { task: true },
-      permission: PRIME_PERMISSIONS as AgentConfig["permission"],
-    }),
-    // Ultra series — cost-optimized (Sonnet orchestration, delegates planning to Opus)
-    "prime-ultra": agentFromPrompt(primeUltraPrompt, {
-      description: "Cost-optimized PRIME. Sonnet orchestrator with wave-based DAG execution — same prompt as standard prime but runs on Sonnet (~5x cheaper). Delegates planning to @plan-ultra (Opus) and execution to @build-cheap (GLM). Use for cost-sensitive workflows where orchestration is rule-following, not reasoning.",
+      description: "PRIME with wave-based DAG execution. Sonnet orchestrator — delegates planning to @plan-ultra (Opus) and hard problems to @build-deep (Opus). Default primary agent.",
       mode: "primary",
       model: "anthropic/claude-sonnet-4-6",
       temperature: 0.2,
       tools: { task: true },
       permission: PRIME_PERMISSIONS as AgentConfig["permission"],
     }),
-    // Legacy series — non-DAG originals (fallback)
-    "prime-legacy": agentFromPrompt(primePrompt, {
-      description: "Legacy PRIME without wave-based DAG execution. Kept as fallback for workflows that don't need parallel wave dispatch.",
+    // Opus variant — for when you want Opus orchestration directly
+    "prime-heavy": agentFromPrompt(primeUltraPrompt, {
+      description: "PRIME on Opus. Same prompt as standard prime but runs on Opus for direct heavyweight orchestration. Use when the task itself requires deep reasoning at the orchestration level, not just at the build level.",
       mode: "primary",
       model: "anthropic/claude-opus-4-7",
       temperature: 0.2,
@@ -778,15 +766,6 @@ export function createAgents(): Record<string, AgentConfig> {
       tools: { task: true },
       permission: PLAN_PERMISSIONS as AgentConfig["permission"],
     }),
-    // Legacy plan — non-DAG original
-    "plan-legacy": agentFromPrompt(planPrompt, {
-      description: "Legacy planner without DAG output. Kept as fallback.",
-      mode: "all",
-      model: "anthropic/claude-opus-4-7",
-      temperature: 0.3,
-      tools: { task: true },
-      permission: PLAN_PERMISSIONS as AgentConfig["permission"],
-    }),
     build: agentFromPrompt(buildPrompt, {
       description: "Executes a written plan. Runs tests inline, gates completion on QA review.",
       mode: "all",
@@ -817,15 +796,6 @@ export function createAgents(): Record<string, AgentConfig> {
       tools: { task: true },
       permission: PLAN_PERMISSIONS as AgentConfig["permission"],
     }),
-    "plan-legacy-cheap": agentFromPrompt(planPrompt, {
-      description: "Cheap-tier legacy planner. Non-DAG prompt on GLM. Used by prime-legacy for cost-cascading.",
-      mode: "subagent",
-      model: "amazon-bedrock/zai.glm-4.7-flash",
-      temperature: 0.3,
-      tools: { task: true },
-      permission: PLAN_PERMISSIONS as AgentConfig["permission"],
-    }),
-
     // Subagents — model/mode/description from frontmatter, permissions
     // via overrides (see permission blocks above). docs-maintainer has no
     // frontmatter permission declaration and keeps that behavior.
