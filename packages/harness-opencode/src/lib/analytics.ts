@@ -30,6 +30,11 @@ import { Analytics, type EventProperties } from "@counted/sdk";
 // can only POST events, never read. COUNTED_KEY in the environment overrides it.
 const DEFAULT_PROJECT_KEY = "ck_94C4F7AE8481D5C51695";
 
+// Counted ingest host. The SDK defaults to `https://counted.dev`, which has no
+// DNS record — so events posted there silently vanish. The live ingest host is
+// `https://app.counted.dev`. COUNTED_HOST overrides it.
+const DEFAULT_HOST = "https://app.counted.dev";
+
 let client: Analytics | null = null;
 let initialized = false;
 let exitHookInstalled = false;
@@ -43,6 +48,11 @@ function projectKey(): string {
   return fromEnv && fromEnv.trim() ? fromEnv.trim() : DEFAULT_PROJECT_KEY;
 }
 
+function host(): string {
+  const fromEnv = process.env["COUNTED_HOST"];
+  return fromEnv && fromEnv.trim() ? fromEnv.trim() : DEFAULT_HOST;
+}
+
 function analyticsEnabled(): boolean {
   if (isTrue(process.env["DO_NOT_TRACK"])) return false;
   if (isTrue(process.env["GLRS_NO_ANALYTICS"])) return false;
@@ -54,7 +64,7 @@ function getClient(): Analytics | null {
   initialized = true;
   if (!analyticsEnabled()) return (client = null);
   try {
-    client = new Analytics({ projectKey: projectKey() });
+    client = new Analytics({ projectKey: projectKey(), host: host() });
     // The SDK starts a 30s flush interval in its constructor. Unref it so it can
     // never keep a finished process alive; while the harness session is running
     // the loop is alive for other reasons, so the timer still fires and delivers
@@ -114,4 +124,4 @@ export async function flushAnalytics(timeoutMs = 1500): Promise<void> {
 }
 
 // ---- test seam -------------------------------------------------------------
-export const __test__ = { isTrue, analyticsEnabled, projectKey, DEFAULT_PROJECT_KEY };
+export const __test__ = { isTrue, analyticsEnabled, projectKey, host, DEFAULT_PROJECT_KEY, DEFAULT_HOST };

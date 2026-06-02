@@ -22,6 +22,11 @@ import { Analytics, type EventProperties } from "@counted/sdk";
 // installs; COUNTED_KEY in the environment overrides it.
 const DEFAULT_PROJECT_KEY = "ck_94C4F7AE8481D5C51695";
 
+// Counted ingest host. The SDK defaults to `https://counted.dev`, which has no
+// DNS record — so events posted there silently vanish. The live ingest host is
+// `https://app.counted.dev`. COUNTED_HOST overrides it.
+const DEFAULT_HOST = "https://app.counted.dev";
+
 let client: Analytics | null = null;
 let initialized = false;
 
@@ -32,6 +37,11 @@ function isTrue(value: string | undefined): boolean {
 function projectKey(): string {
   const fromEnv = process.env["COUNTED_KEY"];
   return fromEnv && fromEnv.trim() ? fromEnv.trim() : DEFAULT_PROJECT_KEY;
+}
+
+function host(): string {
+  const fromEnv = process.env["COUNTED_HOST"];
+  return fromEnv && fromEnv.trim() ? fromEnv.trim() : DEFAULT_HOST;
 }
 
 function analyticsEnabled(): boolean {
@@ -45,7 +55,7 @@ function getClient(): Analytics | null {
   initialized = true;
   if (!analyticsEnabled()) return (client = null);
   try {
-    client = new Analytics({ projectKey: projectKey() });
+    client = new Analytics({ projectKey: projectKey(), host: host() });
     // The SDK starts a 30s flush interval in its constructor. For a short-lived
     // CLI that timer would keep the event loop alive (delaying natural exit by
     // up to 30s). Unref it so it never holds the process open; flushAnalytics()
