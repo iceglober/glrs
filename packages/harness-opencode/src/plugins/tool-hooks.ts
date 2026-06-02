@@ -65,6 +65,13 @@ import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 
 import { parseTscOutput, dedupeAndCap, formatRow } from "../tools/tsc_check.js";
+import { track } from "../lib/analytics.js";
+import {
+  inferToolOk,
+  buildToolUsedProps,
+  buildVerifyProps,
+  extractSkillName,
+} from "../lib/telemetry-events.js";
 
 const exec = promisify(execFileCb);
 
@@ -468,6 +475,13 @@ function applyBackpressure(
 
 // ---- Verification loop ----------------------------------------------------
 
+/**
+ * Run `tsc --noEmit` after a TS/JS edit and append any new errors in the edited
+ * file to the tool output. Returns the number of errors found in that file
+ * (0 = clean), or `null` when the check did not actually run (disabled, not a
+ * TS/JS file, debounced, timed out, or errored) — the caller uses this to emit
+ * the `post_edit_verify` telemetry event only when a check truly completed.
+ */
 async function runPostEditVerify(
   cfg: ToolHooksConfig["verifyLoop"],
   client: OpencodeClient,
@@ -475,15 +489,15 @@ async function runPostEditVerify(
   sessionID: string,
   filePath: string,
   output: { output: string },
-): Promise<void> {
-  if (!cfg.enabled) return;
+): Promise<number | null> {
+  if (!cfg.enabled) return null;
 
   const ext = path.extname(filePath).toLowerCase();
-  if (!TS_EXTENSIONS.has(ext)) return;
+  if (!TS_EXTENSIONS.has(ext)) return null;
 
   // Debounce: skip if we verified < 2s ago
   const now = Date.now();
-  if (now - sess.lastVerifyTs < 2000) return;
+  if (now - sess.lastVerifyTs < 2000) return null;
   sess.lastVerifyTs = now;
 
   const cwd = await resolveSessionDir(client, sess, sessionID);
@@ -508,13 +522,13 @@ async function runPostEditVerify(
       if (stderr) raw += `\n${String(stderr)}`;
     } catch (err) {
       const e = err as { stdout?: string; killed?: boolean; code?: string };
-      if (e.killed || e.code === "ABORT_ERR") return; // timeout — skip silently
+      if (e.killed || e.code === "ABORT_ERR") return null; // timeout — skip silently
       raw = String(e.stdout || "");
     } finally {
       clearTimeout(timer);
     }
 
-    if (!raw.trim()) return; // clean
+    if (!raw.trim()) return 0; // clean
 
     const errors = parseTscOutput(raw);
     // Filter to only errors in the edited file
@@ -526,7 +540,7 @@ async function runPostEditVerify(
       return path.normalize(errPath) === path.normalize(normPath);
     });
 
-    if (fileErrors.length === 0) return; // clean for this file
+    if (fileErrors.length === 0) return 0; // clean for this file
 
     const { rows } = dedupeAndCap(fileErrors, VERIFY_MAX_ERRORS);
     const lines = rows.map(formatRow);
@@ -535,9 +549,11 @@ async function runPostEditVerify(
       `\n\n--- POST-EDIT DIAGNOSTICS (${fileErrors.length} error${fileErrors.length !== 1 ? "s" : ""} in ${path.basename(filePath)}) ---\n` +
       lines.join("\n") +
       `\n--- Fix these before proceeding ---`;
+    return fileErrors.length;
   } catch {
     // Any unexpected error — skip verification silently.
     // Never let verification break the edit operation.
+    return null;
   }
 }
 
@@ -599,6 +615,11 @@ let storedPluginOptions: PluginOptions | undefined;
 
 const plugin: Plugin = async ({ client }, options) => {
   storedPluginOptions = options;
+
+  // Tag telemetry with the active dev preset (if any) so analytics can
+  // correlate tool/skill outcomes with a given model/prompt configuration.
+  const devPreset = process.env["GLRS_DEV_PRESET"] || undefined;
+
   return {
     config: async (config: Config) => {
       pluginConfig = resolveConfig(config, storedPluginOptions);
@@ -612,6 +633,24 @@ const plugin: Plugin = async ({ client }, options) => {
       const sess = getSession(input.sessionID);
 
       const toolName = input.tool;
+
+      // Telemetry: one `tool_used` event per call, with best-effort success and
+      // (for skill invocations) the skill name. Read the success signal from the
+      // ORIGINAL output, before dedup/backpressure below mutate it. Buffered and
+      // fire-and-forget — never blocks or throws.
+      track(
+        "tool_used",
+        buildToolUsedProps({
+          tool: toolName,
+          ok: inferToolOk(
+            toolName,
+            output.output,
+            (output as { metadata?: unknown }).metadata,
+          ),
+          skill: extractSkillName(toolName, input.args),
+          ...(devPreset ? { preset: devPreset } : {}),
+        }),
+      );
 
       // 1. Read dedup (runs before backpressure — dedup replaces the
       //    entire output, so backpressure on the replacement is moot)
@@ -628,7 +667,7 @@ const plugin: Plugin = async ({ client }, options) => {
           // Loop detection (sync, cheap)
           checkEditLoop(cfg.loopDetection, sess, fp, output);
           // Verification loop (async, may append diagnostics)
-          await runPostEditVerify(
+          const verifyErrors = await runPostEditVerify(
             cfg.verifyLoop,
             client as OpencodeClient,
             sess,
@@ -636,6 +675,17 @@ const plugin: Plugin = async ({ client }, options) => {
             fp,
             output,
           );
+          // Telemetry: emit only when a tsc check actually ran (non-null).
+          if (verifyErrors !== null) {
+            track(
+              "post_edit_verify",
+              buildVerifyProps({
+                errorCount: verifyErrors,
+                tool: toolName,
+                ...(devPreset ? { preset: devPreset } : {}),
+              }),
+            );
+          }
         }
       }
 
