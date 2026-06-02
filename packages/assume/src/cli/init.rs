@@ -234,10 +234,25 @@ fn is_installed(id: &str) -> bool {
     cfg_present || dir_present || binary_on_path(bin)
 }
 
+/// OpenCode's global config file: `$XDG_CONFIG_HOME/opencode/opencode.json`,
+/// with `XDG_CONFIG_HOME` defaulting to `~/.config` on EVERY platform — macOS
+/// included. This matches OpenCode's own resolution (and the harness installer).
+///
+/// `dirs::config_dir()` is wrong here: on macOS it returns
+/// `~/Library/Application Support`, where OpenCode never looks — so the gsa MCP
+/// entry would be written to a file the tool ignores.
+fn opencode_config_path() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .or_else(|| dirs::home_dir().map(|h| h.join(".config")))?;
+    Some(base.join("opencode").join("opencode.json"))
+}
+
 /// The JSON file that holds the tool's MCP server map.
 fn mcp_config_path(id: &str) -> Option<PathBuf> {
     match id {
-        "opencode" => Some(dirs::config_dir()?.join("opencode/opencode.json")),
+        "opencode" => opencode_config_path(),
         "claude-code" => Some(dirs::home_dir()?.join(".claude.json")),
         "gemini" => Some(dirs::home_dir()?.join(".gemini/settings.json")),
         "cursor" => Some(dirs::home_dir()?.join(".cursor/mcp.json")),
@@ -380,6 +395,24 @@ mod tests {
         for t in TOOLS {
             assert!(mcp_config_path(t.id).is_some(), "no path for {}", t.id);
         }
+    }
+
+    #[test]
+    fn opencode_path_is_xdg_not_macos_app_support() {
+        // Regression guard: OpenCode reads $XDG_CONFIG_HOME/opencode (default
+        // ~/.config/opencode) on every platform. `dirs::config_dir()` would put
+        // this under ~/Library/Application Support on macOS, where OpenCode never
+        // looks — so the gsa MCP entry would be written to an ignored file.
+        let p = mcp_config_path("opencode").expect("opencode path");
+        let s = p.to_string_lossy().replace('\\', "/");
+        assert!(
+            s.ends_with("opencode/opencode.json"),
+            "unexpected opencode config path: {s}"
+        );
+        assert!(
+            !s.contains("Application Support"),
+            "opencode config must not live under macOS 'Application Support': {s}"
+        );
     }
 
     #[test]
