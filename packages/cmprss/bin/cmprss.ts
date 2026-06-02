@@ -3,9 +3,13 @@
  * cmprss CLI entry point.
  *
  * v0 surface:
- *   cmprss wrap <agent> [--backend bedrock] [--region us-east-1] [--model sonnet] [--port 8787] [-- <agent-args>]
+ *   cmprss wrap <agent> [--backend bedrock] [--region us-east-1] [--port 8787] [-- <agent-args>]
  *   cmprss --version
  *   cmprss --help
+ *
+ * cmprss is model-agnostic: it does not pick a model. The wrapped agent
+ * (claude-code, opencode, ...) sends whatever model it wants; the proxy maps
+ * each request to the right Bedrock inference profile for the region.
  */
 
 import { runWrap } from "../src/cli/wrap.js";
@@ -25,25 +29,31 @@ AGENTS (v0)
 FLAGS
   --backend <id>      bedrock (default; only option in v0)
   --region <region>   AWS region (default: AWS_REGION, AWS_DEFAULT_REGION, or us-east-1)
-  --model <id>        sonnet | haiku | opus, or a full Bedrock inference profile ID
   --port <n>          proxy port (default: 8787)
   --help, -h          show this help
   --version, -V       show version
 
 EXAMPLES
   cmprss wrap claude
-  cmprss wrap claude --region us-west-2 --model haiku
-  cmprss wrap opencode --model sonnet
-  cmprss wrap opencode -- /path/to/project          # extra args pass through
+  cmprss wrap claude --region us-west-2
+  cmprss wrap opencode
+  cmprss wrap opencode -- /path/to/project        # extra args pass through
+
+MODELS
+  cmprss does not pick a model — the wrapped agent does. Each request from
+  the agent carries its own model name; the proxy maps anthropic-API names
+  (e.g. claude-sonnet-4-5-20250929) to the equivalent Bedrock inference
+  profile for the configured region. Switch models in the agent's UI as
+  normal — every request gets mapped independently.
+
+  Caveat: only traffic that the agent routes through its *anthropic* provider
+  reaches cmprss. opencode's amazon-bedrock/*, openai/*, google-vertex/*
+  providers go direct and bypass this proxy.
 
 NOTES
   v0.1 is passthrough only — compression lands in v0.2. The proxy speaks
   Anthropic Messages on /v1/messages and translates to Bedrock Converse
   (SigV4 via AWS SDK).
-
-  opencode's amazon-bedrock/* provider talks to Bedrock directly via AWS SDK
-  and bypasses cmprss. While wrapped, use anthropic/* models — the wrap
-  injects --model anthropic/<id> by default for this reason.
 `;
 
 async function main(): Promise<number> {
@@ -79,7 +89,6 @@ function parseWrap(args: string[]):
       agent: string;
       backend: "bedrock";
       region: string;
-      model: string;
       port: number;
       passthroughArgs: string[];
     }
@@ -88,7 +97,6 @@ function parseWrap(args: string[]):
   let backend: "bedrock" = "bedrock";
   let region =
     process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "us-east-1";
-  let model = "sonnet";
   let port = 8787;
   const passthrough: string[] = [];
   let inPassthrough = false;
@@ -122,14 +130,6 @@ function parseWrap(args: string[]):
       }
       continue;
     }
-    if (a === "--model") {
-      model = args[++i] ?? "";
-      if (!model) {
-        process.stderr.write("cmprss: --model requires a value\n");
-        return null;
-      }
-      continue;
-    }
     if (a === "--port") {
       const v = Number(args[++i]);
       if (!Number.isFinite(v) || v <= 0 || v >= 65536) {
@@ -159,7 +159,6 @@ function parseWrap(args: string[]):
     agent,
     backend,
     region,
-    model,
     port,
     passthroughArgs: passthrough,
   };

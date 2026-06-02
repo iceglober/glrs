@@ -13,6 +13,10 @@ import type {
 } from "@aws-sdk/client-bedrock-runtime";
 
 import type { ChatRequest, Provider, StreamEvent } from "../types.js";
+import {
+  bedrockFromAnthropic,
+  ModelNotFound,
+} from "../../aws/model-resolver.js";
 import { fromConverseStream, toConverseInput } from "./translate.js";
 
 export interface BedrockProviderOptions {
@@ -23,9 +27,14 @@ export interface BedrockProviderOptions {
    */
   credentials?: BedrockRuntimeClientConfig["credentials"];
   /**
-   * Map the IR-level `model` string to the Bedrock model ID / inference profile
-   * ARN actually invoked. Short names like "sonnet" are resolved upstream
-   * (see src/aws/model-resolver.ts); this hook lets callers override late.
+   * Per-request model translator. The proxy calls this with the model name
+   * the harness sent (typically an anthropic API name like
+   * `claude-sonnet-4-5-20250929`) and must return a Bedrock inference profile
+   * ID for the configured region. Defaults to the bundled
+   * `bedrockFromAnthropic(model, region)` which knows the claude-4.x family.
+   *
+   * Throw `ModelNotFound` (or any Error with `.status = 400`) to surface a
+   * 400 to the client; anything else becomes a 5xx.
    */
   resolveModel?: (model: string) => string;
 }
@@ -40,7 +49,14 @@ export class BedrockConverseProvider implements Provider {
       region: opts.region,
       ...(opts.credentials ? { credentials: opts.credentials } : {}),
     });
-    this.resolveModel = opts.resolveModel ?? ((m) => m);
+    const region = opts.region;
+    this.resolveModel =
+      opts.resolveModel ??
+      ((m) => {
+        const id = bedrockFromAnthropic(m, region);
+        if (!id) throw new ModelNotFound(m, region);
+        return id;
+      });
   }
 
   async *stream(

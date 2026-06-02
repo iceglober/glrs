@@ -26,10 +26,12 @@ export type {
 } from "./providers/types.js";
 
 export {
-  resolveModel,
+  bedrockFromAnthropic,
+  knownAnthropicModels,
   regionPrefix,
   ModelNotFound,
 } from "./aws/model-resolver.js";
+export type { RegionPrefix } from "./aws/model-resolver.js";
 
 export {
   defaultCredentials,

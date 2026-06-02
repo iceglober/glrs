@@ -15,16 +15,14 @@ npm i -g @glrs-dev/cmprss
 ## Usage
 
 ```bash
-# Wrap Claude Code with Bedrock backend (default region us-east-1, default model sonnet)
+# Wrap Claude Code with Bedrock backend (default region us-east-1)
 cmprss wrap claude
 
-# Wrap opencode (TUI). Injects --model anthropic/<id> so opencode uses its
-# anthropic provider (which honors ANTHROPIC_BASE_URL) rather than its native
-# amazon-bedrock provider (which goes direct, bypassing cmprss).
-cmprss wrap opencode --model sonnet
+# Wrap opencode TUI
+cmprss wrap opencode
 
-# Pick a different region / model / port
-cmprss wrap claude --region us-west-2 --model haiku --port 8788
+# Different region / port
+cmprss wrap claude --region us-west-2 --port 8788
 
 # Pass args through to the wrapped agent
 cmprss wrap claude -- --version
@@ -33,7 +31,15 @@ cmprss wrap opencode -- /path/to/project
 
 `cmprss` uses the AWS SDK default credential chain (env vars, profile, SSO cache, IRSA, IMDS). No bearer token plumbing.
 
-**opencode caveat:** the proxy can only see traffic that goes through opencode's `anthropic/*` provider. If you switch to an `amazon-bedrock/*` model in-session, that traffic talks to Bedrock directly via AWS SDK and bypasses cmprss until you switch back.
+## Model selection — cmprss does not pick
+
+cmprss is **model-agnostic**. Pick models in your agent's UI as normal — the proxy maps each request independently to the right Bedrock inference profile for the configured region.
+
+A single opencode/claude-code session typically uses several models (main + summarizer + planner). Each one passes through cmprss; each one gets its own mapping.
+
+Anthropic-API names → Bedrock inference profiles (e.g. `claude-sonnet-4-5-20250929` → `us.anthropic.claude-sonnet-4-5-20250929-v1:0`). Already-formatted Bedrock IDs pass through unchanged. Unknown models return a 400 with the list of recognized names — open an issue if you hit something we should add.
+
+**opencode caveat:** only opencode's `anthropic/*` provider routes through `ANTHROPIC_BASE_URL`. Its `amazon-bedrock/*`, `openai/*`, `google-vertex/*` etc. providers go direct to their respective backends and bypass cmprss.
 
 ## Status
 

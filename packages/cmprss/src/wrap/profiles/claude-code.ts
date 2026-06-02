@@ -5,6 +5,9 @@
  * by injecting ANTHROPIC_BASE_URL + a stub bearer. Strips CLAUDE_CODE_USE_BEDROCK
  * from the child env if set (otherwise Claude Code would talk to Bedrock
  * directly, bypassing us).
+ *
+ * Model selection stays with claude-code — it sends whatever model the user
+ * picked via /model or settings.json; the proxy maps it per-request.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -12,10 +15,6 @@ import { spawn, type ChildProcess } from "node:child_process";
 export interface ClaudeCodeWrapContext {
   proxyUrl: string;
   stubBearer: string;
-  /** Bedrock model ID that the proxy will route to (display only). */
-  resolvedModel: string;
-  /** Short alias the user picked, e.g. "sonnet" — sent as `ANTHROPIC_MODEL`. */
-  modelAlias: string;
 }
 
 export interface DetectResult {
@@ -51,9 +50,10 @@ export function claudeCodeEnv(
   const env = { ...base };
   env.ANTHROPIC_BASE_URL = ctx.proxyUrl;
   env.ANTHROPIC_API_KEY = ctx.stubBearer;
-  env.ANTHROPIC_MODEL = ctx.resolvedModel;
   // CRITICAL: drop the Bedrock-native env or Claude Code will bypass the proxy.
   delete env.CLAUDE_CODE_USE_BEDROCK;
+  // Don't set ANTHROPIC_MODEL — let claude-code use whatever the user picked.
+  delete env.ANTHROPIC_MODEL;
   return env;
 }
 

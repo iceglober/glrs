@@ -3,6 +3,9 @@
  *
  * v0: claude (claude-code), opencode. Starts the proxy, spawns the agent with
  * env vars pointing at it, forwards signals, exits with the child's code.
+ *
+ * cmprss is model-agnostic. The agent picks the model; the proxy maps each
+ * request to the right Bedrock inference profile for the configured region.
  */
 
 import type { ChildProcess } from "node:child_process";
@@ -16,7 +19,6 @@ import {
   detectOpencode,
   opencodeEnv,
   spawnOpencode,
-  withDefaultModelArg,
 } from "../wrap/profiles/opencode.js";
 import { BedrockConverseProvider } from "../providers/bedrock-converse/provider.js";
 import {
@@ -24,10 +26,6 @@ import {
   defaultCredentials,
   NoCredentials,
 } from "../auth/credentials.js";
-import {
-  ModelNotFound,
-  resolveModel,
-} from "../aws/model-resolver.js";
 import { startProxy } from "../proxy/server.js";
 import { getLogger, logFilePath } from "../lib/logger.js";
 
@@ -35,7 +33,6 @@ export interface WrapArgs {
   agent: string;
   backend: "bedrock";
   region: string;
-  model: string;
   port: number;
   passthroughArgs: string[];
 }
@@ -43,7 +40,6 @@ export interface WrapArgs {
 const EXIT_USAGE = 2;
 const EXIT_AGENT_MISSING = 3;
 const EXIT_CREDS = 4;
-const EXIT_MODEL = 6;
 const EXIT_PORT = 5;
 
 type AgentId = "claude" | "opencode";
@@ -53,13 +49,7 @@ interface ResolvedProfile {
   installName: string;
   installCmd: string;
   detect: typeof detectClaudeCode;
-  buildEnv: (ctx: {
-    proxyUrl: string;
-    stubBearer: string;
-    resolvedModel: string;
-    modelAlias: string;
-  }) => NodeJS.ProcessEnv;
-  buildArgs: (userArgs: string[], modelAlias: string) => string[];
+  buildEnv: (ctx: { proxyUrl: string; stubBearer: string }) => NodeJS.ProcessEnv;
   spawn: (args: string[], env: NodeJS.ProcessEnv) => ChildProcess;
   postWrapNotes?: string[];
 }
@@ -72,7 +62,6 @@ function resolveProfile(agent: string): ResolvedProfile | null {
       installCmd: "npm i -g @anthropic-ai/claude-code",
       detect: detectClaudeCode,
       buildEnv: claudeCodeEnv,
-      buildArgs: (userArgs) => userArgs,
       spawn: spawnClaudeCode,
     };
   }
@@ -83,11 +72,10 @@ function resolveProfile(agent: string): ResolvedProfile | null {
       installCmd: "https://opencode.ai (or: bunx opencode upgrade)",
       detect: detectOpencode,
       buildEnv: opencodeEnv,
-      buildArgs: (userArgs, modelAlias) => withDefaultModelArg(userArgs, modelAlias),
       spawn: spawnOpencode,
       postWrapNotes: [
-        "  note: opencode's amazon-bedrock/* provider bypasses cmprss.",
-        "  in-session model picks must stay on anthropic/* to flow through this proxy.",
+        "  note: only opencode's anthropic/* models flow through cmprss.",
+        "  amazon-bedrock/*, openai/*, google-vertex/*, etc. bypass this proxy.",
       ],
     };
   }
@@ -105,19 +93,7 @@ export async function runWrap(args: WrapArgs): Promise<number> {
     return EXIT_USAGE;
   }
 
-  // 1. Resolve model + region BEFORE starting anything.
-  let resolvedModel: string;
-  try {
-    resolvedModel = resolveModel(args.model, args.region);
-  } catch (err) {
-    if (err instanceof ModelNotFound) {
-      process.stderr.write(`cmprss: ${err.message}\n`);
-      return EXIT_MODEL;
-    }
-    throw err;
-  }
-
-  // 2. Detect the agent.
+  // 1. Detect the agent.
   const detection = await profile.detect();
   if (!detection.installed) {
     process.stderr.write(
@@ -127,7 +103,7 @@ export async function runWrap(args: WrapArgs): Promise<number> {
     return EXIT_AGENT_MISSING;
   }
 
-  // 3. Verify AWS credentials resolve. Fail fast with a useful message.
+  // 2. Verify AWS credentials resolve. Fail fast with a useful message.
   const creds = defaultCredentials();
   try {
     await assertCredentialsAvailable(creds);
@@ -139,18 +115,12 @@ export async function runWrap(args: WrapArgs): Promise<number> {
     throw err;
   }
 
-  // 4. Build provider + start proxy.
-  // CRITICAL: always route to the wrap-time resolved model, ignoring whatever
-  // the client (claude-code, opencode, etc.) puts in its `model` field. Opencode's
-  // anthropic provider sends names like "claude-sonnet-4-5-20250929" which are
-  // valid for the Anthropic API but NOT for Bedrock — Bedrock needs the
-  // inference-profile ID. Claude Code is set via env (ANTHROPIC_MODEL) but may
-  // still echo a different model name in the wire request. Pinning here keeps
-  // the contract simple: --model at wrap time is what runs.
+  // 3. Build provider + start proxy. The provider's default model resolver
+  // maps anthropic-API model names to Bedrock inference profiles per-request
+  // (see src/aws/model-resolver.ts).
   const provider = new BedrockConverseProvider({
     region: args.region,
     credentials: creds,
-    resolveModel: () => resolvedModel,
   });
 
   const stubBearer = `sk-cmprss-${randomToken()}`;
@@ -175,8 +145,6 @@ export async function runWrap(args: WrapArgs): Promise<number> {
       agent: args.agent,
       backend: args.backend,
       region: args.region,
-      model: args.model,
-      resolvedModel,
       proxyPort: handle.port,
     },
     "wrap.start",
@@ -184,24 +152,18 @@ export async function runWrap(args: WrapArgs): Promise<number> {
 
   process.stderr.write(
     `cmprss  agent=${args.agent}  backend=${args.backend}  region=${args.region}  ` +
-      `model=${args.model} → ${resolvedModel}  proxy=${handle.url}  log=${logFilePath()}\n`,
+      `proxy=${handle.url}  log=${logFilePath()}\n`,
   );
   for (const note of profile.postWrapNotes ?? []) {
     process.stderr.write(`${note}\n`);
   }
 
-  // 5. Spawn the agent.
-  const env = profile.buildEnv({
-    proxyUrl: handle.url,
-    stubBearer,
-    resolvedModel,
-    modelAlias: args.model,
-  });
-  const spawnArgs = profile.buildArgs(args.passthroughArgs, args.model);
+  // 4. Spawn the agent. The agent decides what model(s) to use; the proxy
+  // maps each request.
+  const env = profile.buildEnv({ proxyUrl: handle.url, stubBearer });
+  const child = profile.spawn(args.passthroughArgs, env);
 
-  const child = profile.spawn(spawnArgs, env);
-
-  // 6. Forward signals; second SIGINT escalates.
+  // 5. Forward signals; second SIGINT escalates.
   let lastSigint = 0;
   const sigHandler = (sig: NodeJS.Signals) => {
     if (!child.pid) return;
@@ -234,7 +196,7 @@ export async function runWrap(args: WrapArgs): Promise<number> {
   ];
   for (const s of signals) process.on(s, () => sigHandler(s));
 
-  // 7. Wait for child.
+  // 6. Wait for child.
   const { code, signal } = await new Promise<{
     code: number | null;
     signal: NodeJS.Signals | null;
@@ -248,13 +210,13 @@ export async function runWrap(args: WrapArgs): Promise<number> {
     });
   });
 
-  // 8. Drain proxy.
+  // 7. Drain proxy.
   await handle.stop();
   log.info({ exit: code, signal }, "wrap.exit");
 
   if (signal) {
-    // Forward the signal to ourselves so the shell sees the same exit cause.
-    // SIGINT/SIGTERM/SIGHUP -> 130/143/129 by convention.
+    // Forward the signal so the shell sees the same exit cause.
+    // SIGINT/SIGTERM/SIGHUP → 130/143/129 by convention.
     process.kill(process.pid, signal);
     return 128;
   }
