@@ -1,5 +1,22 @@
 # @glrs-dev/cli
 
+## 3.4.0
+
+### Minor Changes
+
+- [#275](https://github.com/iceglober/glrs/pull/275) [`f818869`](https://github.com/iceglober/glrs/commit/f818869bff4ebeb882bf1c241438c1f5a33b02c5) Thanks [@iceglober](https://github.com/iceglober)! - Add privacy-first product analytics via Counted.
+
+  `glrs` now sends anonymous usage events (which command ran, plus non-PII flags
+  like success/failure and counts) to help prioritize work. No cookies, no
+  fingerprinting, no PII — never repo names, branch names, paths, or arguments.
+  Tracking never blocks or fails a command, and a dead network can never delay
+  exit. Opt out with `DO_NOT_TRACK=1` or `GLRS_NO_ANALYTICS=1`.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @glrs-dev/harness-plugin-opencode@3.4.0
+
 ## 3.3.1
 
 ### Patch Changes
