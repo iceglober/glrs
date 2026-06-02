@@ -148,6 +148,7 @@
         "glrs": "./dist/cli.js",
       },
       "dependencies": {
+        "@counted/sdk": "^0.1.0",
         "@glrs-dev/adapter-claude-code": "workspace:*",
         "@glrs-dev/adapter-opencode": "workspace:*",
         "@glrs-dev/autopilot": "workspace:*",
@@ -293,6 +294,8 @@
     "@changesets/types": ["@changesets/types@6.1.0", "", {}, "sha512-rKQcJ+o1nKNgeoYRHKOS07tAMNd3YSN0uHaJOZYjBAgxfV7TUE7JE+z4BzZdQwb5hKaYbayKN5KrYV7ODb2rAA=="],
 
     "@changesets/write": ["@changesets/write@0.4.0", "", { "dependencies": { "@changesets/types": "^6.1.0", "fs-extra": "^7.0.1", "human-id": "^4.1.1", "prettier": "^2.7.1" } }, "sha512-CdTLvIOPiCNuH71pyDu3rA+Q0n65cmAbXnwWH84rKGiFumFzkmHNT8KHTMEchcxN+Kl8I54xGUhJ7l3E7X396Q=="],
+
+    "@counted/sdk": ["@counted/sdk@0.1.0", "", {}, "sha512-ZqPTEwDPPOLLlEEMpKZWu3D/FTBc59YdzxVjOwLmoHQWlrgLryxNpngK9fhI6HQ6xAu79JggEwN4n6fwJMyygA=="],
 
     "@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.27.7", "", { "os": "aix", "cpu": "ppc64" }, "sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg=="],
 

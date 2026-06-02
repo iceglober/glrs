@@ -4,6 +4,7 @@ import { info } from "../lib/fmt.js";
 import { createWorktree } from "../lib/worktree.js";
 import { loadRegistry } from "../lib/registry.js";
 import { runHook } from "../lib/hooks.js";
+import { track } from "../lib/analytics.js";
 import type { RepoIndex } from "./types.js";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -141,6 +142,10 @@ export const create = command({
   handler: ({ repo, from }) => {
     const repoPath = resolveRepoPath(repo);
     const { wtPath } = createWorktree({ from, repoPath, repo });
+
+    // Core-feature activation. base_default = used the remote default branch
+    // (no --from override). No repo/branch/path names — those are user data.
+    track("worktree_created", { base_default: !from });
 
     runHook("wt_new", wtPath, {
       WORKTREE_DIR: wtPath,

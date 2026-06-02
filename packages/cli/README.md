@@ -27,6 +27,20 @@ glrs autopilot --plan ...    # structured orchestrator
 glrs upgrade                 # self-update
 ```
 
+## Telemetry
+
+`glrs` sends anonymous usage events (which command ran, plus non-PII flags like
+success/failure and counts) via [Counted](https://app.counted.dev) to help
+prioritize work. No cookies, no fingerprinting, no PII — never repo names,
+branch names, paths, or arguments. Tracking never blocks or fails a command.
+
+Opt out with either:
+
+```bash
+export DO_NOT_TRACK=1        # the cross-tool Do Not Track standard
+export GLRS_NO_ANALYTICS=1   # glrs-specific
+```
+
 ## License
 
 MIT

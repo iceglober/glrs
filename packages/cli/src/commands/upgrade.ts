@@ -8,6 +8,7 @@
 import { command } from "cmd-ts";
 import { execFileSync } from "node:child_process";
 import { recordLatestVersion } from "../lib/auto-update.js";
+import { track, flushAnalytics } from "../lib/analytics.js";
 
 const PACKAGE_NAME = "@glrs-dev/cli";
 const REGISTRY_TIMEOUT_MS = 5000;
@@ -48,6 +49,8 @@ export const upgradeCmd = command({
       process.stderr.write(
         `\x1b[31m[glrs]\x1b[0m Failed to check registry: ${err instanceof Error ? err.message : String(err)}\n`,
       );
+      track("cli_upgraded", { outcome: "check_failed" });
+      await flushAnalytics();
       process.exit(1);
     }
 
@@ -58,6 +61,8 @@ export const upgradeCmd = command({
 
     if (latest === current) {
       process.stderr.write(`\x1b[32m[glrs]\x1b[0m Already on latest (${current})\n`);
+      track("cli_upgraded", { outcome: "already_latest" });
+      await flushAnalytics();
       process.exit(0);
     }
 
@@ -71,10 +76,13 @@ export const upgradeCmd = command({
         timeout: 30_000,
       });
       process.stderr.write(`\x1b[32m[glrs]\x1b[0m Upgraded to ${latest}\n`);
+      track("cli_upgraded", { outcome: "upgraded" });
     } catch (err) {
       process.stderr.write(
         `\x1b[31m[glrs]\x1b[0m Upgrade failed: ${err instanceof Error ? err.message : String(err)}\n`,
       );
+      track("cli_upgraded", { outcome: "failed" });
+      await flushAnalytics();
       process.exit(1);
     }
   },

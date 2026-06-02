@@ -18,6 +18,20 @@ import { switchCmd } from "./commands/switch.js";
 import { go } from "./commands/go.js";
 import { autoUpdate } from "./lib/auto-update.js";
 import { runAutopilot } from "./commands/autopilot-tui.js";
+import { track, flushAnalytics } from "./lib/analytics.js";
+
+/** Deliver any buffered analytics, then exit. Flush is bounded and fail-silent. */
+async function endRun(code: number): Promise<never> {
+  await flushAnalytics();
+  process.exit(code);
+}
+
+/** Subcommands we track by name. Anything else is recorded as "unknown" so we
+ *  never send an arbitrary, possibly-sensitive string as a property value. */
+const KNOWN_COMMANDS = new Set([
+  "wt", "worktree", "loop", "autopilot", "harness", "headroom",
+  "assume", "upgrade", "dashboard", "oc",
+]);
 
 // ── Auto-update ─────────────────────────────────────────────────────────────
 const updated = await autoUpdate();
@@ -36,10 +50,25 @@ if (updated) {
 
 const args = process.argv.slice(2);
 
+// Usage/adoption signal: one event per invocation, command name only.
+// Normalized to a known-command enum so we never emit arbitrary strings.
+const first = args[0];
+const commandLabel =
+  args.length === 0 || first === "--help" || first === "-h" || first === "help"
+    ? "help"
+    : first === "--version" || first === "-V"
+      ? "version"
+      : first === "worktree"
+        ? "wt"
+        : KNOWN_COMMANDS.has(first ?? "")
+          ? first!
+          : "unknown";
+track("command_run", { command: commandLabel });
+
 // Top-level help / version / no-args
 if (args.length === 0 || args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
   process.stdout.write(HELP_TEXT);
-  process.exit(0);
+  await endRun(0);
 }
 
 if (args[0] === "--version" || args[0] === "-V") {
@@ -48,7 +77,7 @@ if (args[0] === "--version" || args[0] === "-V") {
   // @ts-ignore - Bun types
   const pkg = await Bun.file(pkgPath).json();
   process.stdout.write(`glrs ${pkg.version}\n`);
-  process.exit(0);
+  await endRun(0);
 }
 
 const sub = args[0];
@@ -60,10 +89,10 @@ if (sub === "wt" || sub === "worktree") {
   if (wtArgs.length === 0 || wtArgs[0] === "--help" || wtArgs[0] === "-h") {
     if (wtArgs.length === 0 && process.stdin.isTTY) {
       await go();
-      process.exit(0);
+      await endRun(0);
     }
     process.stdout.write(WORKTREE_HELP_TEXT);
-    process.exit(0);
+    await endRun(0);
   }
 
   const wt = subcommands({
@@ -79,21 +108,21 @@ if (sub === "wt" || sub === "worktree") {
   });
 
   await run(wt, wtArgs);
-  process.exit(0);
+  await endRun(0);
 }
 
 // Handle loop subcommand
 if (sub === "loop") {
   const { loopCmd } = await import("./commands/loop.js");
   await run(loopCmd, args.slice(1));
-  process.exit(0);
+  await endRun(0);
 }
 
 // Handle autopilot subcommand
 if (sub === "autopilot") {
   const { autopilotInteractiveCmd } = await import("./commands/autopilot.js");
   await run(autopilotInteractiveCmd, args.slice(1));
-  process.exit(0);
+  await endRun(0);
 }
 
 // Handle harness subcommand
@@ -105,24 +134,30 @@ if (sub === "harness") {
   if (harnessArgs[0] === "dev-preset") {
     const { runDevPreset } = await import("./commands/harness-dev-preset.js");
     await runDevPreset(harnessArgs.slice(1));
-    process.exit(0);
+    await endRun(0);
   }
 
   const { harnessCmd } = await import("./commands/harness.js");
   await run(harnessCmd, harnessArgs);
-  process.exit(0);
+  await endRun(0);
 }
 
 // Handle headroom subcommand — context compression proxy
 if (sub === "headroom") {
   const { headroomCmd } = await import("./commands/headroom.js");
   await headroomCmd(args.slice(1));
-  process.exit(0);
+  await endRun(0);
 }
 
 // Handle assume subcommand — installs @glrs-dev/assume if missing, then dispatches to gsa
 if (sub === "assume") {
   const gsaArgs = args.slice(1);
+
+  // SSO adoption signal. Record only a known verb — never the profile/account
+  // positional, which is user-supplied and could identify an org or account.
+  const ASSUME_VERBS = new Set(["init", "login", "logout", "list", "exec", "console", "creds"]);
+  const verb = gsaArgs[0] ?? "";
+  track("assume_used", { subcommand: ASSUME_VERBS.has(verb) ? verb : "other" });
 
   if (gsaArgs[0] === "init") {
     // `init` is the canonical repair entry point: remove deprecated packages
@@ -156,6 +191,10 @@ if (sub === "assume") {
     }
   }
 
+  // Deliver the buffered event before handing the process off to gsa, which
+  // takes over stdio and exits via the child's exit handler below.
+  await flushAnalytics();
+
   const child = spawn("gsa", gsaArgs, { stdio: "inherit" });
   child.on("exit", (code, signal) => {
     if (signal) { process.kill(process.pid, signal); return; }
@@ -172,13 +211,13 @@ if (sub === "assume") {
 if (sub === "upgrade") {
   const { upgradeCmd } = await import("./commands/upgrade.js");
   await run(upgradeCmd, args.slice(1));
-  process.exit(0);
+  await endRun(0);
 }
 
 // Handle dashboard subcommand
 if (sub === "dashboard") {
   await runAutopilot();
-  process.exit(0);
+  await endRun(0);
 }
 
 // Legacy alias: `glrs oc` → `glrs harness`
@@ -189,11 +228,11 @@ if (sub === "oc") {
   );
   const { harnessCmd } = await import("./commands/harness.js");
   await run(harnessCmd, args.slice(1));
-  process.exit(0);
+  await endRun(0);
 }
 
 // Unknown subcommand
 process.stderr.write(
   `[glrs] Unknown subcommand '${sub}'. Run 'glrs --help' for usage.\n`,
 );
-process.exit(2);
+await endRun(2);
