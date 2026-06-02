@@ -36,7 +36,7 @@ import type { Plugin } from "@opencode-ai/plugin";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
-import { track } from "../lib/analytics.js";
+import { track, flushAnalytics } from "../lib/analytics.js";
 import { buildModelTurnProps } from "../lib/telemetry-events.js";
 
 type Tokens = {
@@ -442,6 +442,17 @@ const plugin: Plugin = async () => {
 
   return {
     event: async ({ event }) => {
+      // Deliver buffered telemetry at every natural end-of-turn boundary. The
+      // Counted SDK otherwise only flushes on a 30s timer or a 50-event batch,
+      // so a short or Ctrl-C'd session (SIGINT discards the buffer, and
+      // `beforeExit` never fires) would lose all its events. `session.idle`
+      // fires when the agent finishes responding — before the user interrupts
+      // or closes — so this is the reliable flush point. `session.error` covers
+      // abnormal termination. Bounded and fail-silent (see flushAnalytics).
+      if (event.type === "session.idle" || event.type === "session.error") {
+        await flushAnalytics();
+        return;
+      }
       if (event.type !== "message.updated") return;
       const info = (event.properties as { info?: unknown }).info as
         | { role?: string; [k: string]: unknown }
