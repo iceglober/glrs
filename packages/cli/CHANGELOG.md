@@ -1,5 +1,20 @@
 # @glrs-dev/cli
 
+## 3.5.1
+
+### Patch Changes
+
+- [#279](https://github.com/iceglober/glrs/pull/279) [`2d66f85`](https://github.com/iceglober/glrs/commit/2d66f85fd9f6a050134c503ac868ea860f8f6f75) Thanks [@iceglober](https://github.com/iceglober)! - Fix telemetry: send events to the live Counted ingest host.
+
+  The `@counted/sdk` defaults its ingest host to `https://counted.dev`, which has
+  no DNS record — so every tracked event silently vanished into a failed POST. Both
+  the CLI and harness analytics now point at the live host `https://app.counted.dev`
+  (verified to return HTTP 202), overridable via `COUNTED_HOST`. No events were
+  delivered before this fix.
+
+- Updated dependencies [[`2d66f85`](https://github.com/iceglober/glrs/commit/2d66f85fd9f6a050134c503ac868ea860f8f6f75)]:
+  - @glrs-dev/harness-plugin-opencode@3.5.1
+
 ## 3.5.0
 
 ### Patch Changes
