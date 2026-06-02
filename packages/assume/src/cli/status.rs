@@ -21,6 +21,7 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
     }
 
     let now = Utc::now();
+    let daemon_running = crate::core::daemon::is_daemon_running();
     let mut any_active = false;
 
     for provider_id in registry.ids() {
@@ -40,23 +41,29 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
         any_active = true;
         println!("{}", provider.display_name());
 
-        // Session token status
+        // SSO token + auto-refresh state.
+        //
+        // We deliberately do NOT print a "refresh token expires in N days"
+        // countdown: AWS never reports the refresh token's real lifetime, so any
+        // number here is fabricated (it used to hardcode 7 days and mislead).
+        // What we can state truthfully: while the session is live the daemon
+        // keeps the SSO token fresh; once it shows expired, auto-refresh has hit
+        // the org's SSO session limit and re-login is required.
         let session_remaining = tokens.session_expires_at.signed_duration_since(now);
         if session_remaining.num_seconds() > 0 {
             println!("  SSO token: {}", format_duration(session_remaining));
+            if daemon_running {
+                println!("  Auto-refresh: on");
+            } else {
+                println!("  Auto-refresh: off (daemon not running)");
+            }
         } else {
+            // A running daemon refreshes within the expiry buffer, so an expired
+            // token here means auto-refresh could not renew it — the SSO session
+            // reached its limit (capped server-side, duration not reported) or
+            // was revoked. Re-login is the only fix.
             println!("  SSO token: expired");
-        }
-
-        // Refresh token status
-        let refresh_remaining = tokens.refresh_expires_at.signed_duration_since(now);
-        if refresh_remaining.num_days() > 365 {
-            println!("  Refresh token: never expires");
-        } else if refresh_remaining.num_seconds() > 0 {
-            println!("  Refresh token: {}", format_duration(refresh_remaining));
-        } else {
-            println!("  Refresh token: expired");
-            println!("  Run: gsa login {provider_id}");
+            println!("  SSO session ended — run: gsa login {provider_id}");
         }
 
         // Show active context
@@ -77,7 +84,7 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
     }
 
     // Daemon status
-    if crate::core::daemon::is_daemon_running() {
+    if daemon_running {
         println!("Daemon: running");
     } else {
         println!("Daemon: not running");
