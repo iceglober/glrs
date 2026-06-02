@@ -1,5 +1,18 @@
 # @glrs-dev/assume
 
+## 0.10.3
+
+### Patch Changes
+
+- [#271](https://github.com/iceglober/glrs/pull/271) [`1853420`](https://github.com/iceglober/glrs/commit/18534203443cd7e7415ae85ce9d87cbc43df1315) Thanks [@iceglober](https://github.com/iceglober)! - docs(assume): lead the quick start with `gsa init`
+
+  The `gsa --help` quick start (and the README usage block) still told new users to
+  run `gsa login` / `gsa use` first — but those commands now refuse until `gsa init`
+  completes (init gate). Reordered both to start with `gsa init`, show that
+  `aws s3 ls` then works off the default context, and present `gsa use` as the
+  per-shell override. Also notes the pre-init allowlist. (docs-site/assume.md
+  "How it works" + "Contexts" updated to match.)
+
 ## 0.10.2
 
 ### Patch Changes
