@@ -5,8 +5,12 @@ use std::os::unix::fs::PermissionsExt;
 
 pub const REQUIREMENT: DaemonRequirement = DaemonRequirement::None;
 
-const REPO: &str = "iceglober/glorious";
-const TAG_PREFIX: &str = "assume-v";
+// Post-monorepo coordinates. The pre-rename repo (`iceglober/glorious`, tag
+// prefix `assume-v`) froze at ~0.6.x, so pointing here made `gsa upgrade`
+// report that stale release as "latest" and refuse to update. Releases now live
+// in `iceglober/glrs` under changesets tags like `@glrs-dev/assume@0.10.1`.
+const REPO: &str = "iceglober/glrs";
+const TAG_PREFIX: &str = "@glrs-dev/assume@";
 
 #[derive(Args)]
 pub struct UpgradeArgs {}
@@ -81,14 +85,20 @@ fn try_gh_cli() -> Option<Release> {
     let stdout = String::from_utf8(output.stdout).ok()?;
     let releases: Vec<serde_json::Value> = serde_json::from_str(&stdout).ok()?;
 
-    let tag_entry = releases.iter().find(|r| {
-        r.get("tagName")
-            .and_then(|t| t.as_str())
-            .map(|t| t.starts_with(TAG_PREFIX))
-            .unwrap_or(false)
-    })?;
-
-    let tag = tag_entry.get("tagName")?.as_str()?.to_string();
+    // Pick the highest-semver matching tag, not the first in list order. The
+    // list mixes assume/cli/harness releases and isn't guaranteed to be sorted
+    // the way we need; compare_versions is the source of truth.
+    let tag = releases
+        .iter()
+        .filter_map(|r| r.get("tagName").and_then(|t| t.as_str()))
+        .filter(|t| t.starts_with(TAG_PREFIX))
+        .max_by(|a, b| {
+            compare_versions(
+                a.strip_prefix(TAG_PREFIX).unwrap_or(a),
+                b.strip_prefix(TAG_PREFIX).unwrap_or(b),
+            )
+        })?
+        .to_string();
     let version = tag.strip_prefix(TAG_PREFIX)?.to_string();
 
     Some(Release {
@@ -125,38 +135,49 @@ async fn fetch_from_api() -> anyhow::Result<Option<Release>> {
     let platform = detect_platform();
     let asset_name = format!("glrs-assume-{platform}");
 
-    for release in &releases {
-        let tag = match release.get("tag_name").and_then(|t| t.as_str()) {
-            Some(t) if t.starts_with(TAG_PREFIX) => t,
-            _ => continue,
-        };
+    // Select the highest-semver matching release (not the first in API order).
+    let best = releases
+        .iter()
+        .filter(|r| {
+            r.get("tag_name")
+                .and_then(|t| t.as_str())
+                .map(|t| t.starts_with(TAG_PREFIX))
+                .unwrap_or(false)
+        })
+        .max_by(|a, b| {
+            let va = a.get("tag_name").and_then(|t| t.as_str()).unwrap_or("");
+            let vb = b.get("tag_name").and_then(|t| t.as_str()).unwrap_or("");
+            compare_versions(
+                va.strip_prefix(TAG_PREFIX).unwrap_or(va),
+                vb.strip_prefix(TAG_PREFIX).unwrap_or(vb),
+            )
+        });
 
-        let version = match tag.strip_prefix(TAG_PREFIX) {
-            Some(v) => v.to_string(),
-            None => continue,
-        };
+    let Some(release) = best else { return Ok(None) };
+    let tag = release
+        .get("tag_name")
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    let version = tag.strip_prefix(TAG_PREFIX).unwrap_or(tag).to_string();
 
-        let asset_url = release
-            .get("assets")
-            .and_then(|a| a.as_array())
-            .and_then(|assets| {
-                assets
-                    .iter()
-                    .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(&asset_name))
-            })
-            .and_then(|a| a.get("browser_download_url"))
-            .and_then(|u| u.as_str())
-            .unwrap_or("")
-            .to_string();
+    let asset_url = release
+        .get("assets")
+        .and_then(|a| a.as_array())
+        .and_then(|assets| {
+            assets
+                .iter()
+                .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(&asset_name))
+        })
+        .and_then(|a| a.get("browser_download_url"))
+        .and_then(|u| u.as_str())
+        .unwrap_or("")
+        .to_string();
 
-        return Ok(Some(Release {
-            version,
-            tag: tag.to_string(),
-            asset_url,
-        }));
-    }
-
-    Ok(None)
+    Ok(Some(Release {
+        version,
+        tag: tag.to_string(),
+        asset_url,
+    }))
 }
 
 async fn download_binary(release: &Release, dest: &str) -> anyhow::Result<bool> {
@@ -220,6 +241,11 @@ async fn download_binary(release: &Release, dest: &str) -> anyhow::Result<bool> 
     Ok(true)
 }
 
+/// True if the running binary lives inside a `node_modules` tree (npm install).
+fn is_npm_install(exe: &std::path::Path) -> bool {
+    exe.components().any(|c| c.as_os_str() == "node_modules")
+}
+
 fn recreate_alias(binary_path: &str) {
     let dir = std::path::Path::new(binary_path)
         .parent()
@@ -239,6 +265,33 @@ pub async fn run(_args: UpgradeArgs) -> anyhow::Result<()> {
     let exe_path = fs::canonicalize(&exe_path)?;
     let exe_str = exe_path.to_string_lossy().to_string();
     eprintln!("\x1b[36m▸\x1b[0m installed at: {exe_str}");
+
+    // npm installs upgrade via npm — swapping the binary inside node_modules
+    // would leave it out of sync with the package manifest (and npm would revert
+    // it on the next install). npm's own resolution handles "latest", so we skip
+    // the GitHub-release path entirely here.
+    if is_npm_install(&exe_path) {
+        eprintln!("\x1b[36m▸\x1b[0m npm install detected — upgrading via npm");
+        match std::process::Command::new("npm")
+            .args(["install", "-g", "@glrs-dev/assume@latest"])
+            .status()
+        {
+            Ok(s) if s.success() => {
+                eprintln!("\x1b[32m✓\x1b[0m upgraded to the latest @glrs-dev/assume via npm");
+                return Ok(());
+            }
+            Ok(_) => {
+                eprintln!("\x1b[31merror:\x1b[0m `npm install -g @glrs-dev/assume@latest` failed");
+                std::process::exit(1);
+            }
+            Err(e) => {
+                eprintln!(
+                    "\x1b[31merror:\x1b[0m could not run npm ({e}). Upgrade manually: npm i -g @glrs-dev/assume@latest"
+                );
+                std::process::exit(1);
+            }
+        }
+    }
 
     eprintln!("\x1b[36m▸\x1b[0m checking for updates...");
     let latest = fetch_latest_release().await?;
@@ -293,4 +346,42 @@ pub async fn run(_args: UpgradeArgs) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cmp::Ordering;
+    use std::path::Path;
+
+    #[test]
+    fn compare_versions_is_numeric_not_lexical() {
+        // The bug that made `gsa upgrade` think 0.6.4 was newer than 0.10.0 was
+        // string comparison ("0.10.0" < "0.6.4" lexically). Guard the numeric path.
+        assert_eq!(compare_versions("0.10.0", "0.6.4"), Ordering::Greater);
+        assert_eq!(compare_versions("0.10.1", "0.10.0"), Ordering::Greater);
+        assert_eq!(compare_versions("0.9.0", "0.10.0"), Ordering::Less);
+        assert_eq!(compare_versions("1.0.0", "1.0.0"), Ordering::Equal);
+        // Differing component counts: 0.10 == 0.10.0
+        assert_eq!(compare_versions("0.10", "0.10.0"), Ordering::Equal);
+    }
+
+    #[test]
+    fn coordinates_point_at_the_current_repo_and_tag_format() {
+        assert_eq!(REPO, "iceglober/glrs");
+        assert_eq!(TAG_PREFIX, "@glrs-dev/assume@");
+        // A real published tag strips to a clean semver.
+        assert_eq!(
+            "@glrs-dev/assume@0.10.1".strip_prefix(TAG_PREFIX),
+            Some("0.10.1")
+        );
+    }
+
+    #[test]
+    fn detects_npm_install_by_node_modules_segment() {
+        assert!(is_npm_install(Path::new(
+            "/Users/x/.nvm/versions/node/v24/lib/node_modules/@glrs-dev/assume-darwin-arm64/bin/glrs-assume"
+        )));
+        assert!(!is_npm_install(Path::new("/usr/local/bin/glrs-assume")));
+    }
 }
