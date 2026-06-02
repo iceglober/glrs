@@ -63,12 +63,14 @@ export default defineConfig({
   //   - @opencode-ai/plugin: peer dep, but five custom-tool modules import the
   //     runtime `tool` helper from it; opencode can't resolve it from the
   //     plugin's cache dir, so it must be inlined (see `external` note above).
-  // `zod` is the only third-party runtime value-dep the plugin entry pulls in
-  // (custom tools define schemas with it). Bundle it so `dist/index.js` has
-  // ZERO third-party runtime deps — opencode loads the plugin even when its
-  // cache dep-install fails (e.g. the historical `workspace:*` leak), which it
-  // can't if the entry needs to resolve an uninstalled package.
-  noExternal: ["@glrs-dev/agent-core", "@opencode-ai/plugin", "zod"],
+  // `zod` and `@counted/sdk` are the third-party runtime value-deps the plugin
+  // entry pulls in (custom tools define schemas with zod; cost-tracker/tool-hooks
+  // emit telemetry via @counted/sdk). Bundle them so `dist/index.js` has ZERO
+  // third-party runtime deps — opencode loads the plugin even when its cache
+  // dep-install fails (e.g. the historical `workspace:*` leak), which it can't if
+  // the entry needs to resolve an uninstalled package. The verdaccio e2e smoke
+  // test enforces this by loading the published dist with no node_modules.
+  noExternal: ["@glrs-dev/agent-core", "@opencode-ai/plugin", "zod", "@counted/sdk"],
   // After build: copy skills tree and bin scripts
   async onSuccess() {
     // Copy skills
