@@ -19,6 +19,7 @@ import * as fs from "node:fs";
 import { formatElapsed, formatCost, EventStreamReader, deriveState, applyCLIOverrides, isSuccessExitReason, validatePlan, detectSpecPhases, parseSpecItems } from "@glrs-dev/autopilot";
 import { SessionRunner } from "@glrs-dev/autopilot";
 import { createCliRenderer } from "../cli-renderer.js";
+import { track, flushAnalytics } from "../lib/analytics.js";
 import { createAdapter, ADAPTER_NAMES, DEFAULT_ADAPTER } from "../adapter-factory.js";
 import { resolveConfig } from "../autopilot/config-reader.js";
 import type { AutopilotConfig } from "../autopilot/autopilot-config.js";
@@ -407,6 +408,14 @@ export const autopilotInteractiveCmd = command({
       // Attach CLI renderer — subscribes to events and writes formatted text to stderr
       const renderer = createCliRenderer(runner.events);
 
+      // Core-feature usage. Counts/flags only — no plan path or content.
+      track("autopilot_started", {
+        adapter: finalAdapterName,
+        resume,
+        ship,
+        parallel: parallel ?? 1,
+      });
+
       const result = await runner.run();
       renderer.unsubscribe();
 
@@ -417,6 +426,15 @@ export const autopilotInteractiveCmd = command({
       const summary = renderSummary(result);
       process.stdout.write(summary.stdout);
       exitCode = summary.exitCode;
+
+      // Outcome signal — same three buckets renderSummary uses.
+      const { exitReason, iterations } = result.loopResult;
+      const outcome = isSuccessExitReason(exitReason)
+        ? "success"
+        : exitReason === "kill-switch"
+          ? "killed"
+          : "failed";
+      track("autopilot_finished", { outcome, iterations });
     } finally {
       // Restore the prior GLRS_AGENT_OVERRIDES env var value to keep the parent process clean.
       // The adapter's shutdown() also handles restoration, but we restore here for safety.
@@ -426,6 +444,7 @@ export const autopilotInteractiveCmd = command({
         process.env["GLRS_AGENT_OVERRIDES"] = priorAgentOverridesEnv;
       }
     }
+    await flushAnalytics();
     process.exit(exitCode);
   },
 });

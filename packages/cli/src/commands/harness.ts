@@ -11,6 +11,7 @@
  */
 
 import { command, flag, option, optional, string as stringType, subcommands, oneOf } from "cmd-ts";
+import { track } from "../lib/analytics.js";
 
 const TARGETS = ["opencode"] as const;
 type Target = (typeof TARGETS)[number];
@@ -55,6 +56,8 @@ const installCmd = command({
       case "opencode": {
         const { install } = await import("@glrs-dev/harness-plugin-opencode/cli");
         await install({ dryRun, pin });
+        // Adoption milestone: a coding tool now has the harness installed.
+        track("harness_installed", { target: resolved, pinned: pin, dry_run: dryRun });
         break;
       }
       default: {
