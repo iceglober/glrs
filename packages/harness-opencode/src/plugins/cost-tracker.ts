@@ -36,6 +36,8 @@ import type { Plugin } from "@opencode-ai/plugin";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
+import { track } from "../lib/analytics.js";
+import { buildModelTurnProps } from "../lib/telemetry-events.js";
 
 type Tokens = {
   input: number;
@@ -208,6 +210,10 @@ const plugin: Plugin = async () => {
     string,
     { providerID: string; modelID: string; counted: boolean }
   >();
+
+  // Messages we've already emitted a `model_turn` telemetry event for, so a
+  // late duplicate `finalized` event for the same message can't double-count.
+  const turnEmitted = new Set<string>();
 
   const rollup: Rollup = emptyRollup();
 
@@ -450,6 +456,11 @@ const plugin: Plugin = async () => {
         cost?: number;
         tokens?: unknown;
         time?: { created?: number; completed?: number | null };
+        // Present on error (each variant carries a `name` discriminant); the
+        // free-text `data.message` is intentionally never read — it could be PII.
+        error?: { name?: string } | null;
+        // Provider finish reason (e.g. "stop", "length", "tool-calls").
+        finish?: string | null;
       };
 
       const messageID = String(assistantInfo.id ?? "");
@@ -527,6 +538,29 @@ const plugin: Plugin = async () => {
       await writeRollup(finalized);
 
       if (finalized) {
+        // Telemetry: one `model_turn` event per finalized message, carrying
+        // cost, token speed (tps), and outcome — all keyed by model. Guarded so
+        // a late duplicate finalization can't emit twice. `time.created`/
+        // `.completed` are epoch-ms per the OpenCode convention; tps is omitted
+        // when timing is missing or non-positive (see buildModelTurnProps).
+        if (!turnEmitted.has(messageID)) {
+          turnEmitted.add(messageID);
+          track(
+            "model_turn",
+            buildModelTurnProps({
+              provider: providerID,
+              model: modelID,
+              cost: costNow,
+              tokens: tokensNow,
+              createdMs: assistantInfo.time?.created ?? null,
+              completedMs: assistantInfo.time?.completed ?? null,
+              errorKind: assistantInfo.error?.name ?? null,
+              finish: assistantInfo.finish ?? null,
+              ...(devPreset ? { preset: devPreset } : {}),
+            }),
+          );
+        }
+
         lastSeen.delete(messageID);
         // Keep messageMeta around briefly in case a late duplicate event
         // fires; a subsequent unrelated message would overwrite its own key.

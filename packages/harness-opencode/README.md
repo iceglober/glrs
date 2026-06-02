@@ -46,6 +46,23 @@ Plus 22 subagents, autopilot variants, and cost-optimized tiers. Full list at [g
 
 Model overrides, MCP servers, env vars: [glrs.dev/harness/config](https://glrs.dev/harness/config)
 
+## Telemetry
+
+The harness sends anonymous usage events via [Counted](https://app.counted.dev)
+to help prioritize work: per-model token speed and cost (`model_turn`), tool and
+skill usage with best-effort success (`tool_used`), and post-edit type-check
+results (`post_edit_verify`). No cookies, no fingerprinting, no PII — never repo
+names, branch names, paths, prompts, or arguments; properties are public
+model/provider ids, enums, booleans, and counts only. Tracking never blocks or
+breaks a session and a dead network can never delay it.
+
+Opt out with either:
+
+```bash
+export DO_NOT_TRACK=1        # the cross-tool Do Not Track standard
+export GLRS_NO_ANALYTICS=1   # glrs-specific
+```
+
 ## Security
 
 Report vulnerabilities per [`SECURITY.md`](./SECURITY.md). Not a sandbox — treat the agent like a dev with shell access.
