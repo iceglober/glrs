@@ -1,15 +1,23 @@
 /**
  * `cmprss wrap <agent>` command handler.
  *
- * v0: only `claude` is supported. Starts the proxy, spawns the agent with
+ * v0: claude (claude-code), opencode. Starts the proxy, spawns the agent with
  * env vars pointing at it, forwards signals, exits with the child's code.
  */
+
+import type { ChildProcess } from "node:child_process";
 
 import {
   claudeCodeEnv,
   detectClaudeCode,
   spawnClaudeCode,
 } from "../wrap/profiles/claude-code.js";
+import {
+  detectOpencode,
+  opencodeEnv,
+  spawnOpencode,
+  withDefaultModelArg,
+} from "../wrap/profiles/opencode.js";
 import { BedrockConverseProvider } from "../providers/bedrock-converse/provider.js";
 import {
   assertCredentialsAvailable,
@@ -36,13 +44,63 @@ const EXIT_USAGE = 2;
 const EXIT_AGENT_MISSING = 3;
 const EXIT_CREDS = 4;
 const EXIT_MODEL = 6;
+const EXIT_PORT = 5;
+
+type AgentId = "claude" | "opencode";
+
+interface ResolvedProfile {
+  id: AgentId;
+  installName: string;
+  installCmd: string;
+  detect: typeof detectClaudeCode;
+  buildEnv: (ctx: {
+    proxyUrl: string;
+    stubBearer: string;
+    resolvedModel: string;
+    modelAlias: string;
+  }) => NodeJS.ProcessEnv;
+  buildArgs: (userArgs: string[], modelAlias: string) => string[];
+  spawn: (args: string[], env: NodeJS.ProcessEnv) => ChildProcess;
+  postWrapNotes?: string[];
+}
+
+function resolveProfile(agent: string): ResolvedProfile | null {
+  if (agent === "claude" || agent === "claude-code") {
+    return {
+      id: "claude",
+      installName: "claude",
+      installCmd: "npm i -g @anthropic-ai/claude-code",
+      detect: detectClaudeCode,
+      buildEnv: claudeCodeEnv,
+      buildArgs: (userArgs) => userArgs,
+      spawn: spawnClaudeCode,
+    };
+  }
+  if (agent === "opencode" || agent === "oc") {
+    return {
+      id: "opencode",
+      installName: "opencode",
+      installCmd: "https://opencode.ai (or: bunx opencode upgrade)",
+      detect: detectOpencode,
+      buildEnv: opencodeEnv,
+      buildArgs: (userArgs, modelAlias) => withDefaultModelArg(userArgs, modelAlias),
+      spawn: spawnOpencode,
+      postWrapNotes: [
+        "  note: opencode's amazon-bedrock/* provider bypasses cmprss.",
+        "  in-session model picks must stay on anthropic/* to flow through this proxy.",
+      ],
+    };
+  }
+  return null;
+}
 
 export async function runWrap(args: WrapArgs): Promise<number> {
   const log = getLogger();
 
-  if (args.agent !== "claude" && args.agent !== "claude-code") {
+  const profile = resolveProfile(args.agent);
+  if (!profile) {
     process.stderr.write(
-      `cmprss: agent '${args.agent}' is not supported yet. v0 supports: claude\n`,
+      `cmprss: agent '${args.agent}' is not supported yet. v0 supports: claude, opencode\n`,
     );
     return EXIT_USAGE;
   }
@@ -60,11 +118,11 @@ export async function runWrap(args: WrapArgs): Promise<number> {
   }
 
   // 2. Detect the agent.
-  const detection = await detectClaudeCode();
+  const detection = await profile.detect();
   if (!detection.installed) {
     process.stderr.write(
-      `cmprss: claude is not installed.\n` +
-        `  install: npm i -g @anthropic-ai/claude-code\n`,
+      `cmprss: ${profile.installName} is not installed.\n` +
+        `  install: ${profile.installCmd}\n`,
     );
     return EXIT_AGENT_MISSING;
   }
@@ -82,9 +140,17 @@ export async function runWrap(args: WrapArgs): Promise<number> {
   }
 
   // 4. Build provider + start proxy.
+  // CRITICAL: always route to the wrap-time resolved model, ignoring whatever
+  // the client (claude-code, opencode, etc.) puts in its `model` field. Opencode's
+  // anthropic provider sends names like "claude-sonnet-4-5-20250929" which are
+  // valid for the Anthropic API but NOT for Bedrock — Bedrock needs the
+  // inference-profile ID. Claude Code is set via env (ANTHROPIC_MODEL) but may
+  // still echo a different model name in the wire request. Pinning here keeps
+  // the contract simple: --model at wrap time is what runs.
   const provider = new BedrockConverseProvider({
     region: args.region,
     credentials: creds,
+    resolveModel: () => resolvedModel,
   });
 
   const stubBearer = `sk-cmprss-${randomToken()}`;
@@ -99,9 +165,9 @@ export async function runWrap(args: WrapArgs): Promise<number> {
   } catch (err) {
     process.stderr.write(
       `cmprss: failed to bind 127.0.0.1:${args.port}: ${(err as Error).message}\n` +
-        `  another cmprss may be running — try: cmprss wrap claude --port ${args.port + 1}\n`,
+        `  another cmprss may be running — try: cmprss wrap ${args.agent} --port ${args.port + 1}\n`,
     );
-    return 5;
+    return EXIT_PORT;
   }
 
   log.info(
@@ -120,16 +186,20 @@ export async function runWrap(args: WrapArgs): Promise<number> {
     `cmprss  agent=${args.agent}  backend=${args.backend}  region=${args.region}  ` +
       `model=${args.model} → ${resolvedModel}  proxy=${handle.url}  log=${logFilePath()}\n`,
   );
+  for (const note of profile.postWrapNotes ?? []) {
+    process.stderr.write(`${note}\n`);
+  }
 
   // 5. Spawn the agent.
-  const env = claudeCodeEnv({
+  const env = profile.buildEnv({
     proxyUrl: handle.url,
     stubBearer,
     resolvedModel,
     modelAlias: args.model,
   });
+  const spawnArgs = profile.buildArgs(args.passthroughArgs, args.model);
 
-  const child = spawnClaudeCode(args.passthroughArgs, env);
+  const child = profile.spawn(spawnArgs, env);
 
   // 6. Forward signals; second SIGINT escalates.
   let lastSigint = 0;
@@ -171,7 +241,9 @@ export async function runWrap(args: WrapArgs): Promise<number> {
   }>((resolve) => {
     child.on("exit", (c, s) => resolve({ code: c, signal: s }));
     child.on("error", (err) => {
-      process.stderr.write(`cmprss: failed to spawn claude: ${err.message}\n`);
+      process.stderr.write(
+        `cmprss: failed to spawn ${profile.installName}: ${err.message}\n`,
+      );
       resolve({ code: 1, signal: null });
     });
   });
@@ -184,7 +256,6 @@ export async function runWrap(args: WrapArgs): Promise<number> {
     // Forward the signal to ourselves so the shell sees the same exit cause.
     // SIGINT/SIGTERM/SIGHUP -> 130/143/129 by convention.
     process.kill(process.pid, signal);
-    // If for some reason the signal is ignored (unlikely), fall through.
     return 128;
   }
   return code ?? 0;

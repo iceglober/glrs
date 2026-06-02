@@ -19,12 +19,13 @@ USAGE
   cmprss --version | --help
 
 AGENTS (v0)
-  claude              wrap Claude Code with the cmprss proxy
+  claude              wrap Claude Code (anthropic provider → cmprss → Bedrock)
+  opencode            wrap opencode TUI (anthropic provider → cmprss → Bedrock)
 
 FLAGS
   --backend <id>      bedrock (default; only option in v0)
   --region <region>   AWS region (default: AWS_REGION, AWS_DEFAULT_REGION, or us-east-1)
-  --model <id>        sonnet | haiku | opus, or full Bedrock inference profile ID
+  --model <id>        sonnet | haiku | opus, or a full Bedrock inference profile ID
   --port <n>          proxy port (default: 8787)
   --help, -h          show this help
   --version, -V       show version
@@ -32,12 +33,17 @@ FLAGS
 EXAMPLES
   cmprss wrap claude
   cmprss wrap claude --region us-west-2 --model haiku
-  cmprss wrap claude -- --version
+  cmprss wrap opencode --model sonnet
+  cmprss wrap opencode -- /path/to/project          # extra args pass through
 
 NOTES
   v0.1 is passthrough only — compression lands in v0.2. The proxy speaks
   Anthropic Messages on /v1/messages and translates to Bedrock Converse
   (SigV4 via AWS SDK).
+
+  opencode's amazon-bedrock/* provider talks to Bedrock directly via AWS SDK
+  and bypasses cmprss. While wrapped, use anthropic/* models — the wrap
+  injects --model anthropic/<id> by default for this reason.
 `;
 
 async function main(): Promise<number> {
