@@ -25,23 +25,22 @@ Bins: `glrs-assume`, `gsa` (alias).
 
 ## How it works
 
-1. **`gsa login aws`** — authenticates your SSO session (opens browser). Valid for ~8 hours.
-2. **`gsa use aws dev`** — selects a context for the current shell. Credentials start flowing.
-3. **`aws s3 ls`** — just works. A local daemon serves credentials to the AWS SDK. Tokens auto-refresh.
+1. **`gsa init`** — one-time setup: authenticates (opens browser), approves contexts for agent access, and picks a **default context**. Until init completes, every other command refuses (see Install).
+2. **`aws s3 ls`** — just works. A local daemon serves your default context's credentials to the AWS SDK; tokens auto-refresh. (Requires the shell integration below.)
+3. **`gsa use aws prod`** — switch *this shell* to a different context. Each shell has its own active context — shell 1 can be in `dev` while shell 2 is in `prod`.
 
-Each shell has its own active context. Shell 1 can be in `dev` while shell 2 is in `prod`.
-
-`login` alone doesn't serve credentials. You must `use` a context for the AWS CLI/SDK to work.
+`gsa use` overrides the default for the current terminal only; the default context (set during init) is what every other shell and agent get.
 
 ## Contexts
 
-A context is an identity you can switch to — an AWS account + role pair, or a GCP project. Contexts are discovered automatically from your SSO provider when you `login`.
+A context is an identity you can switch to — an AWS account + role pair, or a GCP project. Contexts are discovered automatically from your SSO provider during `gsa init` (and refreshed with `gsa sync`).
 
 ```bash
-gsa login aws                # authenticate + discover contexts
-gsa use aws dev              # fuzzy-match and activate a context
+gsa init                     # first-time: authenticate + discover contexts + set a default
+gsa use aws dev              # fuzzy-match and activate a context for this shell
 gsa use aws                  # no pattern — opens TUI picker
 gsa use aws prod --pin       # pin to this terminal only
+gsa sync aws                 # re-fetch contexts after IAM changes
 ```
 
 ## Commands

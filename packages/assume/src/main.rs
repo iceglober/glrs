@@ -12,10 +12,12 @@ use std::sync::Arc;
     version,
     about = "Unified credential assume manager for AWS and GCP — authenticate once, work all day",
     after_help = "\x1b[1mQuick start:\x1b[0m
-  gsa login aws                              # Authenticate with AWS (browser SSO)
-  gsa login gcp                              # Authenticate with GCP (browser OAuth)
-  gsa use aws <context>                       # Switch AWS context (interactive shell)
-  gsa use gcp <project>                      # Switch GCP context (interactive shell)
+  gsa init                                   # One-time setup: login, approve agent contexts, pick a default context
+  aws s3 ls                                  # Just works — the daemon serves your default context's credentials
+  gsa use aws <context>                       # Switch this shell to another AWS context
+  gsa use gcp <project>                      # Switch this shell to a GCP project
+
+  (Until 'gsa init' completes, only init/upgrade/shell-init/status/config run.)
 
 \x1b[1mFor scripts and AI agents (non-interactive):\x1b[0m
   gsa exec -- <command>                      # Run with active context credentials

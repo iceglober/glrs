@@ -17,9 +17,9 @@ Or standalone: `npm i -g @glrs-dev/assume` (then `gsa init`).
 ## Usage
 
 ```bash
-gsa login aws                # authenticate (opens browser)
-gsa use aws dev              # switch context (fuzzy match)
-aws s3 ls                    # credentials served locally
+gsa init                     # one-time setup (required first — see Install)
+aws s3 ls                    # credentials served locally (default context)
+gsa use aws dev              # switch this shell to another context (fuzzy match)
 gsa status                   # token expiry, daemon health
 gsa contexts                 # list available contexts
 ```
