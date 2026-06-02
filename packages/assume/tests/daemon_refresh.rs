@@ -309,12 +309,14 @@ async fn daemon_loop_refreshes_before_expiry() {
     );
 }
 
-// ─── a5: Token rotation extends refresh expiry ───────────────────────────────
+// ─── a5: Token rotation preserves the refresh expiry ceiling ─────────────────
 
-/// When the mock returns a new `refresh_token`, the vault is updated with the
-/// new refresh token and `refresh_expires_at` is extended by 7 days from now.
+/// When the mock returns a new `refresh_token`, the vault stores the new token
+/// value but `refresh_expires_at` is PRESERVED (not rolled forward). AWS rotates
+/// the refresh token without extending the underlying SSO session, so resetting
+/// the expiry to now+7d would advertise a window that doesn't exist.
 #[tokio::test]
-async fn token_rotation_extends_refresh_expiry() {
+async fn token_rotation_preserves_refresh_expiry() {
     let now = Utc::now();
     let vault = TestVault::new();
 
@@ -333,18 +335,17 @@ async fn token_rotation_extends_refresh_expiry() {
         .await
         .expect("refresh with rotation should succeed");
 
-    // New refresh token stored
+    // New refresh token value stored …
     assert_eq!(
         new_tokens.secrets.get("refresh_token").unwrap(),
         "new-refresh-token-xyz"
     );
 
-    // refresh_expires_at extended by 7 days from now
-    let expected_refresh_expiry = now + Duration::days(7);
-    let delta = (new_tokens.refresh_expires_at - expected_refresh_expiry)
-        .num_seconds()
-        .abs();
-    assert!(delta < 2, "refresh_expires_at delta {delta}s too large");
+    // … but the expiry ceiling is preserved, NOT reset to now+7d.
+    assert_eq!(
+        new_tokens.refresh_expires_at, tokens.refresh_expires_at,
+        "refresh_expires_at must be preserved across rotation, not rolled forward"
+    );
 
     // Persist and verify
     vault.store_tokens(&new_tokens);
@@ -782,12 +783,11 @@ async fn inline_refresh_succeeds_with_expired_session_and_valid_refresh() {
         "inline-refreshed-token"
     );
 
-    // Rotation extended refresh expiry
-    let expected_refresh_expiry = now + Duration::days(7);
-    let delta = (new_tokens.refresh_expires_at - expected_refresh_expiry)
-        .num_seconds()
-        .abs();
-    assert!(delta < 2, "refresh expiry should be extended by 7 days");
+    // Rotation preserves the refresh expiry ceiling (not rolled forward)
+    assert_eq!(
+        new_tokens.refresh_expires_at, tokens.refresh_expires_at,
+        "refresh expiry must be preserved across rotation, not reset to now+7d"
+    );
 
     // Rotated refresh token is stored
     assert_eq!(

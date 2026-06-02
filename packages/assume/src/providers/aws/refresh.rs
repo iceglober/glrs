@@ -61,14 +61,17 @@ pub async fn refresh_with(
             let expires_in = token_resp.expires_in;
             let session_expires_at = now + Duration::seconds(expires_in as i64);
 
-            // If we got a new refresh token, extend the refresh expiry
-            let refresh_expires_at = if token_resp.refresh_token.is_some() {
-                // New refresh token — reset the expiry window
-                now + Duration::days(7)
-            } else {
-                // Same refresh token — keep existing expiry
-                tokens.refresh_expires_at
-            };
+            // Keep the original refresh expiry — do NOT roll it forward.
+            //
+            // AWS rotates the refresh token on (almost) every refresh, but that
+            // rotation does NOT extend the underlying SSO session: its hard max
+            // is fixed at login and AWS never reports it. Resetting to now+7d on
+            // each refresh fabricated a perpetual 7-day window — so `gsa status`
+            // advertised days of life that didn't exist (the session really ends
+            // at the org's IdC limit, often hours), and the daemon kept hammering
+            // refresh near session end. Rotate the stored token value, but
+            // preserve the expiry ceiling set at login.
+            let refresh_expires_at = tokens.refresh_expires_at;
 
             let mut new_secrets = tokens.secrets.clone();
             new_secrets.insert("access_token".to_string(), access_token);

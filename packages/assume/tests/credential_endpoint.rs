@@ -318,15 +318,18 @@ async fn concurrent_requests_during_expired_session() {
 // ─── Test 3: Multi-cycle token rotation ────────────────────────────────────
 
 /// Simulate 3 consecutive refresh cycles where AWS rotates the refresh token
-/// each time. The 7-day window should reset on each rotation, and the refresh
-/// chain should not break.
+/// each time. The refresh chain must not break, the stored token value must
+/// rotate each cycle, and `refresh_expires_at` must be PRESERVED (the expiry
+/// ceiling set at login) — never rolled forward — since rotation doesn't extend
+/// the underlying SSO session.
 #[tokio::test]
-async fn multi_cycle_token_rotation_extends_refresh_window() {
+async fn multi_cycle_token_rotation_preserves_refresh_window() {
     use assume::providers::aws::clock::MockClock;
     use assume::providers::aws::refresh::refresh_with;
 
     let now = Utc::now();
     let mut tokens = make_tokens_relative(now, 300, 7);
+    let original_refresh_expiry = tokens.refresh_expires_at; // now + 7 days
 
     for cycle in 0..3 {
         let clock = MockClock::new(now + Duration::hours(cycle));
@@ -352,26 +355,14 @@ async fn multi_cycle_token_rotation_extends_refresh_window() {
             &format!("refresh-token-cycle-{cycle}"),
         );
 
-        // Refresh expiry extended to 7 days from this cycle's clock time
-        let expected_refresh_expiry = now + Duration::hours(cycle) + Duration::days(7);
-        let delta = (new_tokens.refresh_expires_at - expected_refresh_expiry)
-            .num_seconds()
-            .abs();
-        assert!(
-            delta < 2,
-            "Cycle {cycle}: refresh_expires_at should reset to 7 days from now, delta={delta}s"
+        // Refresh expiry preserved — NOT reset to this cycle's clock + 7 days.
+        assert_eq!(
+            new_tokens.refresh_expires_at, original_refresh_expiry,
+            "Cycle {cycle}: refresh_expires_at must be preserved, not rolled forward"
         );
 
         tokens = new_tokens;
     }
-
-    // After 3 rotations, the final refresh token should still have ~7 days
-    let final_remaining = tokens.refresh_expires_at - Utc::now();
-    assert!(
-        final_remaining.num_days() >= 6,
-        "After 3 rotations, refresh should still have ~7 days, got {} days",
-        final_remaining.num_days()
-    );
 }
 
 // ─── Test 4: Network failure → no NeedsLogin, retry next tick ──────────────
