@@ -1,7 +1,13 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * @glrs-dev/assume CLI entry — resolves the platform binary via the shim
  * and execs it with the current argv.
+ *
+ * Shebang is `bun`, not `node`: the package declares `engines.bun` and is
+ * driven by `@glrs-dev/cli` (itself `#!/usr/bin/env bun`), so the runtime
+ * guaranteed to be present is Bun. A `node` shebang made `gsa` unrunnable on
+ * the Bun-only machines this tool targets — `env: node: No such file or
+ * directory` — even though the shim's logic runs unchanged under Bun.
  */
 
 import { spawn } from "node:child_process";

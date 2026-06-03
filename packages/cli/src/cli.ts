@@ -174,20 +174,15 @@ if (sub === "assume") {
     }
     process.stderr.write("\n");
   } else {
-    // Other subcommands: lazy-install on first use only.
-    const which = Bun.spawnSync(["which", "gsa"]);
-    if (which.exitCode !== 0) {
-      process.stderr.write("[glrs] gsa not found — installing @glrs-dev/assume...\n");
-      const install = spawn("npm", ["i", "-g", "@glrs-dev/assume"], { stdio: "inherit" });
-      const installCode = await new Promise<number>((resolve) => {
-        install.on("exit", (code) => resolve(code ?? 1));
-        install.on("error", () => resolve(1));
-      });
-      if (installCode !== 0) {
-        process.stderr.write("[glrs] Failed to install @glrs-dev/assume\n");
-        process.exit(1);
-      }
-      process.stderr.write("\n");
+    // Other subcommands: lazy-install on first use only. Idempotent (a working
+    // `gsa` on PATH is a no-op) and package-manager-agnostic (npm → bun → pnpm
+    // → yarn), so it works on a Bun-only machine where `glrs` itself runs.
+    const { ensureGsaInstalled } = await import("./lib/assume-install.js");
+    try {
+      await ensureGsaInstalled();
+    } catch (err) {
+      process.stderr.write(String((err as Error).message) + "\n");
+      process.exit(1);
     }
   }
 

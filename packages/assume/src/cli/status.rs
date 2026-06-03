@@ -90,7 +90,31 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
         println!("Daemon: not running");
     }
 
+    nudge_shell_integration();
+
     Ok(())
+}
+
+/// Point users at shell-integration install when it's missing. Without the rc
+/// wrapper, `gsa use` / `gsa login` can't set per-shell context — and an
+/// auto-upgraded binary won't have it wired until the user does so. Nothing
+/// else surfaces this, so `status` is where we catch the installed base.
+///
+/// Skipped when invoked through the wrapper (`GLRS_CLI_DISPATCHED` set) — that
+/// proves integration is already active, even if it lives in a non-default rc.
+fn nudge_shell_integration() {
+    if std::env::var_os("GLRS_CLI_DISPATCHED").is_some() {
+        return;
+    }
+    let Some(shell) = super::shell_init::detect_shell() else {
+        return; // can't name the rc file or the install command — stay quiet
+    };
+    if super::shell_init::integration_block_present(&shell) {
+        return;
+    }
+    println!();
+    println!("Shell integration not detected — `gsa use` / `gsa login` can't switch this shell.");
+    println!("  Enable it: gsa shell-init --install {shell}");
 }
 
 async fn print_prompt_segments(registry: &PluginRegistry, _cfg: &config::Config) -> Result<()> {
