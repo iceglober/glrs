@@ -231,13 +231,13 @@ fn configure_shell_integration() -> Result<()> {
         return Ok(());
     };
 
-    eprint!(
-        "\nAdd glrs-assume to your shell ({shell})? Enables `gsa use` / `gsa login`. [Y/n]: "
-    );
+    eprint!("\nAdd glrs-assume to your shell ({shell})? Enables `gsa use` / `gsa login`. [Y/n]: ");
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
     let answer = input.trim();
-    if !(answer.is_empty() || answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes"))
+    if !(answer.is_empty()
+        || answer.eq_ignore_ascii_case("y")
+        || answer.eq_ignore_ascii_case("yes"))
     {
         eprintln!("Skipped. Add it later with: gsa shell-init --install {shell}");
         return Ok(());
@@ -246,10 +246,16 @@ fn configure_shell_integration() -> Result<()> {
     match install_shell_integration(&shell)? {
         InstallOutcome::Added(path) => {
             eprintln!("✓ Wrote shell integration to {}", display_home(&path));
-            eprintln!("  Restart your shell or run: source {}", display_home(&path));
+            eprintln!(
+                "  Restart your shell or run: source {}",
+                display_home(&path)
+            );
         }
         InstallOutcome::AlreadyPresent(path) => {
-            eprintln!("✓ Shell integration already present in {}", display_home(&path));
+            eprintln!(
+                "✓ Shell integration already present in {}",
+                display_home(&path)
+            );
         }
     }
     Ok(())

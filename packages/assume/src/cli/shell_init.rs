@@ -51,8 +51,14 @@ pub async fn run(
     if args.install {
         match install_shell_integration(&shell)? {
             InstallOutcome::Added(path) => {
-                eprintln!("✓ Wrote glrs-assume shell integration to {}", display_home(&path));
-                eprintln!("  Restart your shell or run: source {}", display_home(&path));
+                eprintln!(
+                    "✓ Wrote glrs-assume shell integration to {}",
+                    display_home(&path)
+                );
+                eprintln!(
+                    "  Restart your shell or run: source {}",
+                    display_home(&path)
+                );
             }
             InstallOutcome::AlreadyPresent(path) => {
                 eprintln!(
@@ -247,9 +253,7 @@ pub fn detect_shell() -> Option<String> {
 fn shell_from_path(shell_path: &str) -> Option<String> {
     let name = Path::new(shell_path).file_name()?.to_string_lossy();
     let name = name.trim_start_matches('-');
-    SUPPORTED_SHELLS
-        .contains(&name)
-        .then(|| name.to_string())
+    SUPPORTED_SHELLS.contains(&name).then(|| name.to_string())
 }
 
 /// rc file a shell sources on startup. zsh → `~/.zshrc`, bash → `~/.bashrc`,
@@ -346,7 +350,10 @@ mod tests {
     fn shell_from_path_recognizes_supported_shells() {
         assert_eq!(shell_from_path("/bin/zsh").as_deref(), Some("zsh"));
         assert_eq!(shell_from_path("/usr/bin/bash").as_deref(), Some("bash"));
-        assert_eq!(shell_from_path("/usr/local/bin/fish").as_deref(), Some("fish"));
+        assert_eq!(
+            shell_from_path("/usr/local/bin/fish").as_deref(),
+            Some("fish")
+        );
         assert_eq!(shell_from_path("-zsh").as_deref(), Some("zsh")); // login shell form
         assert_eq!(shell_from_path("/bin/dash"), None);
         assert_eq!(shell_from_path(""), None);
