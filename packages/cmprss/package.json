@@ -1,6 +1,6 @@
 {
   "name": "@glrs-dev/cmprss",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Provider-agnostic context-compression proxy for AI coding agents. v0: passthrough Bedrock proxy + claude-code wrap. Compression lands in v0.2.",
   "license": "MIT",
   "repository": {
