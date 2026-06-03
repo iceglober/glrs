@@ -10,6 +10,8 @@
 
 import type { ChildProcess } from "node:child_process";
 
+import { randomToken } from "../lib/id.js";
+
 import {
   claudeCodeEnv,
   detectClaudeCode,
@@ -221,11 +223,4 @@ export async function runWrap(args: WrapArgs): Promise<number> {
     return 128;
   }
   return code ?? 0;
-}
-
-function randomToken(): string {
-  const uuid =
-    (globalThis.crypto as { randomUUID?: () => string } | undefined)?.randomUUID;
-  if (uuid) return uuid().replaceAll("-", "");
-  return Math.random().toString(16).slice(2, 18);
 }
