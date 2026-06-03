@@ -67,6 +67,11 @@ pub async fn run(args: InitArgs, registry: &PluginRegistry, cfg: &config::Config
     // 4. Pick which agent tools to wire the gsa MCP server into.
     configure_mcp_tools()?;
 
+    // 5. Offer to wire shell integration into the user's rc file. Without it,
+    //    `gsa use`/`gsa login` can't set per-shell context (they need the eval
+    //    wrapper). Confirmed, idempotent, and skippable.
+    configure_shell_integration()?;
+
     // Mark init complete only after every required step succeeded. Until this
     // marker exists, the init gate in main.rs keeps gsa non-functional.
     config::mark_initialized()?;
@@ -212,6 +217,42 @@ fn configure_mcp_tools() -> Result<()> {
 enum Outcome {
     Added(PathBuf),
     AlreadyPresent,
+}
+
+/// Offer to append the shell integration to the user's rc file. Detects the
+/// shell from `$SHELL`; on an undetected/unsupported shell, points at the
+/// manual `gsa shell-init --install` escape hatch instead of guessing.
+fn configure_shell_integration() -> Result<()> {
+    use super::shell_init::{detect_shell, install_shell_integration, InstallOutcome};
+
+    let Some(shell) = detect_shell() else {
+        eprintln!("\nSkipping shell integration — couldn't detect your shell from $SHELL.");
+        eprintln!("Add it later with: gsa shell-init --install <bash|zsh|fish>");
+        return Ok(());
+    };
+
+    eprint!(
+        "\nAdd glrs-assume to your shell ({shell})? Enables `gsa use` / `gsa login`. [Y/n]: "
+    );
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let answer = input.trim();
+    if !(answer.is_empty() || answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes"))
+    {
+        eprintln!("Skipped. Add it later with: gsa shell-init --install {shell}");
+        return Ok(());
+    }
+
+    match install_shell_integration(&shell)? {
+        InstallOutcome::Added(path) => {
+            eprintln!("✓ Wrote shell integration to {}", display_home(&path));
+            eprintln!("  Restart your shell or run: source {}", display_home(&path));
+        }
+        InstallOutcome::AlreadyPresent(path) => {
+            eprintln!("✓ Shell integration already present in {}", display_home(&path));
+        }
+    }
+    Ok(())
 }
 
 /// True if the tool looks installed: its config file/dir exists, or its CLI is
