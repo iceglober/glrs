@@ -27,111 +27,77 @@ pub async fn run(args: ExecArgs, registry: &PluginRegistry, _cfg: &config::Confi
         bail!("No command specified. Usage: gsa exec [-c <pattern>] -- <command>");
     }
 
-    // Resolve context: use --context if given, otherwise fall back to active context
-    let context = if let Some(ref ctx_pattern) = args.context {
-        // Support "gcp:novelist-app" syntax — split into provider + pattern
-        let (provider_filter, pattern) = if let Some((prov, pat)) = ctx_pattern.split_once(':') {
-            (Some(prov.to_string()), pat.to_string())
-        } else {
-            (args.provider.clone(), ctx_pattern.clone())
-        };
-
-        // Collect contexts — prefer cache, fall back to live API
-        let mut all_contexts = Vec::new();
-        let providers: Vec<String> = match provider_filter {
-            Some(ref p) => vec![p.clone()],
-            None => registry.ids(),
-        };
-        for provider_id in &providers {
-            if let Some(cached) = crate::core::cache::load_contexts(provider_id) {
-                all_contexts.extend(cached);
-            } else {
-                let tokens = match keychain::load_tokens(provider_id)? {
-                    Some(t) => t,
-                    None => continue,
-                };
-                let provider = match registry.get(provider_id) {
-                    Some(p) => p,
-                    None => continue,
-                };
-                if let Ok(contexts) = provider.list_contexts(&tokens).await {
-                    all_contexts.extend(contexts);
-                }
-            }
-        }
-        let matches = fuzzy::match_contexts(&pattern, &all_contexts);
-        match matches.first() {
-            Some(m) => m.context.clone(),
-            None => bail!("No context matching '{ctx_pattern}'"),
-        }
+    // Resolve which context(s) to inject:
+    //   -c <pattern>   → that one context (today's behavior)
+    //   --provider <p> → that provider's default
+    //   neither        → every provider's default, so the child gets the same
+    //                    ambient credentials an interactive shell would (AWS and
+    //                    GCP at once).
+    let contexts: Vec<crate::plugin::Context> = if let Some(ref ctx_pattern) = args.context {
+        vec![resolve_pattern(ctx_pattern, args.provider.as_deref(), registry).await?]
     } else if let Some(ref provider_id) = args.provider {
-        // --provider without --context: use the active context if it matches the provider
-        let active = crate::core::cache::load_active_context().ok_or_else(|| {
-            anyhow::anyhow!("No active context. Run: gsa use {provider_id} <context>")
+        let ctx = crate::core::cache::load_default(provider_id).ok_or_else(|| {
+            anyhow::anyhow!("No default context for {provider_id}. Run: gsa use {provider_id} <context> --default")
         })?;
-        if active.provider_id != *provider_id {
-            bail!("Active context is for '{}', not '{provider_id}'. Run: gsa use {provider_id} <context>", active.provider_id);
-        }
-        active
+        vec![ctx]
     } else {
-        // Use the active context
-        crate::core::cache::load_active_context().ok_or_else(|| {
-            anyhow::anyhow!("No active context. Run: gsa use <provider> <context>")
-        })?
-    };
-    let context = &context;
-
-    // Get credentials
-    let provider = registry
-        .get(&context.provider_id)
-        .ok_or_else(|| anyhow::anyhow!("Provider not found: {}", context.provider_id))?;
-
-    let tokens = keychain::load_tokens(&context.provider_id)?
-        .ok_or_else(|| anyhow::anyhow!("Not authenticated for {}", context.provider_id))?;
-
-    let credentials = provider
-        .get_credentials(&tokens, context)
-        .await
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to get credentials for {}: {e}",
-                context.display_name
-            )
-        })?;
-
-    // Build env vars based on provider
-    let mut env_vars: Vec<(String, String)> = Vec::new();
-
-    // Env vars to remove from the child process (prevent conflicts)
-    let mut remove_vars: Vec<&str> = Vec::new();
-
-    if context.provider_id == "aws" {
-        let sts = crate::providers::aws::credentials::extract_sts_credentials(&credentials)?;
-        env_vars.push(("AWS_ACCESS_KEY_ID".into(), sts.access_key_id));
-        env_vars.push(("AWS_SECRET_ACCESS_KEY".into(), sts.secret_access_key));
-        env_vars.push(("AWS_SESSION_TOKEN".into(), sts.session_token));
-        env_vars.push(("AWS_DEFAULT_REGION".into(), context.region.clone()));
-        env_vars.push(("AWS_REGION".into(), context.region.clone()));
-        // Clear container credential vars so the AWS SDK uses the static creds above
-        // instead of trying to reach the credential proxy
-        remove_vars.extend(&[
-            "AWS_CONTAINER_CREDENTIALS_FULL_URI",
-            "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
-            "AWS_CONTAINER_AUTHORIZATION_TOKEN",
-        ]);
-    } else if context.provider_id == "gcp" {
-        // Access token for gcloud CLI
-        if let Some(access_token) = tokens.secrets.get("access_token") {
-            env_vars.push(("CLOUDSDK_AUTH_ACCESS_TOKEN".into(), access_token.clone()));
+        let defaults = crate::core::cache::load_all_defaults();
+        if defaults.is_empty() {
+            bail!("No default context. Run: gsa use <provider> <context> --default");
         }
-        // Project env vars
-        let project_id = context
-            .metadata
-            .get("project_id")
-            .unwrap_or(&context.id)
-            .clone();
-        env_vars.push(("GOOGLE_CLOUD_PROJECT".into(), project_id.clone()));
-        env_vars.push(("CLOUDSDK_CORE_PROJECT".into(), project_id));
+        defaults
+    };
+
+    // Build the merged child environment across every selected context. AWS and
+    // GCP use disjoint variable names, so two providers compose cleanly.
+    let mut env_vars: Vec<(String, String)> = Vec::new();
+    let mut remove_vars: Vec<&str> = Vec::new();
+    let mut injected: Vec<String> = Vec::new();
+
+    for context in &contexts {
+        let provider = registry
+            .get(&context.provider_id)
+            .ok_or_else(|| anyhow::anyhow!("Provider not found: {}", context.provider_id))?;
+        let tokens = keychain::load_tokens(&context.provider_id)?
+            .ok_or_else(|| anyhow::anyhow!("Not authenticated for {}", context.provider_id))?;
+        let credentials = provider
+            .get_credentials(&tokens, context)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to get credentials for {}: {e}",
+                    context.display_name
+                )
+            })?;
+
+        if context.provider_id == "aws" {
+            let sts = crate::providers::aws::credentials::extract_sts_credentials(&credentials)?;
+            env_vars.push(("AWS_ACCESS_KEY_ID".into(), sts.access_key_id));
+            env_vars.push(("AWS_SECRET_ACCESS_KEY".into(), sts.secret_access_key));
+            env_vars.push(("AWS_SESSION_TOKEN".into(), sts.session_token));
+            env_vars.push(("AWS_DEFAULT_REGION".into(), context.region.clone()));
+            env_vars.push(("AWS_REGION".into(), context.region.clone()));
+            // Clear container credential vars so the AWS SDK uses the static creds
+            // above instead of reaching for the credential proxy.
+            remove_vars.extend(&[
+                "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+                "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+                "AWS_CONTAINER_AUTHORIZATION_TOKEN",
+            ]);
+        } else if context.provider_id == "gcp" {
+            if let Some(access_token) = tokens.secrets.get("access_token") {
+                env_vars.push(("CLOUDSDK_AUTH_ACCESS_TOKEN".into(), access_token.clone()));
+            }
+            let project_id = context
+                .metadata
+                .get("project_id")
+                .unwrap_or(&context.id)
+                .clone();
+            env_vars.push(("GOOGLE_CLOUD_PROJECT".into(), project_id.clone()));
+            env_vars.push(("CLOUDSDK_CORE_PROJECT".into(), project_id));
+        }
+
+        injected.push(format!("{} as {}", context.provider_id, context.id));
     }
 
     // Run the command
@@ -147,9 +113,52 @@ pub async fn run(args: ExecArgs, registry: &PluginRegistry, _cfg: &config::Confi
 
     audit::log_event(
         audit::AuditEvent::CredentialFetch,
-        &context.provider_id,
-        &format!("exec {} as {}", program, context.id),
+        &contexts[0].provider_id,
+        &format!("exec {} ({})", program, injected.join(", ")),
     );
 
     std::process::exit(status.code().unwrap_or(1));
+}
+
+/// Resolve a `-c` pattern (optionally `provider:pattern`) to a single context,
+/// preferring the cached context list and falling back to a live API call.
+async fn resolve_pattern(
+    ctx_pattern: &str,
+    provider_arg: Option<&str>,
+    registry: &PluginRegistry,
+) -> Result<crate::plugin::Context> {
+    // Support "gcp:novelist-app" syntax — split into provider + pattern.
+    let (provider_filter, pattern) = if let Some((prov, pat)) = ctx_pattern.split_once(':') {
+        (Some(prov.to_string()), pat.to_string())
+    } else {
+        (provider_arg.map(|s| s.to_string()), ctx_pattern.to_string())
+    };
+
+    let providers: Vec<String> = match provider_filter {
+        Some(ref p) => vec![p.clone()],
+        None => registry.ids(),
+    };
+    let mut all_contexts = Vec::new();
+    for provider_id in &providers {
+        if let Some(cached) = crate::core::cache::load_contexts(provider_id) {
+            all_contexts.extend(cached);
+        } else {
+            let tokens = match keychain::load_tokens(provider_id)? {
+                Some(t) => t,
+                None => continue,
+            };
+            let provider = match registry.get(provider_id) {
+                Some(p) => p,
+                None => continue,
+            };
+            if let Ok(contexts) = provider.list_contexts(&tokens).await {
+                all_contexts.extend(contexts);
+            }
+        }
+    }
+    let matches = fuzzy::match_contexts(&pattern, &all_contexts);
+    match matches.first() {
+        Some(m) => Ok(m.context.clone()),
+        None => bail!("No context matching '{ctx_pattern}'"),
+    }
 }

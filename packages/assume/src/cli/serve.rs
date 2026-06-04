@@ -73,8 +73,10 @@ pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config)
 
     eprintln!("Starting glrs-assume daemon...");
 
-    // Write PID file
+    // Write PID file + record our version so CLI invocations can detect a stale
+    // daemon left behind by an auto-upgrade and cycle it.
     daemon::write_pid_file()?;
+    daemon::write_daemon_version();
 
     // Build shared state
     let state: daemon::SharedDaemonState =
@@ -117,6 +119,7 @@ pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config)
     audit::log_event(audit::AuditEvent::DaemonStop, "daemon", "stopped");
     daemon::remove_pid_file();
     daemon::remove_socket_file();
+    daemon::remove_daemon_version();
 
     Ok(())
 }

@@ -28,9 +28,11 @@ pub struct UseArgs {
     #[arg(alias = "profile")]
     pub context: Option<String>,
 
-    /// Pin this context to the current terminal only
+    /// Also set this context as the machine-global default for the provider, so
+    /// new shells (and ambient credentials) use it. Without this flag, `gsa use`
+    /// only overrides the current terminal.
     #[arg(long)]
-    pub pin: bool,
+    pub default: bool,
 }
 
 /// Result of collecting contexts for a single provider.
@@ -133,36 +135,40 @@ pub async fn gather_contexts(
     }
 }
 
-/// Output environment variable exports for the selected context.
-/// This is what the shell wrapper evals to make context per-shell.
-pub fn print_context_exports(selected: &Context, cfg: &config::Config) {
-    let is_dangerous = selected.tags.contains(&"dangerous".to_string());
-
-    let prompt_label = format!("{}:{}", selected.provider_id, selected.display_name);
-    let color = if is_dangerous {
+/// The prompt color for a context: red if dangerous, blue for GCP, else green.
+pub fn context_color(selected: &Context) -> &'static str {
+    if selected.tags.contains(&"dangerous".to_string()) {
         "red"
     } else if selected.provider_id == "gcp" {
         "blue"
     } else {
         "green"
-    };
+    }
+}
 
-    println!(
-        "export GLRS_ASSUME_CONTEXT=\"{}\"",
-        shell_escape(&prompt_label)
+/// Output environment variable exports for the selected context.
+/// This is what the shell wrapper evals to make context per-shell.
+///
+/// `is_override` is true for a per-shell `gsa use` (the segment is marked with `*`
+/// in the prompt) and false when this is the provider's machine default (set at
+/// login / `--default`). Either way only this provider's prompt segment changes;
+/// the other provider's segment, inherited from the shell, is preserved.
+pub fn print_context_exports(selected: &Context, cfg: &config::Config, is_override: bool) {
+    let color = context_color(selected);
+
+    // Merge this provider's segment into GLRS_ASSUME_SEGMENTS, leaving any other
+    // provider's segment intact, so the always-on prompt can render both.
+    let segment = crate::shell::prompt::Segment {
+        provider: selected.provider_id.clone(),
+        label: selected.display_name.clone(),
+        color: color.to_string(),
+        is_override,
+    };
+    let merged = crate::shell::prompt::merge_segment(
+        &crate::shell::prompt::current_segments_env(),
+        &segment,
     );
-    println!(
-        "export GLRS_ASSUME_CONTEXT_COLOR=\"{}\"",
-        shell_escape(color)
-    );
-    println!(
-        "export GLRS_ASSUME_CONTEXT_ID=\"{}\"",
-        shell_escape(&selected.id)
-    );
-    println!(
-        "export GLRS_ASSUME_CONTEXT_PROVIDER=\"{}\"",
-        shell_escape(&selected.provider_id)
-    );
+    println!("export GLRS_ASSUME_SEGMENTS=\"{}\"", shell_escape(&merged));
 
     // Provider-specific env vars
     if selected.provider_id == "aws" {
@@ -223,6 +229,20 @@ pub fn print_context_exports(selected: &Context, cfg: &config::Config) {
     }
 }
 
+/// Drop a provider's prompt segment, e.g. when login found no default to select.
+/// Leaves other providers' segments intact; the prompt falls back to `[gsa]` only
+/// when no provider has a segment.
+pub fn print_segment_cleared(provider_id: &str) {
+    let remaining = crate::shell::prompt::remove_segment(
+        &crate::shell::prompt::current_segments_env(),
+        provider_id,
+    );
+    println!(
+        "export GLRS_ASSUME_SEGMENTS=\"{}\"",
+        shell_escape(&remaining)
+    );
+}
+
 pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config) -> Result<()> {
     let provider_id = &args.provider;
 
@@ -232,7 +252,7 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
         bail!("Unknown provider: {provider_id}. Available: {available}");
     }
 
-    let active_context_id = crate::core::cache::load_active_context().map(|c| c.id);
+    let active_context_id = crate::core::cache::load_default(provider_id).map(|c| c.id);
 
     let result = collect_contexts(registry, cfg, provider_id).await?;
     let mut contexts = result.contexts;
@@ -331,12 +351,17 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
         );
     }
 
-    // Output env vars to stdout for the shell wrapper to eval
-    print_context_exports(&selected, cfg);
+    // Output env vars to stdout for the shell wrapper to eval. This is a
+    // per-shell override (marked `*` in the prompt) unless --default was passed.
+    print_context_exports(&selected, cfg, !args.default);
 
-    // Persist active context for status command (non-prompt uses)
-    if let Err(e) = crate::core::cache::save_active_context(&selected) {
-        tracing::warn!("Failed to save active context: {e}");
+    // --default also makes this the provider's machine-global default, so new
+    // shells and ambient credentials follow it. Plain `gsa use` is terminal-only
+    // and deliberately leaves the default untouched.
+    if args.default {
+        if let Err(e) = crate::core::cache::save_default(&selected) {
+            tracing::warn!("Failed to save default context: {e}");
+        }
     }
 
     // Daemon is already ensured by centralized pre-dispatch in main.rs.

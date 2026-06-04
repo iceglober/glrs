@@ -84,11 +84,11 @@ impl DaemonState {
                 state.contexts = contexts;
                 tracing::info!("Loaded {} cached contexts for {id}", state.contexts.len());
             }
-            // Load active context from cache
-            if let Some(active) = crate::core::cache::load_active_context() {
-                if active.provider_id == id {
-                    state.active_context = Some(active);
-                }
+            // Load this provider's default (machine-global ambient) context.
+            // Each provider keeps its own default, so AWS and GCP can both be
+            // ambient at once.
+            if let Some(default_ctx) = crate::core::cache::load_default(&id) {
+                state.active_context = Some(default_ctx);
             }
             plugin_states.insert(id, state);
         }
@@ -253,6 +253,33 @@ pub fn remove_pid_file() {
 pub fn remove_socket_file() {
     let sock = config::socket_path();
     let _ = std::fs::remove_file(&sock);
+}
+
+/// Record this binary's version as the running daemon's version. Written at
+/// startup so CLI invocations can detect a daemon that an auto-upgrade left
+/// behind on an older build.
+pub fn write_daemon_version() {
+    let _ = std::fs::write(config::daemon_version_path(), env!("CARGO_PKG_VERSION"));
+}
+
+/// Remove the daemon version file (on shutdown).
+pub fn remove_daemon_version() {
+    let _ = std::fs::remove_file(config::daemon_version_path());
+}
+
+/// The version of the running daemon, or None if it hasn't recorded one.
+fn running_daemon_version() -> Option<String> {
+    std::fs::read_to_string(config::daemon_version_path())
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// True when a daemon is running but on a different version than this binary —
+/// the auto-upgrade-left-a-stale-daemon case. A missing version file is treated
+/// as a mismatch so a pre-versioning daemon gets cycled onto the new build once.
+pub fn daemon_version_mismatch() -> bool {
+    running_daemon_version().as_deref() != Some(env!("CARGO_PKG_VERSION"))
 }
 
 /// The unified refresh loop. Runs as a background task, iterating over all
@@ -655,14 +682,15 @@ async fn serve_credential_endpoint(
                             ps.and_then(|p| p.active_context.as_ref().map(|c| c.id.clone()))
                         });
 
-                        // Fallback: re-read active context from cache file in case
-                        // gsa use was run after daemon startup. Use spawn_blocking to
-                        // avoid blocking the tokio runtime with sync file I/O.
+                        // Fallback: re-read this provider's default from disk in
+                        // case `gsa use --default` was run after daemon startup.
+                        // spawn_blocking avoids stalling the runtime on file I/O.
                         let resolved_id = if resolved_id.is_some() {
                             resolved_id
                         } else {
-                            tokio::task::spawn_blocking(|| {
-                                crate::core::cache::load_active_context().map(|c| c.id)
+                            let pid = provider_id.clone();
+                            tokio::task::spawn_blocking(move || {
+                                crate::core::cache::load_default(&pid).map(|c| c.id)
                             })
                             .await
                             .unwrap_or(None)
@@ -874,6 +902,14 @@ pub fn ensure_daemon_running() {
     migrate_remove_old_launchd_agent();
 
     if is_daemon_running() && is_daemon_healthy() {
+        // A healthy daemon on a stale version (auto-upgrade swapped the CLI but
+        // left the long-lived daemon running old code) must be cycled so it
+        // serves the current build's behavior and refresh logic.
+        if daemon_version_mismatch() {
+            tracing::info!("Daemon version differs from CLI — restarting onto current build");
+            stop_daemon();
+            start_daemon_background();
+        }
         return;
     }
 
@@ -945,6 +981,12 @@ pub enum DaemonRequirement {
 pub fn spawn_daemon_if_dead() {
     if !is_daemon_running() {
         tracing::debug!("Daemon not running — spawning in background");
+        spawn_daemon_no_wait();
+    } else if daemon_version_mismatch() {
+        // Running but stale (auto-upgrade left old daemon code). Cycle it in the
+        // background — kill the old one, then fire-and-forget a fresh spawn.
+        tracing::info!("Daemon version differs from CLI — cycling in background");
+        stop_daemon();
         spawn_daemon_no_wait();
     }
 }
@@ -1108,6 +1150,33 @@ mod tests {
 
         let action = serve_action_for_current_state();
         assert_eq!(action, ServeAction::RemoveStalePidAndStart);
+    }
+
+    // ── daemon version skew (P3) ─────────────────────────────────────
+
+    #[test]
+    fn version_mismatch_true_when_no_version_file() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_var_guard("GLRS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+        // No daemon.version file → treat as a mismatch so a pre-versioning
+        // daemon gets cycled onto the current build once.
+        assert!(daemon_version_mismatch());
+    }
+
+    #[test]
+    fn version_mismatch_false_when_versions_match() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_var_guard("GLRS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+        write_daemon_version();
+        assert!(!daemon_version_mismatch());
+    }
+
+    #[test]
+    fn version_mismatch_true_when_versions_differ() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_var_guard("GLRS_ASSUME_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+        std::fs::write(config::daemon_version_path(), "0.0.0-old").unwrap();
+        assert!(daemon_version_mismatch());
     }
 
     // ── is_daemon_running tests (a2) ─────────────────────────────────
@@ -1421,6 +1490,7 @@ fn stop_daemon() {
     std::thread::sleep(std::time::Duration::from_millis(500));
     remove_pid_file();
     remove_socket_file();
+    remove_daemon_version();
 }
 
 /// Fork a daemon process in the background.

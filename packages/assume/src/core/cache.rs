@@ -1,6 +1,6 @@
 use crate::plugin::Context;
 use anyhow::{Context as _, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Cache directory: config_dir/cache/
 fn cache_dir() -> PathBuf {
@@ -11,8 +11,18 @@ fn contexts_path(provider_id: &str) -> PathBuf {
     cache_dir().join(format!("{provider_id}-contexts.json"))
 }
 
-fn active_path() -> PathBuf {
-    super::config::config_dir().join("active.json")
+// The default-context store is parameterized by config-dir so tests can inject a
+// temp directory without mutating the process-global GLRS_ASSUME_CONFIG_DIR (the
+// public wrappers below pass `config::config_dir()`).
+
+/// Legacy single active-context file, kept only for one-time migration into the
+/// per-provider default store. New code never writes this path.
+fn legacy_active_path_in(base: &Path) -> PathBuf {
+    base.join("active.json")
+}
+
+fn default_path_in(base: &Path, provider_id: &str) -> PathBuf {
+    base.join("defaults").join(format!("{provider_id}.json"))
 }
 
 /// Save discovered contexts to disk cache.
@@ -38,11 +48,25 @@ pub fn load_contexts(provider_id: &str) -> Option<Vec<Context>> {
     serde_json::from_str(&json).ok()
 }
 
-/// Save the currently active context to disk.
-pub fn save_active_context(context: &Context) -> Result<()> {
-    let path = active_path();
+/// Save a provider's default (machine-global ambient) context to disk. The
+/// provider is taken from `context.provider_id`, so each provider keeps its own
+/// default and they never clobber each other.
+pub fn save_default(context: &Context) -> Result<()> {
+    save_default_in(&super::config::config_dir(), context)
+}
+
+fn save_default_in(base: &Path, context: &Context) -> Result<()> {
+    let path = default_path_in(base, &context.provider_id);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
     let json = serde_json::to_string(context)?;
-    std::fs::write(&path, json).with_context(|| "Failed to write active context")?;
+    std::fs::write(&path, json).with_context(|| {
+        format!(
+            "Failed to write default context for {}",
+            context.provider_id
+        )
+    })?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -51,17 +75,70 @@ pub fn save_active_context(context: &Context) -> Result<()> {
     Ok(())
 }
 
-/// Load the currently active context from disk.
-pub fn load_active_context() -> Option<Context> {
-    let path = active_path();
-    let json = std::fs::read_to_string(&path).ok()?;
+/// Load a single provider's default context. None if that provider has no default.
+pub fn load_default(provider_id: &str) -> Option<Context> {
+    load_default_in(&super::config::config_dir(), provider_id)
+}
+
+fn load_default_in(base: &Path, provider_id: &str) -> Option<Context> {
+    let json = std::fs::read_to_string(default_path_in(base, provider_id)).ok()?;
     serde_json::from_str(&json).ok()
 }
 
-/// Clear the active context.
-pub fn clear_active_context() {
-    let path = active_path();
-    let _ = std::fs::remove_file(path);
+/// Load every provider's default context. Empty when nothing is configured.
+pub fn load_all_defaults() -> Vec<Context> {
+    load_all_defaults_in(&super::config::config_dir())
+}
+
+fn load_all_defaults_in(base: &Path) -> Vec<Context> {
+    let dir = base.join("defaults");
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    let mut defaults = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        if let Ok(json) = std::fs::read_to_string(&path) {
+            if let Ok(ctx) = serde_json::from_str::<Context>(&json) {
+                defaults.push(ctx);
+            }
+        }
+    }
+    // Stable order across consumers (prompt, exec, status) regardless of the
+    // filesystem's directory-read order — e.g. aws before gcp.
+    defaults.sort_by(|a, b| a.provider_id.cmp(&b.provider_id));
+    defaults
+}
+
+/// Clear a single provider's default context (e.g. on logout of that provider).
+pub fn clear_default(provider_id: &str) {
+    let _ = std::fs::remove_file(default_path_in(&super::config::config_dir(), provider_id));
+}
+
+/// One-time migration: fold a pre-existing single `active.json` into the
+/// per-provider default store, then remove it. Safe to call on every startup —
+/// it's a no-op once `active.json` is gone. Never overwrites an existing
+/// per-provider default (a newer write wins).
+pub fn migrate_legacy_active_context() {
+    migrate_legacy_active_context_in(&super::config::config_dir());
+}
+
+fn migrate_legacy_active_context_in(base: &Path) {
+    let legacy = legacy_active_path_in(base);
+    let json = match std::fs::read_to_string(&legacy) {
+        Ok(j) => j,
+        Err(_) => return, // nothing to migrate
+    };
+    if let Ok(ctx) = serde_json::from_str::<Context>(&json) {
+        if load_default_in(base, &ctx.provider_id).is_none() {
+            let _ = save_default_in(base, &ctx);
+        }
+    }
+    let _ = std::fs::remove_file(&legacy);
 }
 
 fn agent_allowed_path() -> PathBuf {
@@ -101,4 +178,108 @@ pub fn save_agent_allowed(ids: &std::collections::HashSet<String>) -> Result<()>
 pub fn clear_agent_allowed() {
     let path = agent_allowed_path();
     let _ = std::fs::remove_file(path);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx(provider: &str, id: &str, name: &str) -> Context {
+        Context {
+            provider_id: provider.into(),
+            id: id.into(),
+            display_name: name.into(),
+            searchable_fields: vec![],
+            tags: vec![],
+            metadata: Default::default(),
+            region: "us-east-1".into(),
+        }
+    }
+
+    // Use the *_in cores with a temp dir so these tests never touch the
+    // process-global GLRS_ASSUME_CONFIG_DIR — no cross-test env race.
+    fn tmp() -> tempfile::TempDir {
+        tempfile::TempDir::new().unwrap()
+    }
+
+    #[test]
+    fn defaults_are_per_provider_and_isolated() {
+        let d = tmp();
+        let base = d.path();
+        save_default_in(base, &ctx("aws", "a1", "dev")).unwrap();
+        save_default_in(base, &ctx("gcp", "g1", "my-proj")).unwrap();
+
+        assert_eq!(load_default_in(base, "aws").unwrap().id, "a1");
+        assert_eq!(load_default_in(base, "gcp").unwrap().id, "g1");
+
+        // Overwriting one provider leaves the other untouched.
+        save_default_in(base, &ctx("aws", "a2", "prod")).unwrap();
+        assert_eq!(load_default_in(base, "aws").unwrap().id, "a2");
+        assert_eq!(load_default_in(base, "gcp").unwrap().id, "g1");
+    }
+
+    #[test]
+    fn load_all_defaults_is_sorted_by_provider() {
+        let d = tmp();
+        let base = d.path();
+        save_default_in(base, &ctx("gcp", "g1", "my-proj")).unwrap();
+        save_default_in(base, &ctx("aws", "a1", "dev")).unwrap();
+        let ids: Vec<String> = load_all_defaults_in(base)
+            .into_iter()
+            .map(|c| c.provider_id)
+            .collect();
+        assert_eq!(ids, vec!["aws".to_string(), "gcp".to_string()]);
+    }
+
+    #[test]
+    fn clear_default_only_removes_that_provider() {
+        let d = tmp();
+        let base = d.path();
+        save_default_in(base, &ctx("aws", "a1", "dev")).unwrap();
+        save_default_in(base, &ctx("gcp", "g1", "my-proj")).unwrap();
+        let _ = std::fs::remove_file(default_path_in(base, "aws"));
+        assert!(load_default_in(base, "aws").is_none());
+        assert!(load_default_in(base, "gcp").is_some());
+    }
+
+    #[test]
+    fn migration_folds_active_json_into_defaults_then_removes_it() {
+        let d = tmp();
+        let base = d.path();
+        let legacy = legacy_active_path_in(base);
+        std::fs::write(
+            &legacy,
+            serde_json::to_string(&ctx("aws", "a1", "dev")).unwrap(),
+        )
+        .unwrap();
+
+        migrate_legacy_active_context_in(base);
+
+        assert_eq!(load_default_in(base, "aws").unwrap().id, "a1");
+        assert!(
+            !legacy.exists(),
+            "active.json should be removed after migration"
+        );
+
+        // Idempotent: a second call is a clean no-op.
+        migrate_legacy_active_context_in(base);
+        assert_eq!(load_default_in(base, "aws").unwrap().id, "a1");
+    }
+
+    #[test]
+    fn migration_does_not_clobber_an_existing_default() {
+        let d = tmp();
+        let base = d.path();
+        save_default_in(base, &ctx("aws", "new", "current")).unwrap();
+        std::fs::write(
+            legacy_active_path_in(base),
+            serde_json::to_string(&ctx("aws", "old", "stale")).unwrap(),
+        )
+        .unwrap();
+
+        migrate_legacy_active_context_in(base);
+
+        // The existing per-provider default wins over the legacy file.
+        assert_eq!(load_default_in(base, "aws").unwrap().id, "new");
+    }
 }

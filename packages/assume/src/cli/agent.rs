@@ -144,20 +144,18 @@ async fn run_exec(
             None => bail!("No context matching '{profile}'"),
         }
     } else if let Some(ref provider_id) = args.provider {
-        let active = cache::load_active_context().ok_or_else(|| {
-            anyhow::anyhow!("No active context. Run: gsa use {provider_id} <profile>")
-        })?;
-        if active.provider_id != *provider_id {
-            bail!(
-                "Active context is for '{}', not '{provider_id}'. Run: gsa use {provider_id} <profile>",
-                active.provider_id
-            );
-        }
-        active
-    } else {
-        cache::load_active_context().ok_or_else(|| {
-            anyhow::anyhow!("No active context. Run: gsa use <provider> <profile>")
+        cache::load_default(provider_id).ok_or_else(|| {
+            anyhow::anyhow!("No default context for {provider_id}. Run: gsa use {provider_id} <profile> --default")
         })?
+    } else {
+        let mut defaults = cache::load_all_defaults();
+        match defaults.len() {
+            1 => defaults.remove(0),
+            0 => bail!("No default context. Run: gsa use <provider> <profile> --default"),
+            _ => bail!(
+                "Multiple default contexts set. Pass --provider or a profile to disambiguate."
+            ),
+        }
     };
 
     // 2. Permission check

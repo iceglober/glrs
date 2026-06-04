@@ -28,12 +28,8 @@ pub async fn run(args: LogoutArgs, registry: &PluginRegistry) -> Result<()> {
 
         keychain::delete_all(provider_id)?;
 
-        // Clear active context if it belonged to this provider
-        if let Some(active) = crate::core::cache::load_active_context() {
-            if active.provider_id == *provider_id {
-                crate::core::cache::clear_active_context();
-            }
-        }
+        // Clear this provider's default so it stops being served ambiently.
+        crate::core::cache::clear_default(provider_id);
 
         eprintln!("Logged out from {}", provider.display_name());
 

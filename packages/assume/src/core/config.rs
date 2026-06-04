@@ -41,14 +41,24 @@ impl Default for DaemonConfig {
 pub struct PromptConfig {
     #[serde(default = "default_prompt_format")]
     pub format: String,
+    /// Where the glrs tags sit relative to your existing prompt:
+    /// `"above"` (default) puts them on their own line above it (two-line);
+    /// `"inline"` prepends them on the same line.
+    #[serde(default = "default_prompt_layout")]
+    pub layout: String,
 }
 
 impl Default for PromptConfig {
     fn default() -> Self {
         Self {
             format: "[{provider}:{alias}]".to_string(),
+            layout: default_prompt_layout(),
         }
     }
+}
+
+fn default_prompt_layout() -> String {
+    "above".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +126,12 @@ pub fn socket_path() -> PathBuf {
 /// PID file path
 pub fn pid_path() -> PathBuf {
     config_dir().join("daemon.pid")
+}
+
+/// File recording the version of the currently-running daemon. The CLI compares
+/// it against its own version to detect a daemon left stale by an auto-upgrade.
+pub fn daemon_version_path() -> PathBuf {
+    config_dir().join("daemon.version")
 }
 
 /// Audit log path (resolved from config)

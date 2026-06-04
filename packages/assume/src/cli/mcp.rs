@@ -205,10 +205,22 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
             .map(|m| m.context)
             .ok_or((-32602, format!("No context matching '{pattern}'")))?
     } else {
-        cache::load_active_context().ok_or((
-            -32602,
-            "No active context. Run: gsa use <pattern>".to_string(),
-        ))?
+        let mut defaults = cache::load_all_defaults();
+        match defaults.len() {
+            1 => defaults.remove(0),
+            0 => {
+                return Err((
+                    -32602,
+                    "No default context. Run: gsa use <provider> <context> --default".to_string(),
+                ))
+            }
+            _ => {
+                return Err((
+                    -32602,
+                    "Multiple default contexts set. Pass a context explicitly.".to_string(),
+                ))
+            }
+        }
     };
 
     // 2. Permission check

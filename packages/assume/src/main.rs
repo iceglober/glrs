@@ -134,6 +134,11 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    // Fold a pre-existing single `active.json` into the per-provider default
+    // store. Transparent and idempotent — a no-op once migrated — so existing
+    // users keep their ambient default without re-running init.
+    assume::core::cache::migrate_legacy_active_context();
+
     let cfg = config::load_config()?;
     let registry = build_registry(&cfg)?;
 
@@ -225,6 +230,40 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // Loudly surface a dead session in the foreground. When a provider the user
+    // actually uses (it has a default) has no tokens or an expired *refresh*
+    // token, ambient credentials are stale and only a browser re-login fixes it.
+    // The daemon's desktop notification is easy to miss, so guide on the next
+    // command — except the commands that own/repair auth themselves.
+    let warn_dead_session = !matches!(
+        cli.command,
+        Commands::Login(_)
+            | Commands::Logout(_)
+            | Commands::Init(_)
+            | Commands::Upgrade(_)
+            | Commands::ShellInit(_)
+            | Commands::Config(_)
+            | Commands::Serve(_)
+            | Commands::Status(_) // status reports session state in detail itself
+    );
+    if warn_dead_session {
+        let now = chrono::Utc::now();
+        for provider_id in registry.ids() {
+            if assume::core::cache::load_default(&provider_id).is_none() {
+                continue; // provider isn't in ambient use — don't nag
+            }
+            let dead = match assume::core::keychain::load_tokens(&provider_id) {
+                Ok(Some(tokens)) => tokens.refresh_expires_at <= now,
+                _ => true, // missing/unreadable tokens
+            };
+            if dead {
+                eprintln!(
+                    "\x1b[33m⚠\x1b[0m {provider_id} SSO session ended — ambient credentials are stale. Run: gsa login {provider_id}"
+                );
             }
         }
     }

@@ -99,7 +99,11 @@ async fn select_default_context(
         ));
     }
 
-    let active_id = crate::core::cache::load_active_context().map(|c| c.id);
+    // Highlight whichever context is already the default for its provider.
+    let active_id = crate::core::cache::load_all_defaults()
+        .into_iter()
+        .map(|c| c.id)
+        .next();
 
     let selected = match &args.default_context {
         Some(pattern) => {
@@ -120,7 +124,7 @@ async fn select_default_context(
         }
     };
 
-    crate::core::cache::save_active_context(&selected)?;
+    crate::core::cache::save_default(&selected)?;
     eprintln!(
         "✓ Default context: [{}] {}",
         selected.provider_id, selected.display_name

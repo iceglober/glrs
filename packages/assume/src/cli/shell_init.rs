@@ -94,19 +94,45 @@ pub async fn run(
             }
         }
     }
+
+    // Seed GLRS_ASSUME_SEGMENTS from each provider's default so a brand-new shell
+    // shows the ambient default in its prompt (and `gsa use` overrides it later).
+    let seed = seed_segments();
+    match shell.as_str() {
+        "fish" => println!("set -gx GLRS_ASSUME_SEGMENTS \"{seed}\""),
+        _ => println!("export GLRS_ASSUME_SEGMENTS=\"{seed}\""),
+    }
     println!();
 
     // Shell wrapper + prompt — all shell-specific
+    let two_line = cfg.prompt.layout != "inline";
     match shell.as_str() {
-        "bash" | "zsh" => print_posix_integration(&bin, &shell),
-        "fish" => print_fish_integration(&bin),
+        "bash" | "zsh" => print_posix_integration(&bin, &shell, two_line),
+        "fish" => print_fish_integration(&bin, two_line),
         _ => {}
     }
 
     Ok(())
 }
 
-fn print_posix_integration(bin: &str, shell: &str) {
+/// Encode each provider's default context into a GLRS_ASSUME_SEGMENTS value
+/// (`provider:label:color:override`, space-joined), all marked non-override.
+fn seed_segments() -> String {
+    crate::core::cache::load_all_defaults()
+        .iter()
+        .map(|ctx| {
+            crate::shell::prompt::encode_segment(&crate::shell::prompt::Segment {
+                provider: ctx.provider_id.clone(),
+                label: ctx.display_name.clone(),
+                color: super::use_cmd::context_color(ctx).to_string(),
+                is_override: false,
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn print_posix_integration(bin: &str, shell: &str, two_line: bool) {
     // Wrapper function: intercepts `gsa use` and `gsa login` to eval env var exports
     // stdout has export lines, stderr has human messages — $() only captures stdout
     println!(
@@ -127,56 +153,77 @@ gsa() {{
 glrs-assume() {{ gsa "$@"; }}"#
     );
     println!();
-
-    // Prompt: reads env var directly — zero process spawning
-    // ANSI codes must be wrapped in zero-width markers so the shell doesn't
-    // count them as visible characters (which breaks cursor positioning).
-    //   zsh:  %{...\e[32m...%}
-    //   bash: \[...\e[32m...\]
-    let pv = if shell == "zsh" { "PROMPT" } else { "PS1" };
-    let (zw_open, zw_close) = if shell == "zsh" {
-        ("%{", "%}")
-    } else {
-        ("\\[", "\\]")
-    };
-    println!(r#"# Prompt: reads $GLRS_ASSUME_CONTEXT (instant, no subprocess)"#);
-    println!(r#"_glrs_assume_prompt() {{"#);
-    println!(r#"    if [[ -n "$GLRS_ASSUME_CONTEXT" ]]; then"#);
-    println!(r#"        local color reset"#);
-    println!(
-        "        reset=\"{zw_open}\\033[0m{zw_close}\"",
-        zw_open = zw_open,
-        zw_close = zw_close
-    );
-    println!(r#"        case "$GLRS_ASSUME_CONTEXT_COLOR" in"#);
-    println!(
-        "            red)    color=\"{zw_open}\\033[31m{zw_close}\" ;;",
-        zw_open = zw_open,
-        zw_close = zw_close
-    );
-    println!(
-        "            yellow) color=\"{zw_open}\\033[33m{zw_close}\" ;;",
-        zw_open = zw_open,
-        zw_close = zw_close
-    );
-    println!(
-        "            *)      color=\"{zw_open}\\033[32m{zw_close}\" ;;",
-        zw_open = zw_open,
-        zw_close = zw_close
-    );
-    println!(r#"        esac"#);
-    println!(r#"        echo "${{color}}[$GLRS_ASSUME_CONTEXT]${{reset}} ""#);
-    println!(r#"    fi"#);
-    println!(r#"}}"#);
-    println!(
-        "if [[ \"${pv}\" != *'$(_glrs_assume_prompt)'* ]]; then",
-        pv = pv
-    );
-    println!("    {pv}='$(_glrs_assume_prompt)'\"${pv}\"", pv = pv);
-    println!(r#"fi"#);
+    print!("{}", posix_prompt_block(shell, two_line));
 }
 
-fn print_fish_integration(bin: &str) {
+/// The prompt half of the POSIX (bash/zsh) integration: a function that decodes
+/// $GLRS_ASSUME_SEGMENTS into one `[provider:ctx]` bracket per provider (no
+/// subprocess), and the guarded assignment that prepends it.
+///
+/// ANSI codes are emitted as real ESC bytes inside single-quoted assignments and
+/// wrapped in zero-width markers (`%{ %}` zsh, `\[ \]` bash) so the shell doesn't
+/// count them as visible width. An empty segment list renders a dim `[gsa]`, so
+/// the tag is always present.
+fn posix_prompt_block(shell: &str, two_line: bool) -> String {
+    let is_zsh = shell == "zsh";
+    let pv = if is_zsh { "PROMPT" } else { "PS1" };
+    let (o, c) = if is_zsh { ("%{", "%}") } else { ("\\[", "\\]") };
+    let esc = "\x1b"; // real ESC byte; single-quoted in shell so it's stored verbatim
+    let split = if is_zsh {
+        "${=GLRS_ASSUME_SEGMENTS}" // zsh needs ${=...} to word-split
+    } else {
+        "$GLRS_ASSUME_SEGMENTS"
+    };
+    let reset = format!("{o}{esc}[0m{c}");
+    let dim = format!("{o}{esc}[90m{c}");
+
+    let mut s = String::new();
+    s.push_str("# Prompt: render one [provider:ctx] bracket per provider from\n");
+    s.push_str("# $GLRS_ASSUME_SEGMENTS (instant, no subprocess).\n");
+    s.push_str("_glrs_assume_prompt() {\n");
+    s.push_str("    local out='' tok provider label color ovr col star\n");
+    s.push_str(&format!("    local reset='{reset}'\n"));
+    s.push_str(&format!("    for tok in {split}; do\n"));
+    s.push_str("        provider=\"${tok%%:*}\"; tok=\"${tok#*:}\"\n");
+    s.push_str("        label=\"${tok%%:*}\"; tok=\"${tok#*:}\"\n");
+    s.push_str("        color=\"${tok%%:*}\"; ovr=\"${tok##*:}\"\n");
+    s.push_str("        case \"$color\" in\n");
+    s.push_str(&format!("            red)    col='{o}{esc}[31m{c}' ;;\n"));
+    s.push_str(&format!("            yellow) col='{o}{esc}[33m{c}' ;;\n"));
+    s.push_str(&format!("            blue)   col='{o}{esc}[34m{c}' ;;\n"));
+    s.push_str(&format!("            *)      col='{o}{esc}[32m{c}' ;;\n"));
+    s.push_str("        esac\n");
+    s.push_str("        star=''; [ \"$ovr\" = \"1\" ] && star='*'\n");
+    s.push_str("        out=\"${out}${col}[${provider}:${label}${star}]${reset}\"\n");
+    s.push_str("    done\n");
+    s.push_str(&format!(
+        "    if [ -z \"$out\" ]; then out=\"{dim}[gsa]${{reset}}\"; fi\n"
+    ));
+    s.push_str("    printf '%s' \"$out\"\n");
+    s.push_str("}\n");
+
+    // `$()` strips trailing newlines, so a two-line layout puts the newline in
+    // the assignment (outside the substitution), not in the function output.
+    // Inline keeps a trailing space inside the substitution's single quotes.
+    s.push_str(&format!(
+        "if [[ \"${pv}\" != *'$(_glrs_assume_prompt)'* ]]; then\n"
+    ));
+    if is_zsh {
+        // `$(...)` in PROMPT is only expanded with PROMPT_SUBST.
+        s.push_str("    setopt PROMPT_SUBST\n");
+    }
+    if two_line {
+        s.push_str(&format!(
+            "    {pv}='$(_glrs_assume_prompt)'$'\\n'\"${pv}\"\n"
+        ));
+    } else {
+        s.push_str(&format!("    {pv}='$(_glrs_assume_prompt) '\"${pv}\"\n"));
+    }
+    s.push_str("fi\n");
+    s
+}
+
+fn print_fish_integration(bin: &str, two_line: bool) {
     println!(
         r#"# Wrapper: `gsa use` and `gsa login` set per-shell context via env vars
 function gsa
@@ -202,20 +249,46 @@ end
 function glrs-assume; gsa $argv; end"#
     );
     println!();
+    // Fish handles ANSI width via set_color, so no zero-width markers are needed.
+    // Renders one bracket per provider from $GLRS_ASSUME_SEGMENTS; empty → [gsa].
+    let sep = if two_line {
+        "echo ''"
+    } else {
+        r#"echo -n ' '"#
+    };
     println!(
-        r#"# Prompt: reads $GLRS_ASSUME_CONTEXT (instant, no subprocess)
+        r#"# Prompt: reads $GLRS_ASSUME_SEGMENTS (instant, no subprocess)
+function _glrs_assume_prompt
+    if set -q GLRS_ASSUME_SEGMENTS; and test -n "$GLRS_ASSUME_SEGMENTS"
+        for tok in (string split ' ' -- $GLRS_ASSUME_SEGMENTS)
+            set -l parts (string split ':' -- $tok)
+            set -l provider $parts[1]
+            set -l label $parts[2]
+            set -l color $parts[3]
+            set -l ovr $parts[4]
+            set -l fcol green
+            switch $color
+                case red; set fcol red
+                case yellow; set fcol yellow
+                case blue; set fcol blue
+            end
+            set -l star ''
+            test "$ovr" = '1'; and set star '*'
+            set_color $fcol
+            echo -n "[$provider:$label$star]"
+            set_color normal
+        end
+    else
+        set_color brblack
+        echo -n '[gsa]'
+        set_color normal
+    end
+end
 if not functions -q _original_fish_prompt
     functions -c fish_prompt _original_fish_prompt
     function fish_prompt
-        if test -n "$GLRS_ASSUME_CONTEXT"
-            set -l color green
-            if test "$GLRS_ASSUME_CONTEXT_COLOR" = "red"
-                set color red
-            end
-            set_color $color
-            echo -n "[$GLRS_ASSUME_CONTEXT] "
-            set_color normal
-        end
+        _glrs_assume_prompt
+        {sep}
         _original_fish_prompt
     end
 end"#
