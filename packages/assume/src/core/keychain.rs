@@ -127,6 +127,9 @@ fn decrypt_from_file(path: &PathBuf) -> Result<Option<Vec<u8>>> {
 pub fn store_tokens(provider_id: &str, tokens: &AuthTokens) -> Result<()> {
     let json = serde_json::to_string(tokens).context("Failed to serialize tokens")?;
     encrypt_to_file(&token_path(provider_id), json.as_bytes())?;
+    // Fresh valid tokens resolve any pending re-login state (login, daemon
+    // refresh, and inline refresh all land here).
+    crate::core::cache::clear_needs_login(provider_id);
     tracing::debug!("Stored encrypted tokens for provider {provider_id}");
     Ok(())
 }
