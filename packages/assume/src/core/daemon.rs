@@ -413,6 +413,7 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
                             ps.status = PluginStatus::NeedsLogin;
                         }
                     } // write lock dropped BEFORE notification
+                    crate::core::cache::mark_needs_login(provider_id);
                     notify_session_expired(&display_name);
                     return Ok(());
                 }
@@ -529,6 +530,7 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
                         ps.status = PluginStatus::NeedsLogin;
                     }
                 } // write lock dropped BEFORE notification
+                crate::core::cache::mark_needs_login(provider_id);
                 notify_session_expired(&display_name);
             }
             Ok(Err(ProviderError::NetworkError(msg))) => {

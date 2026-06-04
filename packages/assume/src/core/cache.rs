@@ -141,6 +141,45 @@ fn migrate_legacy_active_context_in(base: &Path) {
     let _ = std::fs::remove_file(&legacy);
 }
 
+fn needs_login_path_in(base: &Path, provider_id: &str) -> PathBuf {
+    base.join("needs-login").join(provider_id)
+}
+
+/// Flag that a provider needs an interactive re-login because its refresh
+/// credential was rejected — AWS SSO session ended, or GCP reauth
+/// (`invalid_rapt`). GCP stamps a 10-year refresh expiry, so a timestamp check
+/// can't catch this; the daemon sets this marker when a refresh actually fails,
+/// and it's cleared whenever fresh tokens are stored.
+pub fn mark_needs_login(provider_id: &str) {
+    mark_needs_login_in(&super::config::config_dir(), provider_id)
+}
+
+fn mark_needs_login_in(base: &Path, provider_id: &str) {
+    let path = needs_login_path_in(base, provider_id);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(&path, "");
+}
+
+/// Clear the needs-login marker (called when fresh tokens are stored).
+pub fn clear_needs_login(provider_id: &str) {
+    clear_needs_login_in(&super::config::config_dir(), provider_id)
+}
+
+fn clear_needs_login_in(base: &Path, provider_id: &str) {
+    let _ = std::fs::remove_file(needs_login_path_in(base, provider_id));
+}
+
+/// Whether a provider is flagged as needing interactive re-login.
+pub fn needs_login(provider_id: &str) -> bool {
+    needs_login_in(&super::config::config_dir(), provider_id)
+}
+
+fn needs_login_in(base: &Path, provider_id: &str) -> bool {
+    needs_login_path_in(base, provider_id).exists()
+}
+
 fn agent_allowed_path() -> PathBuf {
     super::config::config_dir().join("agent-allowed.json")
 }
@@ -240,6 +279,21 @@ mod tests {
         let _ = std::fs::remove_file(default_path_in(base, "aws"));
         assert!(load_default_in(base, "aws").is_none());
         assert!(load_default_in(base, "gcp").is_some());
+    }
+
+    #[test]
+    fn needs_login_marker_set_clear_per_provider() {
+        let d = tmp();
+        let base = d.path();
+        assert!(!needs_login_in(base, "gcp"));
+        mark_needs_login_in(base, "gcp");
+        assert!(needs_login_in(base, "gcp"));
+        // Marking one provider doesn't flag another.
+        assert!(!needs_login_in(base, "aws"));
+        clear_needs_login_in(base, "gcp");
+        assert!(!needs_login_in(base, "gcp"));
+        // Clearing an unset marker is a no-op, not an error.
+        clear_needs_login_in(base, "aws");
     }
 
     #[test]

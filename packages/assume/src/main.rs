@@ -224,6 +224,11 @@ async fn main() -> anyhow::Result<()> {
                                     "Inline refresh succeeded for {provider_id} (daemon not running)"
                                 );
                             }
+                            Err(assume::plugin::ProviderError::RefreshTokenExpired) => {
+                                // Refresh credential genuinely rejected — flag for
+                                // the dead-session banner below (and future runs).
+                                assume::core::cache::mark_needs_login(&provider_id);
+                            }
                             Err(e) => {
                                 tracing::debug!("Inline refresh failed for {provider_id}: {e}");
                             }
@@ -256,13 +261,17 @@ async fn main() -> anyhow::Result<()> {
             if assume::core::cache::load_default(&provider_id).is_none() {
                 continue; // provider isn't in ambient use — don't nag
             }
-            let dead = match assume::core::keychain::load_tokens(&provider_id) {
-                Ok(Some(tokens)) => tokens.refresh_expires_at <= now,
-                _ => true, // missing/unreadable tokens
-            };
+            // Dead when the refresh window lapsed, tokens are gone, or the daemon
+            // flagged a rejected refresh — the last case catches GCP reauth
+            // (`invalid_rapt`), whose refresh token carries a 10-year expiry.
+            let dead = assume::core::cache::needs_login(&provider_id)
+                || match assume::core::keychain::load_tokens(&provider_id) {
+                    Ok(Some(tokens)) => tokens.refresh_expires_at <= now,
+                    _ => true, // missing/unreadable tokens
+                };
             if dead {
                 eprintln!(
-                    "\x1b[33m⚠\x1b[0m {provider_id} SSO session ended — ambient credentials are stale. Run: gsa login {provider_id}"
+                    "\x1b[33m⚠\x1b[0m {provider_id} session needs re-authentication — ambient credentials are stale. Run: gsa login {provider_id}"
                 );
             }
         }
