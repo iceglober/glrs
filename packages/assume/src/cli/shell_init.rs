@@ -74,8 +74,15 @@ pub async fn run(
     println!("# glrs-assume shell integration for {shell}");
     println!();
 
-    // Environment variables for each provider's credential endpoint
+    // Environment variables for each provider's credential endpoint. Only export
+    // them for a provider glrs actually has a default for — otherwise vars like
+    // GCE_METADATA_HOST would hijack GCP credential resolution for every app in
+    // the shell even when glrs isn't managing GCP (e.g. logged out so you can use
+    // gcloud's own auth, which — unlike glrs — handles org reauth).
     for provider_id in registry.ids() {
+        if crate::core::cache::load_default(&provider_id).is_none() {
+            continue;
+        }
         let provider = registry.get(&provider_id).unwrap();
         let port = cfg
             .providers
