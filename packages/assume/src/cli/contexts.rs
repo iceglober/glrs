@@ -87,13 +87,17 @@ pub async fn run(
             println!("{:<40} {:<15} Region", "Context", "Alias",);
         }
 
-        // Check active context
-        let active_id = crate::core::cache::load_active_context().map(|c| c.id);
+        // Mark each provider's default context.
+        let default_ids: std::collections::HashSet<String> =
+            crate::core::cache::load_all_defaults()
+                .into_iter()
+                .map(|c| c.id)
+                .collect();
 
         for ctx in &contexts {
             let alias = ctx.metadata.get("alias").map(String::as_str).unwrap_or("-");
             let is_dangerous = ctx.tags.contains(&"dangerous".to_string());
-            let is_active = active_id.as_deref() == Some(ctx.id.as_str());
+            let is_active = default_ids.contains(&ctx.id);
             let marker = if is_active {
                 "\x1b[32m● \x1b[0m"
             } else {

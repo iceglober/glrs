@@ -13,31 +13,24 @@ pub struct LoginArgs {
     pub provider: Option<String>,
 }
 
-/// Escape a string for safe interpolation inside double-quoted shell values.
-fn shell_escape(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('$', "\\$")
-        .replace('`', "\\`")
-        .replace('!', "\\!")
-}
-
-/// Output export lines to set the prompt to [provider:no-context].
-/// Used when login completes but no specific context is selected.
-fn print_provider_prompt(provider_id: &str) {
-    let label = format!("{provider_id}:no-context");
-    let color = if provider_id == "gcp" {
-        "blue"
-    } else {
-        "green"
-    };
-    println!("export GLRS_ASSUME_CONTEXT=\"{}\"", shell_escape(&label));
-    println!("export GLRS_ASSUME_CONTEXT_COLOR=\"{}\"", color);
-    println!("export GLRS_ASSUME_CONTEXT_ID=\"\"");
-    println!(
-        "export GLRS_ASSUME_CONTEXT_PROVIDER=\"{}\"",
-        shell_escape(provider_id)
-    );
+/// Pick the context to use as this provider's default after login. Prefers the
+/// existing default when it's still present (so a re-login after SSO expiry keeps
+/// you where you were), otherwise the sole context when there's only one. Returns
+/// None when the choice is genuinely ambiguous — `gsa init` / `gsa use --default`
+/// own that decision rather than login guessing.
+fn choose_default<'a>(
+    provider_id: &str,
+    contexts: &'a [crate::plugin::Context],
+) -> Option<&'a crate::plugin::Context> {
+    if let Some(existing) = crate::core::cache::load_default(provider_id) {
+        if let Some(found) = contexts.iter().find(|c| c.id == existing.id) {
+            return Some(found);
+        }
+    }
+    if contexts.len() == 1 {
+        return Some(&contexts[0]);
+    }
+    None
 }
 
 /// Prompt the user for input with an optional default value.
@@ -221,21 +214,28 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
                 tracing::warn!("Failed to cache contexts: {e}");
             }
 
-            // Set prompt: auto-select if single context, otherwise [provider:no-profile]
-            if contexts.len() == 1 {
-                let selected = &contexts[0];
-                eprintln!(
-                    "Auto-selected: {} ({})",
-                    selected.display_name, selected.region
-                );
-                super::use_cmd::print_context_exports(selected, cfg);
-                if let Err(e) = crate::core::cache::save_active_context(selected) {
-                    tracing::warn!("Failed to save active context: {e}");
+            // Establish the provider's default: keep the prior one if still
+            // valid (re-login after SSO expiry shouldn't strand ambient creds),
+            // else auto-select a sole context. Never reset to "no context" when
+            // contexts exist — that was the bug that forced `gsa exec` for
+            // everything after every re-login.
+            match choose_default(&provider_id, &contexts) {
+                Some(selected) => {
+                    eprintln!(
+                        "Default context: {} ({})",
+                        selected.display_name, selected.region
+                    );
+                    super::use_cmd::print_context_exports(selected, cfg, false);
+                    if let Err(e) = crate::core::cache::save_default(selected) {
+                        tracing::warn!("Failed to save default context: {e}");
+                    }
                 }
-            } else {
-                // Multiple contexts — set provider-only prompt
-                print_provider_prompt(&provider_id);
-                eprintln!("Run: gsa use {provider_id} <context> to select a context");
+                None => {
+                    super::use_cmd::print_segment_cleared(&provider_id);
+                    eprintln!(
+                        "Run: gsa use {provider_id} <context> --default to pick your default"
+                    );
+                }
             }
         }
         Err(e) => {
@@ -252,15 +252,14 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
                         if let Err(e) = crate::core::cache::save_contexts(&provider_id, &contexts) {
                             tracing::warn!("Failed to cache contexts: {e}");
                         }
-                        if contexts.len() == 1 {
-                            let selected = &contexts[0];
+                        if let Some(selected) = choose_default(&provider_id, &contexts) {
                             eprintln!(
-                                "Auto-selected: {} ({})",
+                                "Default context: {} ({})",
                                 selected.display_name, selected.region
                             );
-                            super::use_cmd::print_context_exports(selected, cfg);
-                            if let Err(e) = crate::core::cache::save_active_context(selected) {
-                                tracing::warn!("Failed to save active context: {e}");
+                            super::use_cmd::print_context_exports(selected, cfg, false);
+                            if let Err(e) = crate::core::cache::save_default(selected) {
+                                tracing::warn!("Failed to save default context: {e}");
                             }
                         }
                         // Skip the fallback prompt — we handled it
@@ -278,8 +277,8 @@ pub async fn run(args: LoginArgs, registry: &PluginRegistry, cfg: &config::Confi
             }
 
             eprintln!("You can try: gsa sync {provider_id}");
-            // Still set the provider prompt even without contexts
-            print_provider_prompt(&provider_id);
+            // No contexts to default to — clear this provider's prompt segment.
+            super::use_cmd::print_segment_cleared(&provider_id);
         }
     }
 

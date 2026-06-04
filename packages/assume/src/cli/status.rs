@@ -66,14 +66,12 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
             println!("  SSO session ended — run: gsa login {provider_id}");
         }
 
-        // Show active context
-        if let Some(ref active) = crate::core::cache::load_active_context() {
-            if active.provider_id == provider_id {
-                println!(
-                    "  Active context: {} ({})",
-                    active.display_name, active.region
-                );
-            }
+        // Show this provider's default (ambient) context
+        if let Some(ref default_ctx) = crate::core::cache::load_default(&provider_id) {
+            println!(
+                "  Default context: {} ({})",
+                default_ctx.display_name, default_ctx.region
+            );
         }
 
         println!();
@@ -118,13 +116,18 @@ fn nudge_shell_integration() {
 }
 
 async fn print_prompt_segments(registry: &PluginRegistry, _cfg: &config::Config) -> Result<()> {
-    // Read active context from disk — must be instant for shell prompt
-    if let Some(ctx) = crate::core::cache::load_active_context() {
-        if let Some(provider) = registry.get(&ctx.provider_id) {
-            let segment = provider.prompt_segment(&ctx);
-            print!("{}", prompt::format_segment(&segment));
-        }
-    }
+    // Render one segment per provider's default. The installed shell integration
+    // reads GLRS_ASSUME_SEGMENTS directly (no subprocess); this `--prompt` path is
+    // a convenience for inspecting what the prompt would show.
+    let segments: Vec<_> = crate::core::cache::load_all_defaults()
+        .into_iter()
+        .filter_map(|ctx| {
+            registry
+                .get(&ctx.provider_id)
+                .map(|p| p.prompt_segment(&ctx))
+        })
+        .collect();
+    print!("{}", prompt::format_prompt(&segments));
     Ok(())
 }
 
