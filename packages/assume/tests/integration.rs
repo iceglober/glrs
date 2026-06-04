@@ -25,6 +25,30 @@ fn glrs_assume_initialized() -> (Command, TempDir) {
     (cmd, dir)
 }
 
+/// Write a minimal AWS default context into a config dir's `defaults/` so
+/// shell-init emits the AWS ambient env (it's gated on the provider having a
+/// default — see `cli::shell_init::run`).
+fn write_aws_default(dir: &std::path::Path) {
+    let defaults = dir.join("defaults");
+    std::fs::create_dir_all(&defaults).unwrap();
+    std::fs::write(
+        defaults.join("aws.json"),
+        r#"{"provider_id":"aws","id":"acct/role","display_name":"dev","searchable_fields":[],"tags":[],"metadata":{},"region":"us-east-1"}"#,
+    )
+    .unwrap();
+}
+
+/// An initialized config dir that already has an AWS default, so shell-init
+/// exports the AWS credential endpoint env. Keep the `TempDir` alive.
+fn glrs_assume_with_aws_default() -> (Command, TempDir) {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("initialized.json"), "{}\n").unwrap();
+    write_aws_default(dir.path());
+    let mut cmd = glrs_assume();
+    cmd.env("GLRS_ASSUME_CONFIG_DIR", dir.path());
+    (cmd, dir)
+}
+
 #[test]
 fn test_version() {
     glrs_assume()
@@ -132,8 +156,9 @@ fn test_use_help_does_not_output_export() {
 #[test]
 fn test_shell_init_contains_bearer_token() {
     // shell-init must set AWS_CONTAINER_AUTHORIZATION_TOKEN for credential auth
-    glrs_assume()
-        .args(["shell-init", "zsh"])
+    // (with an AWS default present — ambient env is gated on having one).
+    let (mut cmd, _dir) = glrs_assume_with_aws_default();
+    cmd.args(["shell-init", "zsh"])
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -182,11 +207,24 @@ fn test_shell_init_wrapper_only_evals_exports() {
 
 #[test]
 fn test_session_token_is_persistent() {
-    // Two invocations of shell-init should produce the same session token
-    let output1 = glrs_assume().args(["shell-init", "zsh"]).output().unwrap();
+    // Two invocations of shell-init should produce the same session token.
+    // Both share one config dir (with an AWS default so the token is emitted).
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("initialized.json"), "{}\n").unwrap();
+    write_aws_default(dir.path());
+
+    let output1 = glrs_assume()
+        .env("GLRS_ASSUME_CONFIG_DIR", dir.path())
+        .args(["shell-init", "zsh"])
+        .output()
+        .unwrap();
     let stdout1 = String::from_utf8_lossy(&output1.stdout);
 
-    let output2 = glrs_assume().args(["shell-init", "zsh"]).output().unwrap();
+    let output2 = glrs_assume()
+        .env("GLRS_ASSUME_CONFIG_DIR", dir.path())
+        .args(["shell-init", "zsh"])
+        .output()
+        .unwrap();
     let stdout2 = String::from_utf8_lossy(&output2.stdout);
 
     // Extract the token value from both outputs
@@ -209,7 +247,8 @@ fn test_session_token_is_persistent() {
 fn test_shell_init_bearer_prefix() {
     // AWS_CONTAINER_AUTHORIZATION_TOKEN must include Bearer prefix
     // because AWS SDKs send this value as-is in the Authorization header
-    let output = glrs_assume().args(["shell-init", "zsh"]).output().unwrap();
+    let (mut cmd, _dir) = glrs_assume_with_aws_default();
+    let output = cmd.args(["shell-init", "zsh"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let token_line = stdout
         .lines()
@@ -225,7 +264,8 @@ fn test_shell_init_bearer_prefix() {
 fn test_shell_init_and_use_share_same_credential_uri_base() {
     // shell-init outputs the base credential URI
     // gsa use should output an updated URI with context ID appended
-    let output = glrs_assume().args(["shell-init", "zsh"]).output().unwrap();
+    let (mut cmd, _dir) = glrs_assume_with_aws_default();
+    let output = cmd.args(["shell-init", "zsh"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Must contain the base URI
