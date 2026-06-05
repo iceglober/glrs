@@ -164,11 +164,46 @@ export function extractSkillName(tool: string, args?: unknown): string | null {
 export function buildToolUsedProps(args: {
   tool: string;
   ok: boolean;
+  provider?: string;
+  model?: string;
   skill?: string | null;
   preset?: string;
 }): EventProperties {
-  const props: EventProperties = { tool: args.tool || "unknown", ok: args.ok };
+  const props: EventProperties = {
+    provider: args.provider || "unknown",
+    model: args.model || "unknown",
+    tool: args.tool || "unknown",
+    ok: args.ok,
+  };
   if (args.skill) props.skill = args.skill;
+  if (args.preset) props.preset = args.preset;
+  return props;
+}
+
+/**
+ * Properties for the `loop_detected` event — emitted when the tool-loop guard
+ * warns or aborts a session that is spinning (repeated calls or a long passive
+ * exploration streak with no forward progress). `kind` distinguishes the two
+ * signatures; `level` is the escalation stage; `count` is the streak/repeat
+ * score that tripped it.
+ */
+export function buildLoopProps(args: {
+  tool: string;
+  kind: "explore" | "repeat";
+  level: "warn" | "abort";
+  count: number;
+  provider?: string;
+  model?: string;
+  preset?: string;
+}): EventProperties {
+  const props: EventProperties = {
+    provider: args.provider || "unknown",
+    model: args.model || "unknown",
+    tool: args.tool || "unknown",
+    kind: args.kind,
+    level: args.level,
+    count: Math.max(0, Math.round(args.count || 0)),
+  };
   if (args.preset) props.preset = args.preset;
   return props;
 }
@@ -177,12 +212,16 @@ export function buildToolUsedProps(args: {
 export function buildVerifyProps(args: {
   errorCount: number;
   tool: string;
+  provider?: string;
+  model?: string;
   preset?: string;
 }): EventProperties {
   const props: EventProperties = {
     ok: args.errorCount === 0,
     errors: Math.max(0, Math.round(args.errorCount || 0)),
     lang: "ts",
+    provider: args.provider || "unknown",
+    model: args.model || "unknown",
     tool: args.tool || "unknown",
   };
   if (args.preset) props.preset = args.preset;

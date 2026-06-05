@@ -121,22 +121,55 @@ describe("inferToolOk", () => {
 });
 
 describe("buildToolUsedProps", () => {
-  it("includes skill and preset only when set", () => {
-    expect(buildToolUsedProps({ tool: "read", ok: true })).toEqual({ tool: "read", ok: true });
+  it("includes skill and preset only when set, defaults provider/model to unknown", () => {
+    expect(buildToolUsedProps({ tool: "read", ok: true })).toEqual({
+      provider: "unknown",
+      model: "unknown",
+      tool: "read",
+      ok: true,
+    });
     expect(
-      buildToolUsedProps({ tool: "skill", ok: false, skill: "code-quality", preset: "fast" }),
-    ).toEqual({ tool: "skill", ok: false, skill: "code-quality", preset: "fast" });
+      buildToolUsedProps({
+        tool: "skill",
+        ok: false,
+        provider: "anthropic",
+        model: "claude-opus-4-8",
+        skill: "code-quality",
+        preset: "fast",
+      }),
+    ).toEqual({
+      provider: "anthropic",
+      model: "claude-opus-4-8",
+      tool: "skill",
+      ok: false,
+      skill: "code-quality",
+      preset: "fast",
+    });
   });
 });
 
 describe("buildVerifyProps", () => {
-  it("ok=true when no errors", () => {
-    expect(buildVerifyProps({ errorCount: 0, tool: "edit" })).toEqual({
+  it("ok=true when no errors, carries provider/model", () => {
+    expect(
+      buildVerifyProps({
+        errorCount: 0,
+        tool: "edit",
+        provider: "anthropic",
+        model: "claude-opus-4-8",
+      }),
+    ).toEqual({
       ok: true,
       errors: 0,
       lang: "ts",
+      provider: "anthropic",
+      model: "claude-opus-4-8",
       tool: "edit",
     });
+  });
+  it("defaults provider/model to unknown when omitted", () => {
+    const p = buildVerifyProps({ errorCount: 0, tool: "edit" });
+    expect(p.provider).toBe("unknown");
+    expect(p.model).toBe("unknown");
   });
   it("ok=false with the error count", () => {
     const p = buildVerifyProps({ errorCount: 3, tool: "write" });

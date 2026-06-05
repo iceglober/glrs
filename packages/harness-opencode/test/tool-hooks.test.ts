@@ -7,6 +7,9 @@ const {
   resolveConfig,
   applyBackpressure,
   checkEditLoop,
+  checkToolLoop,
+  normalizeToolSig,
+  loopCorrective,
   checkReadDedup,
   looksLikeBashFailure,
   extractFilePath,
@@ -16,6 +19,10 @@ const {
   takeGrepHead,
   DEFAULT_BACKPRESSURE_THRESHOLD,
   DEFAULT_LOOP_THRESHOLD,
+  DEFAULT_EXPLORATION_WARN,
+  DEFAULT_EXPLORATION_ABORT,
+  DEFAULT_REPEAT_WARN,
+  DEFAULT_REPEAT_ABORT,
 } = __test__;
 
 // ---- helpers ---------------------------------------------------------------
@@ -43,6 +50,11 @@ describe("resolveConfig", () => {
     expect(cfg.verifyLoop.timeoutMs).toBe(15_000);
     expect(cfg.loopDetection.enabled).toBe(true);
     expect(cfg.loopDetection.threshold).toBe(DEFAULT_LOOP_THRESHOLD);
+    expect(cfg.loopDetection.explorationWarn).toBe(DEFAULT_EXPLORATION_WARN);
+    expect(cfg.loopDetection.explorationAbort).toBe(DEFAULT_EXPLORATION_ABORT);
+    expect(cfg.loopDetection.repeatWarn).toBe(DEFAULT_REPEAT_WARN);
+    expect(cfg.loopDetection.repeatAbort).toBe(DEFAULT_REPEAT_ABORT);
+    expect(cfg.loopDetection.abortEnabled).toBe(true);
     expect(cfg.readDedup.enabled).toBe(true);
   });
 
@@ -50,7 +62,14 @@ describe("resolveConfig", () => {
     const cfg = makeConfig({
       backpressure: { enabled: false, threshold: 5000, tools: ["bash"] },
       verifyLoop: { enabled: false, timeoutMs: 30_000 },
-      loopDetection: { threshold: 10 },
+      loopDetection: {
+        threshold: 10,
+        explorationWarn: 5,
+        explorationAbort: 9,
+        repeatWarn: 2,
+        repeatAbort: 4,
+        abortEnabled: false,
+      },
       readDedup: { enabled: false },
     });
     expect(cfg.backpressure.enabled).toBe(false);
@@ -59,6 +78,11 @@ describe("resolveConfig", () => {
     expect(cfg.verifyLoop.enabled).toBe(false);
     expect(cfg.verifyLoop.timeoutMs).toBe(30_000);
     expect(cfg.loopDetection.threshold).toBe(10);
+    expect(cfg.loopDetection.explorationWarn).toBe(5);
+    expect(cfg.loopDetection.explorationAbort).toBe(9);
+    expect(cfg.loopDetection.repeatWarn).toBe(2);
+    expect(cfg.loopDetection.repeatAbort).toBe(4);
+    expect(cfg.loopDetection.abortEnabled).toBe(false);
     expect(cfg.readDedup.enabled).toBe(false);
   });
 });
@@ -444,6 +468,117 @@ describe("checkEditLoop", () => {
     const output = { output: "edit applied" };
     checkEditLoop(cfg, sess, "/foo.ts", output);
     expect(output.output).toBe("edit applied");
+  });
+});
+
+// ---- normalizeToolSig ------------------------------------------------------
+
+describe("normalizeToolSig", () => {
+  it("keys reads on filePath + offset", () => {
+    expect(normalizeToolSig("read", { filePath: "/a.ts" })).toBe("read:/a.ts@");
+    expect(normalizeToolSig("read", { filePath: "/a.ts", offset: 100 })).toBe("read:/a.ts@100");
+    // Same file, different offset → different signature (not a loop).
+    expect(normalizeToolSig("read", { filePath: "/a.ts", offset: 0 })).not.toBe(
+      normalizeToolSig("read", { filePath: "/a.ts", offset: 200 }),
+    );
+  });
+  it("keys grep on pattern + scope and bash on the command", () => {
+    expect(normalizeToolSig("grep", { pattern: "foo", path: "/src" })).toBe("grep:foo|/src");
+    expect(normalizeToolSig("bash", { command: "  ls -la " })).toBe("bash:ls -la");
+  });
+  it("caps signature length", () => {
+    const sig = normalizeToolSig("bash", { command: "x".repeat(500) });
+    expect(sig.length).toBeLessThanOrEqual("bash:".length + 200);
+  });
+});
+
+// ---- checkToolLoop ---------------------------------------------------------
+
+describe("checkToolLoop", () => {
+  beforeEach(() => {
+    sessions.clear();
+  });
+
+  it("stays silent during normal, varied tool use", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("ctl-normal");
+    // A mix of reads broken up by edits (active calls reset the streak).
+    for (let i = 0; i < 8; i++) {
+      expect(checkToolLoop(cfg, sess, "read", { filePath: `/f${i}.ts` }, true).level).toBe("none");
+      expect(checkToolLoop(cfg, sess, "edit", { filePath: `/f${i}.ts` }, true).level).toBe("none");
+    }
+    expect(sess.passiveStreak).toBe(0);
+  });
+
+  it("warns then aborts on a long passive-exploration streak (the 166c pattern)", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("ctl-explore");
+    const levels: string[] = [];
+    // Distinct files each time → no repeat signal; pure exploration streak.
+    for (let i = 0; i < DEFAULT_EXPLORATION_ABORT; i++) {
+      const tool = i % 2 === 0 ? "read" : "grep";
+      const args = tool === "read" ? { filePath: `/f${i}.ts` } : { pattern: `p${i}` };
+      levels.push(checkToolLoop(cfg, sess, tool, args, true).level);
+    }
+    expect(levels[DEFAULT_EXPLORATION_WARN - 2]).toBe("none");
+    expect(levels[DEFAULT_EXPLORATION_WARN - 1]).toBe("warn");
+    const last = checkToolLoop(cfg, sess, "read", { filePath: "/final.ts" }, true);
+    expect(last.level).toBe("abort");
+    expect(last.kind).toBe("explore");
+  });
+
+  it("an active call (bash/edit) resets the exploration streak", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("ctl-reset");
+    for (let i = 0; i < DEFAULT_EXPLORATION_WARN - 1; i++) {
+      checkToolLoop(cfg, sess, "read", { filePath: `/f${i}.ts` }, true);
+    }
+    // A real command = progress.
+    checkToolLoop(cfg, sess, "bash", { command: "bun test" }, true);
+    expect(sess.passiveStreak).toBe(0);
+    // Resumes from zero, so the next read is nowhere near the warn threshold.
+    expect(checkToolLoop(cfg, sess, "read", { filePath: "/again.ts" }, true).level).toBe("none");
+  });
+
+  it("flags an identical repeated call as a repeat loop", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("ctl-repeat");
+    let v;
+    for (let i = 0; i < cfg.repeatAbort; i++) {
+      v = checkToolLoop(cfg, sess, "grep", { pattern: "same" }, true);
+    }
+    expect(v!.kind).toBe("repeat");
+    expect(v!.level).toBe("abort");
+  });
+
+  it("escalates a repeatedly FAILING call twice as fast (failures weigh double)", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("ctl-fail");
+    // ok=false → weight 2. repeatAbort/2 failing calls should already abort.
+    const calls = Math.ceil(cfg.repeatAbort / 2);
+    let v;
+    for (let i = 0; i < calls; i++) {
+      v = checkToolLoop(cfg, sess, "bash", { command: "broken-cmd" }, false);
+    }
+    expect(v!.level).toBe("abort");
+    expect(v!.kind).toBe("repeat");
+  });
+
+  it("is a no-op when disabled", () => {
+    const cfg = { ...defaultConfig().loopDetection, enabled: false };
+    const sess = getSession("ctl-disabled");
+    for (let i = 0; i < DEFAULT_EXPLORATION_ABORT + 5; i++) {
+      expect(checkToolLoop(cfg, sess, "read", { filePath: "/same.ts" }, true).level).toBe("none");
+    }
+  });
+
+  it("loopCorrective text differs by kind", () => {
+    expect(loopCorrective({ level: "warn", kind: "explore", sig: "read:/a", count: 12 })).toContain(
+      "read/search calls in a row",
+    );
+    expect(loopCorrective({ level: "abort", kind: "repeat", sig: "grep:x", count: 6 })).toContain(
+      "same tool call",
+    );
   });
 });
 
