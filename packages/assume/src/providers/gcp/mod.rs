@@ -1,10 +1,9 @@
-pub mod adc;
 pub mod auth;
 pub mod contexts;
 pub mod credentials;
 pub mod endpoint;
+pub mod gcloud;
 pub mod refresh;
-pub mod setup;
 
 use crate::plugin::{
     AuthTokens, Context, CredentialEndpoint, Credentials, ProfileConfig, PromptSegment, Provider,
@@ -86,17 +85,20 @@ impl Provider for GcpProvider {
         credentials::get_credentials(tokens, context).await
     }
 
+    fn is_daemon_served(&self) -> bool {
+        // GCP credentials are delivered by gcloud's ADC, not the daemon.
+        false
+    }
+
     fn credential_endpoint(&self) -> CredentialEndpoint {
+        // Unused (is_daemon_served == false); kept to satisfy the trait.
         endpoint::build_endpoint(self.port)
     }
 
-    fn shell_env(&self, endpoint_port: u16) -> Vec<(String, String)> {
-        let port = if endpoint_port > 0 {
-            endpoint_port
-        } else {
-            self.port
-        };
-        endpoint::shell_env(port, None)
+    fn shell_env(&self, _endpoint_port: u16) -> Vec<(String, String)> {
+        // No ambient endpoint env for GCP — the per-default project export is
+        // handled in shell-init / `gsa use` instead.
+        Vec::new()
     }
 
     fn prompt_segment(&self, context: &Context) -> PromptSegment {

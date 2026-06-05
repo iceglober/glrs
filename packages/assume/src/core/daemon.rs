@@ -555,6 +555,11 @@ pub async fn start_credential_endpoints(
     let s = state.read().await;
 
     for provider in s.registry.list() {
+        // Providers that delegate credential delivery to a native tool (GCP via
+        // gcloud ADC) bind no daemon endpoint.
+        if !provider.is_daemon_served() {
+            continue;
+        }
         let endpoint = provider.credential_endpoint();
         let provider_id = provider.id().to_string();
         let state_clone = Arc::clone(&state);

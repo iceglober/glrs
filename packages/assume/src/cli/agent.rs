@@ -192,12 +192,13 @@ async fn run_exec(
             env_vars.push(("AWS_DEFAULT_REGION".into(), context.region.clone()));
         }
     } else if context.provider_id == "gcp" {
-        // Inject access token for gcloud CLI + project env vars
-        let tokens = keychain::load_tokens("gcp")?
+        // Require GCP to be set up, then mint a fresh ADC token via gcloud.
+        keychain::load_tokens("gcp")?
             .ok_or_else(|| anyhow::anyhow!("Not authenticated for GCP. Run: gsa login gcp"))?;
-        if let Some(access_token) = tokens.secrets.get("access_token") {
-            env_vars.push(("CLOUDSDK_AUTH_ACCESS_TOKEN".into(), access_token.clone()));
-        }
+        let access_token = crate::providers::gcp::gcloud::adc_access_token().map_err(|e| {
+            anyhow::anyhow!("GCP credentials unavailable ({e}). Run: gsa login gcp")
+        })?;
+        env_vars.push(("CLOUDSDK_AUTH_ACCESS_TOKEN".into(), access_token));
         let project_id = context
             .metadata
             .get("project_id")

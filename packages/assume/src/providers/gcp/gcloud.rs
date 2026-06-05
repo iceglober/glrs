@@ -1,0 +1,229 @@
+//! Thin wrapper over the `gcloud` CLI. glrs delegates GCP auth to gcloud rather
+//! than reimplementing Google OAuth, so gcloud owns reauth / MFA / org policy and
+//! writes Application Default Credentials (ADC) the blessed way. Everything here
+//! shells out to `gcloud`; nothing talks to Google directly.
+
+use crate::plugin::ProviderError;
+use std::io::ErrorKind;
+use std::process::{Command, Stdio};
+
+const GCLOUD: &str = "gcloud";
+
+/// Whether `gcloud` is on PATH. GCP is unavailable without it.
+pub fn is_available() -> bool {
+    Command::new(GCLOUD)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn not_installed() -> ProviderError {
+    ProviderError::Other(
+        "gcloud not found on PATH. Install the Google Cloud SDK: \
+         https://cloud.google.com/sdk/docs/install"
+            .to_string(),
+    )
+}
+
+/// Run a non-interactive gcloud command, capturing stdout. stdin is closed so a
+/// command that would otherwise prompt (e.g. a lapsed reauth) fails fast instead
+/// of hanging — that failure is classified as `RefreshTokenExpired`.
+fn run(args: &[&str]) -> Result<String, ProviderError> {
+    let output = Command::new(GCLOUD)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| {
+            if e.kind() == ErrorKind::NotFound {
+                not_installed()
+            } else {
+                ProviderError::Other(format!("failed to run gcloud: {e}"))
+            }
+        })?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(classify_error(&String::from_utf8_lossy(&output.stderr)))
+    }
+}
+
+/// Map gcloud stderr to a typed error. A reauth challenge or missing/expired
+/// credentials become `RefreshTokenExpired` so the core surfaces "run gsa login
+/// gcp" (the interactive gcloud login satisfies reauth).
+pub fn classify_error(stderr: &str) -> ProviderError {
+    let s = stderr.to_lowercase();
+    let needs_login = s.contains("reauth")
+        || s.contains("invalid_rapt")
+        || s.contains("invalid_grant")
+        || s.contains("active account")
+        || s.contains("does not have any valid credentials")
+        || s.contains("there was a problem refreshing")
+        || s.contains("gcloud auth login")
+        || s.contains("application-default login")
+        || s.contains("credentials were not found")
+        || s.contains("not have application default credentials");
+    if needs_login {
+        ProviderError::RefreshTokenExpired
+    } else if s.contains("network")
+        || s.contains("timed out")
+        || s.contains("could not reach")
+        || s.contains("connection")
+    {
+        ProviderError::NetworkError(stderr.trim().to_string())
+    } else {
+        ProviderError::Other(stderr.trim().to_string())
+    }
+}
+
+/// Run an interactive gcloud command (inherits the terminal so the browser opens
+/// and reauth prompts work). Used only by `gsa login gcp`.
+fn run_interactive(args: &[&str]) -> Result<(), ProviderError> {
+    let status = Command::new(GCLOUD).args(args).status().map_err(|e| {
+        if e.kind() == ErrorKind::NotFound {
+            not_installed()
+        } else {
+            ProviderError::LoginFailed(format!("failed to run gcloud {}: {e}", args.join(" ")))
+        }
+    })?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(ProviderError::LoginFailed(format!(
+            "`gcloud {}` exited with status {}",
+            args.join(" "),
+            status.code().unwrap_or(-1)
+        )))
+    }
+}
+
+/// Interactive login for both the gcloud CLI (`auth login`) and applications
+/// (`auth application-default login`, which writes ADC). Satisfies reauth.
+pub fn login() -> Result<(), ProviderError> {
+    if !is_available() {
+        return Err(not_installed());
+    }
+    run_interactive(&["auth", "login"])?;
+    run_interactive(&["auth", "application-default", "login"])?;
+    Ok(())
+}
+
+/// The active gcloud account email, if any (no token required — reads local config).
+pub fn active_account() -> Option<String> {
+    let out = run(&[
+        "auth",
+        "list",
+        "--filter=status:ACTIVE",
+        "--format=value(account)",
+    ])
+    .ok()?;
+    let acct = out.trim().to_string();
+    (!acct.is_empty()).then_some(acct)
+}
+
+/// The gcloud CLI's configured default project (local config; no token).
+pub fn current_project() -> Option<String> {
+    let out = run(&["config", "get-value", "project"]).ok()?;
+    let p = out.trim().to_string();
+    // gcloud prints "(unset)" when no project is configured.
+    (!p.is_empty() && p != "(unset)").then_some(p)
+}
+
+/// Set the gcloud CLI's default project.
+pub fn set_project(project: &str) -> Result<(), ProviderError> {
+    run(&["config", "set", "project", project]).map(|_| ())
+}
+
+/// Mint a fresh ADC access token. Fails (→ `RefreshTokenExpired`) when reauth is
+/// due, since this path is non-interactive.
+pub fn adc_access_token() -> Result<String, ProviderError> {
+    let out = run(&["auth", "application-default", "print-access-token"])?;
+    let token = out.trim().to_string();
+    if token.is_empty() {
+        Err(ProviderError::RefreshTokenExpired)
+    } else {
+        Ok(token)
+    }
+}
+
+/// A GCP project as reported by `gcloud projects list --format=json`.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    pub project_id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub project_number: String,
+    #[serde(default)]
+    pub labels: Option<std::collections::HashMap<String, String>>,
+}
+
+/// List active projects via gcloud. Requires a valid session (fails on reauth).
+pub fn list_projects() -> Result<Vec<Project>, ProviderError> {
+    let json = run(&[
+        "projects",
+        "list",
+        "--filter=lifecycleState:ACTIVE",
+        "--format=json",
+    ])?;
+    parse_projects(&json)
+}
+
+/// Parse the JSON array from `gcloud projects list`. Split out for unit testing.
+pub fn parse_projects(json: &str) -> Result<Vec<Project>, ProviderError> {
+    serde_json::from_str::<Vec<Project>>(json)
+        .map_err(|e| ProviderError::Other(format!("failed to parse gcloud projects list: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_projects_list_json() {
+        let json = r#"[
+            {"projectId":"ai-tooling-496018","name":"AI Tooling","projectNumber":"123","lifecycleState":"ACTIVE"},
+            {"projectId":"prod-app","name":"Prod App","projectNumber":"456","lifecycleState":"ACTIVE","labels":{"env":"prod"}}
+        ]"#;
+        let p = parse_projects(json).unwrap();
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].project_id, "ai-tooling-496018");
+        assert_eq!(p[0].name, "AI Tooling");
+        assert_eq!(p[1].labels.as_ref().unwrap().get("env").unwrap(), "prod");
+    }
+
+    #[test]
+    fn classifies_reauth_as_needs_login() {
+        assert!(matches!(
+            classify_error(
+                "Reauthentication failed. cannot prompt during non-interactive execution"
+            ),
+            ProviderError::RefreshTokenExpired
+        ));
+        assert!(matches!(
+            classify_error("reauth related error (invalid_rapt)"),
+            ProviderError::RefreshTokenExpired
+        ));
+        assert!(matches!(
+            classify_error("You do not currently have an active account selected"),
+            ProviderError::RefreshTokenExpired
+        ));
+    }
+
+    #[test]
+    fn classifies_network_and_other() {
+        assert!(matches!(
+            classify_error("network is unreachable"),
+            ProviderError::NetworkError(_)
+        ));
+        assert!(matches!(
+            classify_error("PERMISSION_DENIED: nope"),
+            ProviderError::Other(_)
+        ));
+    }
+}

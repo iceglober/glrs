@@ -53,10 +53,14 @@ impl PluginRegistry {
             bail!("Plugin '{}' is already registered", id);
         }
 
-        // Check shell_env is non-empty
-        let env = provider.shell_env(0);
-        if env.is_empty() {
-            bail!("Plugin '{}': shell_env() returned empty vec", id);
+        // Daemon-served providers must expose at least one shell env var (the
+        // credential-endpoint wiring). Providers that delegate delivery to a
+        // native tool (e.g. GCP via gcloud ADC) may legitimately return none.
+        if provider.is_daemon_served() {
+            let env = provider.shell_env(0);
+            if env.is_empty() {
+                bail!("Plugin '{}': shell_env() returned empty vec", id);
+            }
         }
 
         // Check refresh schedule validity

@@ -19,13 +19,3 @@ pub fn build_endpoint(port: u16) -> CredentialEndpoint {
         },
     }
 }
-
-/// Environment variables that tell GCP SDKs to use our metadata server
-pub fn shell_env(port: u16, project_id: Option<&str>) -> Vec<(String, String)> {
-    let mut vars = vec![("GCE_METADATA_HOST".to_string(), format!("localhost:{port}"))];
-    if let Some(project) = project_id {
-        vars.push(("GOOGLE_CLOUD_PROJECT".to_string(), project.to_string()));
-        vars.push(("CLOUDSDK_CORE_PROJECT".to_string(), project.to_string()));
-    }
-    vars
-}

@@ -41,6 +41,25 @@ pub async fn run(args: StatusArgs, registry: &PluginRegistry, cfg: &config::Conf
         any_active = true;
         println!("{}", provider.display_name());
 
+        // gcloud-backed providers (GCP): creds live in gcloud's ADC, not the
+        // daemon, so the AWS SSO-token/auto-refresh lines don't apply.
+        if !provider.is_daemon_served() {
+            match tokens.secrets.get("account").filter(|a| !a.is_empty()) {
+                Some(account) => println!("  Account: {account} (via gcloud)"),
+                None => println!("  Managed by gcloud"),
+            }
+            if crate::core::cache::needs_login(&provider_id) {
+                println!("  Reauth required — run: gsa login {provider_id}");
+            } else {
+                println!("  Credentials: gcloud ADC");
+            }
+            if let Some(ref default_ctx) = crate::core::cache::load_default(&provider_id) {
+                println!("  Default project: {}", default_ctx.display_name);
+            }
+            println!();
+            continue;
+        }
+
         // SSO token + auto-refresh state.
         //
         // We deliberately do NOT print a "refresh token expires in N days"
