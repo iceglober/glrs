@@ -70,7 +70,9 @@ export default defineConfig({
   // dep-install fails (e.g. the historical `workspace:*` leak), which it can't if
   // the entry needs to resolve an uninstalled package. The verdaccio e2e smoke
   // test enforces this by loading the published dist with no node_modules.
-  noExternal: ["@glrs-dev/agent-core", "@opencode-ai/plugin", "zod", "@counted/sdk"],
+  // `json5` is bundled too: the CLI's config parser (merge-config/doctor) uses
+  // it, and bundling keeps the published dist free of runtime dep resolution.
+  noExternal: ["@glrs-dev/agent-core", "@opencode-ai/plugin", "zod", "@counted/sdk", "json5"],
   // After build: copy skills tree and bin scripts
   async onSuccess() {
     // Copy skills
