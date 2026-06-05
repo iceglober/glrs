@@ -143,11 +143,21 @@ pub trait Provider: Send + Sync + 'static {
         context: &Context,
     ) -> Result<Credentials, ProviderError>;
 
-    /// HTTP endpoint specification for credential delivery.
+    /// Whether the daemon serves this provider's credentials over a local HTTP
+    /// endpoint (AWS container creds, GCE metadata). Providers that delegate to a
+    /// native tool which owns credential delivery — e.g. GCP via gcloud's ADC —
+    /// return false: the daemon binds no endpoint for them and `shell_env` may be
+    /// empty.
+    fn is_daemon_served(&self) -> bool {
+        true
+    }
+
+    /// HTTP endpoint specification for credential delivery. Unused when
+    /// `is_daemon_served()` is false.
     fn credential_endpoint(&self) -> CredentialEndpoint;
 
-    /// Environment variables the shell hook must set.
-    /// Must return at least one entry.
+    /// Environment variables the shell hook must set. Must return at least one
+    /// entry for daemon-served providers; may be empty otherwise.
     fn shell_env(&self, endpoint_port: u16) -> Vec<(String, String)>;
 
     /// Prompt segment for the active context.

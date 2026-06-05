@@ -198,7 +198,8 @@ pub fn print_context_exports(selected: &Context, cfg: &config::Config, is_overri
             shell_escape(&session_token),
         );
     } else if selected.provider_id == "gcp" {
-        // GCP project env vars
+        // GCP project selection only. Credentials come from gcloud's ADC, so we
+        // never export GCE_METADATA_HOST (which would shadow gcloud's own auth).
         let project_id = selected.metadata.get("project_id").unwrap_or(&selected.id);
         println!(
             "export GOOGLE_CLOUD_PROJECT=\"{}\"",
@@ -208,24 +209,6 @@ pub fn print_context_exports(selected: &Context, cfg: &config::Config, is_overri
             "export CLOUDSDK_CORE_PROJECT=\"{}\"",
             shell_escape(project_id)
         );
-
-        // GCP metadata host
-        let port = cfg
-            .providers
-            .get("gcp")
-            .and_then(|p| p.port)
-            .unwrap_or(crate::providers::gcp::endpoint::DEFAULT_PORT);
-        println!("export GCE_METADATA_HOST=\"localhost:{}\"", port);
-
-        // Export access token so gcloud CLI works without separate auth
-        if let Ok(Some(tokens)) = crate::core::keychain::load_tokens("gcp") {
-            if let Some(access_token) = tokens.secrets.get("access_token") {
-                println!(
-                    "export CLOUDSDK_AUTH_ACCESS_TOKEN=\"{}\"",
-                    shell_escape(access_token)
-                );
-            }
-        }
     }
 }
 
@@ -361,6 +344,14 @@ pub async fn run(args: UseArgs, registry: &PluginRegistry, cfg: &config::Config)
     if args.default {
         if let Err(e) = crate::core::cache::save_default(&selected) {
             tracing::warn!("Failed to save default context: {e}");
+        }
+        // Keep gcloud's own default project in sync so bare `gcloud` commands
+        // match glrs's GCP default.
+        if selected.provider_id == "gcp" {
+            let project = selected.metadata.get("project_id").unwrap_or(&selected.id);
+            if let Err(e) = crate::providers::gcp::gcloud::set_project(project) {
+                tracing::warn!("Failed to set gcloud project: {e}");
+            }
         }
     }
 

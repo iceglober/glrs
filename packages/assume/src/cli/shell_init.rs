@@ -74,26 +74,38 @@ pub async fn run(
     println!("# glrs-assume shell integration for {shell}");
     println!();
 
-    // Environment variables for each provider's credential endpoint. Only export
-    // them for a provider glrs actually has a default for — otherwise vars like
-    // GCE_METADATA_HOST would hijack GCP credential resolution for every app in
-    // the shell even when glrs isn't managing GCP (e.g. logged out so you can use
-    // gcloud's own auth, which — unlike glrs — handles org reauth).
+    // Ambient env per provider, only for one glrs has a default for. For
+    // daemon-served providers (AWS) this is the credential-endpoint wiring; for
+    // gcloud-backed GCP it's just the default project (creds come from gcloud's
+    // ADC, so we never set GCE_METADATA_HOST, which would shadow gcloud's auth).
     for provider_id in registry.ids() {
-        if crate::core::cache::load_default(&provider_id).is_none() {
-            continue;
-        }
+        let default_ctx = match crate::core::cache::load_default(&provider_id) {
+            Some(c) => c,
+            None => continue,
+        };
         let provider = registry.get(&provider_id).unwrap();
-        let port = cfg
-            .providers
-            .get(&provider_id)
-            .and_then(|p| p.port)
-            .unwrap_or_else(|| {
-                let endpoint = provider.credential_endpoint();
-                endpoint.port
-            });
 
-        let env_vars = provider.shell_env(port);
+        let env_vars: Vec<(String, String)> = if provider.is_daemon_served() {
+            let port = cfg
+                .providers
+                .get(&provider_id)
+                .and_then(|p| p.port)
+                .unwrap_or_else(|| provider.credential_endpoint().port);
+            provider.shell_env(port)
+        } else if provider_id == "gcp" {
+            let project = default_ctx
+                .metadata
+                .get("project_id")
+                .unwrap_or(&default_ctx.id)
+                .clone();
+            vec![
+                ("GOOGLE_CLOUD_PROJECT".to_string(), project.clone()),
+                ("CLOUDSDK_CORE_PROJECT".to_string(), project),
+            ]
+        } else {
+            Vec::new()
+        };
+
         for (key, value) in &env_vars {
             match shell.as_str() {
                 "fish" => println!("set -gx {key} \"{value}\""),

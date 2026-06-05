@@ -85,8 +85,12 @@ pub async fn run(args: ExecArgs, registry: &PluginRegistry, _cfg: &config::Confi
                 "AWS_CONTAINER_AUTHORIZATION_TOKEN",
             ]);
         } else if context.provider_id == "gcp" {
-            if let Some(access_token) = tokens.secrets.get("access_token") {
-                env_vars.push(("CLOUDSDK_AUTH_ACCESS_TOKEN".into(), access_token.clone()));
+            // The GCP credential payload is a gcloud-minted access token.
+            if let Ok(p) = serde_json::from_slice::<
+                crate::providers::gcp::credentials::GcpTokenPayload,
+            >(&credentials.payload)
+            {
+                env_vars.push(("CLOUDSDK_AUTH_ACCESS_TOKEN".into(), p.access_token));
             }
             let project_id = context
                 .metadata
