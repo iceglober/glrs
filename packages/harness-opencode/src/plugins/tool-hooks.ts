@@ -70,6 +70,7 @@ import {
   inferToolOk,
   buildToolUsedProps,
   buildVerifyProps,
+  buildLoopProps,
   extractSkillName,
 } from "../lib/telemetry-events.js";
 
@@ -107,6 +108,29 @@ const VERIFY_MAX_ERRORS = 10;
 
 const DEFAULT_LOOP_THRESHOLD = 5;
 
+// ---- Tool-loop guard ------------------------------------------------------
+// Catches a model that keeps calling tools without making progress. Two
+// signatures, derived from real stalled sessions:
+//   - exploration: a long unbroken run of read-only calls (read/grep/glob)
+//     with no intervening mutation, command, or subagent — the model researches
+//     forever and never converges to an edit or a conclusion.
+//   - repeat: the same (tool + args) signature fired over and over, including
+//     the same failing call retried — repeating it cannot change the result.
+// Intervention escalates: an in-band corrective injected into the tool output
+// first, then a hard `session.abort` + re-plan prompt if the loop continues.
+const DEFAULT_EXPLORATION_WARN = 12;
+const DEFAULT_EXPLORATION_ABORT = 22;
+const DEFAULT_REPEAT_WARN = 3;
+const DEFAULT_REPEAT_ABORT = 6;
+// Rolling window (in tool calls) over which repeat scores are accumulated, so
+// an identical call spread across a long session doesn't slowly accrue a false
+// positive — only clustered repetition trips it.
+const LOOP_WINDOW = 30;
+// Read-only "exploration" tools: gathering context, not changing state. Any
+// tool NOT in this set (edit/write/bash/task/MCP/...) counts as forward
+// progress and resets the exploration streak.
+const PASSIVE_TOOLS = new Set(["read", "grep", "glob", "list", "webfetch"]);
+
 // ---- Per-session state ----------------------------------------------------
 
 interface ReadCacheEntry {
@@ -120,11 +144,24 @@ interface SessionState {
   callSeq: number;
   lastVerifyTs: number;
   directory: string | null;
+  /** Provider/model ids of the latest assistant message in this session, for telemetry. */
+  provider: string | null;
+  model: string | null;
+  // ---- tool-loop guard state ----
+  /** Consecutive passive (read-only) tool calls since the last active call. */
+  passiveStreak: number;
+  /** Rolling window of recent call signatures (with their weight) for repeat scoring. */
+  loopWindow: { sig: string; w: number }[];
+  /** Signature → accumulated weight within the window. */
+  sigScores: Map<string, number>;
+  /** Escalation stage: 0 none, 1 warned, 2 aborted. */
+  loopStage: 0 | 1 | 2;
 }
 
 const sessions = new Map<string, SessionState>();
 
-function getSession(sessionID: string): SessionState {
+/** Get-or-create the session state without advancing the call sequence. */
+function ensureSession(sessionID: string): SessionState {
   let s = sessions.get(sessionID);
   if (!s) {
     s = {
@@ -133,9 +170,20 @@ function getSession(sessionID: string): SessionState {
       callSeq: 0,
       lastVerifyTs: 0,
       directory: null,
+      provider: null,
+      model: null,
+      passiveStreak: 0,
+      loopWindow: [],
+      sigScores: new Map(),
+      loopStage: 0,
     };
     sessions.set(sessionID, s);
   }
+  return s;
+}
+
+function getSession(sessionID: string): SessionState {
+  const s = ensureSession(sessionID);
   s.callSeq++;
   return s;
 }
@@ -166,7 +214,16 @@ interface ToolHooksConfig {
   };
   loopDetection: {
     enabled: boolean;
+    /** Same-file edit warn threshold (legacy checkEditLoop). */
     threshold: number;
+    /** Consecutive passive (read-only) calls before warning / hard-abort. */
+    explorationWarn: number;
+    explorationAbort: number;
+    /** Repeated-signature score before warning / hard-abort (failures count 2x). */
+    repeatWarn: number;
+    repeatAbort: number;
+    /** Master switch for the hard `session.abort` escalation. */
+    abortEnabled: boolean;
   };
   readDedup: {
     enabled: boolean;
@@ -226,6 +283,19 @@ function resolveConfig(config: Config, pluginOptions?: PluginOptions): ToolHooks
       enabled: ld.enabled !== false,
       threshold:
         typeof ld.threshold === "number" ? ld.threshold : DEFAULT_LOOP_THRESHOLD,
+      explorationWarn:
+        typeof ld.explorationWarn === "number"
+          ? ld.explorationWarn
+          : DEFAULT_EXPLORATION_WARN,
+      explorationAbort:
+        typeof ld.explorationAbort === "number"
+          ? ld.explorationAbort
+          : DEFAULT_EXPLORATION_ABORT,
+      repeatWarn:
+        typeof ld.repeatWarn === "number" ? ld.repeatWarn : DEFAULT_REPEAT_WARN,
+      repeatAbort:
+        typeof ld.repeatAbort === "number" ? ld.repeatAbort : DEFAULT_REPEAT_ABORT,
+      abortEnabled: ld.abortEnabled !== false,
     },
     readDedup: {
       enabled: rd.enabled !== false,
@@ -581,6 +651,138 @@ function checkEditLoop(
   }
 }
 
+// ---- Tool-loop guard ------------------------------------------------------
+
+/**
+ * Stable signature for a tool call: tool name + its salient args. Used to
+ * detect the same call being fired repeatedly. Path-bearing tools key on the
+ * path; the rest fall back to a length-capped JSON of the args so distinct
+ * calls don't collide and a giant arg blob can't bloat the window.
+ */
+function normalizeToolSig(tool: string, args: unknown): string {
+  const a = (args ?? {}) as Record<string, unknown>;
+  let detail: string;
+  if (typeof a.pattern === "string") {
+    // grep/glob — pattern plus optional path/glob scope.
+    const scope =
+      (typeof a.path === "string" && a.path) ||
+      (typeof a.glob === "string" && a.glob) ||
+      "";
+    detail = `${a.pattern}|${scope}`;
+  } else if (typeof a.command === "string") {
+    detail = a.command.trim();
+  } else {
+    const fp = extractFilePath(args);
+    if (fp) {
+      // Re-reading the exact same slice is a loop; a different offset is not.
+      const off = typeof a.offset === "number" ? a.offset : "";
+      detail = `${fp}@${off}`;
+    } else {
+      try {
+        detail = JSON.stringify(args);
+      } catch {
+        detail = "";
+      }
+    }
+  }
+  return `${tool}:${detail.slice(0, 200)}`;
+}
+
+export type LoopVerdict = {
+  level: "none" | "warn" | "abort";
+  kind: "explore" | "repeat" | null;
+  sig: string;
+  /** Repeat score (weighted) or passive streak that drove the verdict. */
+  count: number;
+};
+
+/**
+ * Pure loop detector. Updates the session's rolling window + passive streak and
+ * returns the current verdict. Failures weigh double so a call that keeps
+ * erroring trips the repeat threshold roughly twice as fast. Side-effect-free
+ * apart from the session-state bookkeeping it owns, so it is unit-testable.
+ */
+function checkToolLoop(
+  cfg: ToolHooksConfig["loopDetection"],
+  sess: SessionState,
+  tool: string,
+  args: unknown,
+  ok: boolean,
+): LoopVerdict {
+  const sig = normalizeToolSig(tool, args);
+  if (!cfg.enabled) return { level: "none", kind: null, sig, count: 0 };
+
+  // Repeat scoring over a bounded window. Failed calls count double.
+  const w = ok ? 1 : 2;
+  sess.loopWindow.push({ sig, w });
+  sess.sigScores.set(sig, (sess.sigScores.get(sig) ?? 0) + w);
+  while (sess.loopWindow.length > LOOP_WINDOW) {
+    const old = sess.loopWindow.shift()!;
+    const next = (sess.sigScores.get(old.sig) ?? 0) - old.w;
+    if (next <= 0) sess.sigScores.delete(old.sig);
+    else sess.sigScores.set(old.sig, next);
+  }
+
+  // Exploration streak: passive calls advance it; any active (state-changing or
+  // evidence-gathering) call resets it — that is forward progress.
+  if (PASSIVE_TOOLS.has(tool)) sess.passiveStreak++;
+  else sess.passiveStreak = 0;
+
+  const score = sess.sigScores.get(sig) ?? 0;
+  const repeat =
+    score >= cfg.repeatAbort ? 2 : score >= cfg.repeatWarn ? 1 : 0;
+  const explore =
+    sess.passiveStreak >= cfg.explorationAbort
+      ? 2
+      : sess.passiveStreak >= cfg.explorationWarn
+        ? 1
+        : 0;
+
+  // Prefer the repeat signature when it's at least as severe — it's the more
+  // specific, lower-false-positive signal and yields a clearer corrective.
+  if (repeat >= explore && repeat > 0) {
+    return { level: repeat === 2 ? "abort" : "warn", kind: "repeat", sig, count: score };
+  }
+  if (explore > 0) {
+    return {
+      level: explore === 2 ? "abort" : "warn",
+      kind: "explore",
+      sig,
+      count: sess.passiveStreak,
+    };
+  }
+  return { level: "none", kind: null, sig, count: 0 };
+}
+
+/** Corrective text injected into the offending tool's output (in-band nudge). */
+function loopCorrective(v: LoopVerdict): string {
+  if (v.kind === "repeat") {
+    return (
+      `\n\n--- LOOP WARNING ---\n` +
+      `You've issued the same tool call (${v.sig}) ${v.count} times. ` +
+      `Repeating it will not change the result. Use what you already have, or ` +
+      `try a materially different approach. If you're blocked, say so explicitly ` +
+      `with a BLOCKED status and what you need.\n---`
+    );
+  }
+  return (
+    `\n\n--- LOOP WARNING ---\n` +
+    `You've made ${v.count} read/search calls in a row without editing a file, ` +
+    `running a command, or reaching a conclusion. You may be stuck exploring. ` +
+    `STOP gathering more context now. State your current hypothesis in one sentence, ` +
+    `then either take a concrete action (edit, run, or answer the user) or declare ` +
+    `BLOCKED with exactly what you're missing.\n---`
+  );
+}
+
+/** Re-plan directive queued after a hard abort. */
+const LOOP_ABORT_PROMPT =
+  "You were interrupted by the loop guard after a run of tool calls with no forward " +
+  "progress — no edits, no commands, no conclusion. Do NOT resume exploring. " +
+  "Summarize what you've already found, state your best current answer or hypothesis, " +
+  "and then either take one concrete action or ask the user a specific question. " +
+  "If you genuinely cannot proceed, reply with a BLOCKED status naming what you need.";
+
 // ---- Read dedup -----------------------------------------------------------
 
 function checkReadDedup(
@@ -620,9 +822,89 @@ const plugin: Plugin = async ({ client }, options) => {
   // correlate tool/skill outcomes with a given model/prompt configuration.
   const devPreset = process.env["GLRS_DEV_PRESET"] || undefined;
 
+  // Run the loop detector and act on its verdict. `warn` injects a corrective
+  // into the tool output (read on the model's next step). `abort` does that
+  // AND hard-stops the runaway turn via session.abort, then queues a re-plan
+  // prompt — but only once per loop (loopStage gate). After an abort the loop
+  // counters reset so a recovered session can be guarded again later. Every
+  // branch is wrapped fail-silent: a telemetry/SDK hiccup must never break the
+  // tool result we're decorating.
+  async function maybeInterveneOnLoop(
+    cfg: ToolHooksConfig["loopDetection"],
+    sess: SessionState,
+    sessionID: string,
+    tool: string,
+    args: unknown,
+    output: { output: string },
+    ok: boolean,
+  ): Promise<void> {
+    const v = checkToolLoop(cfg, sess, tool, args, ok);
+    if (v.level === "none" || v.kind === null) return;
+
+    const hardAbort = v.level === "abort" && cfg.abortEnabled && sess.loopStage < 2;
+
+    // In-band corrective: always present while looping so the freshest tool
+    // output carries it. Cheap and the single highest-recovery intervention.
+    output.output += loopCorrective(v);
+
+    track(
+      "loop_detected",
+      buildLoopProps({
+        tool,
+        kind: v.kind,
+        level: hardAbort ? "abort" : "warn",
+        count: v.count,
+        provider: sess.provider ?? undefined,
+        model: sess.model ?? undefined,
+        ...(devPreset ? { preset: devPreset } : {}),
+      }),
+    );
+
+    if (!hardAbort) {
+      if (sess.loopStage < 1) sess.loopStage = 1;
+      return;
+    }
+
+    sess.loopStage = 2;
+    output.output +=
+      `\n\n--- LOOP ABORTED ---\n` +
+      `The loop guard interrupted this turn. ${LOOP_ABORT_PROMPT}\n---`;
+    try {
+      await client.session.abort({ path: { id: sessionID } });
+      await client.session.promptAsync({
+        path: { id: sessionID },
+        body: { parts: [{ type: "text", text: LOOP_ABORT_PROMPT }] },
+      });
+    } catch {
+      // Session gone/busy — the in-band corrective above still applies.
+    }
+    // Reset counters so a recovered session is judged afresh.
+    sess.passiveStreak = 0;
+    sess.loopWindow = [];
+    sess.sigScores.clear();
+    sess.loopStage = 0;
+  }
+
   return {
     config: async (config: Config) => {
       pluginConfig = resolveConfig(config, storedPluginOptions);
+    },
+
+    // Track the active provider/model per session so tool/verify telemetry can
+    // be segmented like `model_turn` already is. The assistant message (which
+    // carries providerID/modelID) is created before its tool calls execute, so
+    // by the time `tool.execute.after` fires this is populated. Fail-silent.
+    event: async ({ event }) => {
+      if (event.type !== "message.updated") return;
+      const info = (event.properties as { info?: unknown }).info as
+        | { role?: string; sessionID?: string; providerID?: string; modelID?: string }
+        | undefined;
+      if (!info || info.role !== "assistant") return;
+      const sessionID = info.sessionID;
+      if (!sessionID) return;
+      const sess = ensureSession(sessionID);
+      if (info.providerID) sess.provider = info.providerID;
+      if (info.modelID) sess.model = info.modelID;
     },
 
     "tool.execute.after": async (input, output) => {
@@ -634,23 +916,34 @@ const plugin: Plugin = async ({ client }, options) => {
 
       const toolName = input.tool;
 
+      // Best-effort success signal, read from the ORIGINAL output before dedup/
+      // backpressure below mutate it. Reused by telemetry and the loop guard.
+      const ok = inferToolOk(
+        toolName,
+        output.output,
+        (output as { metadata?: unknown }).metadata,
+      );
+
       // Telemetry: one `tool_used` event per call, with best-effort success and
-      // (for skill invocations) the skill name. Read the success signal from the
-      // ORIGINAL output, before dedup/backpressure below mutate it. Buffered and
-      // fire-and-forget — never blocks or throws.
+      // (for skill invocations) the skill name. Buffered and fire-and-forget —
+      // never blocks or throws.
       track(
         "tool_used",
         buildToolUsedProps({
           tool: toolName,
-          ok: inferToolOk(
-            toolName,
-            output.output,
-            (output as { metadata?: unknown }).metadata,
-          ),
+          ok,
+          provider: sess.provider ?? undefined,
+          model: sess.model ?? undefined,
           skill: extractSkillName(toolName, input.args),
           ...(devPreset ? { preset: devPreset } : {}),
         }),
       );
+
+      // Tool-loop guard: detect a model spinning without progress (repeated
+      // calls or a long passive-exploration streak) and intervene — an in-band
+      // corrective first, then a hard abort if it keeps going. Runs for EVERY
+      // tool so it can reset the streak on active calls. Fail-silent.
+      await maybeInterveneOnLoop(cfg.loopDetection, sess, input.sessionID, toolName, input.args, output, ok);
 
       // 1. Read dedup (runs before backpressure — dedup replaces the
       //    entire output, so backpressure on the replacement is moot)
@@ -682,6 +975,8 @@ const plugin: Plugin = async ({ client }, options) => {
               buildVerifyProps({
                 errorCount: verifyErrors,
                 tool: toolName,
+                provider: sess.provider ?? undefined,
+                model: sess.model ?? undefined,
                 ...(devPreset ? { preset: devPreset } : {}),
               }),
             );
@@ -713,6 +1008,9 @@ export const __test__ = {
   resolveConfig,
   applyBackpressure,
   checkEditLoop,
+  checkToolLoop,
+  normalizeToolSig,
+  loopCorrective,
   checkReadDedup,
   looksLikeBashFailure,
   extractFilePath,
@@ -724,6 +1022,11 @@ export const __test__ = {
   TS_EXTENSIONS,
   DEFAULT_BACKPRESSURE_THRESHOLD,
   DEFAULT_LOOP_THRESHOLD,
+  DEFAULT_EXPLORATION_WARN,
+  DEFAULT_EXPLORATION_ABORT,
+  DEFAULT_REPEAT_WARN,
+  DEFAULT_REPEAT_ABORT,
+  PASSIVE_TOOLS,
   DEFAULT_PER_TOOL_SHAPES,
   DEFAULT_GREP_HEAD_MATCHES,
   DEFAULT_BASH_TAIL_CHARS,
