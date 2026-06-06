@@ -49,7 +49,7 @@ pub async fn run() -> Result<()> {
         let result = match method {
             "initialize" => handle_initialize(&params),
             "tools/list" => handle_tools_list(),
-            "tools/call" => handle_tools_call(&params),
+            "tools/call" => handle_tools_call(&params).await,
             _ => Err((-32601, format!("Method not found: {method}"))),
         };
 
@@ -123,9 +123,21 @@ fn handle_tools_list() -> Result<Value, (i32, String)> {
                             "type": "object",
                             "additionalProperties": { "type": "string" },
                             "description": "Additional environment variables (string values) set for the command, alongside the injected AWS credentials. The gsa-injected AWS_* credential and region vars take precedence and cannot be overridden."
+                        },
+                        "timeout_ms": {
+                            "type": "integer",
+                            "description": "Max milliseconds to wait for the command before killing it and returning a clear timeout (default 120000, max 600000). A hung command no longer blocks until the MCP client gives up; on timeout, session health is checked and stale-session guidance is returned."
                         }
                     },
                     "required": ["command"]
+                }
+            },
+            {
+                "name": "check_session",
+                "description": "Check whether the gsa AWS session is valid before running commands. Returns { valid, needs_login, session_expires_at, refresh_expires_at }. When invalid, `action` tells the user the exact `gsa login` command to run (an interactive browser flow an agent cannot perform). Use this at session start, or after a command fails, to distinguish a stale session from a genuine command error.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
                 }
             },
             {
@@ -140,12 +152,13 @@ fn handle_tools_list() -> Result<Value, (i32, String)> {
     }))
 }
 
-fn handle_tools_call(params: &Value) -> Result<Value, (i32, String)> {
+async fn handle_tools_call(params: &Value) -> Result<Value, (i32, String)> {
     let tool_name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
     let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
 
     match tool_name {
-        "run_with_credentials" => tool_run_with_credentials(&arguments),
+        "run_with_credentials" => tool_run_with_credentials(&arguments).await,
+        "check_session" => tool_check_session(&arguments),
         "list_contexts" => tool_list_contexts(),
         _ => Err((-32602, format!("Unknown tool: {tool_name}"))),
     }
@@ -223,7 +236,148 @@ fn parse_env_arg(arguments: &Value) -> Result<Vec<(String, String)>, (i32, Strin
     Ok(out)
 }
 
-fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> {
+/// Default/clamp bounds for the per-command execution timeout.
+const DEFAULT_TIMEOUT_MS: u64 = 120_000;
+const MIN_TIMEOUT_MS: u64 = 1_000;
+const MAX_TIMEOUT_MS: u64 = 600_000;
+
+/// Parse `timeout_ms` (or legacy `timeout`), accepting either a JSON number or a
+/// numeric string (agents have passed both), clamped to sane bounds.
+fn parse_timeout_ms(arguments: &Value) -> u64 {
+    let raw = arguments
+        .get("timeout_ms")
+        .or_else(|| arguments.get("timeout"));
+    let parsed = match raw {
+        Some(Value::Number(n)) => n.as_u64(),
+        Some(Value::String(s)) => s.trim().parse::<u64>().ok(),
+        _ => None,
+    };
+    parsed
+        .unwrap_or(DEFAULT_TIMEOUT_MS)
+        .clamp(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS)
+}
+
+/// Resolved view of a provider's auth state, used by both `check_session` and
+/// the stale-session guard in `run_with_credentials`.
+struct SessionHealth {
+    /// Usable now or auto-refreshable by the daemon (refresh window still open).
+    valid: bool,
+    /// The daemon flagged a rejected refresh — only a browser re-login fixes it.
+    needs_login: bool,
+    session_expires_at: Option<String>,
+    refresh_expires_at: Option<String>,
+    /// Human-readable reason when not valid.
+    reason: Option<String>,
+}
+
+/// Determine whether `provider_id`'s session can still produce credentials.
+///
+/// Mirrors the dead-session logic in `main.rs`: dead when the daemon set the
+/// needs-login marker (rejected refresh / SSO ended), tokens are missing, or the
+/// refresh window has lapsed. An expired *access* token alone is fine — the
+/// daemon auto-refreshes it — so only `refresh_expires_at` is fatal.
+fn session_health(provider_id: &str) -> SessionHealth {
+    let now = chrono::Utc::now();
+    if crate::core::cache::needs_login(provider_id) {
+        return SessionHealth {
+            valid: false,
+            needs_login: true,
+            session_expires_at: None,
+            refresh_expires_at: None,
+            reason: Some("the daemon flagged a rejected refresh (the SSO session ended)".into()),
+        };
+    }
+    match crate::core::keychain::load_tokens(provider_id) {
+        Ok(Some(t)) => {
+            let refresh_dead = t.refresh_expires_at <= now;
+            SessionHealth {
+                valid: !refresh_dead,
+                needs_login: false,
+                session_expires_at: Some(t.session_expires_at.to_rfc3339()),
+                refresh_expires_at: Some(t.refresh_expires_at.to_rfc3339()),
+                reason: refresh_dead.then(|| "the refresh token has expired".to_string()),
+            }
+        }
+        _ => SessionHealth {
+            valid: false,
+            needs_login: false,
+            session_expires_at: None,
+            refresh_expires_at: None,
+            reason: Some("no stored credentials".into()),
+        },
+    }
+}
+
+/// Structured result returned when the session is too stale to run a command.
+/// Carries machine-readable `session_stale`/`action` fields plus prose so the
+/// agent stops retrying and surfaces the re-login to the user.
+fn stale_session_result(provider_id: &str, context_display: &str, health: &SessionHealth) -> Value {
+    let reason = health
+        .reason
+        .clone()
+        .unwrap_or_else(|| "the session is not valid".to_string());
+    json!({
+        "content": [{
+            "type": "text",
+            "text": format!(
+                "gsa session for '{context_display}' is stale — {reason}. \
+                 Re-authentication is an interactive browser flow that an agent cannot perform. \
+                 Ask the user to run:  gsa login {provider_id}\n\
+                 A desktop notification has been sent. Do not retry this command until the user confirms they have re-logged in."
+            )
+        }],
+        "isError": true,
+        "session_stale": true,
+        "action": format!("gsa login {provider_id}"),
+        "needs_login": health.needs_login,
+        "session_expires_at": health.session_expires_at,
+        "refresh_expires_at": health.refresh_expires_at,
+    })
+}
+
+/// `check_session` tool — report AWS session validity without running anything.
+fn tool_check_session(_arguments: &Value) -> Result<Value, (i32, String)> {
+    let provider_id = "aws";
+    let health = session_health(provider_id);
+
+    // Best-effort: name the default context for the summary line.
+    let mut defaults = cache::load_all_defaults();
+    let context_name = if defaults.len() == 1 {
+        defaults.remove(0).display_name
+    } else {
+        provider_id.to_string()
+    };
+
+    let summary = if health.valid {
+        match &health.session_expires_at {
+            Some(exp) => format!(
+                "gsa session for '{context_name}' is valid (access token expires {exp}; auto-refreshed by the daemon)."
+            ),
+            None => format!("gsa session for '{context_name}' is valid."),
+        }
+    } else {
+        let reason = health
+            .reason
+            .clone()
+            .unwrap_or_else(|| "session not valid".to_string());
+        format!(
+            "gsa session for '{context_name}' is NOT valid — {reason}. Ask the user to run: gsa login {provider_id}"
+        )
+    };
+
+    Ok(json!({
+        "content": [{ "type": "text", "text": summary }],
+        "valid": health.valid,
+        "needs_login": health.needs_login,
+        "provider": provider_id,
+        "context": context_name,
+        "session_expires_at": health.session_expires_at,
+        "refresh_expires_at": health.refresh_expires_at,
+        "action": if health.valid { Value::Null } else { json!(format!("gsa login {provider_id}")) },
+    }))
+}
+
+async fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> {
     let command = arguments
         .get("command")
         .and_then(|c| c.as_str())
@@ -282,6 +436,22 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
 
     // Daemon is already ensured by centralized pre-dispatch in main.rs.
 
+    // 2b. Stale-session guard. If the session can't produce credentials, the
+    // injected endpoint will 503 or hang — which historically surfaced as an
+    // opaque MCP `-32001 Request timed out` after the client gave up. Fail fast
+    // with actionable guidance and an OS notification instead.
+    let health = session_health(&context.provider_id);
+    if !health.valid {
+        crate::core::notify::notify_session_expired(&context.provider_id);
+        return Ok(stale_session_result(
+            &context.provider_id,
+            &context.display_name,
+            &health,
+        ));
+    }
+
+    let timeout_ms = parse_timeout_ms(arguments);
+
     // 3. Build env vars — point at daemon endpoint for auto-refreshing credentials
     let cfg = config::load_config().map_err(|e| (-32603, format!("Config error: {e}")))?;
     let port = cfg
@@ -318,16 +488,62 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
         env.push(("AWS_DEFAULT_REGION".into(), context.region.clone()));
     }
 
-    // 5. Execute command
-    let output = std::process::Command::new("sh")
-        .args(["-c", command])
-        .envs(env)
-        .output()
-        .map_err(|e| (-32603, format!("Failed to execute command: {e}")))?;
+    // 5. Execute command, bounded by `timeout_ms`. `kill_on_drop` reaps the
+    // child if we time out (the future is dropped), so a hung command can't
+    // linger. On timeout we re-check session health: a stale session is the
+    // usual cause, and we surface re-login guidance rather than a bare timeout.
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.args(["-c", command]).envs(env).kill_on_drop(true);
+
+    let output = match tokio::time::timeout(
+        std::time::Duration::from_millis(timeout_ms),
+        cmd.output(),
+    )
+    .await
+    {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => return Err((-32603, format!("Failed to execute command: {e}"))),
+        Err(_elapsed) => {
+            let health = session_health(&context.provider_id);
+            if !health.valid {
+                crate::core::notify::notify_session_expired(&context.provider_id);
+                return Ok(stale_session_result(
+                    &context.provider_id,
+                    &context.display_name,
+                    &health,
+                ));
+            }
+            return Ok(json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!(
+                        "Command timed out after {timeout_ms} ms and was killed. The gsa session still looks valid, so this is likely the command itself (a slow query, a missing `&` on a long task, or a network stall) — not credentials. Re-run with a larger `timeout_ms`, or launch long work in the background with `&`."
+                    )
+                }],
+                "isError": true,
+                "timed_out": true,
+            }));
+        }
+    };
 
     let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
     let exit_code = output.status.code().unwrap_or(-1);
+
+    // 5b. If the command failed, check whether the session went stale during the
+    // run (the daemon may have just flagged a rejected refresh). If so, surface
+    // re-login guidance instead of letting the agent puzzle over the raw error.
+    if exit_code != 0 {
+        let health = session_health(&context.provider_id);
+        if !health.valid {
+            crate::core::notify::notify_session_expired(&context.provider_id);
+            return Ok(stale_session_result(
+                &context.provider_id,
+                &context.display_name,
+                &health,
+            ));
+        }
+    }
 
     // 6. Audit log
     audit::log_event(
@@ -399,5 +615,48 @@ mod tests {
     fn env_rejects_invalid_names() {
         assert!(parse_env_arg(&json!({ "env": { "": "x" } })).is_err());
         assert!(parse_env_arg(&json!({ "env": { "A=B": "x" } })).is_err());
+    }
+
+    #[test]
+    fn timeout_defaults_when_absent() {
+        assert_eq!(parse_timeout_ms(&json!({})), DEFAULT_TIMEOUT_MS);
+    }
+
+    #[test]
+    fn timeout_accepts_number_and_numeric_string() {
+        assert_eq!(parse_timeout_ms(&json!({ "timeout_ms": 30000 })), 30000);
+        // Agents have passed the legacy `timeout` key as a string.
+        assert_eq!(parse_timeout_ms(&json!({ "timeout": "15000" })), 15000);
+    }
+
+    #[test]
+    fn timeout_is_clamped() {
+        assert_eq!(
+            parse_timeout_ms(&json!({ "timeout_ms": 1 })),
+            MIN_TIMEOUT_MS
+        );
+        assert_eq!(
+            parse_timeout_ms(&json!({ "timeout_ms": 9_999_999 })),
+            MAX_TIMEOUT_MS
+        );
+    }
+
+    #[test]
+    fn stale_result_is_machine_readable() {
+        let health = SessionHealth {
+            valid: false,
+            needs_login: true,
+            session_expires_at: None,
+            refresh_expires_at: None,
+            reason: Some("the SSO session ended".into()),
+        };
+        let v = stale_session_result("aws", "production / developer", &health);
+        assert_eq!(v["session_stale"], json!(true));
+        assert_eq!(v["isError"], json!(true));
+        assert_eq!(v["action"], json!("gsa login aws"));
+        assert_eq!(v["needs_login"], json!(true));
+        let text = v["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("gsa login aws"));
+        assert!(text.contains("production / developer"));
     }
 }
