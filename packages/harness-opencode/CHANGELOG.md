@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.6.1
+
+### Patch Changes
+
+- [#296](https://github.com/iceglober/glrs/pull/296) [`020048c`](https://github.com/iceglober/glrs/commit/020048ce087a93d6ef0f2cab40f1f08508393ce1) Thanks [@iceglober](https://github.com/iceglober)! - The harness CLI now parses `opencode.json` tolerantly (JSONC), matching opencode itself.
+
+  `harness install`/`configure` and `doctor` previously used strict `JSON.parse`, so a config opencode loads fine — e.g. one with a trailing comma or a comment — would crash with "invalid JSON" and refuse to proceed. They now fall back to JSON5 when strict parsing fails, accepting the same conveniences opencode does. Genuinely malformed files still error and the merge still leaves them untouched.
+
 ## 3.6.0
 
 ### Minor Changes
