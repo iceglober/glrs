@@ -107,7 +107,7 @@ fn handle_tools_list() -> Result<Value, (i32, String)> {
         "tools": [
             {
                 "name": "run_with_credentials",
-                "description": "Run a shell command with AWS credentials injected from gsa. Only works for contexts approved via `gsa agent allow`. Returns stdout, stderr, and exit code.",
+                "description": "Run a shell command with AWS credentials injected from gsa, in the gsa MCP server's working directory (the workspace root it was launched in — same as the bash tool). Optionally pass repo-specific environment variables via `env`. Only works for contexts approved via `gsa agent allow`. Returns stdout, stderr, and exit code.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -118,6 +118,11 @@ fn handle_tools_list() -> Result<Value, (i32, String)> {
                         "context": {
                             "type": "string",
                             "description": "Context pattern to use (optional, defaults to active context from gsa use)"
+                        },
+                        "env": {
+                            "type": "object",
+                            "additionalProperties": { "type": "string" },
+                            "description": "Additional environment variables (string values) set for the command, alongside the injected AWS credentials. The gsa-injected AWS_* credential and region vars take precedence and cannot be overridden."
                         }
                     },
                     "required": ["command"]
@@ -182,6 +187,42 @@ fn tool_list_contexts() -> Result<Value, (i32, String)> {
     }))
 }
 
+/// Parse the optional `env` argument into ordered (name, value) pairs.
+///
+/// Values must be strings (env vars are inherently strings — coercing numbers
+/// silently would surprise callers). Names must be non-empty and free of `=`
+/// and NUL, which the OS forbids. Returns a JSON-RPC invalid-params error
+/// (-32602) on malformed input so the caller gets a clear message rather than a
+/// silently-dropped variable. Absent or null `env` yields an empty vec.
+fn parse_env_arg(arguments: &Value) -> Result<Vec<(String, String)>, (i32, String)> {
+    let env_val = match arguments.get("env") {
+        None => return Ok(Vec::new()),
+        Some(v) if v.is_null() => return Ok(Vec::new()),
+        Some(v) => v,
+    };
+    let obj = env_val.as_object().ok_or((
+        -32602,
+        "Parameter `env` must be an object of string values".to_string(),
+    ))?;
+    let mut out = Vec::with_capacity(obj.len());
+    for (name, val) in obj {
+        if name.is_empty() || name.contains('=') || name.contains('\0') {
+            return Err((-32602, format!("Invalid env var name: {name:?}")));
+        }
+        let value = val
+            .as_str()
+            .ok_or((-32602, format!("env var {name:?} must be a string value")))?;
+        if value.contains('\0') {
+            return Err((
+                -32602,
+                format!("env var {name:?} value contains a NUL byte"),
+            ));
+        }
+        out.push((name.clone(), value.to_string()));
+    }
+    Ok(out)
+}
+
 fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> {
     let command = arguments
         .get("command")
@@ -189,6 +230,10 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
         .ok_or((-32602, "Missing required parameter: command".to_string()))?;
 
     let context_pattern = arguments.get("context").and_then(|c| c.as_str());
+
+    // Caller-supplied env vars (validated up front so a bad arg fails fast,
+    // before we resolve contexts or touch the daemon).
+    let user_env = parse_env_arg(arguments)?;
 
     // 1. Resolve context
     let context = if let Some(pattern) = context_pattern {
@@ -246,16 +291,27 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
         .unwrap_or(crate::providers::aws::endpoint::DEFAULT_PORT);
     let token = crate::providers::aws::endpoint::get_or_create_session_token();
 
-    let mut env: Vec<(String, String)> = vec![
-        (
-            "AWS_CONTAINER_CREDENTIALS_FULL_URI".into(),
-            format!("http://localhost:{port}/credentials/{}", context.id),
-        ),
-        (
-            "AWS_CONTAINER_AUTHORIZATION_TOKEN".into(),
-            format!("Bearer {token}"),
-        ),
-    ];
+    // Caller-supplied env first; the gsa-injected AWS_* vars are pushed AFTER so
+    // they win on any key collision (`Command::envs` lets later entries
+    // override). This is deliberate: a caller must not be able to redirect the
+    // credential endpoint/token via `env`. Record the names (not values — values
+    // may be secrets) for the audit log before `user_env` is moved into `env`.
+    let mut env_note = String::new();
+    if !user_env.is_empty() {
+        let mut names: Vec<&str> = user_env.iter().map(|(n, _)| n.as_str()).collect();
+        names.sort_unstable();
+        env_note = format!(" [env: {}]", names.join(", "));
+    }
+
+    let mut env: Vec<(String, String)> = user_env;
+    env.push((
+        "AWS_CONTAINER_CREDENTIALS_FULL_URI".into(),
+        format!("http://localhost:{port}/credentials/{}", context.id),
+    ));
+    env.push((
+        "AWS_CONTAINER_AUTHORIZATION_TOKEN".into(),
+        format!("Bearer {token}"),
+    ));
 
     if !context.region.is_empty() {
         env.push(("AWS_REGION".into(), context.region.clone()));
@@ -277,7 +333,7 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
     audit::log_event(
         audit::AuditEvent::CredentialFetch,
         &context.provider_id,
-        &format!("mcp run_with_credentials: {command}"),
+        &format!("mcp run_with_credentials: {command}{env_note}"),
     );
 
     let mut text = String::new();
@@ -302,4 +358,46 @@ fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, String)> 
         }],
         "isError": exit_code != 0
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn env_absent_or_null_is_empty() {
+        assert!(parse_env_arg(&json!({})).unwrap().is_empty());
+        assert!(parse_env_arg(&json!({ "env": null })).unwrap().is_empty());
+    }
+
+    #[test]
+    fn env_parses_string_values_in_order_independent_pairs() {
+        let args = json!({ "env": { "A": "1", "TEMPORAL_NAMESPACE": "kn-prod" } });
+        let out = parse_env_arg(&args).unwrap();
+        assert_eq!(out.len(), 2);
+        // Order within a JSON object isn't guaranteed across serde versions, so
+        // assert by membership rather than index.
+        assert!(out.contains(&("A".to_string(), "1".to_string())));
+        assert!(out.contains(&("TEMPORAL_NAMESPACE".to_string(), "kn-prod".to_string())));
+    }
+
+    #[test]
+    fn env_rejects_non_object() {
+        assert!(parse_env_arg(&json!({ "env": "A=1" })).is_err());
+        assert!(parse_env_arg(&json!({ "env": ["A", "1"] })).is_err());
+    }
+
+    #[test]
+    fn env_rejects_non_string_value() {
+        // Numbers/bools are not coerced — callers must pass strings explicitly.
+        assert!(parse_env_arg(&json!({ "env": { "PORT": 7233 } })).is_err());
+        assert!(parse_env_arg(&json!({ "env": { "FLAG": true } })).is_err());
+    }
+
+    #[test]
+    fn env_rejects_invalid_names() {
+        assert!(parse_env_arg(&json!({ "env": { "": "x" } })).is_err());
+        assert!(parse_env_arg(&json!({ "env": { "A=B": "x" } })).is_err());
+    }
 }
