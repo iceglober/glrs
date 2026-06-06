@@ -9,6 +9,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { execSync } from "node:child_process";
 import { validateModelOverride } from "../model-validator.js";
+import { parseJsonc } from "../lib/jsonc.js";
 
 const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
 
@@ -57,7 +58,10 @@ export function doctor(): void {
   const configPath = getOpencodeConfigPath();
   if (fs.existsSync(configPath)) {
     try {
-      const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      const config = parseJsonc(fs.readFileSync(configPath, "utf8")) as Record<
+        string,
+        any
+      >;
       const plugins: unknown[] = Array.isArray(config.plugin) ? config.plugin : [];
       let pluginOptions: Record<string, unknown> | null = null;
       const hasPlugin = plugins.some((p) => {

@@ -23,6 +23,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseJsonc } from "../lib/jsonc.js";
 
 // The single union-allowlist: only these top-level keys get array-union treatment.
 const UNION_ALLOWLIST = new Set(["plugin"]);
@@ -194,7 +195,10 @@ export function mergeConfig(
 
   let dst: Record<string, JsonValue>;
   try {
-    dst = JSON.parse(dstText);
+    // Tolerant of JSONC (trailing commas, comments) like opencode itself, so a
+    // config opencode loads fine doesn't wedge the merge. Truly malformed input
+    // still throws and we leave the file untouched.
+    dst = parseJsonc(dstText) as Record<string, JsonValue>;
   } catch (e: any) {
     throw new Error(
       `User config at ${dstPath} has invalid JSON: ${e.message}. Not touching the file.`,
