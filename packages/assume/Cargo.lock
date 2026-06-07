@@ -1419,7 +1419,7 @@ dependencies = [
 
 [[package]]
 name = "glrs-assume"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
