@@ -377,6 +377,15 @@ Discover the correct commands from `package.json` scripts, `Makefile`, or `AGENT
 
 For each command that exits 0, record an ISO-8601 timestamp. These become the session-green summary for `@code-reviewer`. If any command fails, handle as a red-CI condition (re-dispatch to `@build` with the failing command).
 
+### Long-running commands (>~30s): background them
+
+The tool layer cancels a command after ~30s (`-32001 Request timed out`), so anything that can exceed that — backfills, data migrations, long builds, slow integration suites, prod scripts — will be **killed mid-run** if you run it inline. Background it instead:
+
+- `background_run(command, with_gsa?, cwd?, env?)` returns a job id immediately and survives both the timeout and an MCP/opencode restart. Poll `background_check(job_id)` until it reports `exited`; a non-zero exit code is a failure. `background_list` / `background_stop` manage jobs.
+- For commands that need cloud credentials (anything hitting AWS/prod), pass `with_gsa: "<gsa context>"` so credentials are injected — the agent equivalent of `with-stack` / `gsa exec`. Without it the command runs uncredentialed.
+
+Short (<30s) commands still run inline as usual — don't background a quick test or grep.
+
 ## Assess supplements
 
 ### Parallel Assess after parallel Execute
