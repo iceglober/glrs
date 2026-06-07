@@ -664,29 +664,22 @@ async fn daemon_dies_session_expired_but_refresh_valid_recovers() {
 #[test]
 fn spawn_daemon_if_dead_is_noop_when_running() {
     use assume::core::daemon::{is_daemon_running, spawn_daemon_if_dead};
-    use tempfile::TempDir;
 
-    let temp_dir = TempDir::new().unwrap();
+    // Use TestVault so the GLRS_ASSUME_CONFIG_DIR mutation shares the SAME lock
+    // (`helpers::ENV_LOCK`) as every other env-dependent test in this binary.
+    // This test previously used a PRIVATE `static ENV_LOCK`, so it serialized
+    // only against itself — not against the TestVault tests — and intermittently
+    // clobbered their config dir mid-test, failing their store→load asserts.
+    // TestVault also restores the env var on drop.
+    let _vault = TestVault::new();
 
-    // Serialize env-var mutation (same pattern as daemon.rs unit tests)
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let old = std::env::var("GLRS_ASSUME_CONFIG_DIR").ok();
-    std::env::set_var("GLRS_ASSUME_CONFIG_DIR", temp_dir.path());
-
-    // No PID file → is_daemon_running() returns false
+    // No PID file in the fresh temp config dir → is_daemon_running() returns false.
     assert!(!is_daemon_running(), "No PID file → daemon not running");
 
     // spawn_daemon_if_dead() should not panic even if start_daemon_background
     // can't find the binary (we're running under cargo test, not the real binary).
-    // The function is fire-and-forget; we just verify it completes.
+    // Fire-and-forget; we just verify it completes.
     spawn_daemon_if_dead();
-
-    // Restore env
-    match old {
-        Some(v) => std::env::set_var("GLRS_ASSUME_CONFIG_DIR", v),
-        None => std::env::remove_var("GLRS_ASSUME_CONFIG_DIR"),
-    }
 }
 
 // ─── a4: Expired client registration triggers re-registration ────────────────
