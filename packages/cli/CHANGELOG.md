@@ -1,5 +1,12 @@
 # @glrs-dev/cli
 
+## 3.8.1
+
+### Patch Changes
+
+- Updated dependencies [[`cfcad86`](https://github.com/iceglober/glrs/commit/cfcad86c7f17922a9fae6cc4b92aabfa70a57951)]:
+  - @glrs-dev/harness-plugin-opencode@3.8.1
+
 ## 3.8.0
 
 ### Patch Changes
