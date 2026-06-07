@@ -321,9 +321,10 @@ fn stale_session_result(provider_id: &str, context_display: &str, health: &Sessi
             "type": "text",
             "text": format!(
                 "gsa session for '{context_display}' is stale — {reason}. \
-                 Re-authentication is an interactive browser flow that an agent cannot perform. \
-                 Ask the user to run:  gsa login {provider_id}\n\
-                 A desktop notification has been sent. Do not retry this command until the user confirms they have re-logged in."
+                 Re-authenticating requires a human to complete an SSO browser sign-in; an agent cannot do that step. \
+                 In an interactive local session you MAY launch `gsa login {provider_id}` in the background (it opens a browser for the user to finish), then poll the `check_session` tool until it reports valid before retrying. \
+                 Otherwise (headless/remote, or no browser available) ask the user to run:  gsa login {provider_id}\n\
+                 A desktop notification has been sent. Do not retry this command until `check_session` reports the session is valid."
             )
         }],
         "isError": true,
@@ -658,5 +659,9 @@ mod tests {
         let text = v["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("gsa login aws"));
         assert!(text.contains("production / developer"));
+        // Softened guidance: agent may self-launch in interactive sessions, and
+        // should gate retries on check_session rather than a fixed wait.
+        assert!(text.contains("background"));
+        assert!(text.contains("check_session"));
     }
 }
