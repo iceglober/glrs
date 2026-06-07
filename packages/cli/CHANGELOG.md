@@ -1,5 +1,12 @@
 # @glrs-dev/cli
 
+## 3.8.0
+
+### Patch Changes
+
+- Updated dependencies [[`19aedb7`](https://github.com/iceglober/glrs/commit/19aedb7182cb8c7ad1f41eba80f792ccbbb71c70)]:
+  - @glrs-dev/harness-plugin-opencode@3.8.0
+
 ## 3.7.0
 
 ### Patch Changes
