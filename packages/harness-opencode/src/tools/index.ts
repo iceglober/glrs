@@ -4,6 +4,7 @@ import tscCheckTool from "./tsc_check.js";
 import eslintCheckTool from "./eslint_check.js";
 import todoScanTool from "./todo_scan.js";
 import commentCheckTool from "./comment_check.js";
+import { backgroundTools } from "./background.js";
 
 export function createTools(): Record<string, ToolDefinition> {
   return {
@@ -12,5 +13,6 @@ export function createTools(): Record<string, ToolDefinition> {
     eslint_check: eslintCheckTool,
     todo_scan: todoScanTool,
     comment_check: commentCheckTool,
+    ...backgroundTools,
   };
 }
