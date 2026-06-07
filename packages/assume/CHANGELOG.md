@@ -1,5 +1,13 @@
 # @glrs-dev/assume
 
+## 0.15.1
+
+### Patch Changes
+
+- [#302](https://github.com/iceglober/glrs/pull/302) [`2ad94cd`](https://github.com/iceglober/glrs/commit/2ad94cd4efab27d6f0c60c18ad3778f02ed15c1a) Thanks [@iceglober](https://github.com/iceglober)! - Soften the stale-session guidance from `gsa run_with_credentials` so an agent can self-recover in interactive sessions.
+
+  The stale-session message now tells the agent it MAY launch `gsa login <provider>` in the background (which opens the browser for the user to complete) and then poll the `check_session` tool until valid, rather than always asking the user to run the command. In headless/remote contexts it still falls back to asking the user. Retries are gated on `check_session` reporting valid.
+
 ## 0.15.0
 
 ### Minor Changes
