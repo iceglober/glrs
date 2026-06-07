@@ -426,7 +426,9 @@ When you attempt a fix and CI/tests produce the **same error** (same error messa
 
 **Detection:** two consecutive CI runs that produce the same error class (same exception type + same call site OR same test name failing) after two different fix attempts = stuck. Don't wait for a third.
 
-**This is the highest-priority rule in Execute.** A Sonnet-class model looping on the same error wastes more tokens and wall-clock time than a single Opus dispatch. The cost of one `@build-deep` call is less than the cost of three failed Sonnet retries.
+**Distinct-failure grind (same rule, different shape).** You are also stuck when the errors **keep changing** but never resolve: ~4+ failing test/build/typecheck runs on the same task, across different fix attempts, without reaching green — even though each failure looks new. Chasing a moving target this long is a complexity signal, not progress. The trigger is the *count of failing verify runs without convergence*, not error sameness. When you hit it (the tool layer will also nudge you with a `COMPLEXITY CHECK`), **stop iterating inline and escalate to `@build-deep`** with the deep-dispatch context block — exactly as for a same-error loop. This applies even if you started the task inline and never entered the build cascade: a long inline grind on hard code is precisely when to hand off to Opus.
+
+**This is the highest-priority rule in Execute.** A Sonnet-class model looping on the same error — or chasing a moving target across many failing runs — wastes more tokens and wall-clock time than a single Opus dispatch. The cost of one `@build-deep` call is less than the cost of three failed Sonnet retries.
 
 **Do NOT:**
 - Try a third variation of the same approach

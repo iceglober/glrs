@@ -10,6 +10,9 @@ const {
   checkToolLoop,
   normalizeToolSig,
   loopCorrective,
+  checkComplexityHint,
+  complexityHint,
+  isVerifyCommand,
   checkReadDedup,
   looksLikeBashFailure,
   extractFilePath,
@@ -23,6 +26,8 @@ const {
   DEFAULT_EXPLORATION_ABORT,
   DEFAULT_REPEAT_WARN,
   DEFAULT_REPEAT_ABORT,
+  DEFAULT_COMPLEXITY_WARN,
+  DEFAULT_DEEP_AGENT,
 } = __test__;
 
 // ---- helpers ---------------------------------------------------------------
@@ -55,6 +60,8 @@ describe("resolveConfig", () => {
     expect(cfg.loopDetection.repeatWarn).toBe(DEFAULT_REPEAT_WARN);
     expect(cfg.loopDetection.repeatAbort).toBe(DEFAULT_REPEAT_ABORT);
     expect(cfg.loopDetection.abortEnabled).toBe(true);
+    expect(cfg.loopDetection.complexityWarn).toBe(DEFAULT_COMPLEXITY_WARN);
+    expect(cfg.loopDetection.deepAgent).toBe(DEFAULT_DEEP_AGENT);
     expect(cfg.readDedup.enabled).toBe(true);
   });
 
@@ -69,6 +76,8 @@ describe("resolveConfig", () => {
         repeatWarn: 2,
         repeatAbort: 4,
         abortEnabled: false,
+        complexityWarn: 3,
+        deepAgent: "@build-opus",
       },
       readDedup: { enabled: false },
     });
@@ -83,6 +92,8 @@ describe("resolveConfig", () => {
     expect(cfg.loopDetection.repeatWarn).toBe(2);
     expect(cfg.loopDetection.repeatAbort).toBe(4);
     expect(cfg.loopDetection.abortEnabled).toBe(false);
+    expect(cfg.loopDetection.complexityWarn).toBe(3);
+    expect(cfg.loopDetection.deepAgent).toBe("@build-opus");
     expect(cfg.readDedup.enabled).toBe(false);
   });
 });
@@ -579,6 +590,84 @@ describe("checkToolLoop", () => {
     expect(loopCorrective({ level: "abort", kind: "repeat", sig: "grep:x", count: 6 })).toContain(
       "same tool call",
     );
+  });
+});
+
+// ---- isVerifyCommand -------------------------------------------------------
+
+describe("isVerifyCommand", () => {
+  it("matches known test/build/typecheck runners", () => {
+    expect(isVerifyCommand("pnpm test")).toBe(true);
+    expect(isVerifyCommand("pnpm run typecheck")).toBe(true);
+    expect(isVerifyCommand("npx vitest run src/foo.test.ts")).toBe(true);
+    expect(isVerifyCommand("cargo test --release")).toBe(true);
+    expect(isVerifyCommand("bun test")).toBe(true);
+    expect(isVerifyCommand("tsc --noEmit")).toBe(true);
+  });
+  it("does not match ordinary commands", () => {
+    expect(isVerifyCommand("git status")).toBe(false);
+    expect(isVerifyCommand("cat src/test-helpers.ts")).toBe(false); // 'test' only in a path
+    expect(isVerifyCommand("ls packages/tests")).toBe(false);
+  });
+});
+
+// ---- checkComplexityHint ---------------------------------------------------
+
+describe("checkComplexityHint", () => {
+  beforeEach(() => {
+    sessions.clear();
+  });
+
+  it("suggests delegation after N failing verify runs, once", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("cx-1");
+    let v;
+    for (let i = 0; i < DEFAULT_COMPLEXITY_WARN; i++) {
+      v = checkComplexityHint(cfg, sess, "bash", "pnpm test", false);
+    }
+    expect(v.suggest).toBe(true);
+    expect(v.fails).toBe(DEFAULT_COMPLEXITY_WARN);
+    // Fires only once.
+    const again = checkComplexityHint(cfg, sess, "bash", "pnpm test", false);
+    expect(again.suggest).toBe(false);
+  });
+
+  it("ignores passing verify runs and non-verify failures", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("cx-2");
+    for (let i = 0; i < DEFAULT_COMPLEXITY_WARN + 2; i++) {
+      checkComplexityHint(cfg, sess, "bash", "pnpm test", true); // passing
+      checkComplexityHint(cfg, sess, "bash", "git status", false); // not a verify cmd
+    }
+    expect(sess.failedVerifyRuns).toBe(0);
+    expect(sess.complexitySuggested).toBe(false);
+  });
+
+  it("is suppressed once the agent delegates via the task tool", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("cx-3");
+    checkComplexityHint(cfg, sess, "task", null, true); // delegated
+    let v;
+    for (let i = 0; i < DEFAULT_COMPLEXITY_WARN + 3; i++) {
+      v = checkComplexityHint(cfg, sess, "bash", "cargo test", false);
+    }
+    expect(v.suggest).toBe(false);
+    expect(sess.delegated).toBe(true);
+  });
+
+  it("is disabled when complexityWarn is 0", () => {
+    const cfg = { ...defaultConfig().loopDetection, complexityWarn: 0 };
+    const sess = getSession("cx-4");
+    let v;
+    for (let i = 0; i < 8; i++) {
+      v = checkComplexityHint(cfg, sess, "bash", "pnpm test", false);
+    }
+    expect(v.suggest).toBe(false);
+  });
+
+  it("hint text names the configured deep agent", () => {
+    expect(complexityHint("@build-deep", 4)).toContain("@build-deep");
+    expect(complexityHint("@build-deep", 4)).toContain("delegate");
   });
 });
 

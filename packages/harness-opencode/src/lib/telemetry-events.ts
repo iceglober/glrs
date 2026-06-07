@@ -182,14 +182,15 @@ export function buildToolUsedProps(args: {
 
 /**
  * Properties for the `loop_detected` event — emitted when the tool-loop guard
- * warns or aborts a session that is spinning (repeated calls or a long passive
- * exploration streak with no forward progress). `kind` distinguishes the two
- * signatures; `level` is the escalation stage; `count` is the streak/repeat
+ * warns or aborts a session that is spinning. `kind` distinguishes the
+ * signatures: `explore` (long passive read/search streak), `repeat` (same call
+ * repeated), or `complexity` (repeated failing verify runs → suggest deeper
+ * agent). `level` is the escalation stage; `count` is the streak/repeat/fail
  * score that tripped it.
  */
 export function buildLoopProps(args: {
   tool: string;
-  kind: "explore" | "repeat";
+  kind: "explore" | "repeat" | "complexity";
   level: "warn" | "abort";
   count: number;
   provider?: string;

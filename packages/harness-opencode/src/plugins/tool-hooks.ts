@@ -131,6 +131,38 @@ const LOOP_WINDOW = 30;
 // progress and resets the exploration streak.
 const PASSIVE_TOOLS = new Set(["read", "grep", "glob", "list", "webfetch"]);
 
+// ---- Complexity-delegation hint -------------------------------------------
+// A signal DISTINCT from the loop signatures above: the agent is doing real,
+// active work (editing, running tests) but the test/build keeps FAILING across
+// attempts — the errors may differ each time, so the "same call repeated" and
+// "same error twice" rules never fire. That pattern is the fingerprint of
+// grinding on inherent complexity. After enough failing verify runs with no
+// delegation, suggest (once, softly — never abort) handing the problem to a
+// deeper-reasoning subagent. The default agent name matches the harness's
+// deep-tier build agent.
+const DEFAULT_COMPLEXITY_WARN = 4;
+const DEFAULT_DEEP_AGENT = "@build-deep";
+// Bash commands that look like running tests / type-checks / builds — i.e. a
+// "verify" step. Conservative: only well-known runners, so an ordinary command
+// that merely contains "test" in a path doesn't count.
+const VERIFY_COMMAND = new RegExp(
+  [
+    "\\b(vitest|jest|pytest|mocha|ava)\\b",
+    "\\b(tsc|tsgo)\\b",
+    "\\bcargo\\s+(test|clippy|build|check)\\b",
+    "\\bgo\\s+test\\b",
+    "\\bbun\\s+test\\b",
+    "\\b(pnpm|npm|yarn|bun)\\s+(run\\s+)?(test|build|typecheck|lint|check)\\b",
+    "\\bmake\\s+(test|check|build)\\b",
+  ].join("|"),
+  "i",
+);
+
+/** True when a bash command string is a test/build/typecheck "verify" run. */
+function isVerifyCommand(command: string): boolean {
+  return VERIFY_COMMAND.test(command);
+}
+
 // ---- Per-session state ----------------------------------------------------
 
 interface ReadCacheEntry {
@@ -156,6 +188,13 @@ interface SessionState {
   sigScores: Map<string, number>;
   /** Escalation stage: 0 none, 1 warned, 2 aborted. */
   loopStage: 0 | 1 | 2;
+  // ---- complexity-delegation hint ----
+  /** Failing test/build ("verify") runs seen this session. */
+  failedVerifyRuns: number;
+  /** Whether the agent has delegated via the `task` tool this session. */
+  delegated: boolean;
+  /** Whether the complexity-delegation hint has already been emitted. */
+  complexitySuggested: boolean;
 }
 
 const sessions = new Map<string, SessionState>();
@@ -176,6 +215,9 @@ function ensureSession(sessionID: string): SessionState {
       loopWindow: [],
       sigScores: new Map(),
       loopStage: 0,
+      failedVerifyRuns: 0,
+      delegated: false,
+      complexitySuggested: false,
     };
     sessions.set(sessionID, s);
   }
@@ -224,6 +266,11 @@ interface ToolHooksConfig {
     repeatAbort: number;
     /** Master switch for the hard `session.abort` escalation. */
     abortEnabled: boolean;
+    /** Failing verify (test/build) runs, with no delegation, before suggesting
+     * a deeper agent. 0 disables the complexity-delegation hint. */
+    complexityWarn: number;
+    /** Subagent to suggest when the complexity hint fires. */
+    deepAgent: string;
   };
   readDedup: {
     enabled: boolean;
@@ -296,6 +343,14 @@ function resolveConfig(config: Config, pluginOptions?: PluginOptions): ToolHooks
       repeatAbort:
         typeof ld.repeatAbort === "number" ? ld.repeatAbort : DEFAULT_REPEAT_ABORT,
       abortEnabled: ld.abortEnabled !== false,
+      complexityWarn:
+        typeof ld.complexityWarn === "number"
+          ? ld.complexityWarn
+          : DEFAULT_COMPLEXITY_WARN,
+      deepAgent:
+        typeof ld.deepAgent === "string" && ld.deepAgent
+          ? ld.deepAgent
+          : DEFAULT_DEEP_AGENT,
     },
     readDedup: {
       enabled: rd.enabled !== false,
@@ -783,6 +838,52 @@ const LOOP_ABORT_PROMPT =
   "and then either take one concrete action or ask the user a specific question. " +
   "If you genuinely cannot proceed, reply with a BLOCKED status naming what you need.";
 
+// ---- Complexity-delegation hint -------------------------------------------
+
+type ComplexityVerdict = { suggest: boolean; fails: number };
+
+/**
+ * Track the complexity signal for one tool call and decide whether to emit the
+ * one-time delegation hint. Distinct from the loop signatures: it keys on
+ * *failing verify runs* (tests/builds that fail), not on repetition or
+ * passivity — varied failures across real fix attempts that the repeat/explore
+ * checks never catch. Suppressed once the agent delegates (`task`). Pure apart
+ * from the session counters it owns.
+ */
+function checkComplexityHint(
+  cfg: ToolHooksConfig["loopDetection"],
+  sess: SessionState,
+  tool: string,
+  command: string | null,
+  ok: boolean,
+): ComplexityVerdict {
+  // Delegating cancels the hint — the agent already reached for help.
+  if (tool === "task") sess.delegated = true;
+  if (tool === "bash" && command && !ok && isVerifyCommand(command)) {
+    sess.failedVerifyRuns++;
+  }
+  const suggest =
+    cfg.enabled &&
+    cfg.complexityWarn > 0 &&
+    !sess.delegated &&
+    !sess.complexitySuggested &&
+    sess.failedVerifyRuns >= cfg.complexityWarn;
+  if (suggest) sess.complexitySuggested = true;
+  return { suggest, fails: sess.failedVerifyRuns };
+}
+
+/** Soft, in-band hint suggesting delegation to a deeper-reasoning subagent. */
+function complexityHint(deepAgent: string, fails: number): string {
+  return (
+    `\n\n--- COMPLEXITY CHECK ---\n` +
+    `You've had ${fails} failing test/build runs this session and haven't delegated. ` +
+    `If you're struggling with inherent complexity — a root cause several layers deep, ` +
+    `subtle cross-module behavior, or fixes that keep surfacing new failures — package ` +
+    `what you've learned and delegate to ${deepAgent} (a deeper-reasoning model) rather ` +
+    `than continuing to iterate inline. If this is ordinary polish, ignore this.\n---`
+  );
+}
+
 // ---- Read dedup -----------------------------------------------------------
 
 function checkReadDedup(
@@ -945,6 +1046,34 @@ const plugin: Plugin = async ({ client }, options) => {
       // tool so it can reset the streak on active calls. Fail-silent.
       await maybeInterveneOnLoop(cfg.loopDetection, sess, input.sessionID, toolName, input.args, output, ok);
 
+      // Complexity-delegation hint: distinct from the loop guard — keys on
+      // repeated FAILING verify runs (not repetition/passivity) and suggests
+      // (once, never aborts) handing the problem to a deeper agent.
+      {
+        const cmd =
+          toolName === "bash" &&
+          input.args &&
+          typeof (input.args as { command?: unknown }).command === "string"
+            ? ((input.args as { command: string }).command)
+            : null;
+        const cx = checkComplexityHint(cfg.loopDetection, sess, toolName, cmd, ok);
+        if (cx.suggest) {
+          output.output += complexityHint(cfg.loopDetection.deepAgent, cx.fails);
+          track(
+            "loop_detected",
+            buildLoopProps({
+              tool: toolName,
+              kind: "complexity",
+              level: "warn",
+              count: cx.fails,
+              provider: sess.provider ?? undefined,
+              model: sess.model ?? undefined,
+              ...(devPreset ? { preset: devPreset } : {}),
+            }),
+          );
+        }
+      }
+
       // 1. Read dedup (runs before backpressure — dedup replaces the
       //    entire output, so backpressure on the replacement is moot)
       if (toolName === "read") {
@@ -1011,6 +1140,9 @@ export const __test__ = {
   checkToolLoop,
   normalizeToolSig,
   loopCorrective,
+  checkComplexityHint,
+  complexityHint,
+  isVerifyCommand,
   checkReadDedup,
   looksLikeBashFailure,
   extractFilePath,
@@ -1026,6 +1158,8 @@ export const __test__ = {
   DEFAULT_EXPLORATION_ABORT,
   DEFAULT_REPEAT_WARN,
   DEFAULT_REPEAT_ABORT,
+  DEFAULT_COMPLEXITY_WARN,
+  DEFAULT_DEEP_AGENT,
   PASSIVE_TOOLS,
   DEFAULT_PER_TOOL_SHAPES,
   DEFAULT_GREP_HEAD_MATCHES,
