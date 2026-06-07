@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.8.1
+
+### Patch Changes
+
+- [#309](https://github.com/iceglober/glrs/pull/309) [`cfcad86`](https://github.com/iceglober/glrs/commit/cfcad86c7f17922a9fae6cc4b92aabfa70a57951) Thanks [@iceglober](https://github.com/iceglober)! - PRIME now tells the agent to background long-running commands. The `prime-ultra` prompt gained a short rule: commands that can exceed the ~30s tool timeout (backfills, migrations, long builds, prod scripts) must use `background_run`/`background_check` instead of running inline, with `with_gsa: "<context>"` for credential-injected (AWS/prod) commands. Drives adoption of the background tools added in 3.8.0.
+
 ## 3.8.0
 
 ### Minor Changes
