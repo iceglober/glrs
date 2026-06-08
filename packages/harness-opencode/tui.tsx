@@ -1,16 +1,23 @@
 /**
- * SPIKE — opencode TUI sidebar widget for harness background jobs.
+ * opencode TUI sidebar widget for the harness's background jobs.
  *
- * Goal: confirm opencode's (experimental, community-demonstrated) sidebar slot
- * API works on your build before investing in a full widget. It registers a
- * `sidebar_content` slot that reads the harness background-jobs state from disk
- * and renders a live, auto-refreshing list.
+ * The `./tui` entrypoint of @glrs-dev/harness-plugin-opencode. opencode treats
+ * this package as having two targets: the server plugin (`.` → dist/index.js,
+ * the hooks/tools/agents) and this TUI plugin. They load via separate paths —
+ * the server via the config `plugin` array, this via opencode's TUI registry —
+ * so the sidebar is activated by registering the package as a TUI plugin:
  *
- * NOT verified end-to-end by the author (no TUI available in the build env) and
- * NOT published. The `slots`/`tui` surface is typed via `@opencode-ai/plugin/tui`
- * but is not part of opencode's stable plugin contract — treat as a spike.
+ *     opencode plugin @glrs-dev/harness-plugin-opencode
  *
- * Modeled on streetturtle/opencode-better-sidebar (plugins/open-in).
+ * Registers a `sidebar_content` slot that reads background-job state from disk
+ * (`$XDG_STATE_HOME/harness-opencode/background-jobs/`, the same dir
+ * `background_run` writes — no coupling to the server plugin), filters by the
+ * slot's `session_id`, and renders a live, 2s-refreshed list. opencode
+ * transpiles this Solid `.tsx` and provides the runtime; it is not built by the
+ * harness's tsup pipeline.
+ *
+ * The `slots`/`tui` surface is typed (`@opencode-ai/plugin/tui`) but not part of
+ * opencode's stable plugin contract — it may change between opencode versions.
  */
 
 import { createSignal, For, onCleanup } from "solid-js";
