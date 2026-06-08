@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { __test__, buildJobsBanner, listJobs, jobLabel } from "../src/tools/background.js";
+import {
+  __test__,
+  listJobs,
+  jobLabel,
+  selectFreshCompletions,
+  buildCompletionNotice,
+} from "../src/tools/background.js";
 
 const { buildSpawnPlan, readJobState, tailFile, shQuote, fmtRuntime } = __test__;
 
@@ -126,46 +132,53 @@ describe("jobLabel", () => {
   });
 });
 
-describe("buildJobsBanner", () => {
-  const now = 1_000_000;
-
-  it("returns null when nothing is running and nothing is newly finished", () => {
-    expect(buildJobsBanner([], new Set(), now)).toBeNull();
-    // a finished job already surfaced → still null
-    const j = job({ id: "bg-done", status: "exited", exitCode: 0 });
-    expect(buildJobsBanner([j], new Set(["bg-done"]), now)).toBeNull();
+describe("selectFreshCompletions", () => {
+  it("returns only THIS session's finished, un-announced jobs", () => {
+    const jobs = [
+      job({ id: "a", sessionID: "s1", status: "exited", exitCode: 0 }),
+      job({ id: "b", sessionID: "s1", status: "running" }), // not finished
+      job({ id: "c", sessionID: "s2", status: "exited", exitCode: 0 }), // other session
+      job({ id: "d", sessionID: null, status: "exited", exitCode: 0 }), // global/legacy — excluded
+      job({ id: "e", sessionID: "s1", status: "failed" }),
+    ];
+    const announced = new Set<string>();
+    const fresh = selectFreshCompletions(jobs, "s1", announced);
+    expect(fresh.map((j) => j.id).sort()).toEqual(["a", "e"]);
   });
 
-  it("lists running jobs with runtime", () => {
-    const b = buildJobsBanner([job({ id: "bg-r", startedAt: now - 130_000 })], new Set(), now)!;
-    expect(b).toContain("[background jobs]");
-    expect(b).toContain("bg-r");
-    expect(b).toContain("running 2m 10s");
-    expect(b).toContain("background_check");
+  it("excludes already-announced jobs", () => {
+    const jobs = [job({ id: "a", sessionID: "s1", status: "exited", exitCode: 0 })];
+    expect(selectFreshCompletions(jobs, "s1", new Set(["a"]))).toEqual([]);
+  });
+});
+
+describe("buildCompletionNotice", () => {
+  it("formats title + exit status, points at background_check", () => {
+    const n = buildCompletionNotice([
+      job({ id: "bg-1", title: "Poll PR #2478", status: "exited", exitCode: 0 }),
+    ]);
+    expect(n).toContain("[background] 1 job finished");
+    expect(n).toContain("Poll PR #2478 — exited 0");
+    expect(n).toContain("background_check job_id: bg-1");
   });
 
-  it("shows the title when present, else the command", () => {
-    const withTitle = buildJobsBanner(
-      [job({ id: "bg-t", title: "Poll PR #2478 checks", command: "while true; do gh pr checks…" })],
-      new Set(),
-      now,
-    )!;
-    expect(withTitle).toContain("Poll PR #2478 checks");
-    expect(withTitle).not.toContain("while true");
-
-    const noTitle = buildJobsBanner([job({ id: "bg-n", command: "pnpm build" })], new Set(), now)!;
-    expect(noTitle).toContain("pnpm build");
+  it("marks non-zero exits as FAILED and pluralizes", () => {
+    const n = buildCompletionNotice([
+      job({ id: "bg-1", command: "./a.sh", status: "exited", exitCode: 0 }),
+      job({ id: "bg-2", command: "./b.sh", status: "exited", exitCode: 2 }),
+    ]);
+    expect(n).toContain("2 jobs finished");
+    expect(n).toContain("exited 2 — FAILED");
   });
 
-  it("surfaces a finished job once, marking failure", () => {
-    const surfaced = new Set<string>();
-    const j = job({ id: "bg-f", status: "exited", exitCode: 2, command: "./migrate.sh" });
-    const first = buildJobsBanner([j], surfaced, now)!;
-    expect(first).toContain("exited(2) — FAILED");
-    expect(first).toContain("./migrate.sh");
-    // caller would now mark it surfaced; once surfaced it drops out
-    surfaced.add("bg-f");
-    expect(buildJobsBanner([j], surfaced, now)).toBeNull();
+  it("caps the list and notes the overflow", () => {
+    const many = Array.from({ length: 5 }, (_, i) =>
+      job({ id: `bg-${i}`, command: `c${i}`, status: "exited", exitCode: 0 }),
+    );
+    const n = buildCompletionNotice(many, 3);
+    expect(n).toContain("5 jobs finished");
+    expect((n.match(/background_check job_id/g) ?? []).length).toBe(3);
+    expect(n).toContain("(+2 more — background_list)");
   });
 });
 

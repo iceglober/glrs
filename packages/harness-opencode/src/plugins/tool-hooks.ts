@@ -65,6 +65,11 @@ import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 
 import { parseTscOutput, dedupeAndCap, formatRow } from "../tools/tsc_check.js";
+import {
+  listJobs,
+  selectFreshCompletions,
+  buildCompletionNotice,
+} from "../tools/background.js";
 import { track } from "../lib/analytics.js";
 import {
   inferToolOk,
@@ -195,6 +200,8 @@ interface SessionState {
   delegated: boolean;
   /** Whether the complexity-delegation hint has already been emitted. */
   complexitySuggested: boolean;
+  /** Background jobs whose completion has been announced to the model (once). */
+  announcedJobs: Set<string>;
 }
 
 const sessions = new Map<string, SessionState>();
@@ -218,6 +225,7 @@ function ensureSession(sessionID: string): SessionState {
       failedVerifyRuns: 0,
       delegated: false,
       complexitySuggested: false,
+      announcedJobs: new Set(),
     };
     sessions.set(sessionID, s);
   }
@@ -1122,6 +1130,27 @@ const plugin: Plugin = async ({ client }, options) => {
       );
       if (!compressed) {
         applyBackpressure(cfg.backpressure, toolName, input.callID, output, input.args);
+      }
+
+      // 4. Background-job completion notices. Surface jobs that finished in THIS
+      //    session, once, by appending to this tool's output (the safe channel —
+      //    never the user message, so no part-schema/persistence issue). Runs
+      //    last so it survives backpressure truncation. Skipped on the
+      //    background_* tools themselves (they already report). Fail-silent.
+      if (!toolName.startsWith("background")) {
+        try {
+          const fresh = selectFreshCompletions(
+            listJobs(input.sessionID),
+            input.sessionID,
+            sess.announcedJobs,
+          );
+          if (fresh.length > 0) {
+            for (const j of fresh) sess.announcedJobs.add(j.id);
+            output.output += buildCompletionNotice(fresh);
+          }
+        } catch {
+          // a job-state hiccup must never corrupt a tool result
+        }
       }
     },
   };
