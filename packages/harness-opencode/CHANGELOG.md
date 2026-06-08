@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.9.0
+
+### Minor Changes
+
+- [#311](https://github.com/iceglober/glrs/pull/311) [`d14a91c`](https://github.com/iceglober/glrs/commit/d14a91cf76233840cc184d5e0e76df66cc3c45e5) Thanks [@iceglober](https://github.com/iceglober)! - The model now sees background-job state on every turn. A new `chat.message` hook appends a compact banner to each user message listing running background jobs (with runtime) and any just-finished job — surfaced once, then dropped — so the agent notices a backfill/migration completed without being told, and without an idle timer or out-of-band injection. Fail-silent; no banner when there are no active jobs.
+
+  (Also adds an unpublished TUI sidebar spike under `examples/tui-background-sidebar/` for evaluating opencode's sidebar slot API — see its README.)
+
 ## 3.8.1
 
 ### Patch Changes
