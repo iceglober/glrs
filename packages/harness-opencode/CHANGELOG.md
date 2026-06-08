@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.12.0
+
+### Minor Changes
+
+- [#320](https://github.com/iceglober/glrs/pull/320) [`5452210`](https://github.com/iceglober/glrs/commit/5452210f4fb67cef4c6feb8a0fdf4010d9f984ea) Thanks [@iceglober](https://github.com/iceglober)! - The background-jobs sidebar is now part of the harness package itself, as its `./tui` export — no separate package to install or version. The harness is now a dual-target opencode plugin: the server plugin (hooks/tools/agents) and the TUI sidebar.
+
+  Because opencode loads server and TUI plugins via separate registries, activate the sidebar once with:
+
+  ```
+  opencode plugin @glrs-dev/harness-plugin-opencode
+  ```
+
+  The standalone `@glrs-dev/opencode-background-sidebar` package is superseded and will be deprecated on npm.
+
+### Patch Changes
+
+- [#322](https://github.com/iceglober/glrs/pull/322) [`e7d2545`](https://github.com/iceglober/glrs/commit/e7d25455773d3c6753134dddedc5b3bfa3fe87c6) Thanks [@iceglober](https://github.com/iceglober)! - Fix: the first message in an opencode session got no response (you had to send a second). The `chat.message` background-jobs banner (added in 3.9.0) pushed a synthetic `{type,text}` part onto the user message, but opencode's part schema requires `messageID`/`sessionID`/`id` — so `session.prompt` rejected the message ("SchemaError: Missing key at [messageID] … invalid user part before save") and produced no response. It only hit the first message because the banner then went empty. Removed the banner entirely (mutating saved user-message parts is the wrong mechanism); background jobs remain visible via the sidebar and `background_check`/`background_list`.
+
 ## 3.11.0
 
 ### Minor Changes
