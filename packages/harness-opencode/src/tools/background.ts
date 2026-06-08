@@ -32,6 +32,8 @@ interface JobMeta {
   command: string;
   /** Human label shown in listings/sidebar instead of the raw command. */
   title: string | null;
+  /** opencode session that launched the job — for per-session isolation. */
+  sessionID: string | null;
   withGsa: string | null;
   cwd: string;
   pid: number;
@@ -201,6 +203,7 @@ export interface JobSummary {
   command: string;
   /** Human label, when the caller supplied one; else null (fall back to command). */
   title: string | null;
+  sessionID: string | null;
   status: JobStatus;
   exitCode: number | null;
   startedAt: number;
@@ -212,8 +215,13 @@ export function jobLabel(j: { title: string | null; command: string }): string {
   return j.command.replace(/\s+/g, " ").trim().slice(0, 80);
 }
 
-/** Enumerate all known jobs with their current status, newest first. */
-export function listJobs(): JobSummary[] {
+/**
+ * Enumerate known jobs with their current status, newest first. When
+ * `sessionID` is given, return that session's jobs plus any session-less job
+ * (per-session isolation; a `null` sessionID — legacy/un-stamped — is treated
+ * as global and shown everywhere). Pass nothing to see every session's jobs.
+ */
+export function listJobs(sessionID?: string): JobSummary[] {
   let ids: string[];
   try {
     ids = fs.readdirSync(jobsRoot());
@@ -225,11 +233,14 @@ export function listJobs(): JobSummary[] {
     const dir = jobDir(id);
     const meta = readMeta(dir);
     if (!meta) continue;
+    const ms = meta.sessionID ?? null;
+    if (sessionID !== undefined && ms !== null && ms !== sessionID) continue;
     const { status, exitCode } = readJobState(dir);
     out.push({
       id: meta.id,
       command: meta.command,
       title: meta.title ?? null,
+      sessionID: meta.sessionID ?? null,
       status,
       exitCode,
       startedAt: meta.startedAt,
@@ -348,6 +359,7 @@ const backgroundRunTool = tool({
       id,
       command: args.command,
       title: args.title?.trim() || null,
+      sessionID: context.sessionID ?? null,
       withGsa: args.with_gsa ?? null,
       cwd,
       pid,
@@ -397,25 +409,16 @@ const backgroundCheckTool = tool({
 });
 
 const backgroundListTool = tool({
-  description: "List background jobs and their statuses (most recent first).",
+  description:
+    "List THIS session's background jobs and their statuses (most recent first). " +
+    "Jobs are isolated per session.",
   args: {},
-  async execute() {
-    let ids: string[];
-    try {
-      ids = fs.readdirSync(jobsRoot());
-    } catch {
-      return "(no background jobs)";
-    }
-    const rows = ids
-      .map((id) => ({ id, meta: readMeta(jobDir(id)) }))
-      .filter((r): r is { id: string; meta: JobMeta } => r.meta !== null)
-      .sort((a, b) => b.meta.startedAt - a.meta.startedAt)
-      .map(({ id, meta }) => {
-        const { status, exitCode } = readJobState(jobDir(id));
-        const tag =
-          status === "exited" ? `exited(${exitCode ?? "?"})` : status;
-        return `${id}  ${tag}  ${fmtRuntime(meta.startedAt)}  ${jobLabel(meta)}`;
-      });
+  async execute(_args, context) {
+    const now = Date.now();
+    const rows = listJobs(context.sessionID).map((j) => {
+      const tag = j.status === "exited" ? `exited(${j.exitCode ?? "?"})` : j.status;
+      return `${j.id}  ${tag}  ${fmtRuntime(j.startedAt, now)}  ${jobLabel(j)}`;
+    });
     return rows.length ? rows.join("\n") : "(no background jobs)";
   },
 });
