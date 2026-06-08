@@ -50,3 +50,28 @@ at the built file). The reference repo's build script is the template.
 
 If that renders, the slot API is viable and the full widget is worth building
 (grouping, click-to-check, stop button, per-session filtering via `props.session_id`).
+
+## Easiest path: `try-local.sh`
+
+```bash
+bash examples/tui-background-sidebar/try-local.sh
+```
+
+One isolated command: installs the spike's deps, seeds 3 demo jobs (running /
+exit 0 / exit 2) into a temp `XDG_STATE_HOME`, launches opencode in a throwaway
+project whose `opencode.json` loads only this plugin, and cleans up on quit. Your
+real `~/.config/opencode` (auth, models, your other plugins) is left intact;
+nothing persists.
+
+## Troubleshooting
+
+- **No "background jobs" section appears** → the plugin didn't load. Most likely:
+  - opencode doesn't resolve a local **directory** path in `plugin`. Try an
+    absolute path to the dir; if that fails, `opencode plugin add "$PWD/examples/tui-background-sidebar"`.
+  - It needs the JSX **built** like the reference plugin (build `tui.tsx` →
+    `dist/tui.tsx`, point `exports["./tui"]` at the built file).
+- **It loads but errors** → capture what opencode prints (a load/transpile error
+  naming `@opentui/solid`, JSX, or `slots`) and share it — that tells us whether
+  the slot signature or JSX runtime differs on your opencode build.
+- **Section shows but empty** → the seeded jobs are under the temp
+  `XDG_STATE_HOME` the script sets; confirm opencode inherited that env.

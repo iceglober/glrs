@@ -30,6 +30,8 @@ const JOB_TTL_MS = 24 * 60 * 60 * 1000; // purge finished jobs older than this
 interface JobMeta {
   id: string;
   command: string;
+  /** Human label shown in listings/sidebar instead of the raw command. */
+  title: string | null;
   withGsa: string | null;
   cwd: string;
   pid: number;
@@ -197,9 +199,17 @@ function fmtRuntime(startedAt: number, now: number = Date.now()): string {
 export interface JobSummary {
   id: string;
   command: string;
+  /** Human label, when the caller supplied one; else null (fall back to command). */
+  title: string | null;
   status: JobStatus;
   exitCode: number | null;
   startedAt: number;
+}
+
+/** What to show in listings: the title if given, else a clipped command. */
+export function jobLabel(j: { title: string | null; command: string }): string {
+  if (j.title && j.title.trim()) return j.title.trim();
+  return j.command.replace(/\s+/g, " ").trim().slice(0, 80);
 }
 
 /** Enumerate all known jobs with their current status, newest first. */
@@ -216,7 +226,14 @@ export function listJobs(): JobSummary[] {
     const meta = readMeta(dir);
     if (!meta) continue;
     const { status, exitCode } = readJobState(dir);
-    out.push({ id: meta.id, command: meta.command, status, exitCode, startedAt: meta.startedAt });
+    out.push({
+      id: meta.id,
+      command: meta.command,
+      title: meta.title ?? null,
+      status,
+      exitCode,
+      startedAt: meta.startedAt,
+    });
   }
   out.sort((a, b) => b.startedAt - a.startedAt);
   return out;
@@ -239,17 +256,16 @@ export function buildJobsBanner(
   );
   if (running.length === 0 && finishedNew.length === 0) return null;
 
-  const clip = (cmd: string) => cmd.replace(/\s+/g, " ").trim().slice(0, 80);
   const lines = ["[background jobs]"];
   for (const j of running) {
-    lines.push(`- ${j.id}  running ${fmtRuntime(j.startedAt, now)}  ·  ${clip(j.command)}`);
+    lines.push(`- ${j.id}  running ${fmtRuntime(j.startedAt, now)}  ·  ${jobLabel(j)}`);
   }
   for (const j of finishedNew) {
     const tag =
       j.status === "exited"
         ? `exited(${j.exitCode ?? "?"})${j.exitCode === 0 ? "" : " — FAILED"}`
         : "stopped/crashed";
-    lines.push(`- ${j.id}  ${tag}  ·  ${clip(j.command)}`);
+    lines.push(`- ${j.id}  ${tag}  ·  ${jobLabel(j)}`);
   }
   lines.push("Inspect output with background_check(job_id); stop with background_stop(job_id).");
   return lines.join("\n");
@@ -264,9 +280,16 @@ const backgroundRunTool = tool({
     "backfills, migrations, long builds. The job is detached: it survives the " +
     "timeout AND an MCP-server/opencode restart. Poll it with background_check. " +
     "Set `with_gsa` to a gsa context name to inject AWS credentials (wraps the " +
-    "command in `gsa exec`); omit for ordinary commands.",
+    "command in `gsa exec`); omit for ordinary commands. Pass a short `title` for " +
+    "a readable label in listings/sidebar.",
   args: {
     command: tool.schema.string().describe("Shell command to run (passed to sh -c)"),
+    title: tool.schema
+      .string()
+      .optional()
+      .describe(
+        "Short human label shown in job listings and the sidebar instead of the raw command (e.g. 'Poll PR #2478 checks'). Omit to show the command.",
+      ),
     with_gsa: tool.schema
       .string()
       .optional()
@@ -324,6 +347,7 @@ const backgroundRunTool = tool({
     writeMeta(dir, {
       id,
       command: args.command,
+      title: args.title?.trim() || null,
       withGsa: args.with_gsa ?? null,
       cwd,
       pid,
@@ -352,14 +376,15 @@ const backgroundCheckTool = tool({
     if (!meta) return `Unknown job: ${args.job_id}`;
 
     const { status, exitCode } = readJobState(dir);
+    const name = meta.title ? `${meta.id} — ${meta.title}` : meta.id;
     const header =
       status === "exited"
-        ? `Job ${meta.id}: exited (code ${exitCode ?? "unknown"})${exitCode === 0 ? "" : " — FAILED"}`
+        ? `Job ${name}: exited (code ${exitCode ?? "unknown"})${exitCode === 0 ? "" : " — FAILED"}`
         : status === "running"
-          ? `Job ${meta.id}: running (pid ${meta.pid}, ${fmtRuntime(meta.startedAt)})`
+          ? `Job ${name}: running (pid ${meta.pid}, ${fmtRuntime(meta.startedAt)})`
           : status === "failed"
-            ? `Job ${meta.id}: process gone without recording an exit code (killed or crashed)`
-            : `Job ${meta.id}: state unknown`;
+            ? `Job ${name}: process gone without recording an exit code (killed or crashed)`
+            : `Job ${name}: state unknown`;
 
     const stdout = tailFile(path.join(dir, "stdout.log"));
     const stderr = tailFile(path.join(dir, "stderr.log"));
@@ -389,7 +414,7 @@ const backgroundListTool = tool({
         const { status, exitCode } = readJobState(jobDir(id));
         const tag =
           status === "exited" ? `exited(${exitCode ?? "?"})` : status;
-        return `${id}  ${tag}  ${fmtRuntime(meta.startedAt)}  ${meta.command.slice(0, 80)}`;
+        return `${id}  ${tag}  ${fmtRuntime(meta.startedAt)}  ${jobLabel(meta)}`;
       });
     return rows.length ? rows.join("\n") : "(no background jobs)";
   },

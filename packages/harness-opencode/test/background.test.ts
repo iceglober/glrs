@@ -2,13 +2,21 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { __test__, buildJobsBanner, listJobs } from "../src/tools/background.js";
+import { __test__, buildJobsBanner, listJobs, jobLabel } from "../src/tools/background.js";
 
 const { buildSpawnPlan, readJobState, tailFile, shQuote, fmtRuntime } = __test__;
 
 type JobSummary = ReturnType<typeof listJobs>[number];
 function job(p: Partial<JobSummary>): JobSummary {
-  return { id: "bg-x", command: "pnpm test", status: "running", exitCode: null, startedAt: 0, ...p };
+  return {
+    id: "bg-x",
+    command: "pnpm test",
+    title: null,
+    status: "running",
+    exitCode: null,
+    startedAt: 0,
+    ...p,
+  };
 }
 
 describe("buildSpawnPlan", () => {
@@ -109,6 +117,14 @@ describe("fmtRuntime", () => {
   });
 });
 
+describe("jobLabel", () => {
+  it("prefers a non-empty title, else falls back to the command", () => {
+    expect(jobLabel({ title: "Deploy prod", command: "./deploy.sh" })).toBe("Deploy prod");
+    expect(jobLabel({ title: null, command: "./deploy.sh" })).toBe("./deploy.sh");
+    expect(jobLabel({ title: "  ", command: "./deploy.sh" })).toBe("./deploy.sh");
+  });
+});
+
 describe("buildJobsBanner", () => {
   const now = 1_000_000;
 
@@ -125,6 +141,19 @@ describe("buildJobsBanner", () => {
     expect(b).toContain("bg-r");
     expect(b).toContain("running 2m 10s");
     expect(b).toContain("background_check");
+  });
+
+  it("shows the title when present, else the command", () => {
+    const withTitle = buildJobsBanner(
+      [job({ id: "bg-t", title: "Poll PR #2478 checks", command: "while true; do gh pr checks…" })],
+      new Set(),
+      now,
+    )!;
+    expect(withTitle).toContain("Poll PR #2478 checks");
+    expect(withTitle).not.toContain("while true");
+
+    const noTitle = buildJobsBanner([job({ id: "bg-n", command: "pnpm build" })], new Set(), now)!;
+    expect(noTitle).toContain("pnpm build");
   });
 
   it("surfaces a finished job once, marking failure", () => {
@@ -153,25 +182,34 @@ describe("listJobs", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  function makeJob(id: string, pid: number, startedAt: number, exitCode?: number) {
+  function makeJob(
+    id: string,
+    pid: number,
+    startedAt: number,
+    exitCode?: number,
+    title: string | null = null,
+  ) {
     const dir = path.join(root, "harness-opencode", "background-jobs", id);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
       path.join(dir, "meta.json"),
-      JSON.stringify({ id, command: `cmd ${id}`, withGsa: null, cwd: ".", pid, startedAt }),
+      JSON.stringify({ id, command: `cmd ${id}`, title, withGsa: null, cwd: ".", pid, startedAt }),
     );
     if (exitCode !== undefined) fs.writeFileSync(path.join(dir, "exit_code"), String(exitCode));
   }
 
-  it("enumerates jobs with status, newest first", () => {
-    makeJob("bg-old", process.pid, 1000); // alive pid, no exit → running
-    makeJob("bg-new", 999999, 2000, 0); // exit_code present → exited
+  it("enumerates jobs with status + title, newest first", () => {
+    makeJob("bg-old", process.pid, 1000, undefined, "watch tests"); // alive pid, no exit → running
+    makeJob("bg-new", 999999, 2000, 0); // exit_code present → exited; no title
     const jobs = listJobs();
     expect(jobs.map((j) => j.id)).toEqual(["bg-new", "bg-old"]); // sorted by startedAt desc
-    expect(jobs.find((j) => j.id === "bg-old")!.status).toBe("running");
+    const old = jobs.find((j) => j.id === "bg-old")!;
+    expect(old.status).toBe("running");
+    expect(old.title).toBe("watch tests");
     const done = jobs.find((j) => j.id === "bg-new")!;
     expect(done.status).toBe("exited");
     expect(done.exitCode).toBe(0);
+    expect(done.title).toBeNull();
   });
 
   it("returns empty when the jobs dir is absent", () => {
