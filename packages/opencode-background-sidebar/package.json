@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "opencode TUI sidebar widget: lists this session's harness background jobs (background_run) with live status.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iceglober/glrs.git",
+    "directory": "packages/opencode-background-sidebar"
+  },
+  "homepage": "https://glrs.dev",
+  "bugs": {
+    "url": "https://github.com/iceglober/glrs/issues"
+  },
   "exports": {
     "./tui": "./tui.tsx"
   },
