@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.10.0
+
+### Minor Changes
+
+- [#313](https://github.com/iceglober/glrs/pull/313) [`34f8799`](https://github.com/iceglober/glrs/commit/34f87990116f2707bf45f031434b619ad1be735e) Thanks [@iceglober](https://github.com/iceglober)! - `background_run` now takes an optional `title` — a short human label shown in job listings, the chat.message banner, and `background_check`/`background_list` instead of the raw command (which can be a long one-liner). Falls back to the (clipped) command when no title is given. The example TUI sidebar displays the title too.
+
 ## 3.9.0
 
 ### Minor Changes
