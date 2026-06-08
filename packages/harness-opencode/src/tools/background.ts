@@ -251,35 +251,44 @@ export function listJobs(sessionID?: string): JobSummary[] {
 }
 
 /**
- * Build the compact banner appended to a user message so the model sees live
- * job state. Shows every running job, plus any finished job NOT already in
- * `surfaced` (surface-once). Returns null when there's nothing worth saying.
- * Caller marks finished ids as surfaced after emitting.
+ * Pick the just-finished jobs for `sessionID` that haven't been announced yet.
+ *
+ * Strictly this session's jobs (a `null`/global job is NOT announced — those are
+ * accumulated/legacy and would spam every session). The model learns of a
+ * completion exactly once, the next time it acts. Pure.
  */
-export function buildJobsBanner(
+export function selectFreshCompletions(
   jobs: JobSummary[],
-  surfaced: Set<string>,
-  now: number = Date.now(),
-): string | null {
-  const running = jobs.filter((j) => j.status === "running");
-  const finishedNew = jobs.filter(
-    (j) => (j.status === "exited" || j.status === "failed") && !surfaced.has(j.id),
+  sessionID: string,
+  announced: Set<string>,
+): JobSummary[] {
+  return jobs.filter(
+    (j) =>
+      j.sessionID === sessionID &&
+      (j.status === "exited" || j.status === "failed") &&
+      !announced.has(j.id),
   );
-  if (running.length === 0 && finishedNew.length === 0) return null;
+}
 
-  const lines = ["[background jobs]"];
-  for (const j of running) {
-    lines.push(`- ${j.id}  running ${fmtRuntime(j.startedAt, now)}  ·  ${jobLabel(j)}`);
-  }
-  for (const j of finishedNew) {
+/**
+ * Compact, append-to-tool-output notice for finished jobs. This is the SAFE
+ * channel: it's added to a tool's textual output (like backpressure/loop-guard),
+ * never to the user message — so there's no part-schema or persisted-history
+ * problem. Capped; the overflow points at `background_list`.
+ */
+export function buildCompletionNotice(fresh: JobSummary[], cap = 3): string {
+  const shown = fresh.slice(0, cap);
+  const lines = shown.map((j) => {
     const tag =
       j.status === "exited"
-        ? `exited(${j.exitCode ?? "?"})${j.exitCode === 0 ? "" : " — FAILED"}`
+        ? `exited ${j.exitCode ?? "?"}${j.exitCode === 0 ? "" : " — FAILED"}`
         : "stopped/crashed";
-    lines.push(`- ${j.id}  ${tag}  ·  ${jobLabel(j)}`);
-  }
-  lines.push("Inspect output with background_check(job_id); stop with background_stop(job_id).");
-  return lines.join("\n");
+    return `- ${jobLabel(j)} — ${tag}  (background_check job_id: ${j.id})`;
+  });
+  const more =
+    fresh.length > cap ? `\n  (+${fresh.length - cap} more — background_list)` : "";
+  const n = fresh.length;
+  return `\n\n[background] ${n} job${n === 1 ? "" : "s"} finished:\n${lines.join("\n")}${more}`;
 }
 
 // ---- tools -----------------------------------------------------------------
