@@ -228,7 +228,7 @@
     },
     "packages/opencode-background-sidebar": {
       "name": "@glrs-dev/opencode-background-sidebar",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@opencode-ai/plugin": "^1.15",
         "@opentui/core": "^0.2",
