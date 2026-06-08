@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.11.0
+
+### Minor Changes
+
+- [#315](https://github.com/iceglober/glrs/pull/315) [`b7e6379`](https://github.com/iceglober/glrs/commit/b7e6379fed2d9e6b997bd1d0640e3fcd083884b9) Thanks [@iceglober](https://github.com/iceglober)! - Background jobs are now isolated per session. `background_run` stamps each job with the launching session's id; the `chat.message` banner and `background_list` show only the current session's jobs (and the example sidebar filters by `props.session_id`). A job with no session id (started by an older harness) is treated as global and shown everywhere, so nothing disappears on upgrade.
+
 ## 3.10.0
 
 ### Minor Changes
