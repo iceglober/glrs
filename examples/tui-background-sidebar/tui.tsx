@@ -21,7 +21,7 @@ import { homedir } from "node:os";
 
 interface JobRow {
   id: string;
-  command: string;
+  label: string;
   status: "running" | "exited" | "failed";
   exitCode: number | null;
 }
@@ -42,7 +42,7 @@ function readJobs(): JobRow[] {
   const rows: JobRow[] = [];
   for (const id of ids) {
     const dir = join(jobsRoot(), id);
-    let meta: { command?: string; pid?: number; startedAt?: number };
+    let meta: { command?: string; title?: string | null; pid?: number; startedAt?: number };
     try {
       meta = JSON.parse(readFileSync(join(dir, "meta.json"), "utf8"));
     } catch {
@@ -61,9 +61,11 @@ function readJobs(): JobRow[] {
         status = "failed";
       }
     }
+    // Prefer the caller-supplied title; fall back to the command.
+    const label = (meta.title && meta.title.trim()) || String(meta.command ?? "");
     rows.push({
       id,
-      command: String(meta.command ?? "").replace(/\s+/g, " ").trim().slice(0, 36),
+      label: label.replace(/\s+/g, " ").trim().slice(0, 36),
       status,
       exitCode,
     });
@@ -83,7 +85,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi) => {
         const t = api.theme.current;
         const color = (j: JobRow) =>
           j.status === "running" ? t.info : j.status === "exited" && j.exitCode === 0 ? t.success : t.error;
-        const label = (j: JobRow) =>
+        const statusLabel = (j: JobRow) =>
           j.status === "running"
             ? "running"
             : j.status === "exited"
@@ -94,9 +96,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi) => {
           <box flexDirection="column" gap={0}>
             <text fg={t.textMuted}>background jobs</text>
             <For each={jobs()} fallback={<text fg={t.textMuted}>{"  (none)"}</text>}>
-              {(j) => (
-                <text fg={color(j)}>{`  ${label(j).padEnd(8)} ${j.id.replace(/^bg-/, "")}  ${j.command}`}</text>
-              )}
+              {(j) => <text fg={color(j)}>{`  ${statusLabel(j).padEnd(8)} ${j.label}`}</text>}
             </For>
           </box>
         );
