@@ -1,6 +1,6 @@
 {
   "name": "@glrs-dev/opencode-background-sidebar",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "opencode TUI sidebar widget: lists this session's harness background jobs (background_run) with live status.",
   "type": "module",
   "exports": {
