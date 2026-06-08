@@ -2,9 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { __test__ } from "../src/tools/background.js";
+import { __test__, buildJobsBanner, listJobs } from "../src/tools/background.js";
 
 const { buildSpawnPlan, readJobState, tailFile, shQuote, fmtRuntime } = __test__;
+
+type JobSummary = ReturnType<typeof listJobs>[number];
+function job(p: Partial<JobSummary>): JobSummary {
+  return { id: "bg-x", command: "pnpm test", status: "running", exitCode: null, startedAt: 0, ...p };
+}
 
 describe("buildSpawnPlan", () => {
   it("plain command: sh -c wrapper that records the exit code", () => {
@@ -101,5 +106,76 @@ describe("fmtRuntime", () => {
     const now = 1_000_000;
     expect(fmtRuntime(now - 5_000, now)).toBe("5s");
     expect(fmtRuntime(now - 95_000, now)).toBe("1m 35s");
+  });
+});
+
+describe("buildJobsBanner", () => {
+  const now = 1_000_000;
+
+  it("returns null when nothing is running and nothing is newly finished", () => {
+    expect(buildJobsBanner([], new Set(), now)).toBeNull();
+    // a finished job already surfaced → still null
+    const j = job({ id: "bg-done", status: "exited", exitCode: 0 });
+    expect(buildJobsBanner([j], new Set(["bg-done"]), now)).toBeNull();
+  });
+
+  it("lists running jobs with runtime", () => {
+    const b = buildJobsBanner([job({ id: "bg-r", startedAt: now - 130_000 })], new Set(), now)!;
+    expect(b).toContain("[background jobs]");
+    expect(b).toContain("bg-r");
+    expect(b).toContain("running 2m 10s");
+    expect(b).toContain("background_check");
+  });
+
+  it("surfaces a finished job once, marking failure", () => {
+    const surfaced = new Set<string>();
+    const j = job({ id: "bg-f", status: "exited", exitCode: 2, command: "./migrate.sh" });
+    const first = buildJobsBanner([j], surfaced, now)!;
+    expect(first).toContain("exited(2) — FAILED");
+    expect(first).toContain("./migrate.sh");
+    // caller would now mark it surfaced; once surfaced it drops out
+    surfaced.add("bg-f");
+    expect(buildJobsBanner([j], surfaced, now)).toBeNull();
+  });
+});
+
+describe("listJobs", () => {
+  let prevXdg: string | undefined;
+  let root: string;
+  beforeEach(() => {
+    prevXdg = process.env["XDG_STATE_HOME"];
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "bglist-"));
+    process.env["XDG_STATE_HOME"] = root;
+  });
+  afterEach(() => {
+    if (prevXdg === undefined) delete process.env["XDG_STATE_HOME"];
+    else process.env["XDG_STATE_HOME"] = prevXdg;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  function makeJob(id: string, pid: number, startedAt: number, exitCode?: number) {
+    const dir = path.join(root, "harness-opencode", "background-jobs", id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "meta.json"),
+      JSON.stringify({ id, command: `cmd ${id}`, withGsa: null, cwd: ".", pid, startedAt }),
+    );
+    if (exitCode !== undefined) fs.writeFileSync(path.join(dir, "exit_code"), String(exitCode));
+  }
+
+  it("enumerates jobs with status, newest first", () => {
+    makeJob("bg-old", process.pid, 1000); // alive pid, no exit → running
+    makeJob("bg-new", 999999, 2000, 0); // exit_code present → exited
+    const jobs = listJobs();
+    expect(jobs.map((j) => j.id)).toEqual(["bg-new", "bg-old"]); // sorted by startedAt desc
+    expect(jobs.find((j) => j.id === "bg-old")!.status).toBe("running");
+    const done = jobs.find((j) => j.id === "bg-new")!;
+    expect(done.status).toBe("exited");
+    expect(done.exitCode).toBe(0);
+  });
+
+  it("returns empty when the jobs dir is absent", () => {
+    fs.rmSync(root, { recursive: true, force: true });
+    expect(listJobs()).toEqual([]);
   });
 });

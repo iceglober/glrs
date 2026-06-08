@@ -42,6 +42,7 @@ import toolHooksPlugin from "./plugins/tool-hooks.js";
 import parallelDispatchPlugin from "./plugins/parallel-dispatch.js";
 import stallDetectorPlugin from "./plugins/stall-detector.js";
 import dispatchTrackerPlugin from "./plugins/dispatch-tracker.js";
+import backgroundNotifierPlugin from "./plugins/background-notifier.js";
 
 // ---- Update notification ----
 
@@ -137,6 +138,7 @@ const plugin: Plugin = async (input, options) => {
   const parallelDispatchHooks = await parallelDispatchPlugin(input);
   const stallDetectorHooks = await stallDetectorPlugin(input);
   const dispatchTrackerHooks = await dispatchTrackerPlugin(input);
+  const backgroundNotifierHooks = await backgroundNotifierPlugin(input);
 
   // Merge all hooks.
   //
@@ -168,6 +170,14 @@ const plugin: Plugin = async (input, options) => {
       if (stallDetectorHooks.event) await stallDetectorHooks.event(input);
     },
   };
+
+  // chat.message — append a background-jobs banner so the model sees live job
+  // state on each user turn (surface-once for finished jobs).
+  if (backgroundNotifierHooks["chat.message"]) {
+    hooks["chat.message"] = async (input, output) => {
+      await backgroundNotifierHooks["chat.message"]!(input, output);
+    };
+  }
 
   // tool.execute.before — block question tool in headless mode + stall detector.
   // Throwing from tool.execute.before is the documented "deny this tool execution"

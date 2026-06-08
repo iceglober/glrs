@@ -192,6 +192,69 @@ function fmtRuntime(startedAt: number, now: number = Date.now()): string {
   return `${m}m ${s % 60}s`;
 }
 
+// ---- job summaries (shared with the chat.message banner) -------------------
+
+export interface JobSummary {
+  id: string;
+  command: string;
+  status: JobStatus;
+  exitCode: number | null;
+  startedAt: number;
+}
+
+/** Enumerate all known jobs with their current status, newest first. */
+export function listJobs(): JobSummary[] {
+  let ids: string[];
+  try {
+    ids = fs.readdirSync(jobsRoot());
+  } catch {
+    return [];
+  }
+  const out: JobSummary[] = [];
+  for (const id of ids) {
+    const dir = jobDir(id);
+    const meta = readMeta(dir);
+    if (!meta) continue;
+    const { status, exitCode } = readJobState(dir);
+    out.push({ id: meta.id, command: meta.command, status, exitCode, startedAt: meta.startedAt });
+  }
+  out.sort((a, b) => b.startedAt - a.startedAt);
+  return out;
+}
+
+/**
+ * Build the compact banner appended to a user message so the model sees live
+ * job state. Shows every running job, plus any finished job NOT already in
+ * `surfaced` (surface-once). Returns null when there's nothing worth saying.
+ * Caller marks finished ids as surfaced after emitting.
+ */
+export function buildJobsBanner(
+  jobs: JobSummary[],
+  surfaced: Set<string>,
+  now: number = Date.now(),
+): string | null {
+  const running = jobs.filter((j) => j.status === "running");
+  const finishedNew = jobs.filter(
+    (j) => (j.status === "exited" || j.status === "failed") && !surfaced.has(j.id),
+  );
+  if (running.length === 0 && finishedNew.length === 0) return null;
+
+  const clip = (cmd: string) => cmd.replace(/\s+/g, " ").trim().slice(0, 80);
+  const lines = ["[background jobs]"];
+  for (const j of running) {
+    lines.push(`- ${j.id}  running ${fmtRuntime(j.startedAt, now)}  ·  ${clip(j.command)}`);
+  }
+  for (const j of finishedNew) {
+    const tag =
+      j.status === "exited"
+        ? `exited(${j.exitCode ?? "?"})${j.exitCode === 0 ? "" : " — FAILED"}`
+        : "stopped/crashed";
+    lines.push(`- ${j.id}  ${tag}  ·  ${clip(j.command)}`);
+  }
+  lines.push("Inspect output with background_check(job_id); stop with background_stop(job_id).");
+  return lines.join("\n");
+}
+
 // ---- tools -----------------------------------------------------------------
 
 const backgroundRunTool = tool({
