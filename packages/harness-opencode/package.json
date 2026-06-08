@@ -14,10 +14,12 @@
     "./cli": {
       "import": "./dist/cli-exports.js",
       "types": "./dist/cli-exports.d.ts"
-    }
+    },
+    "./tui": "./tui.tsx"
   },
   "files": [
     "dist",
+    "tui.tsx",
     "CHANGELOG.md",
     "SECURITY.md"
   ],
@@ -70,8 +72,11 @@
   "dependencies": {
     "@counted/sdk": "^0.1.0",
     "@inquirer/prompts": "^8.4.2",
+    "@opentui/core": "^0.2",
+    "@opentui/solid": "^0.2",
     "cmd-ts": "^0.15.0",
     "json5": "^2.2.3",
+    "solid-js": "^1.9",
     "picomatch": "^4.0.4",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",
