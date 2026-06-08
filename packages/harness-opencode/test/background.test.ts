@@ -12,6 +12,7 @@ function job(p: Partial<JobSummary>): JobSummary {
     id: "bg-x",
     command: "pnpm test",
     title: null,
+    sessionID: null,
     status: "running",
     exitCode: null,
     startedAt: 0,
@@ -188,12 +189,13 @@ describe("listJobs", () => {
     startedAt: number,
     exitCode?: number,
     title: string | null = null,
+    sessionID: string | null = null,
   ) {
     const dir = path.join(root, "harness-opencode", "background-jobs", id);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
       path.join(dir, "meta.json"),
-      JSON.stringify({ id, command: `cmd ${id}`, title, withGsa: null, cwd: ".", pid, startedAt }),
+      JSON.stringify({ id, command: `cmd ${id}`, title, sessionID, withGsa: null, cwd: ".", pid, startedAt }),
     );
     if (exitCode !== undefined) fs.writeFileSync(path.join(dir, "exit_code"), String(exitCode));
   }
@@ -215,5 +217,17 @@ describe("listJobs", () => {
   it("returns empty when the jobs dir is absent", () => {
     fs.rmSync(root, { recursive: true, force: true });
     expect(listJobs()).toEqual([]);
+  });
+
+  it("isolates by session, treating session-less jobs as global", () => {
+    makeJob("bg-s1", 999999, 100, 0, null, "sess-1");
+    makeJob("bg-s2", 999999, 200, 0, null, "sess-2");
+    makeJob("bg-global", 999999, 300, 0, null, null); // no session → global
+    // unfiltered: all three
+    expect(listJobs().map((j) => j.id).sort()).toEqual(["bg-global", "bg-s1", "bg-s2"]);
+    // session 1: its own + the global one, NOT session 2's
+    expect(listJobs("sess-1").map((j) => j.id).sort()).toEqual(["bg-global", "bg-s1"]);
+    expect(listJobs("sess-2").map((j) => j.id).sort()).toEqual(["bg-global", "bg-s2"]);
+    expect(listJobs("sess-1").find((j) => j.id === "bg-s1")!.sessionID).toBe("sess-1");
   });
 });

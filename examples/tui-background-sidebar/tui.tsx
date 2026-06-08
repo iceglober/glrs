@@ -32,7 +32,9 @@ function jobsRoot(): string {
   return join(base, "harness-opencode", "background-jobs");
 }
 
-function readJobs(): JobRow[] {
+// `sessionID` filters to jobs launched by the current session (per-session
+// isolation); pass undefined to show all.
+function readJobs(sessionID?: string): JobRow[] {
   let ids: string[];
   try {
     ids = readdirSync(jobsRoot());
@@ -42,12 +44,21 @@ function readJobs(): JobRow[] {
   const rows: JobRow[] = [];
   for (const id of ids) {
     const dir = join(jobsRoot(), id);
-    let meta: { command?: string; title?: string | null; pid?: number; startedAt?: number };
+    let meta: {
+      command?: string;
+      title?: string | null;
+      sessionID?: string | null;
+      pid?: number;
+      startedAt?: number;
+    };
     try {
       meta = JSON.parse(readFileSync(join(dir, "meta.json"), "utf8"));
     } catch {
       continue;
     }
+    // Per-session isolation; a session-less job (null) is treated as global.
+    const ms = meta.sessionID ?? null;
+    if (sessionID !== undefined && ms !== null && ms !== sessionID) continue;
     let status: JobRow["status"] = "running";
     let exitCode: number | null = null;
     if (existsSync(join(dir, "exit_code"))) {
@@ -77,9 +88,10 @@ const tui: TuiPlugin = async (api: TuiPluginApi) => {
   api.slots.register({
     order: 250,
     slots: {
-      sidebar_content() {
-        const [jobs, setJobs] = createSignal<JobRow[]>(readJobs());
-        const timer = setInterval(() => setJobs(readJobs()), 2000);
+      sidebar_content(_ctx, props) {
+        const sid = props.session_id;
+        const [jobs, setJobs] = createSignal<JobRow[]>(readJobs(sid));
+        const timer = setInterval(() => setJobs(readJobs(sid)), 2000);
         onCleanup(() => clearInterval(timer));
 
         const t = api.theme.current;

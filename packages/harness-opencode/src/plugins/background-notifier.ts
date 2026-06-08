@@ -17,9 +17,10 @@ const plugin: Plugin = async () => {
   const surfaced = new Set<string>();
 
   return {
-    "chat.message": async (_input, output) => {
+    "chat.message": async (input, output) => {
       try {
-        const jobs = listJobs();
+        // Only this session's jobs — background jobs are isolated per session.
+        const jobs = listJobs(input.sessionID);
         const banner = buildJobsBanner(jobs, surfaced, Date.now());
         if (!banner) return;
         // Mark every finished job surfaced now (whether or not it was new this
