@@ -194,6 +194,13 @@ interface SessionState {
   sigScores: Map<string, number>;
   /** Escalation stage: 0 none, 1 warned, 2 aborted. */
   loopStage: 0 | 1 | 2;
+  /**
+   * Subagent `task` calls currently in flight on this session. Incremented in
+   * tool.execute.before, decremented in after. The hard-abort path is suppressed
+   * while this is >0: session.abort would cancel the orchestrator's live
+   * children, not just the (non-existent) runaway turn.
+   */
+  inFlightTasks: number;
   // ---- complexity-delegation hint ----
   /** Failing test/build ("verify") runs seen this session. */
   failedVerifyRuns: number;
@@ -221,6 +228,7 @@ function ensureSession(sessionID: string): SessionState {
       loopWindow: [],
       sigScores: new Map(),
       loopStage: 0,
+      inFlightTasks: 0,
       failedVerifyRuns: 0,
       delegated: false,
       complexitySuggested: false,
@@ -773,6 +781,17 @@ function checkToolLoop(
   const sig = normalizeToolSig(tool, args);
   if (!cfg.enabled) return { level: "none", kind: null, sig, count: 0 };
 
+  // Dispatching a subagent is forward progress, never a loop. N parallel `task`
+  // calls share a long prompt preamble, so they collide under the 200-char
+  // truncated signature and would otherwise trip the repeat guard — whose hard
+  // abort calls session.abort on the WHOLE orchestrator session, cancelling the
+  // in-flight sibling subagents ("Task cancelled" at spin-up). Treat task as an
+  // active call (it resets the passive streak) but never score it for repeats.
+  if (tool === "task") {
+    sess.passiveStreak = 0;
+    return { level: "none", kind: null, sig, count: 0 };
+  }
+
   // Repeat scoring over a bounded window. Failed calls count double.
   const w = ok ? 1 : 2;
   sess.loopWindow.push({ sig, w });
@@ -948,7 +967,14 @@ const plugin: Plugin = async ({ client }, options) => {
     const v = checkToolLoop(cfg, sess, tool, args, ok);
     if (v.level === "none" || v.kind === null) return;
 
-    const hardAbort = v.level === "abort" && cfg.abortEnabled && sess.loopStage < 2;
+    // Never hard-abort while subagents are in flight: session.abort cancels the
+    // orchestrator's live children (the parallel-dispatch deadlock). The in-band
+    // corrective below still applies; the abort just downgrades to a warn.
+    const hardAbort =
+      v.level === "abort" &&
+      cfg.abortEnabled &&
+      sess.loopStage < 2 &&
+      sess.inFlightTasks === 0;
 
     // In-band corrective: always present while looping so the freshest tool
     // output carries it. Cheap and the single highest-recovery intervention.
@@ -997,6 +1023,14 @@ const plugin: Plugin = async ({ client }, options) => {
       pluginConfig = resolveConfig(config, storedPluginOptions);
     },
 
+    // Count in-flight subagents so the loop guard never aborts a session that
+    // has live children. Fires before the task tool starts; the matching
+    // decrement is at the top of tool.execute.after.
+    "tool.execute.before": async (input: { sessionID: string; tool?: string }) => {
+      if (input.tool !== "task") return;
+      ensureSession(input.sessionID).inFlightTasks++;
+    },
+
     // Track the active provider/model per session so tool/verify telemetry can
     // be segmented like `model_turn` already is. The assistant message (which
     // carries providerID/modelID) is created before its tool calls execute, so
@@ -1022,6 +1056,13 @@ const plugin: Plugin = async ({ client }, options) => {
       const sess = getSession(input.sessionID);
 
       const toolName = input.tool;
+
+      // A subagent just finished — drop it from the in-flight count BEFORE the
+      // loop guard runs, so the guard sees only the siblings still running. If
+      // any remain, the hard-abort stays suppressed (it would cancel them).
+      if (toolName === "task") {
+        sess.inFlightTasks = Math.max(0, sess.inFlightTasks - 1);
+      }
 
       // Best-effort success signal, read from the ORIGINAL output before dedup/
       // backpressure below mutate it. Reused by telemetry and the loop guard.

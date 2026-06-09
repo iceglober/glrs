@@ -562,6 +562,22 @@ describe("checkToolLoop", () => {
     expect(v!.level).toBe("abort");
   });
 
+  it("never scores `task` dispatch as a loop, even when sibling sigs collide", () => {
+    // Parallel @build dispatches share a long prompt preamble, so the 200-char
+    // truncated signature collides. Before the fix this tripped repeatAbort and
+    // the hard abort cancelled the orchestrator's in-flight siblings.
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("ctl-task");
+    const args = { subagent_type: "build", description: "x", prompt: "@build ".repeat(60) };
+    for (let i = 0; i < cfg.repeatAbort + 4; i++) {
+      const v = checkToolLoop(cfg, sess, "task", args, true);
+      expect(v.level).toBe("none");
+      expect(v.kind).toBeNull();
+    }
+    // It also counts as an active call: the passive streak stays reset.
+    expect(sess.passiveStreak).toBe(0);
+  });
+
   it("escalates a repeatedly FAILING call twice as fast (failures weigh double)", () => {
     const cfg = defaultConfig().loopDetection;
     const sess = getSession("ctl-fail");
