@@ -29,8 +29,16 @@ import { homedir } from "node:os";
 interface JobRow {
   id: string;
   label: string;
-  status: "running" | "exited" | "failed";
-  exitCode: number | null;
+  startedAt: number;
+}
+
+/** Compact elapsed-time label, e.g. "5s" / "3m" / "1h12m". */
+function fmtElapsed(startedAt: number, now: number = Date.now()): string {
+  const s = Math.max(0, Math.round((now - startedAt) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h${m % 60}m`;
 }
 
 // Mirror of the harness's job dir (packages/harness-opencode/src/tools/background.ts).
@@ -39,8 +47,13 @@ function jobsRoot(): string {
   return join(base, "harness-opencode", "background-jobs");
 }
 
-// `sessionID` filters to jobs launched by the current session (per-session
-// isolation); pass undefined to show all.
+// Read the current session's *running* background jobs. The sidebar is a
+// live-activity widget, so it shows only active work — finished jobs are
+// reported to the agent via the completion channel and would otherwise pile up
+// here for 24h until the TTL purges them. `sessionID` scopes strictly to jobs
+// this session launched; an unstamped/legacy job (no sessionID) is NOT shown
+// when a session is known, so other sessions' old jobs never leak in. Pass
+// undefined (no active session) to show all running jobs.
 function readJobs(sessionID?: string): JobRow[] {
   let ids: string[];
   try {
@@ -63,20 +76,16 @@ function readJobs(sessionID?: string): JobRow[] {
     } catch {
       continue;
     }
-    // Per-session isolation; a session-less job (null) is treated as global.
-    const ms = meta.sessionID ?? null;
-    if (sessionID !== undefined && ms !== null && ms !== sessionID) continue;
-    let status: JobRow["status"] = "running";
-    let exitCode: number | null = null;
-    if (existsSync(join(dir, "exit_code"))) {
-      const raw = readFileSync(join(dir, "exit_code"), "utf8").trim();
-      exitCode = Number.parseInt(raw, 10);
-      status = "exited";
-    } else if (meta.pid) {
+    // Strict per-session isolation: only this session's own jobs.
+    if (sessionID !== undefined && (meta.sessionID ?? null) !== sessionID) continue;
+    // Active jobs only: skip anything that has recorded an exit code (finished)
+    // or whose pid is no longer alive (crashed/killed).
+    if (existsSync(join(dir, "exit_code"))) continue;
+    if (meta.pid) {
       try {
         process.kill(meta.pid, 0);
       } catch {
-        status = "failed";
+        continue; // dead pid, no exit code → not active
       }
     }
     // Prefer the caller-supplied title; fall back to the command.
@@ -84,11 +93,11 @@ function readJobs(sessionID?: string): JobRow[] {
     rows.push({
       id,
       label: label.replace(/\s+/g, " ").trim().slice(0, 36),
-      status,
-      exitCode,
+      startedAt: meta.startedAt ?? 0,
     });
   }
-  return rows.sort((a, b) => a.id.localeCompare(b.id));
+  // Newest first.
+  return rows.sort((a, b) => b.startedAt - a.startedAt);
 }
 
 const tui: TuiPlugin = async (api: TuiPluginApi) => {
@@ -102,20 +111,12 @@ const tui: TuiPlugin = async (api: TuiPluginApi) => {
         onCleanup(() => clearInterval(timer));
 
         const t = api.theme.current;
-        const color = (j: JobRow) =>
-          j.status === "running" ? t.info : j.status === "exited" && j.exitCode === 0 ? t.success : t.error;
-        const statusLabel = (j: JobRow) =>
-          j.status === "running"
-            ? "running"
-            : j.status === "exited"
-              ? `exit ${j.exitCode ?? "?"}`
-              : "stopped";
 
         return (
           <box flexDirection="column" gap={0}>
-            <text fg={t.textMuted}>background jobs</text>
-            <For each={jobs()} fallback={<text fg={t.textMuted}>{"  (none)"}</text>}>
-              {(j) => <text fg={color(j)}>{`  ${statusLabel(j).padEnd(8)} ${j.label}`}</text>}
+            <text fg={t.textMuted}>{`background jobs (${jobs().length} running)`}</text>
+            <For each={jobs()} fallback={<text fg={t.textMuted}>{"  (none running)"}</text>}>
+              {(j) => <text fg={t.info}>{`  ${fmtElapsed(j.startedAt).padEnd(6)} ${j.label}`}</text>}
             </For>
           </box>
         );
