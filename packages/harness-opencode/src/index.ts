@@ -42,6 +42,7 @@ import toolHooksPlugin from "./plugins/tool-hooks.js";
 import parallelDispatchPlugin from "./plugins/parallel-dispatch.js";
 import stallDetectorPlugin from "./plugins/stall-detector.js";
 import dispatchTrackerPlugin from "./plugins/dispatch-tracker.js";
+import backgroundNotifierPlugin from "./plugins/background-notifier.js";
 
 // ---- Update notification ----
 
@@ -137,6 +138,7 @@ const plugin: Plugin = async (input, options) => {
   const parallelDispatchHooks = await parallelDispatchPlugin(input);
   const stallDetectorHooks = await stallDetectorPlugin(input);
   const dispatchTrackerHooks = await dispatchTrackerPlugin(input);
+  const backgroundNotifierHooks = await backgroundNotifierPlugin(input);
 
   // Merge all hooks.
   //
@@ -166,6 +168,7 @@ const plugin: Plugin = async (input, options) => {
       if (notifyHooks.event) await notifyHooks.event(input);
       if (costTrackerHooks.event) await costTrackerHooks.event(input);
       if (stallDetectorHooks.event) await stallDetectorHooks.event(input);
+      if (backgroundNotifierHooks.event) await backgroundNotifierHooks.event(input);
     },
   };
 

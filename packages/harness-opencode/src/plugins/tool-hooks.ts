@@ -69,6 +69,7 @@ import {
   listJobs,
   selectFreshCompletions,
   buildCompletionNotice,
+  announcedFor,
 } from "../tools/background.js";
 import { track } from "../lib/analytics.js";
 import {
@@ -200,8 +201,6 @@ interface SessionState {
   delegated: boolean;
   /** Whether the complexity-delegation hint has already been emitted. */
   complexitySuggested: boolean;
-  /** Background jobs whose completion has been announced to the model (once). */
-  announcedJobs: Set<string>;
 }
 
 const sessions = new Map<string, SessionState>();
@@ -225,7 +224,6 @@ function ensureSession(sessionID: string): SessionState {
       failedVerifyRuns: 0,
       delegated: false,
       complexitySuggested: false,
-      announcedJobs: new Set(),
     };
     sessions.set(sessionID, s);
   }
@@ -1139,13 +1137,14 @@ const plugin: Plugin = async ({ client }, options) => {
       //    background_* tools themselves (they already report). Fail-silent.
       if (!toolName.startsWith("background")) {
         try {
+          const announced = announcedFor(input.sessionID);
           const fresh = selectFreshCompletions(
             listJobs(input.sessionID),
             input.sessionID,
-            sess.announcedJobs,
+            announced,
           );
           if (fresh.length > 0) {
-            for (const j of fresh) sess.announcedJobs.add(j.id);
+            for (const j of fresh) announced.add(j.id);
             output.output += buildCompletionNotice(fresh);
           }
         } catch {

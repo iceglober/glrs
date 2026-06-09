@@ -271,6 +271,28 @@ export function selectFreshCompletions(
 }
 
 /**
+ * Per-session ledger of job ids already announced to the model — shared by both
+ * delivery channels so a completion is surfaced exactly once. The tool-output
+ * channel (tool-hooks `tool.execute.after`) and the idle channel
+ * (background-notifier on `session.idle`) both read/write the same set, so
+ * whichever fires first wins and the other skips. Module-level: opencode runs
+ * server plugins in one process, so the Map is shared by import. In-memory and
+ * intentionally ephemeral (reset on opencode restart), matching the original
+ * #323 design.
+ */
+const announcedBySession = new Map<string, Set<string>>();
+
+/** Get-or-create the announced-job set for a session. */
+export function announcedFor(sessionID: string): Set<string> {
+  let s = announcedBySession.get(sessionID);
+  if (!s) {
+    s = new Set();
+    announcedBySession.set(sessionID, s);
+  }
+  return s;
+}
+
+/**
  * Compact, append-to-tool-output notice for finished jobs. This is the SAFE
  * channel: it's added to a tool's textual output (like backpressure/loop-guard),
  * never to the user message — so there's no part-schema or persisted-history
@@ -291,6 +313,21 @@ export function buildCompletionNotice(fresh: JobSummary[], cap = 3): string {
   return `\n\n[background] ${n} job${n === 1 ? "" : "s"} finished:\n${lines.join("\n")}${more}`;
 }
 
+/**
+ * Wake-up framing for the idle channel. Unlike buildCompletionNotice (appended to
+ * a tool's output), this is the whole text of a standalone user turn pushed via
+ * promptAsync when the session is idle — so it leads with context and tells the
+ * model how to react instead of silently spinning up a turn.
+ */
+export function buildIdleNotice(fresh: JobSummary[], cap = 3): string {
+  const n = fresh.length;
+  return (
+    `[background] ${n} background job${n === 1 ? "" : "s"} you launched finished while you were idle.` +
+    buildCompletionNotice(fresh, cap) +
+    "\n\nIf this completes what you were waiting on, continue the work; otherwise acknowledge and stop."
+  );
+}
+
 // ---- tools -----------------------------------------------------------------
 
 const backgroundRunTool = tool({
@@ -298,7 +335,11 @@ const backgroundRunTool = tool({
     "Launch a long-running shell command in the BACKGROUND and return immediately " +
     "with a job id (sub-second). Use for work that exceeds the ~30s tool timeout — " +
     "backfills, migrations, long builds. The job is detached: it survives the " +
-    "timeout AND an MCP-server/opencode restart. Poll it with background_check. " +
+    "timeout AND an MCP-server/opencode restart. You are notified automatically " +
+    "when it finishes — on your next tool call, or proactively if you go idle — so " +
+    "do NOT poll background_check in a loop. Go do other work (or wrap up) and the " +
+    "completion will reach you; call background_check only when you want output or " +
+    "progress before it finishes. " +
     "Set `with_gsa` to a gsa context name to inject AWS credentials (wraps the " +
     "command in `gsa exec`); omit for ordinary commands. Pass a short `title` for " +
     "a readable label in listings/sidebar.",
@@ -378,7 +419,8 @@ const backgroundRunTool = tool({
     const credLine = args.with_gsa ? ` AWS creds: gsa context "${args.with_gsa}".` : "";
     return (
       `Started background job ${id} (pid ${pid}).${credLine}\n` +
-      `Poll: background_check(job_id: "${id}"). Stop: background_stop(job_id: "${id}"). ` +
+      `You'll be notified when it finishes — don't poll in a loop. ` +
+      `Check output anytime: background_check(job_id: "${id}"). Stop: background_stop(job_id: "${id}"). ` +
       `Survives the tool timeout and MCP restarts.`
     );
   },
@@ -386,8 +428,10 @@ const backgroundRunTool = tool({
 
 const backgroundCheckTool = tool({
   description:
-    "Check a background job's status and recent output. Returns running / exited " +
-    "(with exit code) / failed, runtime, and bounded stdout+stderr tails.",
+    "Optionally inspect a background job's status and recent output — you're told " +
+    "automatically when a job finishes, so this is for peeking at progress/output " +
+    "before completion, not for polling. Returns running / exited (with exit code) " +
+    "/ failed, runtime, and bounded stdout+stderr tails.",
   args: {
     job_id: tool.schema.string().describe("Job id returned by background_run"),
   },
