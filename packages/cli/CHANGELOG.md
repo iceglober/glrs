@@ -1,5 +1,14 @@
 # @glrs-dev/cli
 
+## 3.16.0
+
+### Patch Changes
+
+- Updated dependencies [[`4a32f65`](https://github.com/iceglober/glrs/commit/4a32f65fe15ab73575fcaf1fcc819bcc707930f3)]:
+  - @glrs-dev/harness-plugin-opencode@3.16.0
+  - @glrs-dev/adapter-claude-code@0.1.21
+  - @glrs-dev/autopilot@0.7.7
+
 ## 3.15.0
 
 ### Patch Changes
