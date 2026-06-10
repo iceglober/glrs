@@ -35,6 +35,30 @@ import { fetchModelsDevProviders, suggestTiersFromModelsDev, pickBedrockTierIds,
 
 const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
 
+// The harness is a dual-target opencode plugin: the server target (hooks/
+// tools/agents, the `.` export) and the TUI sidebar (the `./tui` export).
+// opencode loads each `plugin`-array entry independently, so the sidebar only
+// activates when its subpath is its OWN entry — being in the array as the
+// server tuple is not enough. This is exactly what `opencode plugin <pkg>`
+// writes. Intentionally UNPINNED: a versioned subpath (`…@1.2.3/tui`) collapses
+// to the same `pluginName()` as the server entry and would be deduped away,
+// never registering. The sidebar is decoupled (it reads job state off disk), so
+// running it at `latest` alongside a pinned server is harmless.
+const TUI_PLUGIN_ENTRY = `${PLUGIN_NAME}/tui`;
+
+/**
+ * Is this plugin-array entry the harness's TUI sidebar target? Matches the
+ * canonical unpinned form and the pinned subpath form a user may have written
+ * by hand via `opencode plugin`.
+ */
+function isTuiPluginEntry(entry: unknown): boolean {
+  if (typeof entry !== "string") return false;
+  return (
+    entry === TUI_PLUGIN_ENTRY ||
+    (entry.startsWith(`${PLUGIN_NAME}@`) && entry.endsWith("/tui"))
+  );
+}
+
 // --- ANSI helpers ----------------------------------------------------------
 
 const c = {
@@ -587,6 +611,53 @@ export function writePluginToggles(
   }
 }
 
+/**
+ * Ensure the TUI sidebar target is registered as its own entry in the `plugin`
+ * array. Idempotent: a no-op when an equivalent `…/tui` entry already exists.
+ *
+ * This runs on EVERY install path, including the "already fully configured"
+ * early returns below — that's the upgrade case (a user who has the server
+ * plugin from before the sidebar shipped), and it's the whole reason the
+ * sidebar never appeared from a published install: nothing ever added the
+ * second entry. Separate from mergeConfig so it covers the paths that return
+ * before the merge runs.
+ *
+ * Returns { changed: false } when the file is absent (fresh installs get the
+ * entry via the built config + seedConfig) or unparseable, or already present.
+ */
+export function ensureTuiPluginRegistered(
+  configPath: string,
+  opts: { dryRun: boolean },
+): { changed: boolean; bakPath?: string } {
+  try {
+    if (!fs.existsSync(configPath)) return { changed: false };
+
+    const raw = fs.readFileSync(configPath, "utf8");
+    const config = JSON.parse(raw);
+
+    const plugins: unknown[] = Array.isArray(config.plugin) ? config.plugin : [];
+    if (plugins.some(isTuiPluginEntry)) return { changed: false };
+
+    if (opts.dryRun) {
+      info(`[dry-run] Would register the background-jobs sidebar (${TUI_PLUGIN_ENTRY})`);
+      return { changed: true };
+    }
+
+    const bakPath = `${configPath}.bak.${Date.now()}-${process.pid}`;
+    fs.copyFileSync(configPath, bakPath);
+
+    config.plugin = [...plugins, TUI_PLUGIN_ENTRY];
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+
+    ok("Registered the background-jobs sidebar (TUI plugin)");
+    info(`Backup: ${bakPath}`);
+    return { changed: true, bakPath };
+  } catch {
+    // Best-effort — never break install over the sidebar registration.
+    return { changed: false };
+  }
+}
+
 export interface InstallOptions {
   dryRun?: boolean;
   pin?: boolean;
@@ -627,6 +698,11 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
   if (existingMcps.size > 0) {
     ok(`MCPs: ${[...existingMcps].join(", ")} enabled`);
   }
+  // Register the TUI sidebar target up front, so it's covered even on the
+  // "already configured, nothing to do" early returns below (the upgrade path).
+  // No-op on fresh installs (file absent) — those get it via the built config.
+  ensureTuiPluginRegistered(configPath, { dryRun });
+
   // Track reconfiguration choices for imperative overwrite path
   let reconfigureModels = false;
   let reconfigureMcps = false;
@@ -909,9 +985,12 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
     ? [pluginEntry, pluginOpts]
     : pluginEntry;
 
+  // Include both targets: the server tuple/string AND the TUI sidebar subpath.
+  // On a fresh install seedConfig writes this verbatim; on an existing config
+  // mergeConfig unions the sidebar entry in (deduped by its distinct name).
   const config: Record<string, unknown> = {
     $schema: "https://opencode.ai/config.json",
-    plugin: [pluginValue],
+    plugin: [pluginValue, TUI_PLUGIN_ENTRY],
   };
 
   // Optional MCPs — only prompt for ones not already configured.

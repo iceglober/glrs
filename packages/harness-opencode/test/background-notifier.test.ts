@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import backgroundNotifierPlugin from "../src/plugins/background-notifier.js";
+import backgroundNotifierPlugin, { __test__ } from "../src/plugins/background-notifier.js";
 import { announcedFor, buildIdleNotice, listJobs } from "../src/tools/background.js";
 
 // ---- harness ---------------------------------------------------------------
@@ -48,6 +48,7 @@ describe("background-notifier (idle channel)", () => {
     process.env["XDG_STATE_HOME"] = root;
   });
   afterEach(() => {
+    __test__.clearPollers(); // a running-job idle arms a poller; don't leak timers
     if (prevXdg === undefined) delete process.env["XDG_STATE_HOME"];
     else process.env["XDG_STATE_HOME"] = prevXdg;
     fs.rmSync(root, { recursive: true, force: true });
@@ -93,7 +94,7 @@ describe("background-notifier (idle channel)", () => {
     expect(text).toContain("background_check job_id: bg-1");
   });
 
-  it("does nothing when there are no fresh completions", async () => {
+  it("does not push when there are no fresh completions, but arms a poller for running jobs", async () => {
     const sid = "sess-running";
     makeJob("bg-live", sid, { pid: process.pid }); // alive → running, not finished
     const { client, calls } = fakeClient();
@@ -101,6 +102,66 @@ describe("background-notifier (idle channel)", () => {
 
     await fire(sid);
     expect(calls.length).toBe(0);
+    // The job is still running, so the notifier must keep watching for it to
+    // finish — `session.idle` won't fire again on its own when it exits.
+    expect(__test__.activePollers().has(sid)).toBe(true);
+  });
+
+  it("delivers a completion that finishes AFTER the agent went idle (the regression)", async () => {
+    const sid = "sess-late-finish";
+    // Agent backgrounds a job and goes idle while it's still running.
+    makeJob("bg-late", sid, { pid: process.pid, title: "Typecheck" });
+    const { client, calls } = fakeClient();
+    const fire = await makeHook(client);
+
+    await fire(sid); // idle: nothing to push yet, poller armed
+    expect(calls.length).toBe(0);
+    expect(__test__.activePollers().has(sid)).toBe(true);
+
+    // The job finishes during the idle window (exit_code appears on disk).
+    fs.writeFileSync(
+      path.join(root, "harness-opencode", "background-jobs", "bg-late", "exit_code"),
+      "0",
+    );
+
+    // The poller's next tick delivers the notice and disarms.
+    await __test__.pollOnce(client, sid);
+    expect(calls.length).toBe(1);
+    expect(idleText(calls)).toContain("Typecheck — exited 0");
+    expect(__test__.activePollers().has(sid)).toBe(false);
+  });
+
+  it("keeps polling while a job is still running, without pushing", async () => {
+    const sid = "sess-still-running";
+    makeJob("bg-slow", sid, { pid: process.pid });
+    const { client, calls } = fakeClient();
+    const fire = await makeHook(client);
+
+    await fire(sid);
+    await __test__.pollOnce(client, sid); // job still alive → no push, stay armed
+    expect(calls.length).toBe(0);
+    expect(__test__.activePollers().has(sid)).toBe(true);
+  });
+
+  it("disarms the poller when the running job vanishes with no completion to report", async () => {
+    const sid = "sess-vanish";
+    makeJob("bg-live", sid, { pid: process.pid });
+    const { client, calls } = fakeClient();
+    const fire = await makeHook(client);
+    await fire(sid);
+    expect(__test__.activePollers().has(sid)).toBe(true);
+
+    // The job is already announced (e.g. the tool-output channel got it) and is
+    // no longer running. The poller should find nothing fresh, nothing running,
+    // and stop.
+    announcedFor(sid).add("bg-live");
+    fs.rmSync(path.join(root, "harness-opencode", "background-jobs", "bg-live"), {
+      recursive: true,
+      force: true,
+    });
+    await __test__.pollOnce(client, sid);
+    expect(calls.length).toBe(0);
+    expect(__test__.activePollers().has(sid)).toBe(false);
   });
 
   it("ignores events without a sessionID and non-idle events", async () => {
