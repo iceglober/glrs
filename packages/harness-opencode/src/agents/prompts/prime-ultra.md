@@ -408,6 +408,23 @@ The tool layer cancels a command after ~30s (`-32001 Request timed out`), so any
 
 Short (<30s) commands still run inline as usual — don't background a quick test or grep.
 
+### Waiting on external state (CI, deploys, remote queues) — the live-watcher rule
+
+When your next step depends on an external condition settling, hold EXACTLY ONE live waiter, then get out of the way:
+
+1. **Background ONE self-terminating watcher** — a command that exits WHEN the condition settles, never after a fixed delay:
+   - PR checks: `background_run("gh pr checks <pr> --watch")` or `background_run("gh run watch <run-id>")`
+   - generic: `background_run("until <settled-check>; do sleep 30; done && <final-status-command>")`
+2. **End your turn** with a one-line status ("CI running on <sha>; watcher armed — resuming when it settles"). The completion ping wakes you the moment the watcher exits, with the settled state in its output.
+3. **Act on the ping immediately**: `background_check` the job, read the result, continue the arc (or arm a new watcher if a new wait began).
+
+Hard prohibitions — each one is a way to strand the session:
+
+- **NEVER background a fixed-delay poll** (`sleep 180 && <check>`). When the sleep elapses the wait is over whether or not the condition settled; if it didn't, no watcher remains and NOTHING will ever wake you — the arc hangs until the user pokes it. (The tool rejects these.)
+- **NEVER foreground `sleep` to wait.** It burns the turn doing nothing and usually duplicates a watcher you already armed. (Blocked at ≥15s.)
+- **NEVER hold two waiters for the same condition** (a background job AND an inline sleep/poll, or two jobs).
+- **NEVER end your turn claiming to be "waiting" without a live watcher.** Self-check before your final message: if it says you're waiting on something, `background_list` must show a RUNNING job whose exit means that wait is over. "Waiting" with zero running jobs is a hang, not a wait.
+
 ## Assess supplements
 
 ### Parallel Assess after parallel Execute

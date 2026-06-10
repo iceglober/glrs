@@ -29,6 +29,8 @@ const {
   DEFAULT_COMPLEXITY_WARN,
   DEFAULT_DEEP_AGENT,
   DEFAULT_CONSULT_AGENT,
+  checkInlineSleep,
+  DEFAULT_MAX_INLINE_SLEEP_SECONDS,
 } = __test__;
 
 // ---- helpers ---------------------------------------------------------------
@@ -65,6 +67,8 @@ describe("resolveConfig", () => {
     expect(cfg.loopDetection.deepAgent).toBe(DEFAULT_DEEP_AGENT);
     expect(cfg.loopDetection.consultAgent).toBe(DEFAULT_CONSULT_AGENT);
     expect(cfg.readDedup.enabled).toBe(true);
+    expect(cfg.sleepGuard.enabled).toBe(true);
+    expect(cfg.sleepGuard.maxSeconds).toBe(DEFAULT_MAX_INLINE_SLEEP_SECONDS);
   });
 
   it("respects explicit overrides", () => {
@@ -83,6 +87,7 @@ describe("resolveConfig", () => {
         consultAgent: "@my-oracle",
       },
       readDedup: { enabled: false },
+      sleepGuard: { enabled: false, maxSeconds: 60 },
     });
     expect(cfg.backpressure.enabled).toBe(false);
     expect(cfg.backpressure.threshold).toBe(5000);
@@ -99,6 +104,34 @@ describe("resolveConfig", () => {
     expect(cfg.loopDetection.deepAgent).toBe("@build-opus");
     expect(cfg.loopDetection.consultAgent).toBe("@my-oracle");
     expect(cfg.readDedup.enabled).toBe(false);
+    expect(cfg.sleepGuard.enabled).toBe(false);
+    expect(cfg.sleepGuard.maxSeconds).toBe(60);
+  });
+});
+
+// ---- checkInlineSleep (foreground-sleep guard) -------------------------------
+
+describe("checkInlineSleep", () => {
+  // Regression guard for the stranded-session incident: PRIME ran a foreground
+  // `sleep 190 && <CI check>` duplicating a background wait it had already
+  // armed, burning the turn for 3+ minutes.
+  it("blocks long leading sleeps with a teaching message", () => {
+    const msg = checkInlineSleep("sleep 190 && gh api .../check-runs | jq .", 15);
+    expect(msg).not.toBeNull();
+    expect(msg).toContain("Blocked");
+    expect(msg).toContain("gh pr checks");
+    expect(msg).toContain("END your turn");
+  });
+
+  it("allows short pauses and non-leading sleeps", () => {
+    expect(checkInlineSleep("sleep 2 && retry-thing", 15)).toBeNull();
+    expect(checkInlineSleep("sleep 14", 15)).toBeNull();
+    expect(checkInlineSleep("until done-check; do sleep 30; done", 15)).toBeNull();
+    expect(checkInlineSleep("gh run watch 123", 15)).toBeNull();
+  });
+
+  it("threshold is inclusive at maxSeconds", () => {
+    expect(checkInlineSleep("sleep 15", 15)).not.toBeNull();
   });
 });
 

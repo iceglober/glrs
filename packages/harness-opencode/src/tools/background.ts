@@ -60,6 +60,37 @@ function newJobId(): string {
   return `bg-${Date.now().toString(36)}-${crypto.randomBytes(3).toString("hex")}`;
 }
 
+// ---- wait discipline (pure, testable) ---------------------------------------
+
+/**
+ * Detect a "timer poll" — a command whose leading step is a fixed sleep
+ * (e.g. `sleep 180 && <check>`). These are the #1 way an agent strands a
+ * session: the job fires once at an arbitrary time; if the awaited state
+ * hasn't settled by then, the job is already finished, no watcher remains,
+ * and nothing will ever wake the agent — the arc hangs until a human pokes
+ * it. A correct watcher exits WHEN the condition settles (an until-loop,
+ * `gh pr checks --watch`, `gh run watch`). Returns the leading sleep's
+ * seconds, or null when the command doesn't start with a sleep.
+ */
+export function leadingSleepSeconds(command: string): number | null {
+  const m = /^\s*sleep\s+(\d+(?:\.\d+)?)\s*(?:[;&|]|$)/.exec(command);
+  return m ? Number(m[1]) : null;
+}
+
+/** Teaching rejection for timer-poll background commands. */
+export function timerPollRejection(seconds: number): string {
+  return (
+    `Rejected: this is a single-shot timer poll (leading \`sleep ${seconds}\`). ` +
+    `When the sleep elapses the wait is OVER whether or not the thing you're waiting on has settled — ` +
+    `if it hasn't, no watcher remains and nothing will ever wake you; the session hangs until the user pokes it.\n\n` +
+    `Background a WATCHER that exits only when the condition settles, then end your turn — ` +
+    `the completion ping resumes you exactly when there's something to act on:\n` +
+    `- PR checks: gh pr checks <pr> --watch   (or gh run watch <run-id>)\n` +
+    `- generic:   until <settled-check>; do sleep 30; done && <final-status-command>\n\n` +
+    `If you just want the CURRENT state, run the check directly — no sleep, no background job.`
+  );
+}
+
 // ---- spawn planning (pure, testable) ---------------------------------------
 
 /** Single-quote a string for safe interpolation into an `sh -c` wrapper. */
@@ -340,6 +371,11 @@ const backgroundRunTool = tool({
     "do NOT poll background_check in a loop. Go do other work (or wrap up) and the " +
     "completion will reach you; call background_check only when you want output or " +
     "progress before it finishes. " +
+    "To WAIT on an external condition (CI, deploy, remote queue), run a command that " +
+    "exits WHEN the condition settles — `gh pr checks --watch`, `gh run watch`, or " +
+    "`until <check>; do sleep 30; done && <status-cmd>` — never a fixed-delay poll " +
+    "(`sleep N && check`, rejected): if the condition hasn't settled when the sleep " +
+    "elapses, no watcher remains and nothing will wake you. " +
     "Set `with_gsa` to a gsa context name to inject AWS credentials (wraps the " +
     "command in `gsa exec`); omit for ordinary commands. Pass a short `title` for " +
     "a readable label in listings/sidebar.",
@@ -367,6 +403,10 @@ const backgroundRunTool = tool({
       .describe("Working directory. Defaults to the workspace root."),
   },
   async execute(args, context) {
+    const timerSleep = leadingSleepSeconds(args.command);
+    if (timerSleep !== null) {
+      return timerPollRejection(timerSleep);
+    }
     if (args.with_gsa && !resolveGsaBin()) {
       return (
         `Error: with_gsa="${args.with_gsa}" was requested but the gsa binary ` +
