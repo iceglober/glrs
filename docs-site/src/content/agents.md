@@ -1,6 +1,6 @@
 # Agents
 
-28 agents. 4 user-selectable, the rest are subagents dispatched automatically.
+29 agents. 4 user-selectable, the rest are subagents dispatched automatically.
 
 ## User-selectable
 
@@ -38,6 +38,7 @@ Dispatched by user-selectable agents. You don't pick these directly.
 | `research-web` | deep | Web search subagent |
 | `research-local` | deep | Local codebase exploration subagent |
 | `research-auto` | deep | Auto-selecting research subagent |
+| `council-member` | mid | LLM-council seat — answers and peer-reviews as a pure completion (no tools). Driven by the `council` tool, one seat per configured member model. |
 
 ## Autopilot-only
 

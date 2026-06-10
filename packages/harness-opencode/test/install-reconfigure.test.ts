@@ -136,6 +136,40 @@ describe("reconfigure models", () => {
   });
 });
 
+describe("reconfigure council", () => {
+  it("writes the council block alongside existing options", () => {
+    writeConfig({
+      $schema: "https://opencode.ai/config.json",
+      plugin: [[PLUGIN_NAME, { models: { deep: ["anthropic/claude-opus-4-7"] } }]],
+    });
+
+    const council = {
+      members: ["anthropic/claude-opus-4-7", "openai/gpt-5.1"],
+      chairman: "anthropic/claude-opus-4-7",
+    };
+    const result = writePluginOption(configPath, "council", council, { dryRun: false });
+
+    expect(result.changed).toBe(true);
+    const config = readConfig() as any;
+    expect(config.plugin[0][1].council).toEqual(council);
+    expect(config.plugin[0][1].models).toEqual({ deep: ["anthropic/claude-opus-4-7"] });
+  });
+
+  it("removes the council block when value is undefined", () => {
+    writeConfig({
+      $schema: "https://opencode.ai/config.json",
+      plugin: [[PLUGIN_NAME, { council: { members: ["a/b", "c/d"] }, models: {} }]],
+    });
+
+    const result = writePluginOption(configPath, "council", undefined, { dryRun: false });
+
+    expect(result.changed).toBe(true);
+    const config = readConfig() as any;
+    expect("council" in config.plugin[0][1]).toBe(false);
+    expect(config.plugin[0][1].models).toEqual({});
+  });
+});
+
 describe("reconfigure MCPs", () => {
   it("reconfigure MCPs applies new selections and preserves user-authored MCPs", () => {
     writeConfig({

@@ -15,9 +15,17 @@ import { command } from "cmd-ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { promptChoice, promptSelect, promptSearch, type SearchChoice } from "./plugin-check.js";
+import {
+  menuSelect,
+  menuAutocomplete,
+  menuMultiselect,
+  menuText,
+  intro,
+  outro,
+  type MenuOption,
+} from "./clack.js";
 import { fetchModelsDevProviders, type ModelsDevProvider } from "./models-dev.js";
-import { writePluginOption, writeMcpToggles, writePluginToggles } from "./install.js";
+import { writePluginOption, writeMcpToggles } from "./install.js";
 import type { ModelTier } from "../agents/index.js";
 
 const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
@@ -143,8 +151,8 @@ function shortModelName(fullId: string): string {
 function buildModelSearchChoices(
   providers: ModelsDevProvider[],
   currentModel: string | undefined,
-): SearchChoice<string>[] {
-  const choices: SearchChoice<string>[] = [];
+): MenuOption<string>[] {
+  const choices: MenuOption<string>[] = [];
 
   for (const provider of providers) {
     const models = Object.entries(provider.models);
@@ -154,28 +162,17 @@ function buildModelSearchChoices(
       const fullId = `${provider.id}/${modelId}`;
       const cost = (provider.models[modelId] as any)?.cost;
 
-      let desc = provider.name;
+      let hint = provider.name;
       if (cost?.input != null && cost?.output != null) {
-        desc += `  ·  in: $${cost.input}  out: $${cost.output}`;
+        hint += `  ·  in: $${cost.input}  out: $${cost.output}`;
       }
       if (fullId === currentModel) {
-        desc += "  ✦ current";
+        hint += "  ✦ current";
       }
 
-      choices.push({
-        value: fullId,
-        name: fullId,
-        description: desc,
-        short: fullId,
-      });
+      choices.push({ value: fullId, label: fullId, hint });
     }
   }
-
-  choices.push({
-    value: BACK_SENTINEL,
-    name: "← Back",
-    description: "",
-  });
 
   return choices;
 }
@@ -188,39 +185,18 @@ const TIER_NAME_WIDTH = 14;
 
 function buildTierChoices(
   currentModels: Record<string, string[]>,
-): ({ value: string; name: string; description: string; short: string } | { separator: string })[] {
-  const choices: ({ value: string; name: string; description: string; short: string } | { separator: string })[] = [];
-
-  for (const def of TIER_DEFS) {
+): MenuOption<string>[] {
+  // Plain-text labels — clack styles the focused/unfocused rows itself, and
+  // embedded ANSI resets would cut its highlight color mid-line.
+  return TIER_DEFS.map((def) => {
     const model = currentModels[def.tier]?.[0];
-    const tierLabel = pad(def.label, TIER_NAME_WIDTH);
-
-    let valuePart: string;
-    if (model) {
-      valuePart = `${c.cyan}${model}${c.reset}`;
-    } else if (def.fallback) {
-      valuePart = `${c.dim}→ ${def.fallback}${c.reset}`;
-    } else {
-      valuePart = `${c.dim}(not set)${c.reset}`;
-    }
-
-    choices.push({
+    const valuePart = model ?? (def.fallback ? `→ ${def.fallback}` : "(not set)");
+    return {
       value: def.tier,
-      name: `${tierLabel}${valuePart}`,
-      description: def.agents,
-      short: def.label,
-    });
-  }
-
-  choices.push({ separator: " " });
-  choices.push({
-    value: BACK_SENTINEL,
-    name: "← Back",
-    description: "",
-    short: "back",
+      label: `${pad(def.label, TIER_NAME_WIDTH)}${valuePart}`,
+      hint: def.agents,
+    };
   });
-
-  return choices;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +209,7 @@ async function configureModels(configPath: string, currentModels: Record<string,
 
   while (true) {
     const tierChoices = buildTierChoices(currentModels);
-    const selected = await promptSelect("Which tier?", tierChoices, BACK_SENTINEL);
+    const selected = await menuSelect("Which tier?", tierChoices, BACK_SENTINEL);
     if (selected === BACK_SENTINEL) return;
 
     const def = TIER_DEFS.find((d) => d.tier === selected)!;
@@ -241,10 +217,8 @@ async function configureModels(configPath: string, currentModels: Record<string,
 
     if (!providers || providers.length === 0) {
       console.log(`${c.yellow}!${c.reset} Could not reach Models.dev API. Enter model ID manually.`);
-      const { input } = await import("@inquirer/prompts");
-      const modelId = await input({
-        message: `${def.label} model ID:`,
-        default: currentModel ?? "",
+      const modelId = await menuText(`${def.label} model ID:`, {
+        initialValue: currentModel,
       });
       if (modelId) {
         const newModels = { ...currentModels, [def.tier]: [modelId] };
@@ -256,8 +230,8 @@ async function configureModels(configPath: string, currentModels: Record<string,
     }
 
     const choices = buildModelSearchChoices(providers, currentModel);
-    const selectedModel = await promptSearch(
-      `${def.label} model (type to filter):`,
+    const selectedModel = await menuAutocomplete(
+      `${def.label} model:`,
       choices,
       BACK_SENTINEL,
     );
@@ -272,6 +246,167 @@ async function configureModels(configPath: string, currentModels: Record<string,
 }
 
 // ---------------------------------------------------------------------------
+// Configure: Council
+// ---------------------------------------------------------------------------
+
+interface CouncilOptions {
+  members?: string[];
+  chairman?: string;
+  timeoutMs?: number;
+}
+
+const USE_DEFAULT_SENTINEL = "__use_default__";
+
+function councilSummary(council: CouncilOptions, models: Record<string, string[]>): string {
+  const members = council.members ?? [];
+  if (members.length < 2) return "(not configured)";
+  const chairman = council.chairman ?? models["deep"]?.[0] ?? members[0]!;
+  return `${members.length} members  ·  chairman: ${shortModelName(chairman!)}`;
+}
+
+/**
+ * Council config editor. The council needs >= 2 members before the plugin
+ * registers the tool, so the menu surfaces that state explicitly instead of
+ * leaving a 1-member config silently inert.
+ */
+async function configureCouncil(
+  configPath: string,
+  council: CouncilOptions,
+  currentModels: Record<string, string[]>,
+): Promise<void> {
+  info("Fetching available models…");
+  const providers = await fetchModelsDevProviders();
+
+  const persist = () => {
+    const value: CouncilOptions | undefined =
+      (council.members?.length ?? 0) > 0 || council.chairman
+        ? {
+            ...(council.members?.length ? { members: council.members } : {}),
+            ...(council.chairman ? { chairman: council.chairman } : {}),
+            ...(council.timeoutMs ? { timeoutMs: council.timeoutMs } : {}),
+          }
+        : undefined;
+    writePluginOption(configPath, "council", value, { dryRun: false });
+  };
+
+  const pickModel = async (message: string, current?: string): Promise<string | null> => {
+    if (!providers || providers.length === 0) {
+      console.log(`${c.yellow}!${c.reset} Could not reach Models.dev API. Enter model ID manually.`);
+      return menuText(message, { initialValue: current });
+    }
+    const choices = buildModelSearchChoices(providers, current);
+    const selected = await menuAutocomplete(message, choices, BACK_SENTINEL);
+    return selected === BACK_SENTINEL ? null : selected;
+  };
+
+  while (true) {
+    const members = council.members ?? [];
+    const defaultChairman = currentModels["deep"]?.[0] ?? members[0];
+    const chairmanDisplay = council.chairman
+      ? `${c.cyan}${council.chairman}${c.reset}`
+      : `${c.dim}default (${defaultChairman ?? "first member"})${c.reset}`;
+
+    console.log(`\n  ${c.bold}Council${c.reset} — multi-model deliberation for @prime (llm-council style)`);
+    if (members.length === 0) {
+      console.log(`  Members:  ${c.dim}none — council disabled${c.reset}`);
+    } else {
+      members.forEach((m, i) => console.log(`  ${i === 0 ? "Members: " : "         "} ${c.cyan}${m}${c.reset}`));
+      if (members.length < 2) {
+        console.log(`  ${c.yellow}! needs at least 2 members before the council tool activates${c.reset}`);
+      }
+    }
+    console.log(`  Chairman: ${chairmanDisplay}\n`);
+
+    const choices: MenuOption<string>[] = [
+      {
+        value: "add",
+        label: "Add member",
+        hint: "Add a model to the council (each member answers and peer-reviews)",
+      },
+    ];
+    if (members.length > 0) {
+      choices.push({
+        value: "remove",
+        label: "Remove members",
+        hint: "Uncheck members to drop them from the council",
+      });
+    }
+    choices.push({
+      value: "chairman",
+      label: "Set chairman",
+      hint: "The model that synthesizes the final answer (defaults to the deep tier model)",
+    });
+    if (members.length > 0 || council.chairman) {
+      choices.push({
+        value: "clear",
+        label: "Clear council config",
+        hint: "Remove all council settings — disables the council tool",
+      });
+    }
+
+    const action = await menuSelect("Council:", choices, BACK_SENTINEL);
+    if (action === BACK_SENTINEL) return;
+
+    if (action === "add") {
+      const model = await pickModel("Add council member (type to filter):");
+      if (model && !members.includes(model)) {
+        council.members = [...members, model];
+        persist();
+        ok(`Added ${model}`);
+      } else if (model) {
+        info(`${model} is already a member.`);
+      }
+    }
+
+    if (action === "remove") {
+      const kept = await menuMultiselect(
+        "Keep which members?",
+        members.map((m) => ({ value: m, label: m })),
+        members,
+      );
+      // null = backed out — no change.
+      if (kept !== null && kept.length !== members.length) {
+        council.members = members.filter((m) => kept.includes(m));
+        persist();
+        ok(`Council members: ${council.members.length > 0 ? council.members.join(", ") : "(none)"}`);
+      }
+    }
+
+    if (action === "chairman") {
+      const defaultLabel = `Use default (deep tier${defaultChairman ? `: ${defaultChairman}` : ""})`;
+      const mode = await menuSelect(
+        "Chairman:",
+        [
+          { value: USE_DEFAULT_SENTINEL, label: defaultLabel, hint: "Follows the deep tier as you reconfigure it" },
+          { value: "pick", label: "Pick a specific model", hint: "Pin the chairman to one model" },
+        ],
+        BACK_SENTINEL,
+      );
+      if (mode === USE_DEFAULT_SENTINEL) {
+        delete council.chairman;
+        persist();
+        ok("Chairman → deep tier default");
+      } else if (mode === "pick") {
+        const model = await pickModel("Chairman model (type to filter):", council.chairman);
+        if (model) {
+          council.chairman = model;
+          persist();
+          ok(`Chairman → ${model}`);
+        }
+      }
+    }
+
+    if (action === "clear") {
+      delete council.members;
+      delete council.chairman;
+      delete council.timeoutMs;
+      persist();
+      ok("Council config cleared.");
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Configure: Notifications
 // ---------------------------------------------------------------------------
 
@@ -281,30 +416,25 @@ async function configureNotifications(configPath: string, currentNotifyUrl: stri
     : `${c.dim}none${c.reset}`;
   console.log(`\n  Webhook: ${urlDisplay}\n`);
 
-  const choices = [
-    "Set Slack incoming webhook URL",
-    "Set custom webhook URL",
-    "Clear webhook URL",
-    "← Back",
+  const choices: MenuOption<string>[] = [
+    { value: "slack", label: "Set Slack incoming webhook URL" },
+    { value: "custom", label: "Set custom webhook URL" },
+    { value: "clear", label: "Clear webhook URL" },
   ];
-  const choice = await promptChoice("Notifications:", choices, choices.length - 1);
+  const choice = await menuSelect("Notifications:", choices, BACK_SENTINEL);
 
-  if (choice === choices.length - 1) return currentNotifyUrl;
+  if (choice === BACK_SENTINEL) return currentNotifyUrl;
 
-  if (choice === 2) {
+  if (choice === "clear") {
     writeNotifyUrl(configPath, undefined);
     ok("Webhook URL cleared.");
     return undefined;
   }
 
-  const { input } = await import("@inquirer/prompts");
-  const prompt = choice === 0
+  const prompt = choice === "slack"
     ? "Slack incoming webhook URL:"
     : "Webhook URL:";
-  const url = await input({
-    message: prompt,
-    default: currentNotifyUrl ?? "",
-  });
+  const url = await menuText(prompt, { initialValue: currentNotifyUrl });
 
   if (url) {
     writeNotifyUrl(configPath, url);
@@ -372,73 +502,107 @@ export const configureCmd = command({
 
     const opts = extractPluginOptions(config);
     const models: Record<string, string[]> = opts?.models ?? {};
+    const council: CouncilOptions = (opts?.council as CouncilOptions) ?? {};
     let notifyUrl: string | undefined = opts?.notifyUrl as string | undefined;
 
-    console.log(`\n${c.bold}glrs harness configure${c.reset}\n`);
+    intro("glrs harness configure");
 
+    // Each section knows its name, how to summarize its current state (the
+    // hint shown beside the focused row), and how to run its own editor.
+    // Adding a section = adding an entry here, not extending an if-chain
+    // over menu indices.
+    const sections: { name: string; summary: () => string; run: () => Promise<void> }[] = [
+      {
+        name: "Models",
+        summary: () => {
+          const summary = TIER_DEFS
+            .filter((def) => models[def.tier]?.[0])
+            .map((def) => `${def.label}: ${shortModelName(models[def.tier]![0]!)}`)
+            .join("  ·  ");
+          return summary || "(not configured)";
+        },
+        run: async () => {
+          await configureModels(configPath, models);
+          const updated = readConfig(configPath);
+          if (updated) {
+            const updatedOpts = extractPluginOptions(updated);
+            if (updatedOpts?.models) {
+              Object.assign(models, updatedOpts.models);
+            }
+          }
+        },
+      },
+      {
+        name: "MCPs",
+        summary: () => {
+          const mcpEnabled = Object.entries(config.mcp ?? {})
+            .filter(([, v]: [string, any]) => v?.enabled)
+            .map(([k]) => k);
+          return mcpEnabled.length > 0 ? mcpEnabled.join(", ") : "none";
+        },
+        run: async () => {
+          const MCP_TOGGLES = [
+            { name: "playwright", label: "Playwright — browser automation" },
+            { name: "linear", label: "Linear — issue tracker" },
+          ];
+          const currentMcps = Object.entries(config.mcp ?? {})
+            .filter(([, v]: [string, any]) => v?.enabled)
+            .map(([k]) => k);
+          const selected = await menuMultiselect(
+            "Enable MCPs:",
+            MCP_TOGGLES.map((t) => ({ value: t.name, label: t.label })),
+            MCP_TOGGLES.map((t) => t.name).filter((n) => currentMcps.includes(n)),
+          );
+          // null = backed out — no change.
+          if (selected === null) return;
+          const newEnabled = new Set(selected);
+          writeMcpToggles(configPath, newEnabled, { dryRun: false });
+          // Keep the in-memory snapshot in sync so the summary line updates.
+          config.mcp = config.mcp ?? {};
+          for (const t of MCP_TOGGLES) {
+            if (newEnabled.has(t.name)) {
+              config.mcp[t.name] = { ...(config.mcp[t.name] ?? {}), enabled: true };
+            } else {
+              delete config.mcp[t.name];
+            }
+          }
+        },
+      },
+      {
+        name: "Council",
+        summary: () => councilSummary(council, models),
+        run: () => configureCouncil(configPath, council, models),
+      },
+      {
+        name: "Notifications",
+        summary: () => {
+          const slackConfigured = notifyUrl?.includes("hooks.slack.com/") ?? false;
+          return notifyUrl ? (slackConfigured ? "Slack" : "custom webhook") : "none";
+        },
+        run: async () => {
+          notifyUrl = await configureNotifications(configPath, notifyUrl);
+        },
+      },
+    ];
+
+    const DONE = -1;
     while (true) {
-      const deepShort = shortModelName(models.deep?.[0] ?? "");
-      const midShort = shortModelName(models.mid?.[0] ?? "");
-      const modelSummary = deepShort && midShort
-        ? `deep: ${deepShort}  ·  mid: ${midShort}`
-        : deepShort || midShort || "(not configured)";
+      const choices: MenuOption<number>[] = sections.map((s, i) => ({
+        value: i,
+        label: s.name,
+        hint: s.summary(),
+      }));
+      choices.push({ value: DONE, label: "Done", hint: "Save and exit (esc also exits)" });
 
-      const mcpEnabled = Object.entries(config.mcp ?? {})
-        .filter(([, v]: [string, any]) => v?.enabled)
-        .map(([k]) => k);
+      const choice = await menuSelect("What to configure?", choices, DONE);
 
-      const slackConfigured = notifyUrl?.includes("hooks.slack.com/") ?? false;
-      const notifyLabel = notifyUrl
-        ? (slackConfigured ? "Slack" : "custom webhook")
-        : "none";
-
-      const sections = [
-        `Models\n    ${c.dim}${modelSummary}${c.reset}`,
-        `MCPs — ${mcpEnabled.length > 0 ? mcpEnabled.join(", ") : "none"}`,
-        `Notifications — ${notifyLabel}`,
-        "Done",
-      ];
-
-      const choice = await promptChoice("What to configure?", sections, sections.length - 1);
-
-      if (choice === sections.length - 1) {
-        console.log(`\nRestart opencode to pick up changes.\n`);
+      // Esc at the top level = done.
+      if (choice === DONE) {
+        outro("Restart opencode to pick up changes.");
         break;
       }
 
-      if (choice === 0) {
-        await configureModels(configPath, models);
-        const updated = readConfig(configPath);
-        if (updated) {
-          const updatedOpts = extractPluginOptions(updated);
-          if (updatedOpts?.models) {
-            Object.assign(models, updatedOpts.models);
-          }
-        }
-      }
-
-      if (choice === 1) {
-        const { promptMulti } = await import("./plugin-check.js");
-        const MCP_TOGGLES = [
-          { name: "playwright", label: "Playwright — browser automation" },
-          { name: "linear", label: "Linear — issue tracker" },
-        ];
-        const currentMcps = new Set(
-          Object.entries(config.mcp ?? {})
-            .filter(([, v]: [string, any]) => v?.enabled)
-            .map(([k]) => k),
-        );
-        const selected = await promptMulti(
-          "Enable MCPs:",
-          MCP_TOGGLES.map((t) => ({ label: t.label, defaultOn: currentMcps.has(t.name) })),
-        );
-        const newEnabled = new Set([...selected].map((i) => MCP_TOGGLES[i]!.name));
-        writeMcpToggles(configPath, newEnabled, { dryRun: false });
-      }
-
-      if (choice === 2) {
-        notifyUrl = await configureNotifications(configPath, notifyUrl);
-      }
+      await sections[choice]!.run();
     }
   },
 });

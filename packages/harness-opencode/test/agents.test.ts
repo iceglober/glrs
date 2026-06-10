@@ -9,14 +9,14 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 28 agents", () => {
+  it("returns exactly 29 agents", () => {
     // Primary-capable (mode:primary or mode:all): prime, prime-heavy, designer,
     // research. plan/build/scoper are mode:"subagent" — dispatched by @prime
     // (or the scoper wizard) and directly @mentionable, but NOT in the primary
     // picker. autopilot-prime/autopilot-fast and the research-* variants are
     // also mode:"subagent", plus the pure-subagent reviewers/analyzers,
-    // debriefer, and the oracle consult.
-    expect(Object.keys(agents).length).toBe(28);
+    // debriefer, the oracle consult, and the council-member seat.
+    expect(Object.keys(agents).length).toBe(29);
   });
 
   it("has primary-capable agents (prime, prime-heavy, designer, research; mode=primary or mode=all)", () => {
@@ -241,7 +241,7 @@ describe("createAgents", () => {
 
   it("agent count is correct", () => {
     // Alias for the "returns exactly 24 agents" test — used by changeset a9.
-    expect(Object.keys(agents).length).toBe(28);
+    expect(Object.keys(agents).length).toBe(29);
   });
 
   it("plan agent has hallucination-defense clause", () => {
