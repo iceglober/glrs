@@ -8,6 +8,8 @@ import {
   jobLabel,
   selectFreshCompletions,
   buildCompletionNotice,
+  leadingSleepSeconds,
+  timerPollRejection,
 } from "../src/tools/background.js";
 
 const { buildSpawnPlan, readJobState, tailFile, shQuote, fmtRuntime } = __test__;
@@ -25,6 +27,36 @@ function job(p: Partial<JobSummary>): JobSummary {
     ...p,
   };
 }
+
+describe("leadingSleepSeconds — timer-poll detection", () => {
+  // Regression guard for the stranded-session incident: PRIME backgrounded
+  // `sleep 180 && <CI check>`, the job fired before CI settled, no watcher
+  // remained, and the arc hung until the user poked it.
+  it("detects sleep-then-check timer polls", () => {
+    expect(leadingSleepSeconds("sleep 180 && gh api .../check-runs | jq .")).toBe(180);
+    expect(leadingSleepSeconds("  sleep 30; gh pr checks 42")).toBe(30);
+    expect(leadingSleepSeconds("sleep 5")).toBe(5);
+    expect(leadingSleepSeconds("sleep 2.5 && foo")).toBe(2.5);
+  });
+
+  it("does NOT flag watcher loops or commands that merely contain sleep", () => {
+    // until-loop watchers sleep INSIDE the loop — the command exits when the
+    // condition settles, which is exactly the pattern we want.
+    expect(leadingSleepSeconds("until gh pr checks 42 | grep -qv pending; do sleep 30; done")).toBeNull();
+    expect(leadingSleepSeconds("gh run watch 123")).toBeNull();
+    expect(leadingSleepSeconds("while true; do sleep 5; done")).toBeNull();
+    expect(leadingSleepSeconds("./sleep-study.sh")).toBeNull();
+    expect(leadingSleepSeconds("sleeper --daemon")).toBeNull();
+  });
+
+  it("rejection message teaches the watcher patterns", () => {
+    const msg = timerPollRejection(180);
+    expect(msg).toContain("Rejected");
+    expect(msg).toContain("gh pr checks");
+    expect(msg).toContain("until <settled-check>");
+    expect(msg).toContain("nothing will ever wake you");
+  });
+});
 
 describe("buildSpawnPlan", () => {
   it("plain command: sh -c wrapper that records the exit code", () => {

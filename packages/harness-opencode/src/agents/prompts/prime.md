@@ -313,6 +313,10 @@ Discover the correct commands from `package.json` scripts, `Makefile`, or `AGENT
 
 For each command that exits 0, record an ISO-8601 timestamp. These become the session-green summary for `@code-reviewer`. If any command fails, handle as a red-CI condition (re-dispatch to `@build` with the failing command).
 
+### Waiting on external state (CI, deploys) — the live-watcher rule
+
+Hold EXACTLY ONE live waiter, then get out of the way: background ONE self-terminating watcher that exits WHEN the condition settles (`background_run("gh pr checks <pr> --watch")`, `gh run watch <run-id>`, or `until <settled-check>; do sleep 30; done && <status-cmd>`), end your turn with a one-line status, and act on the completion ping the moment it arrives. NEVER background a fixed-delay poll (`sleep N && check` — when the sleep elapses, no watcher remains and nothing will wake you; the tool rejects these), NEVER foreground `sleep` to wait, NEVER hold two waiters for the same condition, and NEVER end a turn claiming to be "waiting" unless a RUNNING background job exists whose exit means the wait is over.
+
 ## Assess supplements
 
 ### Parallel Assess after parallel Execute

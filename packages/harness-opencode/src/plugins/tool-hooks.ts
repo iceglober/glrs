@@ -70,6 +70,7 @@ import {
   selectFreshCompletions,
   buildCompletionNotice,
   announcedFor,
+  leadingSleepSeconds,
 } from "../tools/background.js";
 import { track } from "../lib/analytics.js";
 import {
@@ -170,6 +171,36 @@ const VERIFY_COMMAND = new RegExp(
 /** True when a bash command string is a test/build/typecheck "verify" run. */
 function isVerifyCommand(command: string): boolean {
   return VERIFY_COMMAND.test(command);
+}
+
+// ---- Foreground-sleep guard -------------------------------------------------
+// A foreground `sleep N && check` burns the whole turn doing nothing and is
+// usually a DUPLICATE of a wait the agent already backgrounded — observed in a
+// real session: PRIME backgrounded `sleep 180 && <CI check>`, then ALSO ran a
+// foreground `sleep 190 && <same check>`, then ended the turn "waiting" with
+// no live watcher. Long inline sleeps are blocked before execution with a
+// teaching error; short pauses (retry backoff etc.) pass through.
+const DEFAULT_MAX_INLINE_SLEEP_SECONDS = 15;
+
+/**
+ * If the bash command leads with a sleep at/over the threshold, return the
+ * teaching error message to block it with; otherwise null. Pure.
+ */
+function checkInlineSleep(
+  command: string,
+  maxSeconds: number,
+): string | null {
+  const secs = leadingSleepSeconds(command);
+  if (secs === null || secs < maxSeconds) return null;
+  return (
+    `Blocked: foreground \`sleep ${secs}\` burns the turn doing nothing — and if you already ` +
+    `backgrounded a wait for the same condition, this duplicates it. ` +
+    `To wait on an external condition (CI, deploy): background ONE watcher that exits when it ` +
+    `settles — background_run with \`gh pr checks <pr> --watch\`, \`gh run watch <run-id>\`, or ` +
+    `\`until <settled-check>; do sleep 30; done && <status-cmd>\` — then END your turn with a ` +
+    `one-line status. The completion ping wakes you the moment it exits. ` +
+    `Pauses under ${maxSeconds}s run normally.`
+  );
 }
 
 // ---- Per-session state ----------------------------------------------------
@@ -294,6 +325,11 @@ interface ToolHooksConfig {
   readDedup: {
     enabled: boolean;
   };
+  sleepGuard: {
+    enabled: boolean;
+    /** Leading foreground sleeps at/over this many seconds are blocked. */
+    maxSeconds: number;
+  };
 }
 
 function isValidShape(s: unknown): s is BackpressureShape {
@@ -377,6 +413,13 @@ function resolveConfig(config: Config, pluginOptions?: PluginOptions): ToolHooks
     },
     readDedup: {
       enabled: rd.enabled !== false,
+    },
+    sleepGuard: {
+      enabled: (raw.sleepGuard?.enabled as boolean | undefined) !== false,
+      maxSeconds:
+        typeof raw.sleepGuard?.maxSeconds === "number"
+          ? raw.sleepGuard.maxSeconds
+          : DEFAULT_MAX_INLINE_SLEEP_SECONDS,
     },
   };
 }
@@ -1044,10 +1087,25 @@ const plugin: Plugin = async ({ client }, options) => {
 
     // Count in-flight subagents so the loop guard never aborts a session that
     // has live children. Fires before the task tool starts; the matching
-    // decrement is at the top of tool.execute.after.
-    "tool.execute.before": async (input: { sessionID: string; tool?: string }) => {
-      if (input.tool !== "task") return;
-      ensureSession(input.sessionID).inFlightTasks++;
+    // decrement is at the top of tool.execute.after. Also hosts the
+    // foreground-sleep guard: throwing here blocks the call, and the model
+    // sees the teaching error as the tool result.
+    "tool.execute.before": async (
+      input: { sessionID: string; tool?: string },
+      output?: { args?: Record<string, unknown> },
+    ) => {
+      if (input.tool === "task") {
+        ensureSession(input.sessionID).inFlightTasks++;
+        return;
+      }
+      if (input.tool === "bash") {
+        const cfg = pluginConfig ?? resolveConfig({} as Config, storedPluginOptions);
+        if (!cfg.sleepGuard.enabled) return;
+        const cmd = output?.args?.["command"];
+        if (typeof cmd !== "string") return;
+        const blocked = checkInlineSleep(cmd, cfg.sleepGuard.maxSeconds);
+        if (blocked) throw new Error(blocked);
+      }
     },
 
     // Track the active provider/model per session so tool/verify telemetry can
@@ -1234,6 +1292,8 @@ export const __test__ = {
   loopCorrective,
   checkComplexityHint,
   complexityHint,
+  checkInlineSleep,
+  DEFAULT_MAX_INLINE_SLEEP_SECONDS,
   isVerifyCommand,
   checkReadDedup,
   looksLikeBashFailure,
