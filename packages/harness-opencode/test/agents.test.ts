@@ -9,14 +9,14 @@ import { applyConfig } from "../src/config-hook.js";
 describe("createAgents", () => {
   const agents = createAgents();
 
-  it("returns exactly 27 agents", () => {
+  it("returns exactly 28 agents", () => {
     // Primary-capable (mode:primary or mode:all): prime, prime-heavy, designer,
     // research. plan/build/scoper are mode:"subagent" — dispatched by @prime
     // (or the scoper wizard) and directly @mentionable, but NOT in the primary
     // picker. autopilot-prime/autopilot-fast and the research-* variants are
-    // also mode:"subagent", plus the pure-subagent reviewers/analyzers and
-    // debriefer.
-    expect(Object.keys(agents).length).toBe(27);
+    // also mode:"subagent", plus the pure-subagent reviewers/analyzers,
+    // debriefer, and the oracle consult.
+    expect(Object.keys(agents).length).toBe(28);
   });
 
   it("has primary-capable agents (prime, prime-heavy, designer, research; mode=primary or mode=all)", () => {
@@ -77,6 +77,7 @@ describe("createAgents", () => {
       AGENTS.CODE_SEARCHER,
       AGENTS.GAP_ANALYZER,
       AGENTS.ARCHITECTURE_ADVISOR,
+      AGENTS.ORACLE,
       AGENTS.DOCS_MAINTAINER,
       AGENTS.LIB_READER,
       AGENTS.AGENTS_MD_WRITER,
@@ -240,7 +241,7 @@ describe("createAgents", () => {
 
   it("agent count is correct", () => {
     // Alias for the "returns exactly 24 agents" test — used by changeset a9.
-    expect(Object.keys(agents).length).toBe(27);
+    expect(Object.keys(agents).length).toBe(28);
   });
 
   it("plan agent has hallucination-defense clause", () => {
@@ -267,6 +268,53 @@ describe("createAgents", () => {
     const build = agents[AGENTS.BUILD]!;
     expect(build.model).toBe("anthropic/claude-sonnet-4-6");
     expect(build.temperature).toBe(0.1);
+  });
+
+  it("oracle is a read-only deep consult: opus, subagent, no question tool, no edits", () => {
+    const oracle = agents[AGENTS.ORACLE]!;
+    expect(oracle).toBeDefined();
+    expect(oracle.mode).toBe("subagent");
+    expect(oracle.model).toBe("anthropic/claude-opus-4-7");
+    // Dispatched mid-task (including autopilot) — must never block on a
+    // question, and must never mutate the worktree.
+    expect((oracle as any).tools?.question).toBe(false);
+    const perm = (oracle as any).permission;
+    expect(perm.edit).toBe("deny");
+    expect(perm.bash).toBe("deny");
+    expect(perm.question).toBe("deny");
+    // Bounded-consult contract lives in the prompt.
+    const prompt = oracle.prompt as string;
+    expect(prompt).toContain("ONE question");
+    expect(prompt).toContain("Tool budget");
+  });
+
+  it("build and build-cheap can dispatch @oracle (task tool enabled); build-deep cannot", () => {
+    // The task tool on the Sonnet/GLM builders exists solely for bounded
+    // @oracle consults (build.md "Consulting the oracle"). @build-deep IS
+    // the deep tier — it gets no task tool by design.
+    expect((agents[AGENTS.BUILD] as any).tools?.task).toBe(true);
+    expect((agents[AGENTS.BUILD_CHEAP] as any).tools?.task).toBe(true);
+    expect((agents[AGENTS.BUILD_DEEP] as any).tools?.task).toBeUndefined();
+    const build = agents[AGENTS.BUILD]!.prompt as string;
+    expect(build).toContain("Consulting the oracle");
+    expect(build).toContain("`@oracle` consults ONLY");
+  });
+
+  it("prime prompt wires oracle consults into the reasoning-depth test", () => {
+    const prime = agents[AGENTS.PRIME]!.prompt as string;
+    expect(prime).toContain("Oracle consults");
+    expect(prime).toContain("@oracle");
+  });
+
+  it("plan prompt contains the pattern-first gate and reviewers enforce it", () => {
+    const plan = agents[AGENTS.PLAN]!.prompt as string;
+    expect(plan).toContain("Pattern decision");
+    expect(plan).toContain("pattern-first");
+    expect(plan).toContain("## Pattern decisions");
+    const planReviewer = agents[AGENTS.PLAN_REVIEWER]!.prompt as string;
+    expect(planReviewer).toContain("Pattern decisions");
+    const codeReviewer = agents[AGENTS.CODE_REVIEWER]!.prompt as string;
+    expect(codeReviewer).toContain("Pattern decisions");
   });
 
   it("code-reviewer-thorough subagent is registered with opus model", () => {

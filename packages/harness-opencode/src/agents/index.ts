@@ -68,6 +68,7 @@ const planReviewerPrompt = readPrompt("plan-reviewer.md");
 const codeSearcherPrompt = readPrompt("code-searcher.md");
 const gapAnalyzerPrompt = readPrompt("gap-analyzer.md");
 const architectureAdvisorPrompt = readPrompt("architecture-advisor.md");
+const oraclePrompt = readPrompt("oracle.md");
 const docsMaintainerPrompt = readPrompt("docs-maintainer.md");
 const libReaderPrompt = readPrompt("lib-reader.md");
 const agentsMdWriterPrompt = readPrompt("agents-md-writer.md");
@@ -563,6 +564,28 @@ const ARCHITECTURE_ADVISOR_PERMISSIONS = {
   linear: "allow",
 };
 
+// Oracle: read-only deep-reasoning consult. Same investigation surface as
+// the architecture advisor (serena, ast_grep, read/grep/glob, git MCP) but
+// with `question` denied — the oracle is dispatched mid-task by other agents
+// (including autopilot sessions with no user attached); it must answer with
+// stated assumptions, never block on a question.
+const ORACLE_PERMISSIONS = {
+  edit: "deny" as const,
+  bash: "deny" as const,
+  webfetch: "deny" as const,
+  ast_grep: "allow",
+  tsc_check: "deny",
+  eslint_check: "deny",
+  todo_scan: "allow",
+  comment_check: "allow",
+  question: "deny",
+  serena: "allow",
+  memory: "deny",
+  git: "allow",
+  playwright: "deny",
+  linear: "deny",
+};
+
 const LIB_READER_PERMISSIONS = {
   edit: "deny" as const,
   bash: "deny" as const,
@@ -745,6 +768,10 @@ export function createAgents(): Record<AgentName, AgentConfig> {
       mode: "subagent",
       model: "anthropic/claude-sonnet-4-6",
       temperature: 0.1,
+      // task is enabled for ONE purpose: bounded @oracle consults when the
+      // builder can't articulate a root cause (see build.md "Consulting the
+      // oracle"). The prompt forbids dispatching anything else.
+      tools: { task: true },
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
     [AGENTS.BUILD_CHEAP]: agentFromPrompt(buildPrompt, {
@@ -752,6 +779,9 @@ export function createAgents(): Record<AgentName, AgentConfig> {
       mode: "subagent",
       model: "amazon-bedrock/zai.glm-4.7-flash",
       temperature: 0.1,
+      // Same oracle-only task access as @build — a cheap model escalating a
+      // single hard question to Opus is the cost cascade working as intended.
+      tools: { task: true },
       permission: BUILD_PERMISSIONS as AgentConfig["permission"],
     }),
     [AGENTS.BUILD_DEEP]: agentFromPrompt(buildPrompt, {
@@ -793,6 +823,13 @@ export function createAgents(): Record<AgentName, AgentConfig> {
     }),
     [AGENTS.ARCHITECTURE_ADVISOR]: agentFromPrompt(architectureAdvisorPrompt, {
       permission: ARCHITECTURE_ADVISOR_PERMISSIONS as AgentConfig["permission"],
+    }),
+    [AGENTS.ORACLE]: agentFromPrompt(oraclePrompt, {
+      // The question tool is also disabled at the tools map (not just the
+      // permission map) — same rationale as autopilot-prime: a dispatched
+      // consult that blocks on user input deadlocks its caller.
+      tools: { question: false } as AgentConfig["tools"],
+      permission: ORACLE_PERMISSIONS as AgentConfig["permission"],
     }),
     [AGENTS.DOCS_MAINTAINER]: agentFromPrompt(docsMaintainerPrompt),
     [AGENTS.LIB_READER]: agentFromPrompt(libReaderPrompt, {

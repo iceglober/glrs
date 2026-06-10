@@ -28,6 +28,7 @@ const {
   DEFAULT_REPEAT_ABORT,
   DEFAULT_COMPLEXITY_WARN,
   DEFAULT_DEEP_AGENT,
+  DEFAULT_CONSULT_AGENT,
 } = __test__;
 
 // ---- helpers ---------------------------------------------------------------
@@ -62,6 +63,7 @@ describe("resolveConfig", () => {
     expect(cfg.loopDetection.abortEnabled).toBe(true);
     expect(cfg.loopDetection.complexityWarn).toBe(DEFAULT_COMPLEXITY_WARN);
     expect(cfg.loopDetection.deepAgent).toBe(DEFAULT_DEEP_AGENT);
+    expect(cfg.loopDetection.consultAgent).toBe(DEFAULT_CONSULT_AGENT);
     expect(cfg.readDedup.enabled).toBe(true);
   });
 
@@ -78,6 +80,7 @@ describe("resolveConfig", () => {
         abortEnabled: false,
         complexityWarn: 3,
         deepAgent: "@build-opus",
+        consultAgent: "@my-oracle",
       },
       readDedup: { enabled: false },
     });
@@ -94,6 +97,7 @@ describe("resolveConfig", () => {
     expect(cfg.loopDetection.abortEnabled).toBe(false);
     expect(cfg.loopDetection.complexityWarn).toBe(3);
     expect(cfg.loopDetection.deepAgent).toBe("@build-opus");
+    expect(cfg.loopDetection.consultAgent).toBe("@my-oracle");
     expect(cfg.readDedup.enabled).toBe(false);
   });
 });
@@ -681,9 +685,14 @@ describe("checkComplexityHint", () => {
     expect(v.suggest).toBe(false);
   });
 
-  it("hint text names the configured deep agent", () => {
-    expect(complexityHint("@build-deep", 4)).toContain("@build-deep");
-    expect(complexityHint("@build-deep", 4)).toContain("delegate");
+  it("hint text names the configured deep and consult agents, routed by gap type", () => {
+    const hint = complexityHint("@build-deep", "@oracle", 4);
+    expect(hint).toContain("@build-deep");
+    expect(hint).toContain("@oracle");
+    expect(hint).toContain("delegate");
+    // Comprehension gaps route to the consult; implementation depth to deep.
+    expect(hint).toMatch(/comprehension[\s\S]*@oracle/);
+    expect(hint).toMatch(/fix itself needs deep reasoning[\s\S]*@build-deep/);
   });
 });
 
