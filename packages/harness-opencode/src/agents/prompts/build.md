@@ -19,6 +19,18 @@ For TypeScript symbol lookups during execution (finding the definition you're ab
 
 Use `grep` / `read` / `glob` / `ast_grep` for textual patterns, config files, non-TS code, or when Serena doesn't know the symbol yet.
 
+## Consulting the oracle
+
+`@oracle` is a bounded deep-reasoning consult (read-only Opus, ~5 tool calls): ONE question in, a direct answer with evidence out. Dispatch it via the task tool when the bottleneck is understanding, not editing:
+
+- You're about to change code whose behavior you can't explain — "why does this test fail only when X?", "how does this subsystem actually work? The code is scattered across <files>".
+- Two fix attempts on the same item have failed and you can't articulate the root cause in one sentence. Consult BEFORE a third attempt — a third guess burns more than the consult costs.
+- The plan's approach assumes something about the code you can't verify by reading 1–2 files.
+
+Package the dispatch well: the one question, files you've already read (paths), the call chain you traced, what you tried and how it failed. Then act on the Answer; if it comes back low-confidence, include it in your STOP/BLOCKED payload rather than guessing.
+
+Limits: max 2 oracle consults per build session. **The task tool exists for `@oracle` consults ONLY** — never dispatch `@build`, `@plan`, reviewers, or any other subagent from inside a build session; PRIME owns orchestration. (If you are the deep-tier variant `@build-deep`, you have no task tool — you ARE the deep reasoner; work it out directly.)
+
 ## 1. Read and validate the plan
 
 Read the plan at the path provided by the user. If no plan path is given, ask for one. Do not start work without a plan.
@@ -71,6 +83,8 @@ The skill contains: merge-base reproduction, git blame evidence, scope check, ra
 
 **Fenced plans — TDD order.** If the plan's `## Acceptance criteria` contains a ```plan-state fence, work item-by-item in TDD order: for each acceptance item, write the test(s) named in its `tests:` field FIRST (they must fail initially), then implement the change that makes them pass, then confirm by running the item's `verify:` command. Only mark the fence item `- [x]` after the verify command exits 0. This is how fenced plans encode strict TDD — the `tests:` field is the spec; the code is secondary.
 
+**Patterns: the plan beats the mirror.** A `Mirror:` file is a hint for shape and convention, subordinate to the plan's `## Pattern decisions` section (when present). If the pattern decision says the incumbent is being replaced or quarantined, follow the decision — do NOT faithfully copy the mirror's old pattern. And if, with no pattern decision covering it, you notice you're about to propagate something clearly rotten (boilerplate hand-copied per instance, parallel lists that must be synced by memory, invariants enforced only by comments), don't propagate silently: if following the plan as written is still cheap and reversible, do it and return **DONE_WITH_CONCERNS** naming the pattern problem; if propagation would be costly to undo, treat it as an approach/design discrepancy — STOP and report.
+
 When you discover the plan is wrong:
 - STOP.
 - Report the discrepancy with specifics.
@@ -115,6 +129,7 @@ PRIME owns QA dispatch. Do NOT delegate to `@spec-reviewer`, `@code-reviewer`, o
 # Hard rules
 
 - One plan, one build session. If the user asks for unrelated work mid-session, suggest a new plan.
+- The task tool is for `@oracle` consults only (max 2 per session). Never dispatch `@build`, `@plan`, or reviewers from inside a build session — PRIME owns orchestration.
 - You CAN `git commit` locally for checkpointing (after non-trivial file-level changes, after QA pass). You CANNOT `git push` — permissions enforce this. Final squash + push + PR is `/ship`.
 - **Never use `--no-verify` or `--no-gpg-sign`** to bypass pre-commit hooks. If a hook blocks you, fix the root cause (resolve TODOs, repair lint/type errors). If the hook seems genuinely wrong, STOP and ask the user.
 - Plan file mutations: mark `[x]` freely as items complete. For **cosmetic / self-imposed numeric thresholds** (line-count budgets, row caps, arbitrary `< N` limits the planner set on itself), update the threshold silently and note it in your commit message — do NOT stop. For **approach / design changes** (the interface doesn't exist, the test strategy won't work, a whole section needs restructuring), stop and use the `question` tool. For **scope expansion** (an extra file or two needed to finish the item), add to `## File-level changes` and keep going; only ask if the expansion is > ~2 files or shifts the `## Goal`.

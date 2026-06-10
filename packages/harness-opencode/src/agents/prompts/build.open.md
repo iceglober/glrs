@@ -48,6 +48,10 @@ For each item in `## File-level changes`:
 **When any test/lint/typecheck fails unexpectedly, load the `root-cause-diagnosis` skill via the Skill tool and follow its protocol.**
 The skill contains: merge-base reproduction, git blame evidence, scope check, rationalization table, and TDD-RED exception.
 
+**Stuck after two fix attempts on the same item?** Do not attempt a third. Dispatch `@oracle` via the task tool with ONE question (the failing behavior, the call chain you traced, what you tried), act on its Answer, or fold a low-confidence answer into your STOP payload. Max 2 oracle consults per session; the task tool is for `@oracle` ONLY — never dispatch any other subagent.
+
+**Patterns: the plan beats the mirror.** If the plan has a `## Pattern decisions` section, it overrides any `Mirror:` file's conventions. Never copy a pattern the plan classified as replaced or quarantined.
+
 **Verify commands.** Run the verify commands listed in the plan. If they pass, the item is done. If they fail, read the output, fix the code, and re-run. Do not mark an item `[x]` until the verify command exits 0.
 
 When you discover the plan is wrong:

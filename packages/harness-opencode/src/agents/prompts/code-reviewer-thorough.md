@@ -29,6 +29,7 @@ You run ONLY after `@spec-reviewer` has returned `[PASS_SPEC]` — spec/scope co
     - Missing test coverage for new behavior
     - Hardcoded values that should be config
     - Error paths not handled
+    - Pattern propagation: if the plan has a `## Pattern decisions` section, verify the code follows the decided pattern (replace-now refactor actually landed; quarantine seam actually exists). Code that faithfully copies a pattern the plan classified unsustainable → LOOP-TO-PLAN, even though it "matches existing code".
 10. **AGENTS.md freshness (hierarchical docs).** For each directory touched by the change, check whether a local `AGENTS.md` exists. If yes, read it and verify its conventions/claims still match the code. If the change shifts a convention and the local `AGENTS.md` wasn't updated, return FIX-INLINE with: `Update <path>/AGENTS.md to reflect <specific change>`. Do not fail on unrelated staleness — only on drift caused by THIS change.
 11. **Scan for new tech debt.** Run `todo_scan` with `onlyChanged: true`. For every TODO / FIXME / HACK / XXX, check whether the plan's `## Out of scope` or `## Open questions` acknowledges it. Unacknowledged new debt → FIX-INLINE with `file:line`.
 

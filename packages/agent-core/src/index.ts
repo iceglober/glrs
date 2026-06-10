@@ -35,6 +35,7 @@ export const AGENTS = {
   PLAN_ULTRA: "plan-ultra",
   GAP_ANALYZER: "gap-analyzer",
   ARCHITECTURE_ADVISOR: "architecture-advisor",
+  ORACLE: "oracle",
   CODE_SEARCHER: "code-searcher",
   DOCS_MAINTAINER: "docs-maintainer",
   LIB_READER: "lib-reader",
@@ -99,6 +100,7 @@ export const AGENT_TIERS: Record<AgentName, ModelTier> = {
   "autopilot-prime": "deep",
   "autopilot-fast": "autopilot-execute",
   "architecture-advisor": "deep",
+  oracle: "deep",
   "plan-reviewer": "mid",
   "gap-analyzer": "mid",
   research: "deep",
@@ -194,6 +196,10 @@ export const AGENT_DOC_META: Record<AgentName, AgentDocMeta> = {
   "architecture-advisor": {
     category: "subagent",
     role: "Architecture guidance",
+  },
+  oracle: {
+    category: "subagent",
+    role: "Bounded deep-reasoning consult — one hard question, ~5 tool calls, direct answer with evidence",
   },
   "code-searcher": { category: "subagent", role: "Codebase search" },
   "docs-maintainer": { category: "subagent", role: "Documentation updates" },

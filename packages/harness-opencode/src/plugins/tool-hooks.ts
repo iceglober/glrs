@@ -148,6 +148,9 @@ const PASSIVE_TOOLS = new Set(["read", "grep", "glob", "list", "webfetch"]);
 // deep-tier build agent.
 const DEFAULT_COMPLEXITY_WARN = 4;
 const DEFAULT_DEEP_AGENT = "@build-deep";
+// Bounded read-only consult suggested for comprehension gaps (the agent can't
+// articulate WHY it's failing) — cheaper than a full deep-tier re-dispatch.
+const DEFAULT_CONSULT_AGENT = "@oracle";
 // Bash commands that look like running tests / type-checks / builds — i.e. a
 // "verify" step. Conservative: only well-known runners, so an ordinary command
 // that merely contains "test" in a path doesn't count.
@@ -285,6 +288,8 @@ interface ToolHooksConfig {
     complexityWarn: number;
     /** Subagent to suggest when the complexity hint fires. */
     deepAgent: string;
+    /** Bounded consult subagent to suggest for comprehension gaps. */
+    consultAgent: string;
   };
   readDedup: {
     enabled: boolean;
@@ -365,6 +370,10 @@ function resolveConfig(config: Config, pluginOptions?: PluginOptions): ToolHooks
         typeof ld.deepAgent === "string" && ld.deepAgent
           ? ld.deepAgent
           : DEFAULT_DEEP_AGENT,
+      consultAgent:
+        typeof ld.consultAgent === "string" && ld.consultAgent
+          ? ld.consultAgent
+          : DEFAULT_CONSULT_AGENT,
     },
     readDedup: {
       enabled: rd.enabled !== false,
@@ -897,15 +906,25 @@ function checkComplexityHint(
   return { suggest, fails: sess.failedVerifyRuns };
 }
 
-/** Soft, in-band hint suggesting delegation to a deeper-reasoning subagent. */
-function complexityHint(deepAgent: string, fails: number): string {
+/** Soft, in-band hint suggesting delegation to a deeper-reasoning subagent.
+ * Routes by gap type: comprehension gaps (can't articulate WHY it fails) go to
+ * the bounded consult agent — diagnosis for a few tool calls — while
+ * implementation-depth gaps go to the deep-tier executor. */
+function complexityHint(
+  deepAgent: string,
+  consultAgent: string,
+  fails: number,
+): string {
   return (
     `\n\n--- COMPLEXITY CHECK ---\n` +
     `You've had ${fails} failing test/build runs this session and haven't delegated. ` +
-    `If you're struggling with inherent complexity — a root cause several layers deep, ` +
-    `subtle cross-module behavior, or fixes that keep surfacing new failures — package ` +
-    `what you've learned and delegate to ${deepAgent} (a deeper-reasoning model) rather ` +
-    `than continuing to iterate inline. If this is ordinary polish, ignore this.\n---`
+    `If the gap is comprehension — you can't articulate WHY this fails in one sentence — ` +
+    `dispatch ${consultAgent} with that ONE question plus what you've traced (files read, ` +
+    `call chain, failed attempts); it's a bounded deep-reasoning consult, far cheaper than ` +
+    `more blind retries. If you understand the why but the fix itself needs deep reasoning — ` +
+    `a root cause several layers down, subtle cross-module behavior, invariants across ` +
+    `transitions — package what you've learned and delegate to ${deepAgent}. ` +
+    `If this is ordinary polish, ignore this.\n---`
   );
 }
 
@@ -1105,7 +1124,11 @@ const plugin: Plugin = async ({ client }, options) => {
             : null;
         const cx = checkComplexityHint(cfg.loopDetection, sess, toolName, cmd, ok);
         if (cx.suggest) {
-          output.output += complexityHint(cfg.loopDetection.deepAgent, cx.fails);
+          output.output += complexityHint(
+            cfg.loopDetection.deepAgent,
+            cfg.loopDetection.consultAgent,
+            cx.fails,
+          );
           track(
             "loop_detected",
             buildLoopProps({
@@ -1229,6 +1252,7 @@ export const __test__ = {
   DEFAULT_REPEAT_ABORT,
   DEFAULT_COMPLEXITY_WARN,
   DEFAULT_DEEP_AGENT,
+  DEFAULT_CONSULT_AGENT,
   PASSIVE_TOOLS,
   DEFAULT_PER_TOOL_SHAPES,
   DEFAULT_GREP_HEAD_MATCHES,

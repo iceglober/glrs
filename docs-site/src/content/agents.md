@@ -1,6 +1,6 @@
 # Agents
 
-27 agents. 4 user-selectable, the rest are subagents dispatched automatically.
+28 agents. 4 user-selectable, the rest are subagents dispatched automatically.
 
 ## User-selectable
 
@@ -29,6 +29,7 @@ Dispatched by user-selectable agents. You don't pick these directly.
 | `plan-ultra` | deep | DAG planner for wave-based dispatch |
 | `gap-analyzer` | mid | Identifies gaps in plans |
 | `architecture-advisor` | deep | Architecture guidance |
+| `oracle` | deep | Bounded deep-reasoning consult — one hard question, ~5 tool calls, direct answer with evidence |
 | `code-searcher` | fast | Codebase search |
 | `docs-maintainer` | mid | Documentation updates |
 | `lib-reader` | mid | Library/dependency reader |

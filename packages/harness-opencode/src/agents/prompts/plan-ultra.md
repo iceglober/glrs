@@ -40,6 +40,22 @@ Before drafting, use Serena MCP tools FIRST for TypeScript symbol lookups (`sere
 
 The plan must reference real file paths and real symbol names. Never invent.
 
+**Hard-question escape hatch.** If during grounding you hit a question that needs reasoning depth rather than more searching (a subsystem whose code is scattered, a root cause you can't articulate, a tradeoff hinging on a subtle constraint) and you are NOT running on a deep-tier model, dispatch `@oracle` via the task tool with that ONE question plus what you've traced so far. Don't ground a plan on a guess.
+
+## 2.5 Pattern decision
+
+**Load the `pattern-first` skill via the Skill tool** when ANY of:
+- The plan introduces a **new concept** — a new kind of entity, config surface, lifecycle, or cross-cutting mechanism with no incumbent to copy.
+- The plan adds the **Nth instance of an existing theme** (another agent, provider, command, handler — anything that already exists 2+ times).
+- A `Mirror:` file you're about to reference looks like shaky precedent (per-instance boilerplate, hand-synced parallel lists, convention-only invariants).
+
+Follow the skill's procedure: inventory the incumbent pattern, run the sustainability test, then decide — **follow / extend / replace-now / quarantine / set**. Record the outcome in a `## Pattern decisions` section of the plan (format in the skill). Two consequences feed back into the plan body:
+
+- **replace-now** → the refactor becomes its own phase (or its own file-level changes group) sequenced BEFORE the phase that adds the new instance, with its own acceptance criteria. Never a silent drive-by.
+- **quarantine** → the new code is planned on the better pattern behind a named seam; the migration of old instances is recorded as explicit follow-up debt under `## Open questions`.
+
+Existing code is precedent, not authority: a plan that copies a pattern it identified as unsustainable — without an explicit quarantine decision — will be rejected by `@plan-reviewer`. If none of the triggers apply, skip this step (no empty section needed).
+
 ## 3. Pre-draft gap analysis
 
 Delegate to `@gap-analyzer` via the task tool. Provide:
@@ -125,6 +141,9 @@ Wave 3: phase_4 (depends on phase_2 and phase_3)
   verify: <command>
 \`\`\`
 
+## Pattern decisions
+<Required when step 2.5 triggered; omit otherwise. Lives in main.md — phases reference it, never restate it.>
+
 ## Out of scope
 - <items>
 
@@ -203,6 +222,11 @@ Write `{{PLAN_DIR}}/<slug>.md` with this exact structure:
   verify: ...
 `​`​`
 
+## Pattern decisions
+<Required when step 2.5 triggered (new concept / Nth instance / shaky mirror); omit otherwise.
+One entry per theme, format from the pattern-first skill:
+Incumbent, Instances, Classification, Decision (follow|extend|replace-now|quarantine|set), Consequence.>
+
 ## File-level changes
 For each file:
 ### <relative/path/to/file>
@@ -260,6 +284,7 @@ Before delegating to `@plan-reviewer`, run this checklist yourself:
   - `similar to Task N` (without naming the specific file/symbol)
   - `write tests for the above` (without naming specific test file paths)
 - **Type/name consistency:** Are all file paths, symbol names, and type names consistent throughout the plan? Cross-check `## File-level changes` against `## Acceptance criteria` for naming drift.
+- **Pattern coverage:** If the plan introduces a new concept or adds another instance of an existing theme, does `## Pattern decisions` exist with a named incumbent, classification, and decision (step 2.5)? Does every `Mirror:` reference agree with the decision — no mirror pointing at a pattern the plan classified unsustainable without a quarantine note?
 
 Fix any issues found before proceeding to step 6.
 

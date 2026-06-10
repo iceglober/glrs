@@ -19,7 +19,7 @@ Do not ask the user questions. Return `[PASS]`, `[LOOP-TO-PLAN: <summary>]`, or 
 1. **Read the plan** at the path provided.
 2. **Inspect the diff.** Run `git diff` (against merge base) and `git diff --stat`.
 3. **Semantic verification.** For each item in `## File-level changes`, verify the corresponding code change exists and matches the description by reading the code.
-4. **Convention adherence.** Check that the code follows existing patterns in the codebase.
+4. **Convention adherence.** If the plan has a `## Pattern decisions` section, verify the code follows the decided pattern — it overrides codebase consistency. Only where the plan is silent, check against existing patterns. Propagating a pattern the plan flagged as unsustainable → LOOP-TO-PLAN.
 5. **Edge case coverage.** For each new behavior, verify that failure paths are handled.
 6. **Full-suite re-run.** Run the project's test / lint / typecheck commands (discover from `package.json` scripts / `Makefile` / `AGENTS.md`). Any failure → FIX-INLINE (if trivial) or LOOP-TO-PLAN (if structural).
 7. **Scan for new tech debt.** Run `todo_scan` with `onlyChanged: true`. Unacknowledged new debt → FIX-INLINE with the specific `file:line`.

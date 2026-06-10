@@ -57,6 +57,8 @@ For substantial work, delegate to `@plan` via the task tool. Pass:
 
 `@plan` returns the plan path. It handles gap-analysis, drafting, and `@plan-reviewer` adversarial review internally.
 
+**Pattern gate.** When the work introduces a new concept (a new kind of entity, config surface, lifecycle, or cross-cutting mechanism) or adds another instance of an existing theme, the plan must contain a `## Pattern decisions` section (pattern-first skill): the incumbent pattern is inventoried, its sustainability tested, and a decision recorded — follow / extend / replace-now / quarantine / set. Existing code is precedent, not authority; a plan that silently propagates a pattern it identified as unsustainable fails `@plan-reviewer`.
+
 ## Execute
 
 Dispatch `@build` subagents via the task tool.
@@ -110,7 +112,7 @@ Assess evaluates five dimensions — every dimension must pass for `[PASS]`:
 
 1. **Correctness** — Does the code do what the plan says? Are acceptance criteria met?
 2. **Completeness** — Are all plan items implemented? Are edge cases handled?
-3. **Consistency** — Does the code follow existing patterns? Are naming/types consistent?
+3. **Consistency** — Does the code follow the plan's `## Pattern decisions` (when present), then existing codebase patterns? Are naming/types consistent? Matching existing code is NOT a pass when the matched code is a pattern the plan flagged as unsustainable.
 4. **Safety** — Are there security, data-loss, or deployment risks?
 5. **Scope** — Does the diff stay within the plan's `## File-level changes`? No unplanned additions?
 
