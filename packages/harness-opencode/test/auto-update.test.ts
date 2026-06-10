@@ -6,6 +6,7 @@ import {
   inspectCachePin,
   refreshPluginCache,
   readOurPackageVersion,
+  pickInstaller,
   PACKAGE_NAME,
   getOpenCodeCachePackageDir,
 } from "../src/auto-update.js";
@@ -225,7 +226,7 @@ describe("refreshPluginCache", () => {
     expect(pkgRaw).toContain("0.1.2");
   });
 
-  it("rewrites package.json, deletes lockfiles, and removes node_modules on real refresh", async () => {
+  it("rewrites package.json, deletes lockfiles, and PRESERVES node_modules on real refresh", async () => {
     writeCachePin(tmpCacheDir, "0.1.2", { withNodeModules: true });
     const nmPath = path.join(tmpCacheDir, "node_modules");
     expect(fs.existsSync(nmPath)).toBe(true);
@@ -245,8 +246,10 @@ describe("refreshPluginCache", () => {
     // lockfiles deleted (package manager regenerates on reinstall)
     expect(fs.existsSync(path.join(tmpCacheDir, "package-lock.json"))).toBe(false);
 
-    // node_modules removed
-    expect(fs.existsSync(nmPath)).toBe(false);
+    // node_modules PRESERVED — the install is in-place; deleting the tree
+    // before a successful install is how the 3.16.0 incident bricked plugin
+    // load (failed npm install on a bun-only machine + raced recovery).
+    expect(fs.existsSync(nmPath)).toBe(true);
   });
 
   it("handles missing lockfile gracefully (writes only package.json)", async () => {
@@ -299,5 +302,44 @@ describe("readOurPackageVersion", () => {
     // Pass a bogus file URL that won't find anything upward.
     const version = readOurPackageVersion("file:///nonexistent/deep/path/foo.js");
     expect(version).toBe("0.0.0");
+  });
+});
+
+describe("pickInstaller", () => {
+  // Regression guard for the 3.16.0 incident: on a bun-only machine the
+  // updater ran `npm install` (ENOENT, swallowed) after deleting
+  // node_modules, leaving a cache OpenCode couldn't load.
+  it("prefers npm when available", () => {
+    const i = pickInstaller((cmd) => (cmd === "npm" ? "/usr/bin/npm" : null));
+    expect(i).toEqual({ cmd: "npm", args: ["install", "--no-audit", "--no-fund"] });
+  });
+
+  it("falls back to bun on npm-less machines", () => {
+    const i = pickInstaller((cmd) => (cmd === "bun" ? "/usr/bin/bun" : null));
+    expect(i).toEqual({ cmd: "bun", args: ["install"] });
+  });
+
+  it("returns null when neither exists (rewrite-only, manual install fixes)", () => {
+    expect(pickInstaller(() => null)).toBeNull();
+  });
+});
+
+describe("refreshPluginCache preserves node_modules", () => {
+  // The updater must never delete node_modules before a successful install:
+  // a deleted tree + failed/raced install bricks plugin load. With
+  // skipInstall (no install runs at all), the existing tree must survive.
+  it("leaves an existing node_modules tree intact when install is skipped", async () => {
+    const dir = tmpCacheDir;
+    const nmFile = path.join(dir, "node_modules", PACKAGE_NAME, "dist", "marker.txt");
+    fs.mkdirSync(path.dirname(nmFile), { recursive: true });
+    fs.writeFileSync(nmFile, "old version still loads");
+    writeCachePin(dir, "1.0.0");
+
+    const result = await refreshPluginCache("1.0.0", "2.0.0", {
+      cacheDir: dir,
+      skipInstall: true,
+    });
+    expect(result.outcome).toBe("refreshed");
+    expect(fs.existsSync(nmFile)).toBe(true);
   });
 });
