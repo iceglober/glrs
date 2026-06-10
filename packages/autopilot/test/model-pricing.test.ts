@@ -26,8 +26,17 @@ describe("MODEL_PRICING", () => {
     expect(MODEL_PRICING["claude-sonnet"]).toEqual({ input: 3, output: 15 });
   });
 
-  it("Haiku pricing is $0.25/$1.25 per million tokens", () => {
-    expect(MODEL_PRICING["claude-haiku"]).toEqual({ input: 0.25, output: 1.25 });
+  it("current Haiku (4.5) pricing is $1/$5 per million tokens", () => {
+    expect(MODEL_PRICING["claude-haiku"]).toEqual({ input: 1, output: 5 });
+  });
+
+  it("legacy Haiku 3 keeps its historical $0.25/$1.25 pricing", () => {
+    expect(MODEL_PRICING["claude-3-haiku"]).toEqual({ input: 0.25, output: 1.25 });
+  });
+
+  it("current Opus (4.5+) pricing is $5/$25; Opus 4.1 keeps $15/$75", () => {
+    expect(MODEL_PRICING["claude-opus"]).toEqual({ input: 5, output: 25 });
+    expect(MODEL_PRICING["claude-opus-4-1"]).toEqual({ input: 15, output: 75 });
   });
 });
 
@@ -60,9 +69,13 @@ describe("findPricing", () => {
 
   it("returns undefined for unknown models", () => {
     expect(findPricing("unknown-model-xyz")).toBeUndefined();
-    expect(findPricing("glm-5")).toBeUndefined();
     expect(findPricing("kimi-k1")).toBeUndefined();
     expect(findPricing("")).toBeUndefined();
+  });
+
+  it("matches current Opus generations at the repriced rate", () => {
+    const p = findPricing("global.anthropic.claude-opus-4-7");
+    expect(p).toEqual({ input: 5, output: 25 });
   });
 });
 
@@ -93,10 +106,10 @@ describe("estimateCost", () => {
     expect(cost).toBeCloseTo(1.05, 6);
   });
 
-  it("computes correct cost for Haiku with small token counts", () => {
-    // 10K input at $0.25/M + 5K output at $1.25/M = $0.0025 + $0.00625 = $0.00875
-    const cost = estimateCost("claude-haiku", { input: 10_000, output: 5_000 });
-    expect(cost).toBeCloseTo(0.00875, 6);
+  it("computes correct cost for current Haiku with small token counts", () => {
+    // 10K input at $1/M + 5K output at $5/M = $0.01 + $0.025 = $0.035
+    const cost = estimateCost("claude-haiku-4-5", { input: 10_000, output: 5_000 });
+    expect(cost).toBeCloseTo(0.035, 6);
   });
 
   it("matches by full Bedrock model ID", () => {
@@ -107,8 +120,10 @@ describe("estimateCost", () => {
     expect(cost).toBeCloseTo(3, 6);
   });
 
-  it("returns 0 for GLM-5 (TBD pricing)", () => {
-    expect(estimateCost("glm-5", { input: 1000, output: 500 })).toBe(0);
+  it("prices GLM-5 at the models.dev catalog rate ($1/$3.20)", () => {
+    // 1M input at $1/M + 1M output at $3.2/M
+    const cost = estimateCost("zai.glm-5", { input: 1_000_000, output: 1_000_000 });
+    expect(cost).toBeCloseTo(4.2, 6);
   });
 
   it("returns 0 for Kimi (TBD pricing)", () => {

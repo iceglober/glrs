@@ -11,10 +11,12 @@
  *
  * This module self-heals by detecting a stale cache pin and atomically
  * rewriting the cache-dir's `package.json` + `package-lock.json` to point at
- * the latest version. It then removes `node_modules/` and runs `npm install`
- * to ensure the new version is immediately available. The plugin currently
- * running in-process is still the old version — the refresh takes effect on
- * the NEXT OpenCode restart.
+ * the latest version. It then runs an IN-PLACE install (npm when available,
+ * falling back to bun on npm-less machines) so the new version is immediately
+ * available. `node_modules/` is never deleted up front — if the install
+ * fails, the previous version keeps loading and a later run retries. The
+ * plugin currently running in-process is still the old version — the refresh
+ * takes effect on the NEXT OpenCode restart.
  *
  * Zero-user-filesystem-writes invariant (see AGENTS.md): this writes only
  * inside OpenCode's cache dir for OUR own package. It does NOT touch
@@ -29,8 +31,12 @@
  *   - Skip rewrite if the cache dir's package.json declares a non-exact
  *     version (e.g. `^0.6.0`) — the user is managing pins themselves.
  *   - Cross-check package name in cache dir matches ours before writing.
- *   - Best-effort `npm install` in the cache dir after rewriting; if it
- *     fails, next `glrs harness install` will fix it.
+ *   - Best-effort in-place install (npm → bun fallback) after rewriting; if
+ *     it fails, the OLD node_modules is left intact so the previous version
+ *     still loads, and the next session (or `glrs harness install`) retries.
+ *     Never delete node_modules before a successful install — a deleted
+ *     tree plus a failed/raced install is how a half-extracted package
+ *     bricks plugin load ("Could not find shared file: ...").
  *   - `HARNESS_OPENCODE_AUTO_UPDATE=0` disables ONLY the cache rewrite
  *     (update check still runs and toasts).
  *   - `HARNESS_OPENCODE_UPDATE_CHECK=0` disables both check and rewrite.
@@ -44,6 +50,25 @@ import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 
 export const PACKAGE_NAME = "@glrs-dev/harness-plugin-opencode";
+
+/**
+ * Pick the package manager used for the in-place cache install. Prefer npm
+ * (OpenCode's cache uses npm lockfile format); fall back to bun for
+ * npm-less machines (bun-only installs are common — bun ignores the npm
+ * lockfile and installs from the rewritten package.json, which is exactly
+ * the pin we just wrote). Returns null when neither exists; the rewrite
+ * alone is then left for a manual `glrs harness install`.
+ *
+ * `which` is injectable for tests; defaults to Bun.which (this module only
+ * ever runs under the bun runtime — OpenCode plugins and the glrs CLI).
+ */
+export function pickInstaller(
+  which: (cmd: string) => string | null = (cmd) => Bun.which(cmd),
+): { cmd: string; args: string[] } | null {
+  if (which("npm")) return { cmd: "npm", args: ["install", "--no-audit", "--no-fund"] };
+  if (which("bun")) return { cmd: "bun", args: ["install"] };
+  return null;
+}
 
 export function getOpenCodeCachePackageDir(): string {
   const cacheHome =
@@ -255,34 +280,33 @@ export async function refreshPluginCache(
       }
     }
 
-    // 3. Remove node_modules/ and reinstall so the new version is
-    // immediately available. OpenCode does NOT reliably reinstall when
-    // it finds a cache dir without node_modules — it silently fails to
-    // load the plugin. We must install ourselves.
-    const nmPath = path.join(cacheDir, "node_modules");
-    try {
-      await fs.rm(nmPath, { recursive: true, force: true });
-    } catch {
-      // ignore — install below will overwrite anyway
-    }
-
-    // Run npm install in the cache dir. Use npm (not bun) because
-    // OpenCode's cache uses npm lockfile format.
+    // 3. In-place install so the new version is immediately available.
+    // Do NOT remove node_modules first: with the tree gone, a failed or
+    // interrupted install leaves a cache OpenCode can't load (it does not
+    // reliably reinstall a dir without node_modules), and two OpenCode
+    // instances racing to recover can tear the extraction — the 3.16.0
+    // "Could not find shared file: workflow-mechanics.md" incident. An
+    // in-place install either succeeds (new version next restart) or
+    // fails leaving the old, working tree.
     if (!ctx.skipInstall) {
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const child = execFile(
-            "npm",
-            ["install", "--no-audit", "--no-fund"],
-            { cwd: cacheDir, timeout: 30_000 },
-            (err) => (err ? reject(err) : resolve()),
-          );
-          // Prevent zombie processes
-          child.unref?.();
-        });
-      } catch {
-        // If npm install fails, the pin rewrite still happened. Next
-        // manual `glrs harness install` will fix it.
+      const installer = pickInstaller();
+      if (installer) {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const child = execFile(
+              installer.cmd,
+              installer.args,
+              { cwd: cacheDir, timeout: 60_000 },
+              (err) => (err ? reject(err) : resolve()),
+            );
+            // Prevent zombie processes
+            child.unref?.();
+          });
+        } catch {
+          // Install failed — the pin rewrite still happened and the old
+          // node_modules still loads. Next session (or a manual
+          // `glrs harness install`) retries.
+        }
       }
     }
 

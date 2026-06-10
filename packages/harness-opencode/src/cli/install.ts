@@ -37,24 +37,29 @@ const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
 
 // The harness is a dual-target opencode plugin: the server target (hooks/
 // tools/agents, the `.` export) and the TUI sidebar (the `./tui` export).
-// opencode loads each `plugin`-array entry independently, so the sidebar only
-// activates when its subpath is its OWN entry — being in the array as the
-// server tuple is not enough. This is exactly what `opencode plugin <pkg>`
-// writes. Intentionally UNPINNED: a versioned subpath (`…@1.2.3/tui`) collapses
-// to the same `pluginName()` as the server entry and would be deduped away,
-// never registering. The sidebar is decoupled (it reads job state off disk), so
-// running it at `latest` alongside a pinned server is harmless.
-const TUI_PLUGIN_ENTRY = `${PLUGIN_NAME}/tui`;
+// On opencode ≥1.16 the TUI target is registered in a SEPARATE config file —
+// `tui.json` next to `opencode.json` — listing the BASE package name; opencode
+// resolves the package's `exports["./tui"]` itself. This is exactly what
+// `opencode plugin <pkg>` writes ("Detected server + tui targets" → adds the
+// package to both opencode.json and tui.json).
+//
+// The previous registration (a `<pkg>/tui` SUBPATH entry in the opencode.json
+// `plugin` array) is not a valid plugin spec on opencode ≥1.16: the loader
+// parses it as a package dir and errors at startup —
+//   "Could not read package.json: ENOENT <cwd>/@glrs-dev/…/tui/package.json
+//    failed to install plugin"
+// — and the sidebar never loads. `ensureTuiPluginRegistered` migrates those
+// legacy entries away.
 
 /**
- * Is this plugin-array entry the harness's TUI sidebar target? Matches the
- * canonical unpinned form and the pinned subpath form a user may have written
- * by hand via `opencode plugin`.
+ * Is this plugin-array entry the LEGACY (broken on opencode ≥1.16) TUI
+ * subpath form? Matches the unpinned form this installer used to write and
+ * the pinned subpath form a user may have written by hand.
  */
 function isTuiPluginEntry(entry: unknown): boolean {
   if (typeof entry !== "string") return false;
   return (
-    entry === TUI_PLUGIN_ENTRY ||
+    entry === `${PLUGIN_NAME}/tui` ||
     (entry.startsWith(`${PLUGIN_NAME}@`) && entry.endsWith("/tui"))
   );
 }
@@ -612,50 +617,81 @@ export function writePluginToggles(
 }
 
 /**
- * Ensure the TUI sidebar target is registered as its own entry in the `plugin`
- * array. Idempotent: a no-op when an equivalent `…/tui` entry already exists.
+ * Ensure the TUI sidebar target is registered the way opencode ≥1.16 expects:
+ * the BASE package name listed in `tui.json` (sibling of opencode.json) —
+ * verified against what `opencode plugin <pkg>` itself writes. Also MIGRATES
+ * away the legacy `<pkg>/tui` subpath entries this installer used to put in
+ * the `plugin` array, which opencode ≥1.16 rejects with a startup error
+ * ("Could not read package.json … failed to install plugin") — the sidebar
+ * never loaded from them.
  *
  * This runs on EVERY install path, including the "already fully configured"
- * early returns below — that's the upgrade case (a user who has the server
- * plugin from before the sidebar shipped), and it's the whole reason the
- * sidebar never appeared from a published install: nothing ever added the
- * second entry. Separate from mergeConfig so it covers the paths that return
- * before the merge runs.
+ * early returns below — that's the upgrade case. Separate from mergeConfig so
+ * it covers the paths that return before the merge runs.
  *
- * Returns { changed: false } when the file is absent (fresh installs get the
- * entry via the built config + seedConfig) or unparseable, or already present.
+ * Idempotent: { changed: false } when tui.json already lists the package and
+ * no legacy entries remain.
  */
 export function ensureTuiPluginRegistered(
   configPath: string,
   opts: { dryRun: boolean },
 ): { changed: boolean; bakPath?: string } {
+  let changed = false;
+  let bakPath: string | undefined;
+
+  // 1. Migrate: strip legacy `<pkg>/tui` entries from the plugin array.
   try {
-    if (!fs.existsSync(configPath)) return { changed: false };
-
-    const raw = fs.readFileSync(configPath, "utf8");
-    const config = JSON.parse(raw);
-
-    const plugins: unknown[] = Array.isArray(config.plugin) ? config.plugin : [];
-    if (plugins.some(isTuiPluginEntry)) return { changed: false };
-
-    if (opts.dryRun) {
-      info(`[dry-run] Would register the background-jobs sidebar (${TUI_PLUGIN_ENTRY})`);
-      return { changed: true };
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      const plugins: unknown[] = Array.isArray(config.plugin) ? config.plugin : [];
+      if (plugins.some(isTuiPluginEntry)) {
+        if (opts.dryRun) {
+          info("[dry-run] Would remove the legacy `…/tui` plugin entry (errors on opencode ≥1.16)");
+          changed = true;
+        } else {
+          bakPath = `${configPath}.bak.${Date.now()}-${process.pid}`;
+          fs.copyFileSync(configPath, bakPath);
+          config.plugin = plugins.filter((e) => !isTuiPluginEntry(e));
+          fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+          ok("Removed the legacy `…/tui` plugin entry (sidebar now registers via tui.json)");
+          info(`Backup: ${bakPath}`);
+          changed = true;
+        }
+      }
     }
-
-    const bakPath = `${configPath}.bak.${Date.now()}-${process.pid}`;
-    fs.copyFileSync(configPath, bakPath);
-
-    config.plugin = [...plugins, TUI_PLUGIN_ENTRY];
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
-
-    ok("Registered the background-jobs sidebar (TUI plugin)");
-    info(`Backup: ${bakPath}`);
-    return { changed: true, bakPath };
   } catch {
     // Best-effort — never break install over the sidebar registration.
-    return { changed: false };
   }
+
+  // 2. Register: list the base package in tui.json. opencode resolves the
+  //    package's `exports["./tui"]` itself.
+  try {
+    const tuiPath = path.join(path.dirname(configPath), "tui.json");
+    let tui: { plugin?: unknown[] } & Record<string, unknown> = {};
+    if (fs.existsSync(tuiPath)) {
+      tui = JSON.parse(fs.readFileSync(tuiPath, "utf8"));
+    }
+    const tuiPlugins: unknown[] = Array.isArray(tui.plugin) ? tui.plugin : [];
+    const registered = tuiPlugins.some(
+      (e) => e === PLUGIN_NAME || (typeof e === "string" && e.startsWith(`${PLUGIN_NAME}@`)),
+    );
+    if (!registered) {
+      if (opts.dryRun) {
+        info(`[dry-run] Would register the background-jobs sidebar in ${tuiPath}`);
+        changed = true;
+      } else {
+        tui.plugin = [...tuiPlugins, PLUGIN_NAME];
+        fs.mkdirSync(path.dirname(tuiPath), { recursive: true });
+        fs.writeFileSync(tuiPath, JSON.stringify(tui, null, 2) + "\n");
+        ok("Registered the background-jobs sidebar (tui.json)");
+        changed = true;
+      }
+    }
+  } catch {
+    // Best-effort — never break install over the sidebar registration.
+  }
+
+  return bakPath ? { changed, bakPath } : { changed };
 }
 
 export interface InstallOptions {
@@ -985,12 +1021,12 @@ export async function install(opts: InstallOptions = {}): Promise<void> {
     ? [pluginEntry, pluginOpts]
     : pluginEntry;
 
-  // Include both targets: the server tuple/string AND the TUI sidebar subpath.
-  // On a fresh install seedConfig writes this verbatim; on an existing config
-  // mergeConfig unions the sidebar entry in (deduped by its distinct name).
+  // Server target only — the TUI sidebar registers separately in tui.json
+  // via ensureTuiPluginRegistered (a `<pkg>/tui` subpath entry here errors at
+  // startup on opencode ≥1.16).
   const config: Record<string, unknown> = {
     $schema: "https://opencode.ai/config.json",
-    plugin: [pluginValue, TUI_PLUGIN_ENTRY],
+    plugin: [pluginValue],
   };
 
   // Optional MCPs — only prompt for ones not already configured.
