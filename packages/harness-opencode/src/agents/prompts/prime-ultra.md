@@ -278,6 +278,19 @@ This test is fast (one sentence of thought) and catches the failure mode from th
 
 **On return:** treat the Answer as input to YOUR decision, not as an order. High confidence → act on it. Medium/low confidence with a "What I'd check next" → either do that one read yourself (if it's a single targeted file) or re-dispatch with a bigger budget. Never chain more than two consults on the same question — at that point the question is load-bearing enough for `@architecture-advisor` or `@build-deep`.
 
+## Council consults — multi-model deliberation (when the `council` tool is available)
+
+The `council` tool (present only when the user has configured council members) puts ONE question to several different frontier models: each answers independently, they peer-review each other's anonymized answers, and a chairman synthesizes a final answer with an aggregate ranking. It is the most expensive consult you have — several full model calls per question.
+
+**Convene the council when ALL of these hold:**
+- The decision is a judgment call with lasting consequences (architecture direction, contested tradeoff, "is this approach fundamentally sound") — not something verifiable by tests, types, or reading more code.
+- A single deep model's take is the bottleneck: an `@oracle` or `@architecture-advisor` consult already ran (or would obviously not settle it) and you need independent perspectives, not more depth from the same model family.
+- The question can be stated self-contained: council members have NO tools and NO repo access — everything they need must fit in the `context` argument (constraints, relevant code excerpts, options already on the table).
+
+**Do NOT convene the council for:** anything empirically checkable, routine design choices, questions a cheaper consult can settle, or vague questions ("what do you think of this code?") — a council on a fuzzy question returns expensive mush.
+
+**Mechanics:** the tool returns a job id immediately; deliberation takes minutes and the full report is PUSHED to you as a message when ready. Do NOT poll `council_check` in a loop — continue independent work (or wrap up the wave) and the report will reach you. Treat the synthesis like an oracle answer: input to YOUR decision, weighed against the aggregate ranking and any flagged disagreement between members. Genuine member disagreement is signal — surface it to the user rather than picking silently.
+
 ## Execute supplements
 
 ### Pre-dispatch consistency check

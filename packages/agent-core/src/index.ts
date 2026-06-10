@@ -44,6 +44,7 @@ export const AGENTS = {
   RESEARCH_WEB: "research-web",
   RESEARCH_LOCAL: "research-local",
   RESEARCH_AUTO: "research-auto",
+  COUNCIL_MEMBER: "council-member",
   // Autopilot-only (not user-selectable; driven by the Ralph loop)
   AUTOPILOT_PRIME: "autopilot-prime",
   AUTOPILOT_FAST: "autopilot-fast",
@@ -119,6 +120,10 @@ export const AGENT_TIERS: Record<AgentName, ModelTier> = {
   debriefer: "mid",
   designer: "mid",
   "code-searcher": "fast",
+  // Council seats get their model per-message from the council tool's
+  // configured member list; this tier is only the fallback when a prompt
+  // arrives without a model override.
+  "council-member": "mid",
 };
 
 /**
@@ -214,6 +219,10 @@ export const AGENT_DOC_META: Record<AgentName, AgentDocMeta> = {
   "research-auto": {
     category: "subagent",
     role: "Auto-selecting research subagent",
+  },
+  "council-member": {
+    category: "subagent",
+    role: "LLM-council seat — answers and peer-reviews as a pure completion (no tools). Driven by the `council` tool, one seat per configured member model.",
   },
   "autopilot-prime": {
     category: "autopilot",

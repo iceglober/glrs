@@ -52,6 +52,7 @@ describe("AGENT_TIERS", () => {
     ]);
     expect(mid).toEqual([
       AGENTS.AGENTS_MD_WRITER,
+      AGENTS.COUNCIL_MEMBER,
       AGENTS.DEBRIEFER,
       AGENTS.DESIGNER,
       AGENTS.DOCS_MAINTAINER,

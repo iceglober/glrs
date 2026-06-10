@@ -69,6 +69,7 @@ const codeSearcherPrompt = readPrompt("code-searcher.md");
 const gapAnalyzerPrompt = readPrompt("gap-analyzer.md");
 const architectureAdvisorPrompt = readPrompt("architecture-advisor.md");
 const oraclePrompt = readPrompt("oracle.md");
+const councilMemberPrompt = readPrompt("council-member.md");
 const docsMaintainerPrompt = readPrompt("docs-maintainer.md");
 const libReaderPrompt = readPrompt("lib-reader.md");
 const agentsMdWriterPrompt = readPrompt("agents-md-writer.md");
@@ -586,6 +587,56 @@ const ORACLE_PERMISSIONS = {
   linear: "deny",
 };
 
+// Council member: a pure completion. The council tool drives these sessions
+// with a per-message model override; the seat must never touch the workspace,
+// never block on a question (no human is in the loop), and never re-enter the
+// council (recursion). Tools are additionally disabled at the tools map below
+// so the model doesn't even see them.
+const COUNCIL_MEMBER_PERMISSIONS = {
+  edit: "deny" as const,
+  bash: "deny" as const,
+  webfetch: "deny" as const,
+  ast_grep: "deny",
+  tsc_check: "deny",
+  eslint_check: "deny",
+  todo_scan: "deny",
+  comment_check: "deny",
+  question: "deny",
+  serena: "deny",
+  memory: "deny",
+  git: "deny",
+  playwright: "deny",
+  linear: "deny",
+};
+
+// Every tool a council seat could otherwise reach — builtins, our custom
+// tools, and the council tools themselves. A seat is a pure completion.
+const COUNCIL_MEMBER_DISABLED_TOOLS = {
+  bash: false,
+  edit: false,
+  write: false,
+  read: false,
+  grep: false,
+  glob: false,
+  list: false,
+  patch: false,
+  todowrite: false,
+  todoread: false,
+  webfetch: false,
+  task: false,
+  question: false,
+  ast_grep: false,
+  tsc_check: false,
+  eslint_check: false,
+  todo_scan: false,
+  comment_check: false,
+  background_run: false,
+  background_check: false,
+  background_stop: false,
+  council: false,
+  council_check: false,
+} as const;
+
 const LIB_READER_PERMISSIONS = {
   edit: "deny" as const,
   bash: "deny" as const,
@@ -830,6 +881,10 @@ export function createAgents(): Record<AgentName, AgentConfig> {
       // consult that blocks on user input deadlocks its caller.
       tools: { question: false } as AgentConfig["tools"],
       permission: ORACLE_PERMISSIONS as AgentConfig["permission"],
+    }),
+    [AGENTS.COUNCIL_MEMBER]: agentFromPrompt(councilMemberPrompt, {
+      tools: COUNCIL_MEMBER_DISABLED_TOOLS as AgentConfig["tools"],
+      permission: COUNCIL_MEMBER_PERMISSIONS as AgentConfig["permission"],
     }),
     [AGENTS.DOCS_MAINTAINER]: agentFromPrompt(docsMaintainerPrompt),
     [AGENTS.LIB_READER]: agentFromPrompt(libReaderPrompt, {

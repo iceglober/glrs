@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { select, checkbox, Separator, confirm, search } from "@inquirer/prompts";
+import { select, checkbox, confirm } from "@inquirer/prompts";
 
 const PLUGIN_NAME = "@glrs-dev/harness-plugin-opencode";
 
@@ -75,38 +75,6 @@ export async function promptChoice(
   return answer;
 }
 
-export interface RichChoice<T> {
-  value: T;
-  name: string;
-  description?: string;
-  short?: string;
-  disabled?: boolean | string;
-}
-
-/**
- * Interactive prompt: present rich choices with descriptions (shown for the
- * focused item) and optional separators. Returns the chosen value, or
- * `fallback` for non-TTY.
- */
-export async function promptSelect<T>(
-  question: string,
-  choices: (RichChoice<T> | { separator: string })[],
-  fallback: T,
-): Promise<T> {
-  if (!process.stdin.isTTY) return fallback;
-
-  const mapped = choices.map((c) => {
-    if ("separator" in c) return new Separator(c.separator);
-    return c;
-  });
-
-  return select({
-    message: question,
-    choices: mapped,
-    loop: false,
-  });
-}
-
 /**
  * Interactive prompt: present a list of checkboxes, return selected indices.
  * Non-TTY returns the default-on items.
@@ -133,35 +101,3 @@ export async function promptMulti(
   return new Set(answers);
 }
 
-export interface SearchChoice<T> {
-  value: T;
-  name: string;
-  description?: string;
-  short?: string;
-}
-
-/**
- * Interactive prompt: searchable list. User types to filter, arrow keys to
- * select. Returns the chosen value, or `fallback` for non-TTY.
- */
-export async function promptSearch<T>(
-  question: string,
-  choices: SearchChoice<T>[],
-  fallback: T,
-): Promise<T> {
-  if (!process.stdin.isTTY) return fallback;
-
-  return search({
-    message: question,
-    pageSize: 15,
-    source: (term) => {
-      if (!term) return choices;
-      const lower = term.toLowerCase();
-      return choices.filter(
-        (c) =>
-          c.name.toLowerCase().includes(lower) ||
-          (c.description?.toLowerCase().includes(lower) ?? false),
-      );
-    },
-  });
-}

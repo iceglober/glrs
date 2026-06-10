@@ -382,7 +382,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
  */
 export function writePluginOption(
   configPath: string,
-  subKey: "models" | "mcp",
+  subKey: "models" | "mcp" | "council",
   value: unknown,
   opts: { dryRun: boolean },
 ): { changed: boolean; bakPath?: string } {

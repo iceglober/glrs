@@ -24,6 +24,7 @@ import type { Plugin, Hooks, PluginOptions } from "@opencode-ai/plugin";
 // here as internals. Regression: test/plugin-entry-single-default-export.test.ts.
 import { applyConfig } from "./config-hook.js";
 import { createTools } from "./tools/index.js";
+import type { CouncilClient } from "./tools/council.js";
 import {
   PACKAGE_NAME,
   readOurPackageVersion,
@@ -160,8 +161,13 @@ const plugin: Plugin = async (input, options) => {
       if (toolHooks.config) await toolHooks.config(config);
     },
 
-    // Custom tools
-    tool: createTools(),
+    // Custom tools. The client + options are passed through so the council
+    // tools (registered only when `council.members` is configured) can spawn
+    // member child sessions and push results back into the calling session.
+    tool: createTools({
+      client: input.client as unknown as CouncilClient,
+      pluginOptions,
+    }),
 
     // Event handlers from sub-plugins
     event: async (input) => {
