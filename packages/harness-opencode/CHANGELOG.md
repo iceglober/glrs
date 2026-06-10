@@ -1,5 +1,35 @@
 # Changelog
 
+## 3.16.2
+
+### Patch Changes
+
+- [#335](https://github.com/iceglober/glrs/pull/335) [`9177fc3`](https://github.com/iceglober/glrs/commit/9177fc3eebf5004539864bca22ec33b1e740793c) Thanks [@iceglober](https://github.com/iceglober)! - fix(auto-update): never delete node_modules before installing; fall back to bun when npm is missing
+
+  The 3.16.0 release bricked plugin load on npm-less (bun-only) machines: the auto-updater rewrote the cache pin, deleted `node_modules/`, then ran `npm install` which failed with ENOENT (swallowed). OpenCode does not reliably reinstall a cache dir without node_modules, and concurrent instances racing to recover left a torn package — `Could not find shared file: workflow-mechanics.md` → `failed to load plugin`.
+
+  The updater now installs in place (old tree keeps loading if the install fails) and picks the package manager via `pickInstaller()` — npm when available, bun otherwise, rewrite-only when neither exists.
+
+  Also ships the telemetry accuracy fixes from the Counted audit:
+
+  - **`model_turn.tps` now counts generated tokens (output + reasoning).** Providers that report reasoning separately (google-vertex, azure) had their generation rate understated ~2× when only `output` was counted.
+  - **`model_turn.unpriced: true`** flags turns that consumed tokens but report zero cost (provider/model missing from the models.dev catalog, e.g. azure-foundry) — dashboards can now tell "missing price" apart from "free".
+  - Deleted the harness's dead, stale `lib/model-pricing.ts` (2024 prices, no consumers; the autopilot's live copy was corrected separately).
+
+  Also fixes the background-jobs **TUI sidebar registration**, which never loaded on opencode ≥1.16: the installer wrote a `<pkg>/tui` subpath entry into the opencode.json `plugin` array, which the loader rejects at startup ("Could not read package.json … failed to install plugin"). The correct mechanism — verified against what `opencode plugin <pkg>` itself writes — is listing the base package in `tui.json` next to opencode.json. `ensureTuiPluginRegistered` now writes tui.json and migrates away (with backup) any legacy `…/tui` entries.
+
+  If you're already stuck on a broken 3.16.0 cache: `rm -rf ~/.cache/opencode/packages/@glrs-dev/harness-plugin-opencode@latest && glrs harness install` (or reinstall via your normal flow). Re-running `glrs harness install` also migrates the sidebar registration.
+
+- [#335](https://github.com/iceglober/glrs/pull/335) [`9177fc3`](https://github.com/iceglober/glrs/commit/9177fc3eebf5004539864bca22ec33b1e740793c) Thanks [@iceglober](https://github.com/iceglober)! - fix(harness): never strand a session on a dead wait — live-watcher discipline for background jobs
+
+  Observed incident: PRIME backgrounded `sleep 180 && <CI check>` (a single-shot timer poll), ALSO ran a foreground `sleep 190` duplicating the same wait, then ended its turn "waiting" — with the background job already exited and zero running watchers. Nothing could ever wake it; the arc hung until the user poked the session.
+
+  Three enforcement layers:
+
+  - **`background_run` rejects timer polls** (commands leading with `sleep N`) with a teaching error: background a watcher that exits WHEN the condition settles (`gh pr checks --watch`, `gh run watch`, `until <check>; do sleep 30; done && <status>`) — when a fixed delay elapses with the condition unsettled, no watcher remains and the completion ping has nothing left to arm.
+  - **Foreground-sleep guard** (tool-hooks): bash commands leading with `sleep ≥ 15s` are blocked pre-execution with the same guidance — they burn the turn and usually duplicate an armed watcher. Configurable via `toolHooks.sleepGuard` (`enabled`, `maxSeconds`); short pauses pass through.
+  - **Live-watcher rule in the PRIME prompts**: hold exactly ONE self-terminating watcher, end the turn with a status line, act on the completion ping immediately — and never end a turn claiming to be "waiting" unless `background_list` shows a RUNNING job whose exit means the wait is over.
+
 ## 3.16.1
 
 ### Patch Changes
