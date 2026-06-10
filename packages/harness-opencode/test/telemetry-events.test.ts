@@ -50,10 +50,38 @@ describe("buildModelTurnProps", () => {
     expect(p.cost).toBe(0.123457); // rounded to 6dp
     expect(p.output_tokens).toBe(200);
     expect(p.duration_ms).toBe(10_000);
-    expect(p.tps).toBe(20); // 200 tokens / 10s
+    // tps counts GENERATED tokens (output + reasoning): (200 + 10) / 10s.
+    // Providers like google-vertex report reasoning separately; excluding it
+    // understated their generation rate ~2x.
+    expect(p.tps).toBe(21);
     expect(p.outcome).toBe("ok");
     expect(p.finish).toBe("unknown");
     expect(p.error_kind).toBeUndefined();
+    // Priced turn — no unpriced flag.
+    expect(p.unpriced).toBeUndefined();
+  });
+
+  it("flags zero-cost turns with real tokens as unpriced (catalog gap)", () => {
+    // e.g. azure-foundry models missing from the models.dev catalog report
+    // cost=0 with real token usage — dashboards must be able to tell
+    // "missing price" apart from "free".
+    const p = buildModelTurnProps({
+      provider: "azure-foundry",
+      model: "DeepSeek-V4-Pro",
+      cost: 0,
+      tokens: TOKENS,
+    });
+    expect(p.unpriced).toBe(true);
+
+    // Zero cost AND zero tokens (e.g. instantly-errored turn) is not a
+    // pricing gap — no flag.
+    const empty = buildModelTurnProps({
+      provider: "x",
+      model: "y",
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    });
+    expect(empty.unpriced).toBeUndefined();
   });
 
   it("omits tps/duration when timing is missing or non-positive", () => {

@@ -53,8 +53,17 @@ export function normalizeFinish(finish: string | undefined | null): string {
 
 /**
  * Build properties for the `model_turn` event from a finalized assistant
- * message. `tps` (output tokens per second) and `duration_ms` are omitted when
+ * message. `tps` (GENERATED tokens per second — output + reasoning; providers
+ * like google-vertex/azure report reasoning separately, and excluding it
+ * understated their generation rate ~2x) and `duration_ms` are omitted when
  * timing is unavailable or non-positive, rather than emitting a bogus 0/∞.
+ * Note: the duration window includes TTFT/prefill, so tps is an effective
+ * end-to-end rate, biased below pure decode speed — comparable across
+ * models/presets, not an absolute decode benchmark.
+ *
+ * `unpriced: true` marks turns that consumed tokens but report zero cost —
+ * the provider/model has no pricing entry in the models.dev catalog (e.g.
+ * azure-foundry), so dashboards can distinguish "missing price" from "free".
  */
 export function buildModelTurnProps(args: {
   provider: string;
@@ -80,6 +89,15 @@ export function buildModelTurnProps(args: {
     finish: normalizeFinish(args.finish),
   };
 
+  const genTokens = (args.tokens.output || 0) + (args.tokens.reasoning || 0);
+  const anyTokens =
+    (args.tokens.input || 0) +
+      (args.tokens.cache?.read || 0) +
+      (args.tokens.cache?.write || 0) +
+      genTokens >
+    0;
+  if (!(args.cost > 0) && anyTokens) props.unpriced = true;
+
   const durationMs =
     args.createdMs != null && args.completedMs != null
       ? args.completedMs - args.createdMs
@@ -87,7 +105,7 @@ export function buildModelTurnProps(args: {
   if (durationMs != null && durationMs > 0) {
     props.duration_ms = Math.round(durationMs);
     const seconds = durationMs / 1000;
-    props.tps = round((args.tokens.output || 0) / seconds, 1);
+    props.tps = round(genTokens / seconds, 1);
   }
 
   if (args.errorKind) props.error_kind = args.errorKind;
