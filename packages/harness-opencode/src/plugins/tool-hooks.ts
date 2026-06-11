@@ -63,6 +63,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
+import picomatch from "picomatch";
 
 import { parseTscOutput, dedupeAndCap, formatRow } from "../tools/tsc_check.js";
 import {
@@ -221,6 +222,34 @@ function checkInlineSleep(
     `\`until <settled-check>; do sleep 30; done && <status-cmd>\` — then END your turn with a ` +
     `one-line status. The completion ping wakes you the moment it exits. ` +
     `Pauses under ${maxSeconds}s run normally.`
+  );
+}
+
+// ---- Env-gated tool denylist -------------------------------------------------
+// GLRS_TOOL_DENYLIST="linear_save_issue,linear_create_*" hard-blocks matching
+// tools for the lifetime of the server. Used by sandboxed/experiment runs
+// (e.g. harness evals that must not mutate a real issue tracker). The thrown
+// error becomes the tool result the model sees, so it teaches the recovery:
+// state the intended mutation instead of performing it.
+
+/** Returns the teaching error message when `tool` matches the denylist, else null. Pure. */
+function checkToolDenylist(
+  tool: string,
+  denylist: string | undefined,
+): string | null {
+  if (!denylist) return null;
+  const patterns = denylist
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (patterns.length === 0) return null;
+  const matches = patterns.some((p) => picomatch.isMatch(tool, p));
+  if (!matches) return null;
+  return (
+    `Tool "${tool}" is disabled in this sandbox (GLRS_TOOL_DENYLIST). Do NOT retry it ` +
+    `or look for an equivalent mutation path. Instead, state precisely what you would ` +
+    `have done with it (e.g. the exact comment text or field change) as part of your ` +
+    `final answer, and continue with the rest of the task.`
   );
 }
 
@@ -1077,7 +1106,12 @@ const plugin: Plugin = async ({ client }, options) => {
   ): Promise<void> {
     // Hash the (pre-truncation) output so identical-result re-fetches can be
     // weighted like failures — re-fetching unchanged data is not progress.
-    const v = checkToolLoop(cfg, sess, tool, args, ok, hashContent(output.output));
+    // MCP tools can reach this hook with a non-string output (observed:
+    // linear_* tools, output.output undefined) — hashing undefined throws,
+    // and a throw from tool.execute.after surfaces as the TOOL failing.
+    const outputHash =
+      typeof output.output === "string" ? hashContent(output.output) : null;
+    const v = checkToolLoop(cfg, sess, tool, args, ok, outputHash);
     if (v.level === "none" || v.kind === null) return;
 
     // Never hard-abort while subagents are in flight: session.abort cancels the
@@ -1146,6 +1180,12 @@ const plugin: Plugin = async ({ client }, options) => {
       input: { sessionID: string; tool?: string },
       output?: { args?: Record<string, unknown> },
     ) => {
+      // Sandbox denylist first — a denied tool must not affect any other
+      // bookkeeping (it never executes).
+      if (input.tool) {
+        const denied = checkToolDenylist(input.tool, process.env["GLRS_TOOL_DENYLIST"]);
+        if (denied) throw new Error(denied);
+      }
       if (input.tool === "task") {
         ensureSession(input.sessionID).inFlightTasks++;
         return;
@@ -1345,6 +1385,7 @@ export const __test__ = {
   checkComplexityHint,
   complexityHint,
   checkInlineSleep,
+  checkToolDenylist,
   DEFAULT_MAX_INLINE_SLEEP_SECONDS,
   isVerifyCommand,
   checkReadDedup,
