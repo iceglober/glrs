@@ -32,6 +32,8 @@ const {
   DEFAULT_CONSULT_AGENT,
   checkInlineSleep,
   checkToolDenylist,
+  readHookOutput,
+  appendHookOutput,
   DEFAULT_MAX_INLINE_SLEEP_SECONDS,
 } = __test__;
 
@@ -997,5 +999,55 @@ describe("checkToolDenylist", () => {
     expect(checkToolDenylist("linear_get_issue", deny)).toBeNull();
     expect(checkToolDenylist("linear_list_comments", deny)).toBeNull();
     expect(checkToolDenylist("read", deny)).toBeNull();
+  });
+});
+
+// ---- hook output shape adapters (MCP vs built-in) ----------------------------
+
+describe("readHookOutput / appendHookOutput", () => {
+  it("reads built-in string output", () => {
+    expect(readHookOutput({ output: "hello" })).toBe("hello");
+  });
+
+  it("reads MCP content text items", () => {
+    expect(
+      readHookOutput({ content: [{ type: "text", text: "a" }, { type: "text", text: "b" }] }),
+    ).toBe("a\nb");
+    expect(readHookOutput({ content: [{ type: "image", data: "…" }] })).toBeNull();
+  });
+
+  it("returns null for empty/unknown shapes", () => {
+    expect(readHookOutput({})).toBeNull();
+    expect(readHookOutput(undefined)).toBeNull();
+    expect(readHookOutput({ output: undefined, content: undefined })).toBeNull();
+  });
+
+  it("appends to built-in output string", () => {
+    const o: { output: string } = { output: "result" };
+    appendHookOutput(o, "\nWARN");
+    expect(o.output).toBe("result\nWARN");
+  });
+
+  it("appends a text item to MCP content", () => {
+    const o: { content: unknown[] } = { content: [{ type: "text", text: "result" }] };
+    appendHookOutput(o, "\nWARN");
+    expect(o.content.length).toBe(2);
+    expect(o.content[1]).toEqual({ type: "text", text: "\nWARN" });
+  });
+
+  it("identical MCP re-fetches now trip the repeat guard a call early", () => {
+    // End-to-end of the Gemini gap: same MCP call, same content → the hash
+    // path must see it (this was dead when only output.output was hashed).
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("ctl-mcp-identical");
+    const args = { issueId: "GEN-2620" };
+    const mcpText = readHookOutput({ content: [{ type: "text", text: '{"comments":[]}' }] })!;
+    const hash = hashContent(mcpText);
+    let v = checkToolLoop(cfg, sess, "linear_list_comments", args, true, hash);
+    expect(v.level).toBe("none");
+    v = checkToolLoop(cfg, sess, "linear_list_comments", args, true, hash);
+    expect(v.kind).toBe("repeat");
+    expect(v.level).toBe("warn");
+    expect(v.identicalResult).toBe(true);
   });
 });
