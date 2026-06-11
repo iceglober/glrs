@@ -72,7 +72,7 @@ export default defineConfig({
   // test enforces this by loading the published dist with no node_modules.
   // `json5` is bundled too: the CLI's config parser (merge-config/doctor) uses
   // it, and bundling keeps the published dist free of runtime dep resolution.
-  noExternal: ["@glrs-dev/agent-core", "@opencode-ai/plugin", "zod", "@counted/sdk", "json5"],
+  noExternal: ["@glrs-dev/agent-core", "@opencode-ai/plugin", "zod", "@counted/sdk", "json5", "picomatch"],
   // After build: copy skills tree and bin scripts
   async onSuccess() {
     // Copy skills
