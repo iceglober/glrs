@@ -1,5 +1,18 @@
 # @glrs-dev/cli
 
+## 3.17.1
+
+### Patch Changes
+
+- [#339](https://github.com/iceglober/glrs/pull/339) [`6f33d9e`](https://github.com/iceglober/glrs/commit/6f33d9e19c159c740e4e29e4c1e0b47c4259540d) Thanks [@iceglober](https://github.com/iceglober)! - Fix `glrs harness configure` crashing on install with `Cannot find module '@clack/prompts'`.
+
+  3.17.0 rebuilt the configure TUI on @clack/prompts, but the vendored harness plugin's externals resolve against the CLI's own dependencies — and the new dep was never declared there. The workspace build kept working (hoisted node_modules), so the break only surfaced for npm installs.
+
+  Declared `@clack/prompts` in the CLI's dependencies, and added two guards so the next vendored external can't slip through: a `vendored-externals` test that scans every bare import in the built dist (CLI bundles + vendored packages) and asserts each resolves against the CLI's declared dependencies, and a pack-install smoke step that runs `glrs harness configure` from the packed tarball — the only path that loads the vendored `cli-exports.js`, which `--version` and `autopilot --help` never exercised.
+
+- Updated dependencies []:
+  - @glrs-dev/harness-plugin-opencode@3.17.1
+
 ## 3.17.0
 
 ### Patch Changes
