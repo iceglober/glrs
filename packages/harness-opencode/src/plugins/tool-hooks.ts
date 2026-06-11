@@ -1077,7 +1077,12 @@ const plugin: Plugin = async ({ client }, options) => {
   ): Promise<void> {
     // Hash the (pre-truncation) output so identical-result re-fetches can be
     // weighted like failures — re-fetching unchanged data is not progress.
-    const v = checkToolLoop(cfg, sess, tool, args, ok, hashContent(output.output));
+    // MCP tools can reach this hook with a non-string output (observed:
+    // linear_* tools, output.output undefined) — hashing undefined throws,
+    // and a throw from tool.execute.after surfaces as the TOOL failing.
+    const outputHash =
+      typeof output.output === "string" ? hashContent(output.output) : null;
+    const v = checkToolLoop(cfg, sess, tool, args, ok, outputHash);
     if (v.level === "none" || v.kind === null) return;
 
     // Never hard-abort while subagents are in flight: session.abort cancels the

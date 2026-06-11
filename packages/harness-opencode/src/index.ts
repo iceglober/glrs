@@ -194,6 +194,12 @@ const plugin: Plugin = async (input, options) => {
         "Pick a sensible default and continue without asking the user.",
       );
     }
+    // tool-hooks' before-hook MUST be chained here: it hosts the sandbox
+    // denylist (throw = deny), the foreground-sleep guard, and the in-flight
+    // subagent counter that suppresses loop-guard hard aborts while children
+    // run. It was previously never called — all three were dead at runtime
+    // (found when a sandboxed run's linear_save_issue deny silently no-oped).
+    if (toolHooks["tool.execute.before"]) await toolHooks["tool.execute.before"]!(input, output);
     if (stallDetectorHooks["tool.execute.before"]) await stallDetectorHooks["tool.execute.before"]!(input, output);
   };
 
