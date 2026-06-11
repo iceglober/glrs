@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.17.2
+
+### Patch Changes
+
+- [#343](https://github.com/iceglober/glrs/pull/343) [`a17f616`](https://github.com/iceglober/glrs/commit/a17f616f379958a974eab14723327fe55d9c2d77) Thanks [@iceglober](https://github.com/iceglober)! - Two runtime fixes found by sandboxed harness evals, plus a sandbox tool denylist.
+
+  - **`tool.execute.before` middleware was never chained in the plugin entry** — the foreground-sleep guard and the in-flight-subagent counter (which suppresses loop-guard hard aborts while children run) were dead code at runtime. Now chained.
+  - **MCP tools no longer fail with "The \"data\" argument must be of type string"** — the identical-result loop signal hashed `output.output` unconditionally; MCP tools can reach the after-hook with a non-string output and the throw surfaced as the tool itself failing.
+  - **New `GLRS_TOOL_DENYLIST` env** (comma-separated globs, e.g. `linear_save_issue,linear_create_*`): hard-blocks matching tools with a teaching error telling the model to state the intended mutation instead of performing it. Built for sandboxed eval runs that must not mutate real trackers.
+
+- [#341](https://github.com/iceglober/glrs/pull/341) [`e0b9c3a`](https://github.com/iceglober/glrs/commit/e0b9c3adfe6f2d84c6df5cd3e2d1f3ddbfce733b) Thanks [@iceglober](https://github.com/iceglober)! - Loop guards now catch the Gemini Flash runaway pattern: MCP re-fetch loops and thinking spirals.
+
+  Diagnosed from a real PRIME-on-Gemini-3.5-Flash session that looped for an hour with zero intervention: it re-fetched the same Linear issues (`linear_get_issue`, `linear_list_comments`) with byte-identical results, then died on a 106-second turn of pure reasoning with no output. Three gaps, three fixes:
+
+  - **MCP read tools count as exploration.** The passive-tool set was the five builtins only, so every `linear_get_*`/`*_list_*` call counted as "forward progress" and reset the exploration streak — 15+ consecutive read-only calls never accumulated a single warning. Tools whose verb segment is a read verb (get/list/search/fetch/…) are now passive; write verbs (save/create/update/…) and verify/poll steps (`tsc_check`, `background_check`) stay active.
+  - **Identical-result re-fetches weigh double**, like failures. The repeat guard counted call signatures, so rotating among four issue ids stayed under threshold despite every result already being in context. The guard now hashes tool output: same call + same output trips the warn a full call earlier, and the corrective tells the model the data is byte-identical to what it already has.
+  - **Thinking-spiral recovery.** A turn that ends with reasoning only — no text part, no tool call — matched nothing: the stall detector's intent patterns need message text. The stall detector now inspects the final assistant message at `session.idle` and pushes a bounded corrective (max 2 per session) telling the model to state its conclusion and act. Aborted/errored turns (user pressed esc) are skipped.
+
+  The shipped test suite replays the actual session's 15-call tail and asserts the guard fires by call 12.
+
 ## 3.17.1
 
 ## 3.17.0
