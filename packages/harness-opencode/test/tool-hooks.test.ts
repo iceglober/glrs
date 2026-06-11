@@ -14,6 +14,7 @@ const {
   complexityHint,
   isVerifyCommand,
   checkReadDedup,
+  isPassiveTool,
   looksLikeBashFailure,
   extractFilePath,
   hashContent,
@@ -638,11 +639,120 @@ describe("checkToolLoop", () => {
 
   it("loopCorrective text differs by kind", () => {
     expect(loopCorrective({ level: "warn", kind: "explore", sig: "read:/a", count: 12 })).toContain(
-      "read/search calls in a row",
+      "read-only calls in a row",
     );
     expect(loopCorrective({ level: "abort", kind: "repeat", sig: "grep:x", count: 6 })).toContain(
       "same tool call",
     );
+    // Identical-result repeats call out that the data is already in context.
+    expect(
+      loopCorrective({ level: "warn", kind: "repeat", sig: "linear_get_issue:x", count: 3, identicalResult: true }),
+    ).toContain("BYTE-IDENTICAL");
+  });
+
+  // ---- MCP read tools count as exploration (Gemini Flash regression) -------
+
+  it("classifies MCP read tools as passive and write tools as active", () => {
+    expect(isPassiveTool("linear_get_issue")).toBe(true);
+    expect(isPassiveTool("linear_list_issues")).toBe(true);
+    expect(isPassiveTool("linear_list_comments")).toBe(true);
+    expect(isPassiveTool("linear_search_issues")).toBe(true);
+    expect(isPassiveTool("github_get_pr")).toBe(true);
+    expect(isPassiveTool("read")).toBe(true);
+    expect(isPassiveTool("webfetch")).toBe(true);
+
+    expect(isPassiveTool("linear_save_issue")).toBe(false);
+    expect(isPassiveTool("linear_create_comment")).toBe(false);
+    expect(isPassiveTool("edit")).toBe(false);
+    expect(isPassiveTool("bash")).toBe(false);
+    expect(isPassiveTool("task")).toBe(false);
+    // Verify/poll steps are forward progress, not exploration.
+    expect(isPassiveTool("tsc_check")).toBe(false);
+    expect(isPassiveTool("eslint_check")).toBe(false);
+    expect(isPassiveTool("background_check")).toBe(false);
+    expect(isPassiveTool("background_run")).toBe(false);
+  });
+
+  it("MCP read calls advance the exploration streak instead of resetting it", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("ctl-mcp-streak");
+    // Alternate builtin and MCP reads with DISTINCT args — before the fix the
+    // MCP calls reset passiveStreak and the warn never fired.
+    let v;
+    for (let i = 0; i < cfg.explorationWarn; i++) {
+      const tool = i % 2 === 0 ? "linear_get_issue" : "grep";
+      v = checkToolLoop(cfg, sess, tool, { q: `unique-${i}` }, true, `hash-${i}`);
+    }
+    expect(v!.kind).toBe("explore");
+    expect(v!.level).toBe("warn");
+  });
+
+  it("weighs identical-output re-fetches double, like failures", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("ctl-identical");
+    const args = { id: "GEN-2849" };
+    const sameHash = hashContent('{"id":"GEN-2849","title":"unchanged"}');
+    // Call 1: fresh data, weight 1 → score 1.
+    let v = checkToolLoop(cfg, sess, "linear_get_issue", args, true, sameHash);
+    expect(v.level).toBe("none");
+    // Call 2: identical output, weight 2 → score 3 = repeatWarn. Fires a full
+    // call earlier than changed-output repeats.
+    v = checkToolLoop(cfg, sess, "linear_get_issue", args, true, sameHash);
+    expect(v.kind).toBe("repeat");
+    expect(v.level).toBe("warn");
+    expect(v.identicalResult).toBe(true);
+  });
+
+  it("does not penalize same-signature calls whose output CHANGES", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("ctl-changing");
+    const args = { command: "git status" };
+    // Output changes every time (work is being done between calls) → weight 1.
+    let v;
+    for (let i = 0; i < 2; i++) {
+      v = checkToolLoop(cfg, sess, "bash", args, true, `different-${i}`);
+    }
+    expect(v!.level).toBe("none");
+    expect(v!.identicalResult).toBe(false);
+  });
+
+  it("replays the 2026-06-11 Gemini Flash runaway session and fires the guard", () => {
+    // The exact passive tail of session-gemini-flash.md (lines 2390-3233):
+    // grep, grep, linear_list_issues, grep, then a rotation of linear_get_issue
+    // / linear_list_comments / read across GEN-2849/2620/2623/2018 — fifteen
+    // consecutive read-only calls, several returning byte-identical JSON.
+    // The shipped guard never fired once. It must fire now.
+    const cfg = defaultConfig().loopDetection;
+    const sess = getSession("ctl-gemini-replay");
+    const issue2849 = hashContent('{"id":"GEN-2849",...}');
+    const calls: [string, unknown, string][] = [
+      ["grep", { pattern: "KESB-145", path: "/repo" }, "g1"],
+      ["grep", { pattern: "9624", path: "/repo" }, "g2"],
+      ["linear_list_issues", { query: "KESB-145" }, "l1"],
+      ["grep", { pattern: "KESB-145", path: "/tool-output" }, "g3"],
+      ["linear_get_issue", { id: "GEN-2620" }, "i2620"],
+      ["linear_list_comments", { issueId: "GEN-2849" }, "c2849"],
+      ["linear_get_issue", { id: "GEN-2018" }, "i2018"],
+      ["read", { filePath: "/tool-output/tool_eb4" }, "r1"],
+      ["linear_get_issue", { id: "GEN-2623" }, "i2623"],
+      ["linear_get_issue", { id: "GEN-2849" }, issue2849],
+      ["linear_get_issue", { id: "GEN-2849" }, issue2849], // identical re-fetch
+      ["linear_list_comments", { issueId: "GEN-2620" }, "c2620"],
+      ["linear_list_comments", { issueId: "GEN-2623" }, "c2623"],
+      ["linear_list_comments", { issueId: "GEN-2849" }, "c2849b"],
+      ["linear_get_issue", { id: "GEN-2849" }, issue2849], // identical again
+    ];
+    const verdicts = calls.map(([tool, args, hash]) =>
+      checkToolLoop(cfg, sess, tool, args, true, hash),
+    );
+    const fired = verdicts.filter((v) => v.level !== "none");
+    expect(fired.length).toBeGreaterThan(0);
+    // The warn lands well before the sequence ends — the real session ran for
+    // an hour past this point with zero intervention.
+    const firstFired = verdicts.findIndex((v) => v.level !== "none");
+    expect(firstFired).toBeLessThanOrEqual(11);
+    // And by the end the guard is still escalated, not silenced.
+    expect(verdicts[verdicts.length - 1]!.level).not.toBe("none");
   });
 });
 

@@ -134,9 +134,30 @@ const DEFAULT_REPEAT_ABORT = 6;
 // positive — only clustered repetition trips it.
 const LOOP_WINDOW = 30;
 // Read-only "exploration" tools: gathering context, not changing state. Any
-// tool NOT in this set (edit/write/bash/task/MCP/...) counts as forward
+// tool NOT classified passive (edit/write/bash/task/...) counts as forward
 // progress and resets the exploration streak.
 const PASSIVE_TOOLS = new Set(["read", "grep", "glob", "list", "webfetch"]);
+
+// MCP read tools are exploration too. Evidence: a Gemini Flash PRIME session
+// (2026-06-11) re-fetched the same Linear issues for an hour — every
+// `linear_get_issue` / `linear_list_comments` call counted as "active" under
+// the enumerated set above, reset the passive streak, and the exploration
+// guard never accumulated a single warning across 15+ consecutive read-only
+// calls. Heuristic: underscore-namespaced tools whose verb segment is a read
+// verb are passive; any write verb wins (e.g. `linear_save_issue` is active).
+// `check` is deliberately NOT a read verb: tsc_check/eslint_check/
+// background_check are verify/poll steps that count as forward progress.
+const PASSIVE_TOOL_VERB =
+  /(^|_)(get|list|search|read|fetch|view|show|describe|query|find)(_|$)/;
+const ACTIVE_TOOL_VERB =
+  /(^|_)(save|create|update|delete|write|post|add|remove|set|send|run|exec|apply|move|archive|assign|comment|upload|merge|close|edit|start|stop|cancel)(_|$)/;
+
+/** True when a tool call gathers context rather than changing state. */
+function isPassiveTool(tool: string): boolean {
+  if (PASSIVE_TOOLS.has(tool)) return true;
+  if (ACTIVE_TOOL_VERB.test(tool)) return false;
+  return PASSIVE_TOOL_VERB.test(tool);
+}
 
 // ---- Complexity-delegation hint -------------------------------------------
 // A signal DISTINCT from the loop signatures above: the agent is doing real,
@@ -226,6 +247,8 @@ interface SessionState {
   loopWindow: { sig: string; w: number }[];
   /** Signature → accumulated weight within the window. */
   sigScores: Map<string, number>;
+  /** Signature → hash of its most recent output, for identical-result weighting. */
+  sigLastOutput: Map<string, string>;
   /** Escalation stage: 0 none, 1 warned, 2 aborted. */
   loopStage: 0 | 1 | 2;
   /**
@@ -261,6 +284,7 @@ function ensureSession(sessionID: string): SessionState {
       passiveStreak: 0,
       loopWindow: [],
       sigScores: new Map(),
+      sigLastOutput: new Map(),
       loopStage: 0,
       inFlightTasks: 0,
       failedVerifyRuns: 0,
@@ -815,13 +839,19 @@ export type LoopVerdict = {
   sig: string;
   /** Repeat score (weighted) or passive streak that drove the verdict. */
   count: number;
+  /** True when this call's output was byte-identical to its previous run. */
+  identicalResult?: boolean;
 };
 
 /**
  * Pure loop detector. Updates the session's rolling window + passive streak and
  * returns the current verdict. Failures weigh double so a call that keeps
- * erroring trips the repeat threshold roughly twice as fast. Side-effect-free
- * apart from the session-state bookkeeping it owns, so it is unit-testable.
+ * erroring trips the repeat threshold roughly twice as fast — and so does a
+ * call whose output is byte-identical to its previous run: re-fetching data
+ * that is already in context is the canonical no-progress signature (a Gemini
+ * Flash session re-fetched the same Linear issue for an hour, each call
+ * returning identical JSON). Side-effect-free apart from the session-state
+ * bookkeeping it owns, so it is unit-testable.
  */
 function checkToolLoop(
   cfg: ToolHooksConfig["loopDetection"],
@@ -829,6 +859,7 @@ function checkToolLoop(
   tool: string,
   args: unknown,
   ok: boolean,
+  outputHash: string | null = null,
 ): LoopVerdict {
   const sig = normalizeToolSig(tool, args);
   if (!cfg.enabled) return { level: "none", kind: null, sig, count: 0 };
@@ -844,8 +875,18 @@ function checkToolLoop(
     return { level: "none", kind: null, sig, count: 0 };
   }
 
-  // Repeat scoring over a bounded window. Failed calls count double.
-  const w = ok ? 1 : 2;
+  // Identical-result detection: same signature, same output as last time.
+  const identicalResult =
+    outputHash !== null && sess.sigLastOutput.get(sig) === outputHash;
+  if (outputHash !== null) {
+    sess.sigLastOutput.set(sig, outputHash);
+    // Bound the map; a long healthy session touches many unique signatures.
+    if (sess.sigLastOutput.size > 500) sess.sigLastOutput.clear();
+  }
+
+  // Repeat scoring over a bounded window. Failed calls and identical-result
+  // re-fetches count double — neither can change anything by being repeated.
+  const w = ok && !identicalResult ? 1 : 2;
   sess.loopWindow.push({ sig, w });
   sess.sigScores.set(sig, (sess.sigScores.get(sig) ?? 0) + w);
   while (sess.loopWindow.length > LOOP_WINDOW) {
@@ -855,9 +896,10 @@ function checkToolLoop(
     else sess.sigScores.set(old.sig, next);
   }
 
-  // Exploration streak: passive calls advance it; any active (state-changing or
-  // evidence-gathering) call resets it — that is forward progress.
-  if (PASSIVE_TOOLS.has(tool)) sess.passiveStreak++;
+  // Exploration streak: passive calls (builtin read tools AND MCP-style read
+  // tools — get/list/search/...) advance it; any active (state-changing or
+  // verify) call resets it — that is forward progress.
+  if (isPassiveTool(tool)) sess.passiveStreak++;
   else sess.passiveStreak = 0;
 
   const score = sess.sigScores.get(sig) ?? 0;
@@ -873,7 +915,7 @@ function checkToolLoop(
   // Prefer the repeat signature when it's at least as severe — it's the more
   // specific, lower-false-positive signal and yields a clearer corrective.
   if (repeat >= explore && repeat > 0) {
-    return { level: repeat === 2 ? "abort" : "warn", kind: "repeat", sig, count: score };
+    return { level: repeat === 2 ? "abort" : "warn", kind: "repeat", sig, count: score, identicalResult };
   }
   if (explore > 0) {
     return {
@@ -881,28 +923,35 @@ function checkToolLoop(
       kind: "explore",
       sig,
       count: sess.passiveStreak,
+      identicalResult,
     };
   }
-  return { level: "none", kind: null, sig, count: 0 };
+  return { level: "none", kind: null, sig, count: 0, identicalResult };
 }
 
 /** Corrective text injected into the offending tool's output (in-band nudge). */
 function loopCorrective(v: LoopVerdict): string {
   if (v.kind === "repeat") {
+    const identical = v.identicalResult
+      ? `This output is BYTE-IDENTICAL to what you already received — the data has not changed and is already in your context. `
+      : ``;
     return (
       `\n\n--- LOOP WARNING ---\n` +
-      `You've issued the same tool call (${v.sig}) ${v.count} times. ` +
-      `Repeating it will not change the result. Use what you already have, or ` +
+      `You've issued the same tool call (${v.sig}) repeatedly (weighted score ${v.count}). ` +
+      identical +
+      `Repeating it will not change the result. Do NOT re-fetch, re-read, or re-confirm ` +
+      `anything you already have. Use what you already know, or ` +
       `try a materially different approach. If you're blocked, say so explicitly ` +
       `with a BLOCKED status and what you need.\n---`
     );
   }
   return (
     `\n\n--- LOOP WARNING ---\n` +
-    `You've made ${v.count} read/search calls in a row without editing a file, ` +
-    `running a command, or reaching a conclusion. You may be stuck exploring. ` +
+    `You've made ${v.count} read-only calls in a row (file reads, searches, ` +
+    `issue/API lookups) without editing a file, running a command, dispatching a ` +
+    `subagent, or reaching a conclusion. You may be stuck exploring. ` +
     `STOP gathering more context now. State your current hypothesis in one sentence, ` +
-    `then either take a concrete action (edit, run, or answer the user) or declare ` +
+    `then either take a concrete action (edit, run, dispatch, or answer the user) or declare ` +
     `BLOCKED with exactly what you're missing.\n---`
   );
 }
@@ -1026,7 +1075,9 @@ const plugin: Plugin = async ({ client }, options) => {
     output: { output: string },
     ok: boolean,
   ): Promise<void> {
-    const v = checkToolLoop(cfg, sess, tool, args, ok);
+    // Hash the (pre-truncation) output so identical-result re-fetches can be
+    // weighted like failures — re-fetching unchanged data is not progress.
+    const v = checkToolLoop(cfg, sess, tool, args, ok, hashContent(output.output));
     if (v.level === "none" || v.kind === null) return;
 
     // Never hard-abort while subagents are in flight: session.abort cancels the
@@ -1077,6 +1128,7 @@ const plugin: Plugin = async ({ client }, options) => {
     sess.passiveStreak = 0;
     sess.loopWindow = [];
     sess.sigScores.clear();
+    sess.sigLastOutput.clear();
     sess.loopStage = 0;
   }
 
@@ -1314,6 +1366,7 @@ export const __test__ = {
   DEFAULT_DEEP_AGENT,
   DEFAULT_CONSULT_AGENT,
   PASSIVE_TOOLS,
+  isPassiveTool,
   DEFAULT_PER_TOOL_SHAPES,
   DEFAULT_GREP_HEAD_MATCHES,
   DEFAULT_BASH_TAIL_CHARS,
