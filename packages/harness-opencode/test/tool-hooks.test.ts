@@ -31,6 +31,7 @@ const {
   DEFAULT_DEEP_AGENT,
   DEFAULT_CONSULT_AGENT,
   checkInlineSleep,
+  checkToolDenylist,
   DEFAULT_MAX_INLINE_SLEEP_SECONDS,
 } = __test__;
 
@@ -970,5 +971,31 @@ describe("getSession", () => {
     a.editCounts.set("/x.ts", 5);
     const b = getSession("session-b");
     expect(b.editCounts.has("/x.ts")).toBe(false);
+  });
+});
+
+// ---- checkToolDenylist -------------------------------------------------------
+
+describe("checkToolDenylist", () => {
+  it("null when env is unset or empty", () => {
+    expect(checkToolDenylist("linear_save_issue", undefined)).toBeNull();
+    expect(checkToolDenylist("linear_save_issue", "")).toBeNull();
+    expect(checkToolDenylist("linear_save_issue", " , ")).toBeNull();
+  });
+
+  it("blocks exact names and globs, teaches the recovery", () => {
+    const deny = "linear_save_issue,linear_create_*,linear_update_*";
+    const msg = checkToolDenylist("linear_save_issue", deny);
+    expect(msg).toContain("disabled in this sandbox");
+    expect(msg).toContain("state precisely what you would");
+    expect(checkToolDenylist("linear_create_comment", deny)).not.toBeNull();
+    expect(checkToolDenylist("linear_update_issue", deny)).not.toBeNull();
+  });
+
+  it("leaves read tools untouched", () => {
+    const deny = "linear_save_issue,linear_create_*";
+    expect(checkToolDenylist("linear_get_issue", deny)).toBeNull();
+    expect(checkToolDenylist("linear_list_comments", deny)).toBeNull();
+    expect(checkToolDenylist("read", deny)).toBeNull();
   });
 });
