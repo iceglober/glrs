@@ -40,8 +40,11 @@ describe("isDeadTurnParts", () => {
     expect(isDeadTurnParts([{ type: "text", text: "  \n " }])).toBe(true);
   });
 
-  it("false for empty or missing parts (nothing to judge)", () => {
-    expect(isDeadTurnParts([])).toBe(false);
+  it("true for completed EMPTY turns; false when parts are missing entirely", () => {
+    // Empty continuation = the model generated nothing after tool results —
+    // a real dead turn (exp1-runA: skill load → empty turn → 9s session death).
+    expect(isDeadTurnParts([])).toBe(true);
+    // Missing parts array = we couldn't read the message shape; don't judge.
     expect(isDeadTurnParts(undefined)).toBe(false);
   });
 });
