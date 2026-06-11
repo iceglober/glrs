@@ -129,6 +129,25 @@ describe.if(!SKIP_SMOKE)("pack-install smoke", () => {
     expect(combined).not.toContain("Cannot find module");
   }, 30_000);
 
+  it("installed glrs harness configure loads without MODULE_NOT_FOUND", async () => {
+    // Regression: 3.17.0 shipped with the vendored harness importing
+    // @clack/prompts, which wasn't declared in the CLI's dependencies —
+    // `glrs harness configure` crashed at cli-exports.js import time with
+    // "Cannot find module '@clack/prompts'". The harness subcommands are the
+    // only path that loads the vendored cli-exports.js, so --version and
+    // autopilot --help never caught it.
+    const binPath = join(installDir, "node_modules", ".bin", "glrs");
+    const result = await $`HOME=${installDir} XDG_CONFIG_HOME=${installDir} ${binPath} harness configure --target opencode`
+      .nothrow()
+      .quiet();
+
+    const combined = result.stdout.toString() + result.stderr.toString();
+    // Exits non-zero ("No config found … run glrs harness install first") —
+    // that's fine; the module graph loaded. Resolution errors are the failure.
+    expect(combined).not.toContain("MODULE_NOT_FOUND");
+    expect(combined).not.toContain("Cannot find module");
+  }, 30_000);
+
   it("@glrs-dev/autopilot resolves into cli's dist/node_modules", async () => {
     const cliDistPath = join(installDir, "node_modules", "@glrs-dev", "cli", "dist");
     const script = `console.log(require.resolve('@glrs-dev/autopilot', { paths: [${JSON.stringify(cliDistPath)}] }))`;

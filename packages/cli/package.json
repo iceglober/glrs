@@ -47,6 +47,7 @@
     "test:publish-shape": "bun test test/publish-shape.test.ts test/pack-install-smoke.test.ts"
   },
   "dependencies": {
+    "@clack/prompts": "^1.5.1",
     "@counted/sdk": "^0.1.0",
     "@glrs-dev/adapter-claude-code": "workspace:*",
     "@glrs-dev/adapter-opencode": "workspace:*",
