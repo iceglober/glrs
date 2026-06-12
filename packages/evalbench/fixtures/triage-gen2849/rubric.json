@@ -1,9 +1,0 @@
-{
-  "scaleMax": 10,
-  "criteria": [
-    { "key": "outcome_correctness", "weight": 0.4, "definition": "Found the prior work (GEN-2620 triage, GEN-2623 implementation), verified the shipped state in code, and ended with the correct, clearly stated resolution (write-back referencing GEN-2623/PR 2301; close GEN-2849 as duplicate/done)." },
-    { "key": "convergence", "weight": 0.25, "definition": "Avoided redundant re-fetches of unchanged data and reasoning-only spirals; reached a conclusion within the session." },
-    { "key": "escalation_quality", "weight": 0.2, "definition": "Delegated/escalated appropriately (subagents/oracle) instead of grinding solo; responded to LOOP WARNING / recovery nudges by changing strategy." },
-    { "key": "efficiency", "weight": 0.15, "definition": "Tool calls and wall time proportionate; a good run is roughly 10-20 tool calls." }
-  ]
-}

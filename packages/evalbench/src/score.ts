@@ -13,7 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { validateRubric, type Rubric } from "./manifest.js";
-import { GLRS_ROOT, assembleXdg } from "./sandbox.js";
+import { GLRS_ROOT, assembleXdg, resolveFixtureDir } from "./sandbox.js";
 
 const argv = process.argv.slice(2);
 function arg(name: string, dflt?: string): string | undefined {
@@ -85,7 +85,7 @@ async function main(): Promise<void> {
   const model = arg("model", "azure/deepseek-v4-pro")!;
 
   const runJson = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8")) as { fixture: string };
-  const fixtureDir = path.join(GLRS_ROOT, "packages", "evalbench", "fixtures", runJson.fixture);
+  const fixtureDir = resolveFixtureDir(runJson.fixture);
   const rubric = JSON.parse(fs.readFileSync(path.join(fixtureDir, "rubric.json"), "utf8")) as Rubric;
   validateRubric(rubric);
   const groundTruth = fs.readFileSync(path.join(fixtureDir, "ground-truth.md"), "utf8");

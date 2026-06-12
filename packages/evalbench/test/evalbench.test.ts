@@ -13,8 +13,8 @@ describe("fixtures are well-formed", () => {
     .readdirSync(FIXTURES)
     .filter((f) => fs.existsSync(path.join(FIXTURES, f, "manifest.json")));
 
-  it("at least 4 fixtures exist", () => {
-    expect(names.length).toBeGreaterThanOrEqual(4);
+  it("at least 3 public fixtures exist (org-specific fixtures live in the private dir)", () => {
+    expect(names.length).toBeGreaterThanOrEqual(3);
   });
 
   for (const name of names) {
@@ -27,6 +27,13 @@ describe("fixtures are well-formed", () => {
       expect(fs.readFileSync(path.join(FIXTURES, name, "ground-truth.md"), "utf8").length).toBeGreaterThan(100);
       if (m.mockLinear) {
         expect(fs.existsSync(path.join(FIXTURES, name, "linear", "search-index.json"))).toBe(true);
+      }
+      // Public-repo guard: no org-specific tracker data in committed fixtures.
+      for (const f of fs.readdirSync(path.join(FIXTURES, name), { recursive: true }) as string[]) {
+        const full = path.join(FIXTURES, name, String(f));
+        if (fs.statSync(full).isFile()) {
+          expect(fs.readFileSync(full, "utf8")).not.toMatch(/kn-eng|revenuewell|kayn\.ai|KESB-/i);
+        }
       }
     });
   }
@@ -43,28 +50,47 @@ describe("manifest validation rejects junk", () => {
 });
 
 describe("mock-linear", () => {
-  const dir = path.join(FIXTURES, "triage-gen2849", "linear");
+  // Synthetic data — org-specific fixture content must not live in this repo.
+  const dir = fs.mkdtempSync("/tmp/mock-linear-fixture-");
+  fs.mkdirSync(path.join(dir, "issues"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "comments"), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "issues", "ACME-1.json"),
+    JSON.stringify({ id: "ACME-1", title: "[SRC-9] widget misaligned", description: "d", status: "In Progress" }),
+  );
+  fs.writeFileSync(
+    path.join(dir, "issues", "ACME-2.json"),
+    JSON.stringify({ id: "ACME-2", title: "Fix widget alignment", description: "d", status: "Done" }),
+  );
+  fs.writeFileSync(
+    path.join(dir, "comments", "ACME-1.json"),
+    JSON.stringify({ comments: [{ id: "c1", body: "triage note", author: { name: "A" } }], hasNextPage: false }),
+  );
+  fs.writeFileSync(
+    path.join(dir, "search-index.json"),
+    JSON.stringify({ "src-9": ["ACME-1", "ACME-2"], "ACME-1": ["ACME-1"], "ACME-2": ["ACME-2"] }),
+  );
   const state = fs.mkdtempSync("/tmp/mock-linear-test-");
 
   it("serves frozen issues and comments", () => {
-    const out = callTool(dir, state, "get_issue", { id: "GEN-2849" });
+    const out = callTool(dir, state, "get_issue", { id: "ACME-1" });
     expect(out.isError).toBeUndefined();
     const issue = JSON.parse(out.text);
-    expect(issue.id).toBe("GEN-2849");
-    expect(issue.title).toContain("KESB-145");
-    const comments = JSON.parse(callTool(dir, state, "list_comments", { issueId: "GEN-2849" }).text);
+    expect(issue.id).toBe("ACME-1");
+    expect(issue.title).toContain("SRC-9");
+    const comments = JSON.parse(callTool(dir, state, "list_comments", { issueId: "ACME-1" }).text);
     expect(comments.comments.length).toBeGreaterThanOrEqual(1);
   });
 
   it("search finds siblings by source reference", () => {
-    const res = listIssues(dir, "KESB-145") as { issues: { id: string }[] };
+    const res = listIssues(dir, "SRC-9") as { issues: { id: string }[] };
     const ids = res.issues.map((i) => i.id);
-    expect(ids).toContain("GEN-2849");
-    expect(ids).toContain("GEN-2620");
+    expect(ids).toContain("ACME-1");
+    expect(ids).toContain("ACME-2");
   });
 
   it("records mutations instead of writing", () => {
-    const out = callTool(dir, state, "save_comment", { issueId: "GEN-2849", body: "hello" });
+    const out = callTool(dir, state, "save_comment", { issueId: "ACME-1", body: "hello" });
     expect(JSON.parse(out.text).recorded).toBe(true);
     const log = fs.readFileSync(path.join(state, "mutations.jsonl"), "utf8");
     expect(log).toContain("save_comment");
