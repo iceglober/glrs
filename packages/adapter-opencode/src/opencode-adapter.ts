@@ -609,7 +609,12 @@ export async function waitForIdle(
                       }) => Promise<unknown>;
                     }
                   ).postSessionIdPermissionsPermissionId({
-                    path: { id: opts.sessionId, permissionID: permissionId },
+                    // Reject against the session that RAISED the permission —
+                    // child/subagent sessions raise their own events; posting
+                    // to the parent's id 404s silently and the child blocks
+                    // forever (observed: oracle dispatches dying with empty
+                    // task output whenever the child tripped an `ask` rule).
+                    path: { id: eventSessionId ?? opts.sessionId, permissionID: permissionId },
                     body: { response: "reject" },
                   });
                 } catch {
