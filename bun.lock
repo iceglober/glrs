@@ -197,6 +197,18 @@
         "typescript": "^5.8.3",
       },
     },
+    "packages/evalbench": {
+      "name": "@glrs-dev/evalbench",
+      "version": "0.1.0",
+      "dependencies": {
+        "@glrs-dev/adapter-opencode": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@types/node": "^22",
+        "typescript": "^5",
+      },
+    },
     "packages/harness-opencode": {
       "name": "@glrs-dev/harness-plugin-opencode",
       "version": "3.18.0",
@@ -483,6 +495,8 @@
     "@glrs-dev/cmprss": ["@glrs-dev/cmprss@workspace:packages/cmprss"],
 
     "@glrs-dev/docs-site": ["@glrs-dev/docs-site@workspace:docs-site"],
+
+    "@glrs-dev/evalbench": ["@glrs-dev/evalbench@workspace:packages/evalbench"],
 
     "@glrs-dev/harness-plugin-opencode": ["@glrs-dev/harness-plugin-opencode@workspace:packages/harness-opencode"],
 
