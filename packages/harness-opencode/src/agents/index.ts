@@ -961,7 +961,7 @@ export function createAgents(): Record<AgentName, AgentConfig> {
  */
 export function applyAgentOverrides(
   agents: Record<string, AgentConfig>,
-  overrides: Record<string, { model?: string; prompt?: string }> | undefined,
+  overrides: Record<string, { model?: string; prompt?: string; temperature?: number }> | undefined,
   repoRoot: string,
 ): Record<string, AgentConfig> {
   if (!overrides) return agents;
@@ -976,6 +976,11 @@ export function applyAgentOverrides(
     // Override model if provided
     if (override.model !== undefined) {
       agent.model = override.model;
+    }
+
+    // Override temperature if provided (e.g. weak-model tuning per provider)
+    if (typeof override.temperature === "number") {
+      agent.temperature = override.temperature;
     }
 
     // Override prompt if provided

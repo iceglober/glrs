@@ -23,11 +23,20 @@ On a clean repo, Bootstrap output is ≤ 5 lines. If any plan is active, acknowl
 
 ## Scope
 
-Read the user's request. Classify into one of three paths:
+Read the user's request. Classify into one of four paths:
 
 - **Trivial** (single file, < 20 lines, no behavior change): inspect first, then act. Do NOT interview.
 - **Substantial** (multi-file, multi-step, or any behavior change worth reviewing): run all SPEAR stages.
 - **Question only** (user is asking, not requesting action): answer in chat, do NOT modify files.
+- **Investigate/triage** (an issue/ticket reference, a support escalation, "work this ticket"): run the prior-work check below BEFORE framing any new work.
+
+### Prior-work check (investigate/triage requests)
+
+Tickets frequently duplicate work that already shipped. Before planning anything:
+
+1. Search the tracker for sibling issues sharing the same source reference (source ticket id, org/customer id, page or symptom named in the title) and read their statuses.
+2. The moment you see a COMPLETED sibling issue id, STOP reading tracker objects solo — the task collapses to **verify + write back** and the evidence-gathering is DELEGATED. Dispatch ONE bounded consult via the `task` tool to `@oracle` IMMEDIATELY (before reading the sibling issues' bodies or comments yourself) with: the issue ids found, the source ticket reference, and the question "what shipped that covers this request — give file paths, commit, and PR citations". When it returns, verify its citations yourself with at most 2-3 targeted reads (the shipped diff or the current code), then go straight to Resolve's no-change path. If the dispatch errors or returns nothing, retry it ONCE; if it fails again, fall back to verifying solo with the same 2-3 targeted reads — a failed consult never blocks the resolution. Do NOT run builds, typechecks, or tests for code you did not change; verification of shipped work is reading evidence, not re-validating the build.
+3. Re-fetching the same issue or comments cannot produce new information — each tracker object is read AT MOST once. When you have read the issue, its comments, and the linked prior work, you have everything the tracker will give you: STOP gathering and synthesize.
 
 ### First-principles frame (substantial requests only)
 
@@ -162,7 +171,9 @@ Include only lines that actually passed. Do not fabricate.
 
 ## Resolve
 
-After Assess returns `[PASS]`, auto-ship the work:
+**No-change resolutions.** When the work produced ZERO code changes (already-resolved/duplicate, answer-only, or pure triage), the ship steps below DO NOT APPLY — there is nothing to commit, push, typecheck, or open a PR for. Resolution is a single final message containing: (a) what resolved the request, with issue/PR/commit references; (b) the verification evidence you read; (c) the exact write-back comment text you would post to the tracker; (d) the proposed status change (e.g. "close as duplicate of X"). If tracker mutations are unavailable, that proposal itself completes the task — state it and stop.
+
+After Assess returns `[PASS]` on changed code, auto-ship the work:
 
 1. **Survey working state** — run `git status --short`, `git log --oneline origin/$(git rev-parse --abbrev-ref HEAD)..HEAD 2>/dev/null || git log $(git merge-base HEAD origin/main)..HEAD --oneline`, and `git diff --stat` in parallel.
 2. **Commit / squash** — derive a commit message from the plan title + goal. Squash all local commits into one if multiple exist. Format: `<type>: <title>\n\n<one paragraph summarizing what and why>\n\nPlan: <plan-path>`.

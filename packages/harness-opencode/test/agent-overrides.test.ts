@@ -219,3 +219,14 @@ describe("applyAgentOverrides", () => {
     expect(agents[AGENTS.PRIME].prompt).toContain("Subdir prompt");
   });
 });
+
+describe("temperature override", () => {
+  it("applies a numeric temperature and ignores non-numbers", async () => {
+    const { createAgents, applyAgentOverrides } = await import("../src/agents/index.js");
+    const agents = createAgents();
+    applyAgentOverrides(agents, { prime: { temperature: 0.7 } } as any, process.cwd());
+    expect((agents as any)["prime"].temperature).toBe(0.7);
+    applyAgentOverrides(agents, { prime: { temperature: "hot" } } as any, process.cwd());
+    expect((agents as any)["prime"].temperature).toBe(0.7);
+  });
+});

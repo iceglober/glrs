@@ -225,6 +225,54 @@ function checkInlineSleep(
   );
 }
 
+// ---- Hook output shape adapters ----------------------------------------------
+// Built-in tools reach tool.execute.after as { title, metadata, output:
+// string, attachments }. MCP tools reach it as { content: [{type:"text",
+// text}, …] } — NO `output` key (verified empirically via
+// GLRS_TOOL_HOOKS_DEBUG, 2026-06-11). Every consumer that reads or mutates
+// the result text must go through these two adapters, or it silently no-ops
+// for MCP tools — which is how the loop guard spent a 20-minute Gemini Flash
+// session blind and mute while the model re-fetched the same Linear comments
+// nine times.
+
+type HookOutput = {
+  output?: unknown;
+  content?: unknown[];
+};
+
+/** Human-visible text of a tool result, regardless of shape. Null when none. */
+function readHookOutput(output: unknown): string | null {
+  const o = output as HookOutput;
+  if (typeof o?.output === "string") return o.output;
+  if (Array.isArray(o?.content)) {
+    const texts = o.content
+      .filter(
+        (c): c is { type: string; text: string } =>
+          !!c &&
+          (c as { type?: unknown }).type === "text" &&
+          typeof (c as { text?: unknown }).text === "string",
+      )
+      .map((c) => c.text);
+    if (texts.length > 0) return texts.join("\n");
+  }
+  return null;
+}
+
+/** Append corrective text to a tool result in whichever shape it has. */
+function appendHookOutput(output: unknown, text: string): void {
+  const o = output as HookOutput;
+  if (typeof o?.output === "string") {
+    o.output += text;
+    return;
+  }
+  if (Array.isArray(o?.content)) {
+    o.content.push({ type: "text", text });
+    return;
+  }
+  // Last resort — better a stray key than a silent drop.
+  (o as { output?: string }).output = text;
+}
+
 // ---- Env-gated tool denylist -------------------------------------------------
 // GLRS_TOOL_DENYLIST="linear_save_issue,linear_create_*" hard-blocks matching
 // tools for the lifetime of the server. Used by sandboxed/experiment runs
@@ -1101,16 +1149,17 @@ const plugin: Plugin = async ({ client }, options) => {
     sessionID: string,
     tool: string,
     args: unknown,
-    output: { output: string },
+    output: unknown,
     ok: boolean,
   ): Promise<void> {
-    // Hash the (pre-truncation) output so identical-result re-fetches can be
-    // weighted like failures — re-fetching unchanged data is not progress.
-    // MCP tools can reach this hook with a non-string output (observed:
-    // linear_* tools, output.output undefined) — hashing undefined throws,
-    // and a throw from tool.execute.after surfaces as the TOOL failing.
-    const outputHash =
-      typeof output.output === "string" ? hashContent(output.output) : null;
+    // Hash the (pre-truncation) result text so identical-result re-fetches
+    // can be weighted like failures — re-fetching unchanged data is not
+    // progress. readHookOutput handles both built-in ({output: string}) and
+    // MCP ({content: [...]}) shapes; hashing only strings also keeps the
+    // hook from throwing on exotic shapes (a throw here surfaces as the
+    // TOOL failing).
+    const outText = readHookOutput(output);
+    const outputHash = outText !== null ? hashContent(outText) : null;
     const v = checkToolLoop(cfg, sess, tool, args, ok, outputHash);
     if (v.level === "none" || v.kind === null) return;
 
@@ -1125,7 +1174,9 @@ const plugin: Plugin = async ({ client }, options) => {
 
     // In-band corrective: always present while looping so the freshest tool
     // output carries it. Cheap and the single highest-recovery intervention.
-    output.output += loopCorrective(v);
+    // Shape-aware append — for MCP tools this lands in content[], the only
+    // place the model actually sees.
+    appendHookOutput(output, loopCorrective(v));
 
     track(
       "loop_detected",
@@ -1146,9 +1197,11 @@ const plugin: Plugin = async ({ client }, options) => {
     }
 
     sess.loopStage = 2;
-    output.output +=
+    appendHookOutput(
+      output,
       `\n\n--- LOOP ABORTED ---\n` +
-      `The loop guard interrupted this turn. ${LOOP_ABORT_PROMPT}\n---`;
+        `The loop guard interrupted this turn. ${LOOP_ABORT_PROMPT}\n---`,
+    );
     try {
       await client.session.abort({ path: { id: sessionID } });
       await client.session.promptAsync({
@@ -1218,6 +1271,24 @@ const plugin: Plugin = async ({ client }, options) => {
     },
 
     "tool.execute.after": async (input, output) => {
+      // GLRS_TOOL_HOOKS_DEBUG=<file> appends one shape-line per call — used to
+      // diagnose what the hook actually receives per tool type (built-in vs
+      // MCP outputs differ in ways the docs don't state).
+      const dbg = process.env["GLRS_TOOL_HOOKS_DEBUG"];
+      if (dbg) {
+        try {
+          const o = output as { output?: unknown };
+          fs.appendFileSync(
+            dbg,
+            JSON.stringify({
+              tool: input.tool,
+              outputType: typeof o.output,
+              outputLen: typeof o.output === "string" ? o.output.length : null,
+              keys: Object.keys(output ?? {}),
+            }) + "\n",
+          );
+        } catch {}
+      }
       // Config may not yet be resolved on the very first tool call
       // (race between config hook and first tool execution). Use
       // defaults if so.
@@ -1237,7 +1308,7 @@ const plugin: Plugin = async ({ client }, options) => {
       // backpressure below mutate it. Reused by telemetry and the loop guard.
       const ok = inferToolOk(
         toolName,
-        output.output,
+        readHookOutput(output) ?? output.output,
         (output as { metadata?: unknown }).metadata,
       );
 
@@ -1274,10 +1345,13 @@ const plugin: Plugin = async ({ client }, options) => {
             : null;
         const cx = checkComplexityHint(cfg.loopDetection, sess, toolName, cmd, ok);
         if (cx.suggest) {
-          output.output += complexityHint(
-            cfg.loopDetection.deepAgent,
-            cfg.loopDetection.consultAgent,
-            cx.fails,
+          appendHookOutput(
+            output,
+            complexityHint(
+              cfg.loopDetection.deepAgent,
+              cfg.loopDetection.consultAgent,
+              cx.fails,
+            ),
           );
           track(
             "loop_detected",
@@ -1386,6 +1460,8 @@ export const __test__ = {
   complexityHint,
   checkInlineSleep,
   checkToolDenylist,
+  readHookOutput,
+  appendHookOutput,
   DEFAULT_MAX_INLINE_SLEEP_SECONDS,
   isVerifyCommand,
   checkReadDedup,

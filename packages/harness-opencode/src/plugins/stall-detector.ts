@@ -56,9 +56,13 @@ interface MessagePart {
 }
 
 /** True when an assistant turn's parts contain no user-visible text and no
- * tool call — reasoning/step parts only. Pure, unit-testable. */
+ * tool call — reasoning/step parts only, or NO parts at all (a completed
+ * empty continuation: observed when Gemini Flash loaded a skill, the
+ * follow-up turn completed with zero parts, and the session died at 9s).
+ * Pure, unit-testable. */
 function isDeadTurnParts(parts: MessagePart[] | undefined): boolean {
-  if (!Array.isArray(parts) || parts.length === 0) return false;
+  if (!Array.isArray(parts)) return false;
+  if (parts.length === 0) return true;
   for (const p of parts) {
     if (p?.type === "tool") return false;
     if (p?.type === "text" && typeof p.text === "string" && p.text.trim().length > 0) {

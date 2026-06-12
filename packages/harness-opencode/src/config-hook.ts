@@ -262,7 +262,7 @@ export function applyConfig(config: Config, pluginOptions?: PluginOptions): void
 
   // Apply agent overrides from plugin options (model + prompt customization)
   const agentOverrides = (pluginOptions as any)?.agents as
-    | Record<string, { model?: string; prompt?: string }>
+    | Record<string, { model?: string; prompt?: string; temperature?: number }>
     | undefined;
   if (agentOverrides) {
     applyAgentOverrides(ourAgents, agentOverrides, process.cwd());
@@ -274,7 +274,7 @@ export function applyConfig(config: Config, pluginOptions?: PluginOptions): void
   if (envOverrides) {
     try {
       const parsed = JSON.parse(envOverrides) as
-        | Record<string, { model?: string; prompt?: string }>
+        | Record<string, { model?: string; prompt?: string; temperature?: number }>
         | undefined;
       if (parsed && typeof parsed === "object") {
         applyAgentOverrides(ourAgents, parsed, process.cwd());
