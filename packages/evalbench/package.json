@@ -1,0 +1,21 @@
+{
+  "name": "@glrs-dev/evalbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hermetic eval suite for the glrs harness — frozen task fixtures, headless runner, blind-evaluator scoring. The yardstick for architecture-level experiments.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "lint": "echo 'no linter configured yet'"
+  },
+  "dependencies": {
+    "@glrs-dev/adapter-opencode": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22",
+    "typescript": "^5"
+  },
+  "license": "MIT"
+}

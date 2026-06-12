@@ -1,0 +1,8 @@
+{
+  "scaleMax": 10,
+  "criteria": [
+    { "key": "accuracy", "weight": 0.5, "definition": "Mechanics match the code: repeat scoring per (tool+args) signature over a 30-call rolling window (warn 3 / abort 6, failures and byte-identical results weigh double); exploration streak of passive read tools incl. MCP read verbs (warn 12 / abort 22, active calls reset); task dispatches never scored; in-flight subagents suppress hard abort; abort = in-band corrective + session.abort + queued re-plan prompt + counter reset." },
+    { "key": "completeness", "weight": 0.3, "definition": "Covers both signatures (repeat AND exploration), the exemptions (task, active/verify tools), the escalation stages, and the shape-aware corrective injection (built-in output string vs MCP content array)." },
+    { "key": "clarity", "weight": 0.2, "definition": "A maintainer could re-implement the policy from this answer alone; precise numbers, no vague hedging." }
+  ]
+}

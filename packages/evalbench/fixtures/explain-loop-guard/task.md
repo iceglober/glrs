@@ -1,0 +1,1 @@
+How does this harness's tool-loop guard decide when to warn a session versus hard-abort it? Walk me through the exact signals it tracks, the thresholds, what weighs more than what, what is exempt and why, and precisely what happens to the session when a hard abort fires. I want the real mechanics from the code, not a summary of intent.

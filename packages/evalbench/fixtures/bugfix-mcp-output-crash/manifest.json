@@ -1,0 +1,21 @@
+{
+  "name": "bugfix-mcp-output-crash",
+  "summary": "Real shipped bug: tool.execute.after hashes output.output unconditionally; MCP tools deliver {content} with no output key, so every MCP call fails with a crypto type error",
+  "shape": "bugfix",
+  "repo": {
+    "source": "glrs",
+    "ref": "e0b9c3a",
+    "setup": [
+      "bun install --silent 2>/dev/null || bun install"
+    ]
+  },
+  "budgetMin": 15,
+  "mockLinear": false,
+  "checks": {
+    "finalAnswerMustMatch": [
+      "(hashContent|hash)",
+      "(undefined|non-string)"
+    ],
+    "verifyCommand": "cd packages/harness-opencode && bun -e 'const p=(await import(\"./src/index.ts\")).default; const h=await p({client:{tui:{showToast:async()=>{}}},directory:process.cwd()},{}); await h[\"tool.execute.after\"]({sessionID:\"s\",tool:\"linear_get_issue\",args:{id:\"X\"}},{output:undefined}); console.log(\"OK\")'"
+  }
+}

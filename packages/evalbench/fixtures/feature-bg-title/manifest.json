@@ -1,0 +1,20 @@
+{
+  "name": "feature-bg-title",
+  "summary": "Reimplement a real shipped small feature: optional human-readable title for background jobs",
+  "shape": "feature",
+  "repo": {
+    "source": "glrs",
+    "ref": "ff25534",
+    "setup": [
+      "bun install --silent 2>/dev/null || bun install"
+    ]
+  },
+  "budgetMin": 20,
+  "mockLinear": false,
+  "checks": {
+    "finalAnswerMustMatch": [
+      "title"
+    ],
+    "verifyCommand": "git checkout 34f87990116f2707bf45f031434b619ad1be735e -- packages/harness-opencode/test/background.test.ts && cd packages/harness-opencode && bun test test/background.test.ts"
+  }
+}
