@@ -19,6 +19,37 @@ import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 
 export const GLRS_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
+
+/**
+ * Fixture resolution order: the private external dir first (org-specific
+ * fixtures with real tracker data MUST NOT live in this public repo), then
+ * the in-repo fixtures/ (substrate-only, fully shareable).
+ */
+export function privateFixturesDir(): string {
+  return (
+    process.env["GLRS_EVALBENCH_PRIVATE_FIXTURES"] ??
+    path.join(os.homedir(), ".glrs", "evalbench-private", "fixtures")
+  );
+}
+
+export function resolveFixtureDir(name: string): string {
+  for (const base of [privateFixturesDir(), path.join(GLRS_ROOT, "packages", "evalbench", "fixtures")]) {
+    const dir = path.join(base, name);
+    if (fs.existsSync(path.join(dir, "manifest.json"))) return dir;
+  }
+  throw new Error(`fixture not found in private or repo dirs: ${name}`);
+}
+
+export function listFixtures(): string[] {
+  const names = new Set<string>();
+  for (const base of [privateFixturesDir(), path.join(GLRS_ROOT, "packages", "evalbench", "fixtures")]) {
+    if (!fs.existsSync(base)) continue;
+    for (const f of fs.readdirSync(base)) {
+      if (fs.existsSync(path.join(base, f, "manifest.json"))) names.add(f);
+    }
+  }
+  return [...names].sort();
+}
 const HARNESS_DIST = path.join(GLRS_ROOT, "packages", "harness-opencode", "dist");
 const MOCK_LINEAR = path.join(GLRS_ROOT, "packages", "evalbench", "src", "mock-linear.ts");
 

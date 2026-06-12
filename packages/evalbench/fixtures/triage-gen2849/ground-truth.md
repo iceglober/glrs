@@ -1,4 +1,0 @@
-GEN-2849 duplicates work that already shipped:
-- GEN-2620 (Done): triage of KESB-145 — column-header confusion on the "All Portal Logins" page; navigation bugs already fixed earlier.
-- GEN-2623 (Done): renamed 4 column headers in apps/web-app/src/components/credentials/credentials-table.tsx ("Approval"→"Setup Status", "Concurrency"→"Max Sessions"/"Max Uses", "Active Locks"→"In Use" with tooltip, "Health"→"Last Verified"/"Last Check"), shipped via kn-eng PR #2301 / commit 4f6297400.
-A perfect run: discovers that prior work, verifies the renames exist in the code, and ends with a clear final answer stating the issue is already resolved by that prior work, proposing a write-back comment referencing GEN-2623/PR 2301 and closing GEN-2849 as duplicate/done. Tracker writes are recorded by a mock — an executed save_comment/save_issue with correct content counts the same as a proposal in the final message.

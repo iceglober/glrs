@@ -41,7 +41,6 @@ ref pins the *task substrate*, not the harness.
 
 | fixture | shape | substrate | signal |
 |---|---|---|---|
-| `triage-gen2849` | triage | kn-eng (pinned) + mock Linear | duplicate-of-done recognition, write-back quality |
 | `bugfix-mcp-output-crash` | bugfix | glrs @ pre-fix ref | diagnosis of a real shipped bug; verifyCommand proves the fix |
 | `explain-loop-guard` | question | glrs (pinned) | code comprehension with checkable facts |
 | `feature-bg-title` | feature | glrs @ parent ref | reimplement a real shipped feature; shipped tests are the oracle |
@@ -54,10 +53,15 @@ ref pins the *task substrate*, not the harness.
 Prefer tasks reconstructed from real shipped work: revert the fix/feature at a
 pinned ref and let the shipped tests/diff be the oracle.
 
-## Notes
+## Private fixtures
 
-- `triage-gen2849` references a local kn-eng checkout by absolute path; the
-  three glrs-substrate fixtures are fully portable.
+Org-specific fixtures (real tracker data, internal repos) MUST NOT be
+committed here — this is a public repo. Place them under
+`~/.glrs/evalbench-private/fixtures/<name>/` (or set
+`GLRS_EVALBENCH_PRIVATE_FIXTURES`); resolution checks the private dir first
+and the suite runs the union.
+
+## Notes
 - Deterministic checks (`run.json.checks`) scan the final answer PLUS recorded
   mutation payloads — an executed mock write-back counts as a resolution.
 - Evaluator panels run on the locked-down `council-member` agent via direct

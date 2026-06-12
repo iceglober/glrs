@@ -11,7 +11,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
-import { GLRS_ROOT } from "./sandbox.js";
+import { GLRS_ROOT, listFixtures } from "./sandbox.js";
 
 const argv = process.argv.slice(2);
 function arg(name: string, dflt?: string): string | undefined {
@@ -19,7 +19,6 @@ function arg(name: string, dflt?: string): string | undefined {
   return i >= 0 ? argv[i + 1] : dflt;
 }
 
-const FIXTURES_DIR = path.join(GLRS_ROOT, "packages", "evalbench", "fixtures");
 const RESULTS = path.join(GLRS_ROOT, "eval-runs", "results.tsv");
 const HEADER =
   "ts\tfixture\tmodel\tharness_rev\tmedian\tchecks_pass\tterminal\twall_s\ttool_calls\tdup\tguards\tcost_usd\tmutations\trun_dir\n";
@@ -37,9 +36,7 @@ async function main(): Promise<void> {
   }
   const runs = Number(arg("runs", "1"));
   const evaluatorModel = arg("evaluator-model", "azure/deepseek-v4-pro")!;
-  const fixtures =
-    arg("fixtures")?.split(",").map((s) => s.trim()) ??
-    fs.readdirSync(FIXTURES_DIR).filter((f) => fs.existsSync(path.join(FIXTURES_DIR, f, "manifest.json")));
+  const fixtures = arg("fixtures")?.split(",").map((s) => s.trim()) ?? listFixtures();
 
   const harnessRev = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
     cwd: GLRS_ROOT,

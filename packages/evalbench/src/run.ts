@@ -14,6 +14,7 @@ import { execFileSync } from "node:child_process";
 import { validateManifest, validateRubric, type FixtureManifest } from "./manifest.js";
 import {
   GLRS_ROOT,
+  resolveFixtureDir,
   createWorktree,
   removeWorktree,
   assembleXdg,
@@ -150,7 +151,7 @@ async function main(): Promise<void> {
     console.error("usage: run.ts --fixture <name> --model <provider/model> [--budget-min N] [--out dir]");
     process.exit(2);
   }
-  const fixtureDir = path.join(GLRS_ROOT, "packages", "evalbench", "fixtures", fixtureName);
+  const fixtureDir = resolveFixtureDir(fixtureName);
   const manifest = JSON.parse(fs.readFileSync(path.join(fixtureDir, "manifest.json"), "utf8")) as unknown;
   validateManifest(manifest);
   validateRubric(JSON.parse(fs.readFileSync(path.join(fixtureDir, "rubric.json"), "utf8")));
