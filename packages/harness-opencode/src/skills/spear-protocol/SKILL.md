@@ -29,6 +29,7 @@ Read the user's request. Classify into one of four paths:
 - **Substantial** (multi-file, multi-step, or any behavior change worth reviewing): run all SPEAR stages.
 - **Question only** (user is asking, not requesting action): answer in chat, do NOT modify files.
 - **Investigate/triage** (an issue/ticket reference, a support escalation, "work this ticket"): run the prior-work check below BEFORE framing any new work.
+- **Bug report** (a symptom/error with or without repro steps): diagnose FIRST, classify SECOND. Find the root cause with bounded reads/greps — you cannot size a fix you haven't located. Once the root cause is named, size the FIX itself: if it is local (≤ 2 files, roughly ≤ 30 changed lines), make the edit YOURSELF immediately — do NOT enter Plan or Execute delegation for it — add/adjust the regression test, run the targeted test for the touched package, and go to Resolve. Only a systemic fix (cross-cutting change, new mechanism, many files) takes the Substantial path. Diagnosing without fixing is a non-result: a bug task ends with a verified code change or an explicit BLOCKED.
 
 ### Prior-work check (investigate/triage requests)
 
