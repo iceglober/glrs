@@ -45,3 +45,4 @@ docs-site/dist/
 Pulumi.*.yaml.bak
 .lab/
 run.log
+eval-runs/

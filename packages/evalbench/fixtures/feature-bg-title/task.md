@@ -1,0 +1,3 @@
+The background_run tool in packages/harness-opencode/src/tools/background.ts currently labels jobs in listings and banners using the raw shell command, which is noisy for long commands.
+
+Add an optional `title` parameter to background_run so callers can pass a short human-readable label (e.g. "Poll PR #2478 checks"). When a title is present it should be shown instead of the command in background_list output, the jobs banner, and the background_check header; when absent, fall back to the clipped command. Centralise the label choice in a single exported `jobLabel()` helper, persist the title with the job metadata, and cover the behavior with tests. Run the package tests before finishing.

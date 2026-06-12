@@ -1,0 +1,9 @@
+{
+  "scaleMax": 10,
+  "criteria": [
+    { "key": "outcome_correctness", "weight": 0.45, "definition": "title param added to background_run, persisted in job metadata, surfaced via an exported jobLabel() helper used by listings/banner/check header, with command fallback when absent; tests cover it." },
+    { "key": "code_quality", "weight": 0.25, "definition": "Matches the file's existing idioms; label logic centralized (not copy-pasted at call sites); no unrelated churn." },
+    { "key": "convergence", "weight": 0.15, "definition": "No redundant exploration or spirals; verified with the package test suite." },
+    { "key": "efficiency", "weight": 0.15, "definition": "Tool calls and wall time proportionate; a good run is roughly 15-30 tool calls." }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "explain-loop-guard",
+  "summary": "Question-only comprehension: explain exactly how the tool-loop guard decides warn vs hard-abort",
+  "shape": "question",
+  "repo": { "source": "glrs", "ref": "e48faee" },
+  "budgetMin": 10,
+  "mockLinear": false,
+  "checks": {
+    "finalAnswerMustMatch": ["passive", "(repeat|signature)", "abort", "(window|30)"]
+  }
+}

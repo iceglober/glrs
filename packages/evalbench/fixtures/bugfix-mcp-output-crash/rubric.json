@@ -1,0 +1,9 @@
+{
+  "scaleMax": 10,
+  "criteria": [
+    { "key": "root_cause", "weight": 0.35, "definition": "Correctly identifies that tool.execute.after hashes output.output unconditionally and MCP tool results arrive without a string output key, so crypto throws and the hook error surfaces as the tool failing." },
+    { "key": "fix_quality", "weight": 0.35, "definition": "Fix guards the hash (or reads the MCP shape) without disabling identical-result detection for built-in tools; includes a regression test exercising a non-string output through the after-hook." },
+    { "key": "convergence", "weight": 0.15, "definition": "Reached diagnosis without redundant exploration or spirals; proportionate verification (targeted test run, not full rebuilds)." },
+    { "key": "efficiency", "weight": 0.15, "definition": "Tool calls and wall time proportionate; a good run is roughly 15-25 tool calls." }
+  ]
+}
