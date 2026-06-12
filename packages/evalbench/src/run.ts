@@ -33,6 +33,7 @@ function arg(name: string, dflt?: string): string | undefined {
 export interface RunMetrics {
   fixture: string;
   model: string;
+  prompt_override: string | null;
   terminal_state: string;
   wall_s: number;
   tool_calls: number;
@@ -178,8 +179,18 @@ async function main(): Promise<void> {
     `${GLRS_ROOT}/packages/adapter-opencode/src/opencode-adapter.ts`
   );
 
+  // --override-prompt: replace prime's prompt wholesale (e.g. the
+  // null-hypothesis "vanilla" two-line prompt). applyAgentOverrides requires
+  // repo-root-relative paths, so copy the file into the throwaway worktree.
+  const overridePromptSrc = arg("override-prompt");
+  let promptOverride: { prompt: string } | Record<string, never> = {};
+  if (overridePromptSrc) {
+    fs.copyFileSync(overridePromptSrc, path.join(wt, ".evalbench-prompt.md"));
+    promptOverride = { prompt: ".evalbench-prompt.md" };
+  }
+
   const started = Date.now();
-  const server = await startServer({ cwd: wt, agentOverrides: { prime: { model } } });
+  const server = await startServer({ cwd: wt, agentOverrides: { prime: { model, ...promptOverride } } });
   const client = server.client;
   let terminal = "resolved";
 
@@ -254,6 +265,7 @@ async function main(): Promise<void> {
     const metrics: RunMetrics = {
       fixture: fixtureName,
       model,
+      prompt_override: overridePromptSrc ? path.basename(overridePromptSrc) : null,
       terminal_state: terminal,
       wall_s: Math.round((Date.now() - started) / 1000),
       tool_calls: r.callSigs.length,

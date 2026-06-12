@@ -21,7 +21,7 @@ function arg(name: string, dflt?: string): string | undefined {
 
 const RESULTS = path.join(GLRS_ROOT, "eval-runs", "results.tsv");
 const HEADER =
-  "ts\tfixture\tmodel\tharness_rev\tmedian\tchecks_pass\tterminal\twall_s\ttool_calls\tdup\tguards\tcost_usd\tmutations\trun_dir\n";
+  "ts\tfixture\tmodel\tcondition\tharness_rev\tmedian\tchecks_pass\tterminal\twall_s\ttool_calls\tdup\tguards\tcost_usd\tmutations\trun_dir\n";
 
 function lastJsonLine(out: string): Record<string, unknown> {
   const lines = out.trim().split("\n").filter(Boolean);
@@ -54,7 +54,8 @@ async function main(): Promise<void> {
       try {
         runOut = lastJsonLine(
           execFileSync("bun", [path.join(GLRS_ROOT, "packages", "evalbench", "src", "run.ts"),
-            "--fixture", fixture, "--model", model], {
+            "--fixture", fixture, "--model", model,
+            ...(arg("override-prompt") ? ["--override-prompt", arg("override-prompt")!] : [])], {
             encoding: "utf8",
             stdio: ["ignore", "pipe", "inherit"],
             timeout: 40 * 60_000,
@@ -83,6 +84,7 @@ async function main(): Promise<void> {
         new Date().toISOString(),
         fixture,
         model,
+        arg("override-prompt") ? "vanilla" : "doctrine",
         harnessRev,
         med || "NA",
         String(runOut["checks_pass"]),
