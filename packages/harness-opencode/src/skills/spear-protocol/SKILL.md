@@ -35,7 +35,7 @@ Read the user's request. Classify into one of four paths:
 Tickets frequently duplicate work that already shipped. Before planning anything:
 
 1. Search the tracker for sibling issues sharing the same source reference (source ticket id, org/customer id, page or symptom named in the title) and read their statuses.
-2. If a COMPLETED issue already covers the request: the task collapses to **verify + write back**. Verify the claim at its source — read the shipped commit/PR diff or the current code — then go straight to Resolve's no-change path. Do NOT run builds, typechecks, or tests for code you did not change; verification of shipped work is reading evidence, not re-validating the build.
+2. If a COMPLETED issue already covers the request: the task collapses to **verify + write back** — and the evidence-gathering is DELEGATED, not done solo. Dispatch ONE bounded consult via the `task` tool to `@oracle` with: the issue ids found, the source ticket reference, and the question "what shipped that covers this request — give file paths, commit, and PR citations". Do nothing else while it runs. When it returns, verify its citations yourself with at most 2-3 targeted reads (the shipped diff or the current code), then go straight to Resolve's no-change path. Do NOT run builds, typechecks, or tests for code you did not change; verification of shipped work is reading evidence, not re-validating the build.
 3. Re-fetching the same issue or comments cannot produce new information — each tracker object is read AT MOST once. When you have read the issue, its comments, and the linked prior work, you have everything the tracker will give you: STOP gathering and synthesize.
 
 ### First-principles frame (substantial requests only)
