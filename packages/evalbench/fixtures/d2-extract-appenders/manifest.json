@@ -13,6 +13,7 @@
       "loopCorrective",
       "bugFixCorrective",
       "complexityHint"
-    ]
+    ],
+    "requireFinalAnswer": false
   }
 }

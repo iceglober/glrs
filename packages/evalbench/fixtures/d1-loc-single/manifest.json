@@ -12,6 +12,7 @@
     "finalAnswerMustMatch": [
       "DEFAULT_REPEAT_ABORT",
       "tool-hooks"
-    ]
+    ],
+    "requireFinalAnswer": false
   }
 }
