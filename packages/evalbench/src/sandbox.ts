@@ -87,7 +87,10 @@ export function removeWorktree(_repoSource: string, runDir: string): void {
  * (providers + plugin options) but repoints the harness plugin at the local
  * dist. Symlinks gcloud/gh so provider auth keeps working under the new HOME.
  */
-export function assembleXdg(runDir: string, opts: { mockLinear: boolean; fixtureLinearDir?: string }): string {
+export function assembleXdg(
+  runDir: string,
+  opts: { mockLinear: boolean; fixtureLinearDir?: string; harnessOpts?: Record<string, unknown> },
+): string {
   const xdg = path.join(runDir, "xdg");
   fs.mkdirSync(path.join(xdg, "opencode"), { recursive: true });
 
@@ -108,9 +111,27 @@ export function assembleXdg(runDir: string, opts: { mockLinear: boolean; fixture
 
   // Repoint the harness plugin at the local build.
   const plugins = (cfg["plugin"] as unknown[]) ?? [];
+  // Deep-merge harnessOpts (e.g. {toolHooks:{loopDetection:{bugFixWarn:0}}}) into
+  // the harness plugin's options so A/B conditions toggle one config key on the
+  // SAME binary instead of rebuilding two harnesses.
+  const merge = (a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> => {
+    const out = { ...a };
+    for (const [k, v] of Object.entries(b)) {
+      out[k] =
+        v && typeof v === "object" && !Array.isArray(v) && out[k] && typeof out[k] === "object"
+          ? merge(out[k] as Record<string, unknown>, v as Record<string, unknown>)
+          : v;
+    }
+    return out;
+  };
   cfg["plugin"] = plugins.map((p) => {
-    if (Array.isArray(p) && String(p[0]).includes("harness")) return [`file://${HARNESS_DIST}`, p[1]];
-    if (typeof p === "string" && p.includes("harness")) return `file://${HARNESS_DIST}`;
+    if (Array.isArray(p) && String(p[0]).includes("harness")) {
+      const base = (p[1] as Record<string, unknown>) ?? {};
+      return [`file://${HARNESS_DIST}`, opts.harnessOpts ? merge(base, opts.harnessOpts) : base];
+    }
+    if (typeof p === "string" && p.includes("harness")) {
+      return opts.harnessOpts ? [`file://${HARNESS_DIST}`, opts.harnessOpts] : `file://${HARNESS_DIST}`;
+    }
     return p;
   });
 

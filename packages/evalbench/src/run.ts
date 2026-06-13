@@ -34,6 +34,7 @@ export interface RunMetrics {
   fixture: string;
   model: string;
   prompt_override: string | null;
+  harness_opts: string | null;
   terminal_state: string;
   wall_s: number;
   tool_calls: number;
@@ -143,6 +144,18 @@ export function runChecks(
   return checks;
 }
 
+/**
+ * checks_pass: when an executable oracle (verify-command) is present it is
+ * AUTHORITATIVE — a silently-correct, test-passing fix is a fixed bug, and the
+ * narration checks (final-answer length/regex) become advisory diagnostics, not
+ * gates. Without a verify-command, all checks gate (the legacy behavior).
+ */
+export function checksPass(checks: { name: string; pass: boolean }[]): boolean {
+  const verify = checks.find((c) => c.name === "verify-command");
+  if (verify) return verify.pass;
+  return checks.every((c) => c.pass);
+}
+
 // ---- main -----------------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -167,7 +180,11 @@ async function main(): Promise<void> {
   const linearDir = path.join(fixtureDir, "linear");
   const wt = createWorktree(runDir, manifest.repo.source, manifest.repo.ref, manifest.repo.setup);
   writeWorktreeConfig(wt, runDir, { mockLinear: manifest.mockLinear, fixtureLinearDir: linearDir });
-  const xdg = assembleXdg(runDir, { mockLinear: manifest.mockLinear });
+  const harnessOptsFile = arg("harness-opts");
+  const harnessOpts = harnessOptsFile
+    ? (JSON.parse(fs.readFileSync(harnessOptsFile, "utf8")) as Record<string, unknown>)
+    : undefined;
+  const xdg = assembleXdg(runDir, { mockLinear: manifest.mockLinear, harnessOpts });
 
   process.env["XDG_CONFIG_HOME"] = xdg;
   process.env["GLRS_AUTOPILOT_HEADLESS"] = "1";
@@ -266,6 +283,7 @@ async function main(): Promise<void> {
       fixture: fixtureName,
       model,
       prompt_override: overridePromptSrc ? path.basename(overridePromptSrc) : null,
+      harness_opts: harnessOptsFile ? path.basename(harnessOptsFile) : null,
       terminal_state: terminal,
       wall_s: Math.round((Date.now() - started) / 1000),
       tool_calls: r.callSigs.length,
@@ -277,7 +295,7 @@ async function main(): Promise<void> {
       final_text_chars: r.finalText.length,
       mutations,
       checks,
-      checks_pass: checks.every((c) => c.pass),
+      checks_pass: checksPass(checks),
     };
 
     fs.writeFileSync(path.join(runDir, "session.md"), r.md);
