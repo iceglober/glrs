@@ -130,6 +130,15 @@ const DEFAULT_EXPLORATION_WARN = 12;
 const DEFAULT_EXPLORATION_ABORT = 22;
 const DEFAULT_REPEAT_WARN = 3;
 const DEFAULT_REPEAT_ABORT = 6;
+// Bug-fix nudge: after this many consecutive passive (read/search) calls on a
+// BUG-shaped task with ZERO edits, inject a "fix now" corrective. Evidence
+// (doctrine-as-mechanism lab): the prose SPEAR bug-fix fast path triggers only
+// ~50% on weak primes — they diagnose, the generic explore guard fires, and
+// they state a hypothesis instead of editing. A shape-specific corrective
+// through the same visible-output channel weak models DO obey converts those.
+// Fires earlier than explorationWarn so it pivots before the generic guard
+// engages. 0 disables.
+const DEFAULT_BUGFIX_WARN = 5;
 // Rolling window (in tool calls) over which repeat scores are accumulated, so
 // an identical call spread across a long session doesn't slowly accrue a false
 // positive — only clustered repetition trips it.
@@ -158,6 +167,54 @@ function isPassiveTool(tool: string): boolean {
   if (PASSIVE_TOOLS.has(tool)) return true;
   if (ACTIVE_TOOL_VERB.test(tool)) return false;
   return PASSIVE_TOOL_VERB.test(tool);
+}
+
+// A QUESTION about code is not a bug task even when it quotes an error —
+// checked first so "explain why X errors" classifies as other, not bug.
+const QUESTION_SHAPE =
+  /\b(how (do|does|to|can|would|should)|explain|walk me through|why (does|is|do|are|did)|what (is|are|does|do|happens)|describe|tell me about|where (is|are|does))\b/i;
+// Symptoms that mean "the system misbehaves, make it stop".
+const BUG_SHAPE =
+  /\b(bug\b|bug report|fails?\b|failing|failed|crash(es|ing|ed)?|broke?n|throws?\b|throwing|thrown|exception|stack ?trace|traceback|regression|reproduc|repro\b|does ?n.?t work|not working|doesn.?t\b|won.?t\b|wrong (output|result|value|behaviou?r|answer)|unexpected(ly)?|returns? (the )?wrong|error[: ]|fix (the |this )?(bug|crash|error|issue|failure))/i;
+
+/** Classify a task from its first user message. Pure. */
+function classifyTaskShape(text: string): "bug" | "other" {
+  if (QUESTION_SHAPE.test(text)) return "other";
+  if (BUG_SHAPE.test(text)) return "bug";
+  return "other";
+}
+
+/**
+ * Decide whether to fire the bug-fix nudge for the current call. Fires exactly
+ * once per passive run, when the streak first reaches `bugFixWarn`, on a
+ * bug-shaped session that has not edited anything. The `bugFixArmed` flag
+ * (reset whenever an active call zeroes the passive streak) gives the
+ * once-per-crossing behavior. Pure apart from the flag it owns.
+ */
+function checkBugFixNudge(
+  cfg: ToolHooksConfig["loopDetection"],
+  sess: SessionState,
+): boolean {
+  if (sess.passiveStreak === 0) sess.bugFixArmed = false;
+  const warn = cfg.bugFixWarn;
+  if (!cfg.enabled || warn <= 0) return false;
+  if (sess.taskShape !== "bug") return false;
+  if (sess.editCounts.size > 0) return false; // already editing — pivot achieved
+  if (sess.bugFixArmed) return false;
+  if (sess.passiveStreak < warn) return false;
+  sess.bugFixArmed = true;
+  return true;
+}
+
+/** Shape-specific corrective: the mechanical "fix now" contract. */
+function bugFixCorrective(streak: number): string {
+  return (
+    `\n\n--- FIX THE BUG ---\n` +
+    `This is a bug-fix task and you've made ${streak} read/search calls without editing any file. ` +
+    `Reading more will not fix the bug. If you have located the root cause, EDIT the file NOW and run the ` +
+    `relevant test. If you genuinely have not located it yet, say so in one sentence and name the single ` +
+    `next file to open — do not keep grepping.\n---`
+  );
 }
 
 // ---- Complexity-delegation hint -------------------------------------------
@@ -342,6 +399,11 @@ interface SessionState {
   delegated: boolean;
   /** Whether the complexity-delegation hint has already been emitted. */
   complexitySuggested: boolean;
+  // ---- bug-fix nudge ----
+  /** Task shape from the first user message: null until classified. */
+  taskShape: "bug" | "other" | null;
+  /** Whether the bug-fix nudge has fired for the current passive run. */
+  bugFixArmed: boolean;
 }
 
 const sessions = new Map<string, SessionState>();
@@ -367,6 +429,8 @@ function ensureSession(sessionID: string): SessionState {
       failedVerifyRuns: 0,
       delegated: false,
       complexitySuggested: false,
+      taskShape: null,
+      bugFixArmed: false,
     };
     sessions.set(sessionID, s);
   }
@@ -422,6 +486,9 @@ interface ToolHooksConfig {
     deepAgent: string;
     /** Bounded consult subagent to suggest for comprehension gaps. */
     consultAgent: string;
+    /** Consecutive passive calls on a bug-shaped task with no edits before the
+     * mechanical "fix now" nudge fires. 0 disables. */
+    bugFixWarn: number;
   };
   readDedup: {
     enabled: boolean;
@@ -503,6 +570,8 @@ function resolveConfig(config: Config, pluginOptions?: PluginOptions): ToolHooks
         typeof ld.complexityWarn === "number"
           ? ld.complexityWarn
           : DEFAULT_COMPLEXITY_WARN,
+      bugFixWarn:
+        typeof ld.bugFixWarn === "number" ? ld.bugFixWarn : DEFAULT_BUGFIX_WARN,
       deepAgent:
         typeof ld.deepAgent === "string" && ld.deepAgent
           ? ld.deepAgent
@@ -1297,6 +1366,31 @@ const plugin: Plugin = async ({ client }, options) => {
 
       const toolName = input.tool;
 
+      // Classify the task shape once per session from the first user message
+      // (lazy: one messages() fetch, cached). Drives the mechanical bug-fix
+      // nudge below. Placeholder set before the await so a re-entrant call
+      // doesn't refetch; refined to the real value after.
+      if (sess.taskShape === null) {
+        sess.taskShape = "other";
+        try {
+          const res = await (client as OpencodeClient).session.messages({
+            path: { id: input.sessionID },
+          });
+          const data = (res.data ?? []) as {
+            info?: { role?: string };
+            parts?: { type?: string; text?: string }[];
+          }[];
+          const firstUser = data.find((m) => m.info?.role === "user");
+          const text = (firstUser?.parts ?? [])
+            .filter((pt) => pt.type === "text" && typeof pt.text === "string")
+            .map((pt) => pt.text)
+            .join(" ");
+          if (text) sess.taskShape = classifyTaskShape(text);
+        } catch {
+          // Best-effort — an unclassified session just gets no bug-fix nudge.
+        }
+      }
+
       // A subagent just finished — drop it from the in-flight count BEFORE the
       // loop guard runs, so the guard sees only the siblings still running. If
       // any remain, the hard-abort stays suppressed (it would cancel them).
@@ -1332,6 +1426,26 @@ const plugin: Plugin = async ({ client }, options) => {
       // corrective first, then a hard abort if it keeps going. Runs for EVERY
       // tool so it can reset the streak on active calls. Fail-silent.
       await maybeInterveneOnLoop(cfg.loopDetection, sess, input.sessionID, toolName, input.args, output, ok);
+
+      // Mechanical bug-fix nudge: on a bug-shaped session that keeps reading
+      // without editing, inject the "fix now" contract through the same visible
+      // channel the loop guard uses. Distinct from the generic explore guard —
+      // it fires earlier and says EDIT, not "state a hypothesis". Fail-silent.
+      if (checkBugFixNudge(cfg.loopDetection, sess)) {
+        appendHookOutput(output, bugFixCorrective(sess.passiveStreak));
+        track(
+          "loop_detected",
+          buildLoopProps({
+            tool: toolName,
+            kind: "bugfix",
+            level: "warn",
+            count: sess.passiveStreak,
+            provider: sess.provider ?? undefined,
+            model: sess.model ?? undefined,
+            ...(devPreset ? { preset: devPreset } : {}),
+          }),
+        );
+      }
 
       // Complexity-delegation hint: distinct from the loop guard — keys on
       // repeated FAILING verify runs (not repetition/passivity) and suggests
@@ -1456,6 +1570,10 @@ export const __test__ = {
   checkToolLoop,
   normalizeToolSig,
   loopCorrective,
+  classifyTaskShape,
+  checkBugFixNudge,
+  bugFixCorrective,
+  DEFAULT_BUGFIX_WARN,
   checkComplexityHint,
   complexityHint,
   checkInlineSleep,
