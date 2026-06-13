@@ -1,0 +1,15 @@
+{
+  "scaleMax": 10,
+  "criteria": [
+    {
+      "key": "correctness",
+      "weight": 0.7,
+      "definition": "Lists exactly the 4 importers: src/agents/index.ts, src/plugins/dispatch-tracker.ts, src/plugins/parallel-dispatch.ts, src/tools/council.ts (no false positives, no misses)."
+    },
+    {
+      "key": "efficiency",
+      "weight": 0.3,
+      "definition": "Found via one or two targeted searches, not a wide manual scan."
+    }
+  ]
+}

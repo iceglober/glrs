@@ -1,0 +1,1 @@
+In this repository's harness plugin, the tool-loop guard hard-aborts a session when the same tool call is repeated too many times. Find the exact named constant that sets that hard-abort threshold, and the file it lives in. Answer with the constant name and the file path — nothing else needs changing.

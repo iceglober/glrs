@@ -1,0 +1,21 @@
+{
+  "name": "p2-diagnose-mcp",
+  "summary": "Diagnosis (primary): name the root cause of MCP tools failing \u2014 NO code change",
+  "shape": "diagnosis",
+  "repo": {
+    "source": "glrs",
+    "ref": "e0b9c3a",
+    "setup": [
+      "bun install --silent 2>/dev/null || bun install"
+    ]
+  },
+  "budgetMin": 10,
+  "mockLinear": false,
+  "checks": {
+    "finalAnswerMustMatch": [
+      "output.output",
+      "(undefined|non-string|content)",
+      "hash"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "scaleMax": 10,
+  "criteria": [
+    {
+      "key": "correctness",
+      "weight": 0.7,
+      "definition": "Names loopCorrective, bugFixCorrective, and complexityHint (the message builders). Naming appendHookOutput (the appender helper) is fine extra; missing any builder or adding unrelated functions loses points."
+    },
+    {
+      "key": "efficiency",
+      "weight": 0.3,
+      "definition": "Read/searched the one file directly; ~2-6 calls."
+    }
+  ]
+}

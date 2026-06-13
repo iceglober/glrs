@@ -1,0 +1,17 @@
+{
+  "name": "d1-loc-single",
+  "summary": "Localization (delegate): find the constant defining the repeat-call hard-abort threshold",
+  "shape": "localization",
+  "repo": {
+    "source": "glrs",
+    "ref": "9b79f4a"
+  },
+  "budgetMin": 6,
+  "mockLinear": false,
+  "checks": {
+    "finalAnswerMustMatch": [
+      "DEFAULT_REPEAT_ABORT",
+      "tool-hooks"
+    ]
+  }
+}

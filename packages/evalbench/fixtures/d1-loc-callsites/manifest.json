@@ -1,0 +1,19 @@
+{
+  "name": "d1-loc-callsites",
+  "summary": "Localization (delegate): list every src file importing from @glrs-dev/agent-core",
+  "shape": "localization",
+  "repo": {
+    "source": "glrs",
+    "ref": "9b79f4a"
+  },
+  "budgetMin": 8,
+  "mockLinear": false,
+  "checks": {
+    "finalAnswerMustMatch": [
+      "agents/index",
+      "dispatch-tracker",
+      "parallel-dispatch",
+      "council"
+    ]
+  }
+}
