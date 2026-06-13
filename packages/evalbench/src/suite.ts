@@ -55,7 +55,8 @@ async function main(): Promise<void> {
         runOut = lastJsonLine(
           execFileSync("bun", [path.join(GLRS_ROOT, "packages", "evalbench", "src", "run.ts"),
             "--fixture", fixture, "--model", model,
-            ...(arg("override-prompt") ? ["--override-prompt", arg("override-prompt")!] : [])], {
+            ...(arg("override-prompt") ? ["--override-prompt", arg("override-prompt")!] : []),
+            ...(arg("harness-opts") ? ["--harness-opts", arg("harness-opts")!] : [])], {
             encoding: "utf8",
             stdio: ["ignore", "pipe", "inherit"],
             timeout: 40 * 60_000,
@@ -84,7 +85,7 @@ async function main(): Promise<void> {
         new Date().toISOString(),
         fixture,
         model,
-        arg("override-prompt") ? "vanilla" : "doctrine",
+        arg("harness-opts") ? "mech-off" : arg("override-prompt") ? "vanilla" : "doctrine",
         harnessRev,
         med || "NA",
         String(runOut["checks_pass"]),

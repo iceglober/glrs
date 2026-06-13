@@ -32,6 +32,9 @@ const {
   DEFAULT_CONSULT_AGENT,
   checkInlineSleep,
   checkToolDenylist,
+  classifyTaskShape,
+  checkBugFixNudge,
+  bugFixCorrective,
   readHookOutput,
   appendHookOutput,
   DEFAULT_MAX_INLINE_SLEEP_SECONDS,
@@ -1049,5 +1052,71 @@ describe("readHookOutput / appendHookOutput", () => {
     expect(v.kind).toBe("repeat");
     expect(v.level).toBe("warn");
     expect(v.identicalResult).toBe(true);
+  });
+});
+
+// ---- bug-fix nudge (doctrine-as-mechanism) ---------------------------------
+
+describe("classifyTaskShape", () => {
+  it("classifies bug reports as bug", () => {
+    expect(classifyTaskShape("Bug report: every Linear MCP call fails with...")).toBe("bug");
+    expect(classifyTaskShape("the build crashes on startup")).toBe("bug");
+    expect(classifyTaskShape("this throws an exception when X")).toBe("bug");
+    expect(classifyTaskShape("fix the bug where dates render wrong")).toBe("bug");
+    expect(classifyTaskShape("the endpoint returns the wrong value")).toBe("bug");
+  });
+  it("classifies questions as other even when they mention errors", () => {
+    expect(classifyTaskShape("explain why this code errors out")).toBe("other");
+    expect(classifyTaskShape("how does the loop guard decide to abort?")).toBe("other");
+    expect(classifyTaskShape("walk me through the crash recovery path")).toBe("other");
+    expect(classifyTaskShape("what happens when a tool fails?")).toBe("other");
+  });
+  it("classifies features/triage as other", () => {
+    expect(classifyTaskShape("add a title param to background_run")).toBe("other");
+    expect(classifyTaskShape("GEN-2849 — work this ticket end to end")).toBe("other");
+  });
+});
+
+describe("checkBugFixNudge", () => {
+  function bugSess(id: string, streak: number, edits = 0): any {
+    const sess = getSession(id);
+    sess.taskShape = "bug";
+    sess.passiveStreak = streak;
+    sess.editCounts = new Map(Array.from({ length: edits }, (_, i) => [`/f${i}.ts`, 1]));
+    sess.bugFixArmed = false;
+    return sess;
+  }
+  it("fires once when a bug session crosses the threshold with no edits", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = bugSess("bfn-1", cfg.bugFixWarn);
+    expect(checkBugFixNudge(cfg, sess)).toBe(true);
+    // armed — second call at the same streak does not re-fire
+    expect(checkBugFixNudge(cfg, sess)).toBe(false);
+  });
+  it("does not fire below threshold, or once editing has begun, or on non-bug", () => {
+    const cfg = defaultConfig().loopDetection;
+    expect(checkBugFixNudge(cfg, bugSess("bfn-2", cfg.bugFixWarn - 1))).toBe(false);
+    expect(checkBugFixNudge(cfg, bugSess("bfn-3", cfg.bugFixWarn, 1))).toBe(false);
+    const other = getSession("bfn-4");
+    other.taskShape = "other";
+    other.passiveStreak = cfg.bugFixWarn + 5;
+    expect(checkBugFixNudge(cfg, other)).toBe(false);
+  });
+  it("re-arms after the passive streak resets (a new diagnosis run)", () => {
+    const cfg = defaultConfig().loopDetection;
+    const sess = bugSess("bfn-5", cfg.bugFixWarn);
+    expect(checkBugFixNudge(cfg, sess)).toBe(true);
+    sess.passiveStreak = 0; // active call reset
+    expect(checkBugFixNudge(cfg, sess)).toBe(false); // disarms, not at threshold
+    sess.passiveStreak = cfg.bugFixWarn;
+    expect(checkBugFixNudge(cfg, sess)).toBe(true); // fires again
+  });
+  it("is disabled when bugFixWarn is 0", () => {
+    const cfg = { ...defaultConfig().loopDetection, bugFixWarn: 0 };
+    expect(checkBugFixNudge(cfg, bugSess("bfn-6", 20))).toBe(false);
+  });
+  it("corrective tells the model to EDIT, not to keep reading", () => {
+    expect(bugFixCorrective(5)).toContain("EDIT the file NOW");
+    expect(bugFixCorrective(5)).toContain("5 read/search calls");
   });
 });

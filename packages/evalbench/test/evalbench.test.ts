@@ -183,3 +183,16 @@ describe("runner helpers", () => {
     expect(checks.find((c) => c.name === "final-answer-present")!.pass).toBe(true);
   });
 });
+
+describe("checksPass — executable oracle is authoritative", () => {
+  it("verify-command decides when present (narration is advisory)", () => {
+    const { checksPass } = require("../src/run.ts");
+    expect(checksPass([{ name: "final-answer-present", pass: false }, { name: "verify-command", pass: true }])).toBe(true);
+    expect(checksPass([{ name: "final-answer~/x/i", pass: true }, { name: "verify-command", pass: false }])).toBe(false);
+  });
+  it("all checks gate when there is no verify-command", () => {
+    const { checksPass } = require("../src/run.ts");
+    expect(checksPass([{ name: "final-answer-present", pass: true }, { name: "final-answer~/x/i", pass: false }])).toBe(false);
+    expect(checksPass([{ name: "final-answer-present", pass: true }])).toBe(true);
+  });
+});

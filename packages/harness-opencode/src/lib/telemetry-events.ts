@@ -208,7 +208,7 @@ export function buildToolUsedProps(args: {
  */
 export function buildLoopProps(args: {
   tool: string;
-  kind: "explore" | "repeat" | "complexity";
+  kind: "explore" | "repeat" | "complexity" | "bugfix";
   level: "warn" | "abort";
   count: number;
   provider?: string;
