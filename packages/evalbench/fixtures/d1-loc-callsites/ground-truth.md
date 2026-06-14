@@ -1,0 +1,1 @@
+Exactly 4 files import @glrs-dev/agent-core: src/agents/index.ts, src/plugins/dispatch-tracker.ts, src/plugins/parallel-dispatch.ts, src/tools/council.ts. A single grep answers it; the delegate's value is the clean, complete, false-positive-free list.

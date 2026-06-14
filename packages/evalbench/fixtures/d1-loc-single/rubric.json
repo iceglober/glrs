@@ -1,0 +1,15 @@
+{
+  "scaleMax": 10,
+  "criteria": [
+    {
+      "key": "correctness",
+      "weight": 0.7,
+      "definition": "Names DEFAULT_REPEAT_ABORT in packages/harness-opencode/src/plugins/tool-hooks.ts."
+    },
+    {
+      "key": "efficiency",
+      "weight": 0.3,
+      "definition": "Found it with minimal tool calls; a good localization run is ~2-6 calls."
+    }
+  ]
+}

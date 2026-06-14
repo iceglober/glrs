@@ -1,0 +1,1 @@
+DEFAULT_BUGFIX_WARN appears in tool-hooks.ts (declaration ~line 141, the resolveConfig default, the __test__ export) and in test/tool-hooks.test.ts (destructured import + assertions). A correct rename touches all sites; verifyCommand asserts the old name is gone AND typecheck+tests pass.

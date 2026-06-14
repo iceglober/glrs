@@ -1,0 +1,1 @@
+Root cause: packages/harness-opencode/src/plugins/tool-hooks.ts hashes output.output unconditionally in tool.execute.after; MCP tools deliver {content:[...]} with no string output, so crypto.update(undefined) throws and the after-hook throw surfaces to the model as the tool itself failing. Pure judgment — no fix.

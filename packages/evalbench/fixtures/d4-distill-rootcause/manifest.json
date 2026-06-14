@@ -1,0 +1,9 @@
+{
+  "name": "d4-distill-rootcause",
+  "summary": "Distillation (delegate): from a long failing transcript, extract the buried root cause in <=12 lines",
+  "shape": "distillation",
+  "repo": { "source": "glrs", "ref": "9b79f4a" },
+  "budgetMin": 6,
+  "mockLinear": false,
+  "checks": { "finalAnswerMustMatch": ["sum", "(utils/math|wrong file|two .*sum|both .*sum|different file|imports? from)"] }
+}

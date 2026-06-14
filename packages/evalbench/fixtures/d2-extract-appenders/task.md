@@ -1,0 +1,1 @@
+In packages/harness-opencode/src/plugins/tool-hooks.ts, the harness injects corrective/nudge text into the result a tool returns to the model. Several small functions BUILD that injected text. Name every such message-building function (the ones that return the corrective strings appended to tool output). Return the function names — do not change code.

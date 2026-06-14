@@ -1,0 +1,17 @@
+{
+  "name": "d3-transform-rename",
+  "summary": "Mechanical transform (delegate/exec boundary): rename a constant everywhere, keep green",
+  "shape": "mechanical-transform",
+  "repo": {
+    "source": "glrs",
+    "ref": "9b79f4a",
+    "setup": [
+      "bun install --silent 2>/dev/null || bun install"
+    ]
+  },
+  "budgetMin": 15,
+  "mockLinear": false,
+  "checks": {
+    "verifyCommand": "! git grep -q DEFAULT_BUGFIX_WARN -- packages/harness-opencode/src packages/harness-opencode/test && cd packages/harness-opencode && bun run typecheck && bun test test/tool-hooks.test.ts"
+  }
+}

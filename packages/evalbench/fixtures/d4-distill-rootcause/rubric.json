@@ -1,0 +1,8 @@
+{
+  "scaleMax": 10,
+  "criteria": [
+    { "key": "correctness", "weight": 0.6, "definition": "Identifies the root cause: the test imports sum from ../src/utils/math, but the agent edited the OTHER sum in src/math.ts the whole time, so its edits never affected the function under test (NaN persists, console.log never prints)." },
+    { "key": "evidence", "weight": 0.25, "definition": "Cites the pinning evidence: the test import line (../src/utils/math), the grep showing two sum definitions, and the never-printing console.log." },
+    { "key": "conciseness", "weight": 0.15, "definition": "<= 12 lines, no rambling, no long proposed fix — just cause and evidence." }
+  ]
+}

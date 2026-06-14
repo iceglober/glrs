@@ -1,0 +1,1 @@
+Rename the exported constant `DEFAULT_BUGFIX_WARN` to `DEFAULT_BUGFIX_THRESHOLD` EVERYWHERE it appears in packages/harness-opencode (source and tests), including its export, all usages, and the test import. This is a pure mechanical rename — do not change any behavior. When done, the package must typecheck and the tool-hooks tests must pass. Run them to confirm before finishing.

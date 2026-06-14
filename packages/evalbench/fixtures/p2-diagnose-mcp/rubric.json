@@ -1,0 +1,20 @@
+{
+  "scaleMax": 10,
+  "criteria": [
+    {
+      "key": "correctness",
+      "weight": 0.7,
+      "definition": "Identifies that tool.execute.after (tool-hooks.ts) hashes output.output unconditionally, MCP results arrive as {content:[...]} with no string output key, so crypto throws on undefined and the after-hook error surfaces as the tool failing."
+    },
+    {
+      "key": "precision",
+      "weight": 0.2,
+      "definition": "Cites the specific location (tool-hooks.ts, the hashContent(output.output) call in the loop/after path), not a vague area."
+    },
+    {
+      "key": "discipline",
+      "weight": 0.1,
+      "definition": "Did NOT modify code (diagnosis only); proportionate investigation."
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "scaleMax": 10,
+  "criteria": [
+    {
+      "key": "correctness",
+      "weight": 0.6,
+      "definition": "Every occurrence of DEFAULT_BUGFIX_WARN renamed to DEFAULT_BUGFIX_THRESHOLD (src export+usages and test import); typecheck + tool-hooks tests pass; no behavior change."
+    },
+    {
+      "key": "completeness",
+      "weight": 0.25,
+      "definition": "No occurrence missed (no leftover old name), no unrelated edits/churn."
+    },
+    {
+      "key": "efficiency",
+      "weight": 0.15,
+      "definition": "Located all sites and applied the change without flailing; proportionate calls."
+    }
+  ]
+}
