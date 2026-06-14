@@ -17,6 +17,7 @@ import {
   bedrockFromAnthropic,
   ModelNotFound,
 } from "../../aws/model-resolver.js";
+import { randomToken } from "../../lib/id.js";
 import { fromConverseStream, toConverseInput } from "./translate.js";
 
 export interface BedrockProviderOptions {
@@ -66,7 +67,7 @@ export class BedrockConverseProvider implements Provider {
     const modelId = this.resolveModel(req.model);
     const input = toConverseInput(req, modelId);
 
-    const messageId = `msg_${cryptoRandomId()}`;
+    const messageId = `msg_${randomToken()}`;
     const cmd = new ConverseStreamCommand(input);
     const resp = await this.client.send(cmd, { abortSignal: signal });
 
@@ -94,10 +95,3 @@ function asAsyncIterable(
   return stream;
 }
 
-function cryptoRandomId(): string {
-  // Bun has crypto.randomUUID; fall back to a short random hex.
-  const uuid =
-    (globalThis.crypto as { randomUUID?: () => string } | undefined)?.randomUUID;
-  if (uuid) return uuid().replaceAll("-", "");
-  return Math.random().toString(16).slice(2, 18);
-}
