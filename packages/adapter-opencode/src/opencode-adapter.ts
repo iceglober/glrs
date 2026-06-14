@@ -207,6 +207,10 @@ export async function sendAndWait(
     sessionId: string;
     message: string;
     agentName?: string;
+    /** Per-message model override "provider/model-id" — re-routes this turn's
+     *  responding model while preserving the session's context (OpenCode
+     *  resolves the model on the prompt body). Omit to use the agent default. */
+    model?: string;
     stallMs?: number;
     abortSignal?: AbortSignal;
     onToolCall?: (toolName: string, firstArg?: string) => void;
@@ -242,12 +246,18 @@ export async function sendAndWait(
   });
 
   // Send the message via the correct SDK method
+  const modelOverride = (() => {
+    if (!opts.model) return undefined;
+    const i = opts.model.indexOf("/");
+    return i > 0 ? { providerID: opts.model.slice(0, i), modelID: opts.model.slice(i + 1) } : undefined;
+  })();
   await client.session.prompt({
     path: { id: opts.sessionId },
     body: {
       parts: [{ type: "text", text: opts.message }],
       ...(opts.agentName ? { agent: opts.agentName } : {}),
-    },
+      ...(modelOverride ? { model: modelOverride } : {}),
+    } as never,
   });
 
   return idlePromise;
