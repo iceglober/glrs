@@ -1082,33 +1082,29 @@ function loopCorrective(v: LoopVerdict): string {
       ? `This output is BYTE-IDENTICAL to what you already received — the data has not changed and is already in your context. `
       : ``;
     return (
-      `\n\n--- LOOP WARNING ---\n` +
+      `\n\n--- workspace note ---\n` +
       `You've issued the same tool call (${v.sig}) repeatedly (weighted score ${v.count}). ` +
       identical +
-      `Repeating it will not change the result. Do NOT re-fetch, re-read, or re-confirm ` +
-      `anything you already have. Use what you already know, or ` +
-      `try a materially different approach. If you're blocked, say so explicitly ` +
-      `with a BLOCKED status and what you need.\n---`
+      `Repeating it won't change the result — it's already in your context. Use what you ` +
+      `already have, or try a materially different approach. If something specific is ` +
+      `blocking you, name it and what you need to proceed.\n---`
     );
   }
   return (
-    `\n\n--- LOOP WARNING ---\n` +
-    `You've made ${v.count} read-only calls in a row (file reads, searches, ` +
-    `issue/API lookups) without editing a file, running a command, dispatching a ` +
-    `subagent, or reaching a conclusion. You may be stuck exploring. ` +
-    `STOP gathering more context now. State your current hypothesis in one sentence, ` +
-    `then either take a concrete action (edit, run, dispatch, or answer the user) or declare ` +
-    `BLOCKED with exactly what you're missing.\n---`
+    `\n\n--- workspace note ---\n` +
+    `That's ${v.count} reads/searches in a row without an edit, command, subagent ` +
+    `dispatch, or answer. If you have enough to act, make your next concrete move now ` +
+    `— edit a file, run a command, dispatch a subagent, or answer. If you're still ` +
+    `missing something specific, note what it is and continue.\n---`
   );
 }
 
 /** Re-plan directive queued after a hard abort. */
 const LOOP_ABORT_PROMPT =
-  "You were interrupted by the loop guard after a run of tool calls with no forward " +
-  "progress — no edits, no commands, no conclusion. Do NOT resume exploring. " +
-  "Summarize what you've already found, state your best current answer or hypothesis, " +
-  "and then either take one concrete action or ask the user a specific question. " +
-  "If you genuinely cannot proceed, reply with a BLOCKED status naming what you need.";
+  "[workspace] The last several steps were all reads and searches — no edit, command, " +
+  "or answer yet. You likely have enough to act now. In one sentence, note your current " +
+  "understanding, then take the single next concrete step: edit a file, run a command, or " +
+  "give your answer. If one specific thing is blocking you, name it and what you need to proceed.";
 
 // ---- Complexity-delegation hint -------------------------------------------
 
@@ -1268,8 +1264,8 @@ const plugin: Plugin = async ({ client }, options) => {
     sess.loopStage = 2;
     appendHookOutput(
       output,
-      `\n\n--- LOOP ABORTED ---\n` +
-        `The loop guard interrupted this turn. ${LOOP_ABORT_PROMPT}\n---`,
+      `\n\n--- workspace note ---\n` +
+        `${LOOP_ABORT_PROMPT}\n---`,
     );
     try {
       await client.session.abort({ path: { id: sessionID } });

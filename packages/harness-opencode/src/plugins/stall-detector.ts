@@ -24,10 +24,9 @@ const MAX_NUDGES_PER_SESSION = 3;
 const SUBAGENT_GRACE_MS = 5 * 60 * 1000;
 
 const NUDGE_MESSAGE =
-  "You described an action but didn't execute it. " +
-  "Your last message ended with an intention (e.g., 'Let me...', 'Now I'll...') " +
-  "but no tool call followed. Execute the action now. " +
-  "If you're blocked, say so explicitly with a STOP or BLOCKED status.";
+  "[workspace] Your last message described a next action (e.g., 'Let me...', " +
+  "'Now I'll...') but no tool call followed. Go ahead and take that action now. " +
+  "If you're actually blocked, say what you need to proceed.";
 
 // ---- Dead-turn detection ----------------------------------------------------
 // A turn that ends with ONLY internal reasoning — no user-visible text, no
@@ -39,11 +38,10 @@ const NUDGE_MESSAGE =
 // at `session.idle` (the turn is over — generation can't be interrupted
 // mid-stream) by inspecting the final assistant message's parts.
 const DEAD_TURN_NUDGE =
-  "Your last turn ended after internal reasoning only — no tool call, no text, no answer. " +
-  "You appear to be stuck re-analyzing context you already have. Do NOT re-read, re-fetch, " +
-  "or re-confirm anything. In ONE short message: state your conclusion from what you " +
-  "already know, then take the single next concrete action (one tool call) or give your " +
-  "answer. If something specific is missing, name it in one sentence with a BLOCKED status.";
+  "[workspace] Your last turn ended with internal reasoning only — no tool call, text, " +
+  "or answer. You likely already have what you need: in one short message, note your " +
+  "conclusion and take the single next concrete step (one tool call), or give your answer. " +
+  "If one specific thing is missing, name it.";
 const MAX_DEAD_TURN_NUDGES = 2;
 /** Per-session dead-turn nudge counts. Deliberately NOT cleared on
  * session.idle (unlike the watchdog map) — the budget must survive the very

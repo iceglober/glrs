@@ -645,7 +645,7 @@ describe("checkToolLoop", () => {
 
   it("loopCorrective text differs by kind", () => {
     expect(loopCorrective({ level: "warn", kind: "explore", sig: "read:/a", count: 12 })).toContain(
-      "read-only calls in a row",
+      "reads/searches in a row",
     );
     expect(loopCorrective({ level: "abort", kind: "repeat", sig: "grep:x", count: 6 })).toContain(
       "same tool call",
