@@ -18,7 +18,9 @@ pub async fn get_credentials(
     _tokens: &AuthTokens,
     context: &Context,
 ) -> Result<Credentials, ProviderError> {
-    let access_token = gcloud::adc_access_token()?;
+    // Offloaded: served from the daemon's credential endpoint and refresh loop —
+    // a hung gcloud must not block a runtime worker. See gcloud::offload.
+    let access_token = gcloud::offload(gcloud::adc_access_token).await?;
 
     // ADC tokens are ~1h; advertise a conservative window.
     let expires_in: i64 = 3300;
