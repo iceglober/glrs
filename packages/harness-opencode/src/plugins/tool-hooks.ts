@@ -274,9 +274,11 @@ function checkInlineSleep(
   return (
     `Blocked: foreground \`sleep ${secs}\` burns the turn doing nothing — and if you already ` +
     `backgrounded a wait for the same condition, this duplicates it. ` +
-    `To wait on an external condition (CI, deploy): background ONE watcher that exits when it ` +
-    `settles — background_run with \`gh pr checks <pr> --watch\`, \`gh run watch <run-id>\`, or ` +
-    `\`until <settled-check>; do sleep 30; done && <status-cmd>\` — then END your turn with a ` +
+    `To wait on an external condition (CI, deploy): background ONE watcher whose wake condition ` +
+    `is the first state you'd act on — context-dependent, not always full completion (CI with ` +
+    `parallel checks → the first failure, not after every check) — via background_run with ` +
+    `\`until <wake-check>; do sleep 30; done && <status-cmd>\` or the tool's own watch mode (use ` +
+    `its early-stop / fail-fast option when relevant). Act or re-arm when it wakes you — then END your turn with a ` +
     `one-line status. The completion ping wakes you the moment it exits. ` +
     `Pauses under ${maxSeconds}s run normally.`
   );

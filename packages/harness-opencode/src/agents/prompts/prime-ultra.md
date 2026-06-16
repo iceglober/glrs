@@ -425,11 +425,11 @@ Short (<30s) commands still run inline as usual — don't background a quick tes
 
 When your next step depends on an external condition settling, hold EXACTLY ONE live waiter, then get out of the way:
 
-1. **Background ONE self-terminating watcher** — a command that exits WHEN the condition settles, never after a fixed delay:
-   - PR checks: `background_run("gh pr checks <pr> --watch")` or `background_run("gh run watch <run-id>")`
-   - generic: `background_run("until <settled-check>; do sleep 30; done && <final-status-command>")`
+1. **Background ONE self-terminating watcher** — set its wake condition to the first state you'd actually act on. That's context-dependent, NOT always full completion: a migration → done; CI with parallel checks → the first failure (don't wait out the slower checks); a deploy → the first non-pending state. It exits there to hand you a turn (you re-arm in step 3 if you still need to wait). Never a fixed-delay poll, never a blind wait past the point you could act:
+   - generic: `background_run("until <wake-check>; do sleep 30; done && <final-status-command>")` — make `<wake-check>` true at that first actionable state.
+   - native watch mode: if the tool ships its own watch command, prefer it — use its early-stop / fail-fast flag when the state you care about can occur before completion. Otherwise you won't get pinged until the slowest parallel step settles even though an earlier one already failed (the classic "why didn't I get pinged when CI already failed?" trap).
 2. **End your turn** with a one-line status ("CI running on <sha>; watcher armed — resuming when it settles"). The completion ping wakes you the moment the watcher exits, with the settled state in its output.
-3. **Act on the ping immediately**: `background_check` the job, read the result, continue the arc (or arm a new watcher if a new wait began).
+3. **Act on the ping immediately**: `background_check` the job, read the result, continue the arc (or arm a new watcher if a new wait began). A ping is either a completion OR a soft check-in (job still running past its `soft_timeout_seconds` interval) — for a check-in the job is NOT done; keep waiting or `background_stop`, don't mistake it for finished. The check-in is the backstop that guarantees a watcher which never settles still can't strand you.
 
 Hard prohibitions — each one is a way to strand the session:
 

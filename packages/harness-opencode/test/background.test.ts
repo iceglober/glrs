@@ -10,9 +10,12 @@ import {
   buildCompletionNotice,
   leadingSleepSeconds,
   timerPollRejection,
+  selectSoftTimeoutNotices,
+  buildHeartbeatNotice,
 } from "../src/tools/background.js";
 
-const { buildSpawnPlan, readJobState, tailFile, shQuote, fmtRuntime } = __test__;
+const { buildSpawnPlan, readJobState, tailFile, shQuote, fmtRuntime, DEFAULT_SOFT_TIMEOUT_MS } =
+  __test__;
 
 type JobSummary = ReturnType<typeof listJobs>[number];
 function job(p: Partial<JobSummary>): JobSummary {
@@ -24,6 +27,7 @@ function job(p: Partial<JobSummary>): JobSummary {
     status: "running",
     exitCode: null,
     startedAt: 0,
+    softTimeoutMs: null,
     ...p,
   };
 }
@@ -52,8 +56,13 @@ describe("leadingSleepSeconds — timer-poll detection", () => {
   it("rejection message teaches the watcher patterns", () => {
     const msg = timerPollRejection(180);
     expect(msg).toContain("Rejected");
-    expect(msg).toContain("gh pr checks");
-    expect(msg).toContain("until <settled-check>");
+    // Vendor-neutral: teach the generic shell watcher, not a specific CI/VCS CLI.
+    expect(msg).toContain("until <wake-check>");
+    // Wake condition is the first state you'd ACT on — context-dependent, and the
+    // agent re-arms if it still needs to wait (not a blanket "exit on first event").
+    expect(msg).toContain("first state you'd actually act on");
+    expect(msg).toContain("re-arm");
+    expect(msg).toContain("fail-fast");
     expect(msg).toContain("nothing will ever wake you");
   });
 });
@@ -274,5 +283,61 @@ describe("listJobs", () => {
     expect(listJobs("sess-1").map((j) => j.id).sort()).toEqual(["bg-global", "bg-s1"]);
     expect(listJobs("sess-2").map((j) => j.id).sort()).toEqual(["bg-global", "bg-s2"]);
     expect(listJobs("sess-1").find((j) => j.id === "bg-s1")!.sessionID).toBe("sess-1");
+  });
+
+  it("defaults the soft-timeout cadence for a legacy job whose meta predates the field", () => {
+    // makeJob writes meta WITHOUT softTimeoutMs (the pre-feature shape).
+    makeJob("bg-legacy", 999999, 1000, 0);
+    expect(listJobs().find((j) => j.id === "bg-legacy")!.softTimeoutMs).toBe(
+      DEFAULT_SOFT_TIMEOUT_MS,
+    );
+  });
+});
+
+describe("selectSoftTimeoutNotices — running-job check-ins", () => {
+  const SID = "sess-1";
+
+  it("returns a running job that has crossed a new interval, with its period", () => {
+    const jobs = [job({ id: "bg-1", sessionID: SID, status: "running", startedAt: 0, softTimeoutMs: 1000 })];
+    const due = selectSoftTimeoutNotices(jobs, SID, 5000, new Map());
+    expect(due.map((d) => d.job.id)).toEqual(["bg-1"]);
+    expect(due[0]!.period).toBe(5);
+  });
+
+  it("skips a job younger than one interval, a disabled job, and a finished job", () => {
+    const jobs = [
+      job({ id: "bg-young", sessionID: SID, status: "running", startedAt: 0, softTimeoutMs: 1000 }),
+      job({ id: "bg-off", sessionID: SID, status: "running", startedAt: 0, softTimeoutMs: null }),
+      job({ id: "bg-done", sessionID: SID, status: "exited", exitCode: 0, startedAt: 0, softTimeoutMs: 1000 }),
+    ];
+    const due = selectSoftTimeoutNotices(jobs, SID, 500, new Map());
+    expect(due).toEqual([]);
+  });
+
+  it("does not re-fire the same interval but fires the next", () => {
+    const jobs = [job({ id: "bg-1", sessionID: SID, status: "running", startedAt: 0, softTimeoutMs: 1000 })];
+    const ledger = new Map<string, number>([["bg-1", 5]]);
+    expect(selectSoftTimeoutNotices(jobs, SID, 5500, ledger)).toEqual([]); // still period 5
+    expect(selectSoftTimeoutNotices(jobs, SID, 6000, ledger).map((d) => d.period)).toEqual([6]);
+  });
+
+  it("isolates by session (strictly this session's jobs)", () => {
+    const jobs = [job({ id: "bg-other", sessionID: "sess-2", status: "running", startedAt: 0, softTimeoutMs: 1000 })];
+    expect(selectSoftTimeoutNotices(jobs, SID, 9000, new Map())).toEqual([]);
+  });
+});
+
+describe("buildHeartbeatNotice", () => {
+  it("frames a soft check-in: not done, keep waiting or stop", () => {
+    const n = buildHeartbeatNotice(
+      [{ job: job({ id: "bg-1", title: "Backfill", status: "running", startedAt: 0, softTimeoutMs: 1000 }), period: 5 }],
+      300_000,
+    );
+    expect(n).toContain("still running");
+    expect(n).toContain("NOT done");
+    expect(n).toContain("soft timeout, not a deadline");
+    expect(n).toContain("background_stop");
+    expect(n).toContain("Backfill");
+    expect(n).toContain("background_check job_id: bg-1");
   });
 });

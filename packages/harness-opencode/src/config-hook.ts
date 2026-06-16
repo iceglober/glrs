@@ -34,6 +34,7 @@ import { createAgents, AGENT_TIERS, getStrictPrompt, applyAgentOverrides } from 
 import { AGENTS, EXECUTOR_VARIANT_AGENT_NAMES, type ModelTier } from "@glrs-dev/agent-core";
 import type { AgentConfig } from "@opencode-ai/sdk";
 import { createCommands } from "./commands/index.js";
+import { readExtension } from "./extensions.js";
 import { createMcpConfig } from "./mcp/index.js";
 import { getSkillsRoot } from "./skills/paths.js";
 import { readOurPackageVersion } from "./auto-update.js";
@@ -283,6 +284,25 @@ export function applyConfig(config: Config, pluginOptions?: PluginOptions): void
       // Malformed JSON is best-effort — log a warning and continue
       console.warn(`Failed to parse GLRS_AGENT_OVERRIDES env var: ignoring`);
     }
+  }
+
+  // Repo-local agent extensions: append `<repo>/.glrs/extensions/agents/<agent>.md`
+  // to each of our agents' prompts — the same `.glrs/extensions/` convention command
+  // prompts use (see commands/index.ts), but namespaced under `agents/`. Commands
+  // stay flat (`.glrs/extensions/<command>.md`) for backward compat; agents are new,
+  // so the subdir keeps them collision-free (e.g. `research` is both an agent AND a
+  // command) and separates one-shot command instructions from persistent agent
+  // system-prompt methodology. A repo layers in its own conventions (e.g. its CI
+  // methodology) without forking the bundled prompt. Done LAST, after model
+  // resolution and agent overrides, because both can REPLACE an agent's prompt
+  // (getStrictPrompt for executor variants; a `prompt` override) and would otherwise
+  // clobber an extension appended earlier. readExtension returns "" when the file is
+  // absent, so this is a no-op for repos without one.
+  const cwd = process.cwd();
+  for (const [agentName, agent] of Object.entries(ourAgents)) {
+    if (!agent?.prompt) continue;
+    const ext = readExtension(`agents/${agentName}`, cwd);
+    if (ext) agent.prompt += ext;
   }
 
   (config as any).agent = { ...ourAgents, ...((config as any).agent ?? {}) };

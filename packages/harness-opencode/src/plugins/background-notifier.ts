@@ -39,6 +39,9 @@ import {
   selectFreshCompletions,
   buildIdleNotice,
   announcedFor,
+  selectSoftTimeoutNotices,
+  buildHeartbeatNotice,
+  softNotifiedPeriods,
 } from "../tools/background.js";
 
 /** Minimal slice of the opencode client this plugin needs. */
@@ -93,15 +96,41 @@ async function deliverCompletions(
 }
 
 /**
- * One poller iteration: deliver completions, then decide whether to keep
- * watching. Disarms after a delivery (the push starts a new turn that ends in
- * another `session.idle`, which re-arms for any still-running jobs) or once
- * nothing is left running to wait for.
+ * Push a soft check-in for any of this session's jobs still running past a new
+ * soft-timeout interval. The job is NOT touched — this only wakes the agent so
+ * it can keep waiting or stop the job. Records each delivered period BEFORE the
+ * await so a concurrent tick can't double-fire the same interval. Returns
+ * whether a notice was sent.
+ */
+async function deliverHeartbeats(
+  client: PromptClient,
+  sessionID: string,
+  now: number = Date.now(),
+): Promise<{ delivered: boolean }> {
+  const ledger = softNotifiedPeriods();
+  const due = selectSoftTimeoutNotices(listJobs(sessionID), sessionID, now, ledger);
+  if (due.length === 0) return { delivered: false };
+  for (const d of due) ledger.set(d.job.id, d.period);
+  await client.session.promptAsync({
+    path: { id: sessionID },
+    body: { parts: [{ type: "text", text: buildHeartbeatNotice(due, now) }] },
+  });
+  return { delivered: true };
+}
+
+/**
+ * One poller iteration: deliver a completion if one is ready, else a soft
+ * check-in if a running job has crossed its interval. Disarms after any delivery
+ * (the push starts a new turn that ends in another `session.idle`, which re-arms
+ * for still-running jobs) or once nothing is left running to wait for.
  */
 async function pollOnce(client: PromptClient, sessionID: string): Promise<void> {
   try {
     const { delivered, running } = await deliverCompletions(client, sessionID);
-    if (delivered || !running) disarm(sessionID);
+    if (delivered) return disarm(sessionID);
+    if (!running) return disarm(sessionID);
+    const hb = await deliverHeartbeats(client, sessionID);
+    if (hb.delivered) disarm(sessionID);
   } catch {
     disarm(sessionID);
   }
@@ -133,10 +162,15 @@ const plugin: Plugin = async (input) => {
         // A fresh idle supersedes any prior poller for this session.
         disarm(sessionID);
 
-        const { running } = await deliverCompletions(client, sessionID);
+        const { delivered, running } = await deliverCompletions(client, sessionID);
 
-        // Jobs still running? Watch for them to finish during this idle period
-        // — `session.idle` won't fire again on its own when a job exits.
+        // No completion to report but a job's been running past its soft timeout?
+        // Check in now (catch up if the agent was busy across an interval).
+        if (!delivered && running) await deliverHeartbeats(client, sessionID);
+
+        // Jobs still running? Watch for them to finish (or cross the next
+        // interval) during this idle period — `session.idle` won't fire again on
+        // its own when a job exits.
         if (running) arm(client, sessionID);
       } catch {
         // Best-effort — a session that's gone/busy or a job-state hiccup must
@@ -151,6 +185,7 @@ export default plugin;
 /** Test-only hooks: drive the poller deterministically and tune the interval. */
 export const __test__ = {
   deliverCompletions,
+  deliverHeartbeats,
   pollOnce,
   setPollMs(ms: number) {
     POLL_MS = ms;
