@@ -1640,38 +1640,73 @@ mod tests {
 
 /// Stop ALL running daemon processes, not just the PID file process.
 /// This handles orphaned daemons left behind by crashes or binary updates.
+/// Whether a process is still alive (signal 0 probe).
+fn process_alive(pid: i32) -> bool {
+    use nix::sys::signal;
+    use nix::unistd::Pid;
+    signal::kill(Pid::from_raw(pid), None).is_ok()
+}
+
 fn stop_daemon() {
-    // Kill the PID file process
+    let my_pid = std::process::id() as i32;
+
+    // Collect every daemon to stop: the PID-file process plus any orphaned
+    // glrs-assume / gs-assume (pre-rename) serve processes.
+    let mut targets: Vec<i32> = Vec::new();
     if let Ok(pid_str) = std::fs::read_to_string(config::pid_path()) {
         if let Ok(pid) = pid_str.trim().parse::<i32>() {
-            unsafe {
-                nix::libc::kill(pid, nix::libc::SIGTERM);
-            }
+            targets.push(pid);
         }
     }
-
-    // Also kill any orphaned glrs-assume or gs-assume (pre-rename) serve processes
     for pattern in &["glrs-assume serve", "gs-assume serve"] {
         if let Ok(output) = std::process::Command::new("pgrep")
             .args(["-f", pattern])
             .output()
         {
             if let Ok(pids) = String::from_utf8(output.stdout) {
-                let my_pid = std::process::id() as i32;
                 for line in pids.lines() {
                     if let Ok(pid) = line.trim().parse::<i32>() {
                         if pid != my_pid {
-                            unsafe {
-                                nix::libc::kill(pid, nix::libc::SIGTERM);
-                            }
+                            targets.push(pid);
                         }
                     }
                 }
             }
         }
     }
+    targets.sort_unstable();
+    targets.dedup();
 
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    if !targets.is_empty() {
+        // Ask politely first.
+        for &pid in &targets {
+            unsafe {
+                nix::libc::kill(pid, nix::libc::SIGTERM);
+            }
+        }
+
+        // Wait for them to exit, then SIGKILL any survivors. A daemon whose
+        // runtime is wedged (e.g. blocked in a stuck gcloud call) never processes
+        // its SIGTERM shutdown, so without escalation `restart_daemon` and
+        // shutdown silently leave the old process running — which is exactly how
+        // orphaned daemons piled up. SIGKILL is uncatchable; it always lands.
+        let mut alive: Vec<i32> = targets.clone();
+        for _ in 0..20 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            alive.retain(|&pid| process_alive(pid));
+            if alive.is_empty() {
+                break;
+            }
+        }
+        for &pid in &alive {
+            tracing::warn!("daemon {pid} ignored SIGTERM after 2s — sending SIGKILL");
+            unsafe {
+                nix::libc::kill(pid, nix::libc::SIGKILL);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+
     remove_pid_file();
     remove_socket_file();
     remove_daemon_version();

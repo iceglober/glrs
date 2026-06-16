@@ -9,6 +9,24 @@ use std::process::{Command, Stdio};
 
 const GCLOUD: &str = "gcloud";
 
+/// Run a blocking gcloud call off the async runtime. Every function here shells
+/// out to `gcloud` and blocks; calling them directly inside an async fn pins a
+/// tokio worker thread for the whole call. A gcloud invocation that stalls (a
+/// slow network round-trip, a reauth round) would then starve workers until the
+/// runtime can't even process its own shutdown signal — which is how daemons
+/// ended up immortal and unkillable by SIGTERM. Offloading to the blocking pool
+/// keeps the runtime responsive (and killable) no matter how long gcloud takes.
+pub async fn offload<T, F>(f: F) -> Result<T, ProviderError>
+where
+    F: FnOnce() -> Result<T, ProviderError> + Send + 'static,
+    T: Send + 'static,
+{
+    match tokio::task::spawn_blocking(f).await {
+        Ok(inner) => inner,
+        Err(e) => Err(ProviderError::Other(format!("gcloud task failed: {e}"))),
+    }
+}
+
 /// Whether `gcloud` is on PATH. GCP is unavailable without it.
 pub fn is_available() -> bool {
     Command::new(GCLOUD)
