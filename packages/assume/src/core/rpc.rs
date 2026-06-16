@@ -110,6 +110,7 @@ async fn handle_request(req: &RpcRequest, state: &SharedDaemonState) -> RpcRespo
         "switch_context" => handle_switch_context(req, state).await,
         "get_credentials" => handle_get_credentials(req, state).await,
         "refresh" => handle_refresh(req, state).await,
+        "reauth" => handle_reauth(req, state).await,
         "pin_session" => handle_pin_session(req, state).await,
         "unpin_session" => handle_unpin_session(req, state).await,
         "shutdown" => {
@@ -250,6 +251,36 @@ async fn handle_get_credentials(req: &RpcRequest, state: &SharedDaemonState) -> 
         Some(creds) => RpcResponse::ok(serde_json::to_value(creds).unwrap_or_default()),
         None => RpcResponse::err("Credentials not yet cached"),
     }
+}
+
+/// Trigger an out-of-band browser re-auth for a lapsed session. Used by the MCP
+/// tool so it can recover a stale session itself (open the browser) instead of
+/// telling the agent a human must run `gsa login` by hand. Returns immediately;
+/// the browser flow runs in the daemon's GUI session.
+async fn handle_reauth(req: &RpcRequest, state: &SharedDaemonState) -> RpcResponse {
+    let provider_id = match req.params.get("provider").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => return RpcResponse::err("Missing 'provider' param"),
+    };
+
+    let provider = {
+        let s = state.read().await;
+        match s.registry.get(&provider_id) {
+            Some(p) => Arc::clone(p),
+            None => return RpcResponse::err(format!("Provider not found: {provider_id}")),
+        }
+    };
+
+    if !provider.supports_daemon_reauth() {
+        return RpcResponse::err(format!("{provider_id} does not support out-of-band reauth"));
+    }
+
+    crate::core::daemon::maybe_spawn_reauth(state, &provider_id, &provider).await;
+
+    RpcResponse::ok(serde_json::json!({
+        "triggered": true,
+        "in_progress": crate::core::reauth::in_progress(&provider_id),
+    }))
 }
 
 async fn handle_refresh(req: &RpcRequest, state: &SharedDaemonState) -> RpcResponse {

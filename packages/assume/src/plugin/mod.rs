@@ -173,6 +173,23 @@ pub trait Provider: Send + Sync + 'static {
     /// Token and credential lifetimes for refresh scheduling.
     /// All durations must be non-zero. refresh_buffer < credential_ttl.
     fn refresh_schedule(&self) -> RefreshSchedule;
+
+    /// Whether the daemon may drive an interactive, out-of-band re-auth (open a
+    /// browser itself) when this provider's session lapses, instead of only
+    /// flagging needs-login and waiting for a hand-run `gsa login`. Capability
+    /// methods like this are optional with safe defaults; the v1 contract above
+    /// is unchanged. Default false.
+    fn supports_daemon_reauth(&self) -> bool {
+        false
+    }
+
+    /// Interactive re-auth used for out-of-band recovery (opens a browser).
+    /// Returns fresh tokens, same as `login`. Defaults to `login`; a provider
+    /// overrides this when a lighter reauth suffices (e.g. GCP refreshes only
+    /// ADC, avoiding the second `gcloud auth login` browser).
+    async fn daemon_reauth(&self, config: &ProviderConfig) -> Result<AuthTokens, ProviderError> {
+        self.login(config).await
+    }
 }
 
 fn default_enabled() -> bool {

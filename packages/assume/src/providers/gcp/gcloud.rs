@@ -112,6 +112,58 @@ pub fn login() -> Result<(), ProviderError> {
     Ok(())
 }
 
+/// Re-run only the ADC login (`gcloud auth application-default login`) to refresh
+/// a lapsed reauth proof (RAPT) — the credential apps read and the one that fails
+/// with `invalid_rapt`. Used by the daemon for out-of-band recovery, so it must
+/// never hang: stdin is closed (a console-code fallback gets EOF and exits fast
+/// instead of waiting forever) and a wall-clock deadline kills a stuck process.
+/// The browser is launched by gcloud; the loopback callback completes the flow.
+pub fn reauth_adc() -> Result<(), ProviderError> {
+    if !is_available() {
+        return Err(not_installed());
+    }
+
+    let mut child = Command::new(GCLOUD)
+        .args(["auth", "application-default", "login", "--launch-browser"])
+        .stdin(Stdio::null())
+        .spawn()
+        .map_err(|e| {
+            if e.kind() == ErrorKind::NotFound {
+                not_installed()
+            } else {
+                ProviderError::LoginFailed(format!("failed to run gcloud ADC login: {e}"))
+            }
+        })?;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return Ok(()),
+            Ok(Some(status)) => {
+                return Err(ProviderError::LoginFailed(format!(
+                    "gcloud ADC login exited with status {}",
+                    status.code().unwrap_or(-1)
+                )))
+            }
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(ProviderError::LoginFailed(
+                        "gcloud ADC login timed out after 180s".to_string(),
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            Err(e) => {
+                return Err(ProviderError::LoginFailed(format!(
+                    "error waiting for gcloud ADC login: {e}"
+                )))
+            }
+        }
+    }
+}
+
 /// The active gcloud account email, if any (no token required — reads local config).
 pub fn active_account() -> Option<String> {
     let out = run(&[

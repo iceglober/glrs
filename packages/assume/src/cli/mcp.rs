@@ -308,27 +308,56 @@ fn session_health(provider_id: &str) -> SessionHealth {
     }
 }
 
+/// Trigger an out-of-band browser reauth in the daemon (best-effort), then build
+/// the stale-session result. The daemon runs in the user's GUI session, so it can
+/// open the browser itself — the agent neither performs nor authorizes it.
+async fn stale_with_reauth(
+    provider_id: &str,
+    context_display: &str,
+    health: &SessionHealth,
+) -> Value {
+    let reauth_started = crate::core::rpc::rpc_call("reauth", json!({ "provider": provider_id }))
+        .await
+        .is_ok();
+    stale_session_result(provider_id, context_display, health, reauth_started)
+}
+
 /// Structured result returned when the session is too stale to run a command.
-/// Carries machine-readable `session_stale`/`action` fields plus prose so the
-/// agent stops retrying and surfaces the re-login to the user.
-fn stale_session_result(provider_id: &str, context_display: &str, health: &SessionHealth) -> Value {
+/// Carries machine-readable `session_stale`/`action` fields plus prose. When
+/// `reauth_started` is true the daemon is already opening a browser, so the agent
+/// is told to just poll — not to ask the user whether to continue.
+fn stale_session_result(
+    provider_id: &str,
+    context_display: &str,
+    health: &SessionHealth,
+    reauth_started: bool,
+) -> Value {
     let reason = health
         .reason
         .clone()
         .unwrap_or_else(|| "the session is not valid".to_string());
+    let text = if reauth_started {
+        format!(
+            "gsa session for '{context_display}' is stale — {reason}. \
+             An out-of-band re-authentication is already underway: the gsa daemon is opening a browser for the user to finish sign-in (a desktop notification was also sent). \
+             Do NOT ask the user whether to continue, and do NOT retry this command yet. \
+             Poll the `check_session` tool every few seconds and re-run the command once it reports valid. \
+             Only if it's still invalid after ~2 minutes (headless/remote, or the user dismissed the browser) ask the user to run: gsa login {provider_id}."
+        )
+    } else {
+        format!(
+            "gsa session for '{context_display}' is stale — {reason}. \
+             Automatic re-auth is unavailable here, so a human must complete an SSO browser sign-in. \
+             In an interactive local session you MAY launch `gsa login {provider_id}` in the background (it opens a browser), then poll `check_session` until valid before retrying. \
+             Otherwise (headless/remote, or no browser available) ask the user to run: gsa login {provider_id}\n\
+             A desktop notification has been sent. Do not retry this command until `check_session` reports the session is valid."
+        )
+    };
     json!({
-        "content": [{
-            "type": "text",
-            "text": format!(
-                "gsa session for '{context_display}' is stale — {reason}. \
-                 Re-authenticating requires a human to complete an SSO browser sign-in; an agent cannot do that step. \
-                 In an interactive local session you MAY launch `gsa login {provider_id}` in the background (it opens a browser for the user to finish), then poll the `check_session` tool until it reports valid before retrying. \
-                 Otherwise (headless/remote, or no browser available) ask the user to run:  gsa login {provider_id}\n\
-                 A desktop notification has been sent. Do not retry this command until `check_session` reports the session is valid."
-            )
-        }],
+        "content": [{ "type": "text", "text": text }],
         "isError": true,
         "session_stale": true,
+        "reauth_started": reauth_started,
         "action": format!("gsa login {provider_id}"),
         "needs_login": health.needs_login,
         "session_expires_at": health.session_expires_at,
@@ -444,11 +473,7 @@ async fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, Str
     let health = session_health(&context.provider_id);
     if !health.valid {
         crate::core::notify::notify_session_expired(&context.provider_id);
-        return Ok(stale_session_result(
-            &context.provider_id,
-            &context.display_name,
-            &health,
-        ));
+        return Ok(stale_with_reauth(&context.provider_id, &context.display_name, &health).await);
     }
 
     let timeout_ms = parse_timeout_ms(arguments);
@@ -508,11 +533,9 @@ async fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, Str
             let health = session_health(&context.provider_id);
             if !health.valid {
                 crate::core::notify::notify_session_expired(&context.provider_id);
-                return Ok(stale_session_result(
-                    &context.provider_id,
-                    &context.display_name,
-                    &health,
-                ));
+                return Ok(
+                    stale_with_reauth(&context.provider_id, &context.display_name, &health).await,
+                );
             }
             return Ok(json!({
                 "content": [{
@@ -538,11 +561,9 @@ async fn tool_run_with_credentials(arguments: &Value) -> Result<Value, (i32, Str
         let health = session_health(&context.provider_id);
         if !health.valid {
             crate::core::notify::notify_session_expired(&context.provider_id);
-            return Ok(stale_session_result(
-                &context.provider_id,
-                &context.display_name,
-                &health,
-            ));
+            return Ok(
+                stale_with_reauth(&context.provider_id, &context.display_name, &health).await,
+            );
         }
     }
 
@@ -651,17 +672,24 @@ mod tests {
             refresh_expires_at: None,
             reason: Some("the SSO session ended".into()),
         };
-        let v = stale_session_result("aws", "production / developer", &health);
+        // Fallback branch (no out-of-band reauth available): a human must act.
+        let v = stale_session_result("aws", "production / developer", &health, false);
         assert_eq!(v["session_stale"], json!(true));
         assert_eq!(v["isError"], json!(true));
         assert_eq!(v["action"], json!("gsa login aws"));
         assert_eq!(v["needs_login"], json!(true));
+        assert_eq!(v["reauth_started"], json!(false));
         let text = v["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("gsa login aws"));
         assert!(text.contains("production / developer"));
-        // Softened guidance: agent may self-launch in interactive sessions, and
-        // should gate retries on check_session rather than a fixed wait.
         assert!(text.contains("background"));
         assert!(text.contains("check_session"));
+
+        // Reauth-underway branch: agent must NOT ask the user, just poll.
+        let v = stale_session_result("aws", "production / developer", &health, true);
+        assert_eq!(v["reauth_started"], json!(true));
+        let text = v["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("check_session"));
+        assert!(text.contains("Do NOT ask the user"));
     }
 }

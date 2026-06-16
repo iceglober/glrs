@@ -5,5 +5,6 @@ pub mod daemon;
 pub mod fuzzy;
 pub mod keychain;
 pub mod notify;
+pub mod reauth;
 pub mod rpc;
 pub mod update_check;
