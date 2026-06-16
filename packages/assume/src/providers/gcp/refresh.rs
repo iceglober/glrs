@@ -10,7 +10,9 @@ use chrono::{Duration, Utc};
 pub async fn refresh(tokens: &AuthTokens) -> Result<AuthTokens, ProviderError> {
     // Minting a token confirms ADC is still valid; the value is discarded (the
     // daemon does not serve GCP). On reauth lapse this returns RefreshTokenExpired.
-    let _ = gcloud::adc_access_token()?;
+    // Offloaded: this is the daemon's keep-warm tick — a hung gcloud here must not
+    // wedge a runtime worker (that's what made daemons unkillable).
+    gcloud::offload(gcloud::adc_access_token).await?;
 
     let mut refreshed = tokens.clone();
     refreshed.session_expires_at = Utc::now() + Duration::minutes(55);

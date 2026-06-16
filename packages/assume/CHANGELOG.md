@@ -1,5 +1,26 @@
 # @glrs-dev/assume
 
+## 0.16.2
+
+### Patch Changes
+
+- [#360](https://github.com/iceglober/glrs/pull/360) [`84a7d64`](https://github.com/iceglober/glrs/commit/84a7d64337fefc8eabc3df87403cd8205ba1435a) Thanks [@iceglober](https://github.com/iceglober)! - fix(assume): stop daemons wedging on blocking gcloud calls; fix `gsa upgrade` on bun
+
+  Two robustness fixes uncovered while cleaning up an orphaned-daemon pile:
+
+  - **Daemons could become unkillable.** The GCP keep-warm and credential paths called `gcloud` synchronously inside async fns, so a slow or stuck gcloud blocked a tokio worker thread. With enough blocked workers the runtime couldn't even process its own SIGTERM — leaving daemons immortal (a plain `pkill` did nothing) and piling up. The blocking gcloud calls now run on the blocking pool via `spawn_blocking`, and `stop_daemon` escalates SIGTERM→SIGKILL after a 2s grace period so restart and shutdown always land.
+  - **`gsa upgrade` failed on bun-only machines.** Install detection treated any `node_modules` path as an npm install, but bun's global install (`~/.bun/install/global/node_modules/...`) also contains `node_modules` — so `gsa upgrade` ran `npm`, which isn't on a bun-only PATH (`could not run npm`). Detection now distinguishes bun / pnpm / npm and upgrades with the matching package manager.
+
+## 0.16.1
+
+### Patch Changes
+
+- [#358](https://github.com/iceglober/glrs/pull/358) [`a1d24ce`](https://github.com/iceglober/glrs/commit/a1d24ce6ec283ad139f49452b859a3fe3d25c9e8) Thanks [@iceglober](https://github.com/iceglober)! - fix(assume): make the daemon a singleton so it can't pile up orphan processes
+
+  The daemon wrote its PID file _before_ binding the credential port, and a bind failure was only logged, not fatal. When two daemons raced (e.g. a bun-global and an nvm install each firing `ensure_daemon_running`), the loser overwrote the PID file and then kept running headless instead of exiting — leaving the real port-owner unkillable via the PID file, so every subsequent restart spawned another doomed daemon that lingered. Result: a slowly growing pile of orphaned `serve --foreground` processes.
+
+  Now the credential port is the singleton gate: the daemon binds it **before** claiming the PID file, exits cleanly (status 0) if another daemon already owns the port, and only the true port-owner writes the PID file. `spawn_daemon_if_dead` also treats a healthy port as "already served" so it won't spawn duplicates. Any existing orphans can be swept once with `pkill -f "glrs-assume serve"` followed by any `gsa` command.
+
 ## 0.16.0
 
 ### Minor Changes

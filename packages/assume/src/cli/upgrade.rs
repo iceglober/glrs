@@ -241,9 +241,56 @@ async fn download_binary(release: &Release, dest: &str) -> anyhow::Result<bool> 
     Ok(true)
 }
 
-/// True if the running binary lives inside a `node_modules` tree (npm install).
-fn is_npm_install(exe: &std::path::Path) -> bool {
-    exe.components().any(|c| c.as_os_str() == "node_modules")
+/// The node package manager that installed this binary, inferred from the
+/// install path. `gsa upgrade` must use the *same* manager — swapping the binary
+/// in place would desync it from that manager's manifest, and the next install
+/// would revert it.
+#[derive(Debug, PartialEq, Eq)]
+enum PkgManager {
+    Bun,
+    Pnpm,
+    Npm,
+}
+
+impl PkgManager {
+    fn label(&self) -> &'static str {
+        match self {
+            PkgManager::Bun => "bun",
+            PkgManager::Pnpm => "pnpm",
+            PkgManager::Npm => "npm",
+        }
+    }
+
+    /// The program and args that upgrade the global install to latest.
+    fn upgrade_command(&self) -> (&'static str, &'static [&'static str]) {
+        match self {
+            PkgManager::Bun => ("bun", &["add", "-g", "@glrs-dev/assume@latest"]),
+            PkgManager::Pnpm => ("pnpm", &["add", "-g", "@glrs-dev/assume@latest"]),
+            PkgManager::Npm => ("npm", &["install", "-g", "@glrs-dev/assume@latest"]),
+        }
+    }
+}
+
+/// Detect which package manager installed the running binary from its path, or
+/// `None` for a standalone binary (the GitHub-release install path). A bun global
+/// install lives under `~/.bun/install/global/node_modules/...` — note it *also*
+/// contains `node_modules`, so a plain node_modules check misreads bun as npm
+/// (and then `npm` isn't even on a bun-only PATH). Check for the manager-specific
+/// segment first.
+fn detect_pkg_manager(exe: &std::path::Path) -> Option<PkgManager> {
+    if !exe.components().any(|c| c.as_os_str() == "node_modules") {
+        return None;
+    }
+    if exe.components().any(|c| c.as_os_str() == ".bun") {
+        return Some(PkgManager::Bun);
+    }
+    if exe
+        .components()
+        .any(|c| matches!(c.as_os_str().to_str(), Some(".pnpm") | Some("pnpm")))
+    {
+        return Some(PkgManager::Pnpm);
+    }
+    Some(PkgManager::Npm)
 }
 
 fn recreate_alias(binary_path: &str) {
@@ -266,27 +313,29 @@ pub async fn run(_args: UpgradeArgs) -> anyhow::Result<()> {
     let exe_str = exe_path.to_string_lossy().to_string();
     eprintln!("\x1b[36m▸\x1b[0m installed at: {exe_str}");
 
-    // npm installs upgrade via npm — swapping the binary inside node_modules
-    // would leave it out of sync with the package manifest (and npm would revert
-    // it on the next install). npm's own resolution handles "latest", so we skip
-    // the GitHub-release path entirely here.
-    if is_npm_install(&exe_path) {
-        eprintln!("\x1b[36m▸\x1b[0m npm install detected — upgrading via npm");
-        match std::process::Command::new("npm")
-            .args(["install", "-g", "@glrs-dev/assume@latest"])
-            .status()
-        {
+    // Node-manager installs upgrade via that manager — swapping the binary inside
+    // node_modules would leave it out of sync with the package manifest (and the
+    // manager would revert it on the next install). The manager's own resolution
+    // handles "latest", so we skip the GitHub-release path entirely here.
+    if let Some(mgr) = detect_pkg_manager(&exe_path) {
+        let (prog, args) = mgr.upgrade_command();
+        let cmdline = format!("{prog} {}", args.join(" "));
+        eprintln!(
+            "\x1b[36m▸\x1b[0m {} install detected — upgrading via {prog}",
+            mgr.label()
+        );
+        match std::process::Command::new(prog).args(args).status() {
             Ok(s) if s.success() => {
-                eprintln!("\x1b[32m✓\x1b[0m upgraded to the latest @glrs-dev/assume via npm");
+                eprintln!("\x1b[32m✓\x1b[0m upgraded to the latest @glrs-dev/assume via {prog}");
                 return Ok(());
             }
             Ok(_) => {
-                eprintln!("\x1b[31merror:\x1b[0m `npm install -g @glrs-dev/assume@latest` failed");
+                eprintln!("\x1b[31merror:\x1b[0m `{cmdline}` failed");
                 std::process::exit(1);
             }
             Err(e) => {
                 eprintln!(
-                    "\x1b[31merror:\x1b[0m could not run npm ({e}). Upgrade manually: npm i -g @glrs-dev/assume@latest"
+                    "\x1b[31merror:\x1b[0m could not run {prog} ({e}). Upgrade manually: {cmdline}"
                 );
                 std::process::exit(1);
             }
@@ -378,10 +427,40 @@ mod tests {
     }
 
     #[test]
-    fn detects_npm_install_by_node_modules_segment() {
-        assert!(is_npm_install(Path::new(
-            "/Users/x/.nvm/versions/node/v24/lib/node_modules/@glrs-dev/assume-darwin-arm64/bin/glrs-assume"
-        )));
-        assert!(!is_npm_install(Path::new("/usr/local/bin/glrs-assume")));
+    fn detect_pkg_manager_distinguishes_bun_from_npm() {
+        // Bun's global path contains node_modules but must NOT be read as npm —
+        // that's the bug where `gsa upgrade` ran `npm` (absent on a bun-only PATH).
+        assert_eq!(
+            detect_pkg_manager(Path::new(
+                "/Users/x/.bun/install/global/node_modules/@glrs-dev/assume-darwin-arm64/bin/glrs-assume"
+            )),
+            Some(PkgManager::Bun)
+        );
+        // nvm / npm global → npm.
+        assert_eq!(
+            detect_pkg_manager(Path::new(
+                "/Users/x/.nvm/versions/node/v24/lib/node_modules/@glrs-dev/assume-darwin-arm64/bin/glrs-assume"
+            )),
+            Some(PkgManager::Npm)
+        );
+        // pnpm global store → pnpm.
+        assert_eq!(
+            detect_pkg_manager(Path::new(
+                "/Users/x/Library/pnpm/global/5/.pnpm/@glrs-dev+assume@0.16/node_modules/@glrs-dev/assume/bin/glrs-assume"
+            )),
+            Some(PkgManager::Pnpm)
+        );
+        // Standalone binary (GitHub-release install) → None.
+        assert_eq!(
+            detect_pkg_manager(Path::new("/usr/local/bin/glrs-assume")),
+            None
+        );
+    }
+
+    #[test]
+    fn bun_upgrade_command_uses_bun_add() {
+        let (prog, args) = PkgManager::Bun.upgrade_command();
+        assert_eq!(prog, "bun");
+        assert_eq!(args, ["add", "-g", "@glrs-dev/assume@latest"]);
     }
 }

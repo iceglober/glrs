@@ -8,7 +8,8 @@ pub async fn list_contexts(
     _tokens: &AuthTokens,
     default_region: &str,
 ) -> Result<Vec<Context>, ProviderError> {
-    let projects = gcloud::list_projects()?;
+    // Offloaded so a slow `gcloud projects list` can't block a runtime worker.
+    let projects = gcloud::offload(gcloud::list_projects).await?;
     if projects.is_empty() {
         return Err(ProviderError::NoContextsAvailable);
     }
