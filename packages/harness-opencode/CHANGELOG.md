@@ -1,5 +1,33 @@
 # Changelog
 
+## 3.20.0
+
+### Minor Changes
+
+- [#362](https://github.com/iceglober/glrs/pull/362) [`088202b`](https://github.com/iceglober/glrs/commit/088202b26ff4070d8689b0855396b5f9400d4f83) Thanks [@iceglober](https://github.com/iceglober)! - agents: support repo-local prompt extensions via `.glrs/extensions/agents/<agent>.md`
+
+  The `.glrs/extensions/` convention — already appended to slash-command prompts — now also applies to agent prompts, namespaced under `agents/`. A repo drops `.glrs/extensions/agents/prime.md` (or any agent name) and its content is appended to that agent's system prompt under a `## Extension (from …)` heading. This is how vendor specifics stay OUT of the harness: the bundled prompts teach portable doctrine ("wait by arming a watcher whose wake condition is the first state you'd act on"); a repo supplies its local fact ("our CI is GitHub Actions; `gh pr checks <pr> --watch --fail-fast` wakes me on the first check failure").
+
+  Commands stay flat (`.glrs/extensions/<command>.md`) for backward compatibility; agents live under `agents/` so they never collide with a same-named command (`research` is both) and so one-shot command instructions stay separate from persistent agent-prompt methodology.
+
+  The reader (`readExtension`) was lifted from `commands/index.ts` into a shared `src/extensions.ts` and is now called by both commands and agent assembly — one function, two callers, no duplication. The agent append runs last in `applyConfig`, after model resolution and agent overrides, so it survives prompt replacements (`getStrictPrompt`, `agents.<name>.prompt` overrides). `glrs harness hooks init` now scaffolds an example `extensions/agents/prime.md`.
+
+- [#362](https://github.com/iceglober/glrs/pull/362) [`088202b`](https://github.com/iceglober/glrs/commit/088202b26ff4070d8689b0855396b5f9400d4f83) Thanks [@iceglober](https://github.com/iceglober)! - background jobs: soft-timeout check-ins so a never-settling watcher can't strand the session
+
+  A background job only ever woke the agent on **exit**. If a watcher's wake condition never became true (a wedged `until` loop, a CI run that hangs, a watched state that never arrives), the job ran on and the idle agent was never woken — stuck until a human poked it.
+
+  `background_run` now takes an optional `soft_timeout_seconds` (default 300, `0` disables, min 30s). While the agent is idle and the job is STILL running, it gets re-notified every interval — a soft check-in, not a deadline: the job is never killed. The agent reads the tail and decides to keep waiting (end the turn; the next interval checks back) or `background_stop` it. Jobs that finish before the first interval never trigger it, so the cost falls only on genuinely long idle waits; known-long backfills raise the interval.
+
+  Implementation reuses the existing idle poller in `background-notifier` (it already ticks every 3s while jobs run, delivering on completion) — the new path just adds a second delivery type (`selectSoftTimeoutNotices` / `buildHeartbeatNotice`), period-deduped per job so each interval fires at most once, and idle-only so it never interrupts active work. Legacy jobs whose meta predates the field default to the cadence, so the safety net applies retroactively.
+
+### Patch Changes
+
+- [#362](https://github.com/iceglober/glrs/pull/362) [`088202b`](https://github.com/iceglober/glrs/commit/088202b26ff4070d8689b0855396b5f9400d4f83) Thanks [@iceglober](https://github.com/iceglober)! - background watchers: teach a vendor-neutral, context-dependent wake rule instead of hardcoding GitHub CLI commands
+
+  The `background_run` description, the timer-poll and inline-sleep rejection messages, and both PRIME prompts previously prescribed `gh pr checks --watch` / `gh run watch` — coupling the harness to GitHub Actions and, worse, inviting models to copy the command without reasoning about its semantics (plain `--watch` waits for every parallel check, so an early failure never fires the completion ping).
+
+  They now teach the principle: background one self-terminating watcher whose wake condition is the first state you'd actually act on — context-dependent, NOT always full completion (a migration → done; CI with parallel checks → the first failure; a deploy → the first non-pending state). The watcher exits there to hand the agent a turn; once awake it acts or re-arms to keep waiting. The mechanics: the generic `until <wake-check>; do sleep 30; done && <status-cmd>`, or whatever watch mode the tool provides (using its early-stop / fail-fast option when the state of interest can occur before completion). No VCS/CI vendor is named.
+
 ## 3.19.0
 
 ### Minor Changes
