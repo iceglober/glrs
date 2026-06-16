@@ -1,6 +1,8 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+
+import { readExtension } from "../extensions.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -18,17 +20,6 @@ function readPrompt(name: string): string {
     }
   }
   throw new Error(`Could not find command prompt: ${name}`);
-}
-
-function readExtension(commandName: string, cwd: string): string {
-  const extPath = join(cwd, ".glrs", "extensions", `${commandName}.md`);
-  if (!existsSync(extPath)) return "";
-  try {
-    const content = readFileSync(extPath, "utf8").trim();
-    return `\n\n## Extension (from .glrs/extensions/${commandName}.md)\n\n${content}`;
-  } catch {
-    return "";
-  }
 }
 
 const shipPrompt = readPrompt("ship.md");

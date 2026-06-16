@@ -195,6 +195,16 @@ const EXTENSION_TEMPLATES: Record<string, string> = {
   "extensions/review.md": `<!-- Appended to the /review command prompt. -->
 <!-- Example: add project-specific review criteria. -->
 `,
+  "extensions/agents/prime.md": `<!-- Appended to the PRIME agent's system prompt. -->
+<!-- Name the file after any agent (agents/prime.md, agents/build.md, …). -->
+<!-- Use this for repo-specific facts the bundled prompt can't know — keeps -->
+<!-- vendor specifics out of the harness. Uncomment the lines below to activate. -->
+
+<!-- ## CI -->
+<!-- This repo runs CI on GitHub Actions. When you need to wait on PR checks, -->
+<!-- arm a watcher that wakes you on the FIRST failure (not after every check): -->
+<!--   gh pr checks <pr> --watch --fail-fast -->
+`,
 };
 
 const hooksInitCmd = command({

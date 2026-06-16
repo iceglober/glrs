@@ -126,7 +126,10 @@ describe("checkInlineSleep", () => {
     const msg = checkInlineSleep("sleep 190 && gh api .../check-runs | jq .", 15);
     expect(msg).not.toBeNull();
     expect(msg).toContain("Blocked");
-    expect(msg).toContain("gh pr checks");
+    // Vendor-neutral: teach the generic shell watcher, not a specific CI/VCS CLI.
+    expect(msg).toContain("until <wake-check>");
+    expect(msg).toContain("re-arm");
+    expect(msg).toContain("fail-fast");
     expect(msg).toContain("END your turn");
   });
 
