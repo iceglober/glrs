@@ -1,7 +1,7 @@
 use crate::core::config::{self, Config};
 use crate::core::keychain;
 use crate::plugin::registry::PluginRegistry;
-use crate::plugin::{AuthTokens, Context, Credentials, ProviderError};
+use crate::plugin::{AuthTokens, Context, Credentials, Provider, ProviderError};
 use anyhow::{Context as _, Result};
 use chrono::Utc;
 use std::collections::HashMap;
@@ -363,9 +363,16 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
         (provider, plugin_state)
     };
 
-    // Skip if not active
+    // Skip if not active. A lapsed session (NeedsLogin) is where out-of-band
+    // reauth kicks in: if the provider supports it and the user hasn't disabled
+    // it, the daemon opens a browser itself rather than waiting for a hand-run
+    // `gsa login`. Guarded so it fires at most once per cooldown.
     match &plugin_state.status {
-        PluginStatus::Broken(_) | PluginStatus::NeedsLogin => return Ok(()),
+        PluginStatus::Broken(_) => return Ok(()),
+        PluginStatus::NeedsLogin => {
+            maybe_spawn_reauth(state, provider_id, &provider).await;
+            return Ok(());
+        }
         PluginStatus::Active => {}
     }
 
@@ -544,6 +551,79 @@ async fn refresh_provider(state: &SharedDaemonState, provider_id: &str) -> Resul
     }
 
     Ok(())
+}
+
+/// When a provider's session has lapsed, drive an interactive browser re-auth
+/// out-of-band instead of only flagging needs-login. Returns immediately; the
+/// reauth runs in a spawned task so the refresh loop keeps ticking. On success it
+/// stores fresh tokens, clears the needs-login marker, and flips the provider
+/// back to Active. Guarded by [`reauth::try_begin`] so at most one browser opens
+/// per cooldown, and gated by the `auto_reauth` config (default on).
+pub async fn maybe_spawn_reauth(
+    state: &SharedDaemonState,
+    provider_id: &str,
+    provider: &Arc<dyn Provider>,
+) {
+    if !provider.supports_daemon_reauth() {
+        return;
+    }
+
+    let provider_config = {
+        let s = state.read().await;
+        if !crate::core::reauth::auto_reauth_enabled(&s.config, provider_id) {
+            return;
+        }
+        s.config
+            .providers
+            .get(provider_id)
+            .cloned()
+            .unwrap_or_default()
+    };
+
+    if !crate::core::reauth::try_begin(provider_id) {
+        return; // already running, or still within cooldown
+    }
+
+    let state = Arc::clone(state);
+    let provider = Arc::clone(provider);
+    let provider_id = provider_id.to_string();
+    tokio::spawn(async move {
+        let display = provider.display_name().to_string();
+        notify_reauth(
+            "glrs-assume: Re-authenticating",
+            &format!("{display} session lapsed — opening a browser to re-authenticate."),
+        );
+
+        match provider.daemon_reauth(&provider_config).await {
+            Ok(tokens) => {
+                if let Err(e) = keychain::store_tokens(&provider_id, &tokens) {
+                    tracing::warn!("Failed to store tokens after reauth for {provider_id}: {e}");
+                }
+                crate::core::cache::clear_needs_login(&provider_id);
+                {
+                    let mut s = state.write().await;
+                    if let Some(ps) = s.plugin_states.get_mut(&provider_id) {
+                        ps.tokens = Some(tokens);
+                        ps.status = PluginStatus::Active;
+                    }
+                }
+                tracing::info!("Out-of-band reauth succeeded for {provider_id}");
+                notify_reauth(
+                    "glrs-assume: Session Restored",
+                    &format!("{display} re-authenticated. Resuming."),
+                );
+            }
+            Err(e) => {
+                tracing::warn!("Out-of-band reauth failed for {provider_id}: {e}");
+                notify_reauth(
+                    "glrs-assume: Re-auth Failed",
+                    &format!("{display} re-auth failed. Run `gsa login {provider_id}`."),
+                );
+            }
+        }
+
+        crate::core::reauth::finish(&provider_id);
+    });
 }
 
 /// Start the credential HTTP endpoints for all registered plugins.
@@ -892,6 +972,23 @@ fn notify_session_expired(provider_display_name: &str) {
             .summary("glrs-assume: Session Expired")
             .body(&msg)
             .icon("dialog-warning")
+            .timeout(notify_rust::Timeout::Milliseconds(10_000))
+            .show()
+        {
+            tracing::debug!("Failed to send desktop notification: {e}");
+        }
+    });
+}
+
+/// Desktop notification for the out-of-band reauth lifecycle (browser opening,
+/// restored, failed). Spawned on the blocking pool like `notify_session_expired`.
+fn notify_reauth(title: &'static str, body: &str) {
+    let body = body.to_string();
+    tokio::task::spawn_blocking(move || {
+        if let Err(e) = notify_rust::Notification::new()
+            .summary(title)
+            .body(&body)
+            .icon("dialog-information")
             .timeout(notify_rust::Timeout::Milliseconds(10_000))
             .show()
         {

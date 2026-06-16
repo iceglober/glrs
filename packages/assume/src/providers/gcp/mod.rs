@@ -142,4 +142,14 @@ impl Provider for GcpProvider {
             credential_ttl: Duration::from_secs(3600), // 1 hour
         }
     }
+
+    fn supports_daemon_reauth(&self) -> bool {
+        true
+    }
+
+    async fn daemon_reauth(&self, config: &ProviderConfig) -> Result<AuthTokens, ProviderError> {
+        // Only the ADC half — that's what apps (and the `invalid_rapt` failure)
+        // use. Skips the second `gcloud auth login` browser that full login runs.
+        auth::reauth(config).await
+    }
 }

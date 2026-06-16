@@ -149,4 +149,10 @@ impl Provider for AwsProvider {
             credential_ttl: Duration::from_secs(3600), // 1 hour
         }
     }
+
+    fn supports_daemon_reauth(&self) -> bool {
+        // SSO re-login is the device-authorization flow in `login`, which opens
+        // a browser via `open::that` and polls — drivable out-of-band.
+        true
+    }
 }
