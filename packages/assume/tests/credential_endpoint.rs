@@ -233,9 +233,11 @@ async fn credential_endpoint_retries_after_session_expiry() {
     let state = build_daemon_state(provider.clone(), tokens);
 
     // Start the credential endpoint
-    let _handles = assume::core::daemon::start_credential_endpoints(Arc::clone(&state))
+    let bound = assume::core::daemon::bind_credential_endpoints(&state)
         .await
-        .unwrap();
+        .unwrap()
+        .expect("port should be free in test");
+    let _handles = assume::core::daemon::serve_bound_endpoints(bound, Arc::clone(&state));
 
     // Give the server a moment to bind
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -286,9 +288,11 @@ async fn concurrent_requests_during_expired_session() {
     ));
 
     let state = build_daemon_state(provider.clone(), tokens);
-    let _handles = assume::core::daemon::start_credential_endpoints(Arc::clone(&state))
+    let bound = assume::core::daemon::bind_credential_endpoints(&state)
         .await
-        .unwrap();
+        .unwrap()
+        .expect("port should be free in test");
+    let _handles = assume::core::daemon::serve_bound_endpoints(bound, Arc::clone(&state));
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
