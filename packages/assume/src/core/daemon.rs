@@ -626,13 +626,36 @@ pub async fn maybe_spawn_reauth(
     });
 }
 
-/// Start the credential HTTP endpoints for all registered plugins.
-/// Returns the join handles for the spawned servers.
-pub async fn start_credential_endpoints(
-    state: SharedDaemonState,
-) -> Result<Vec<tokio::task::JoinHandle<()>>> {
-    let mut handles = Vec::new();
+/// A credential endpoint whose TCP port is already bound. Holding the listener is
+/// what makes the daemon a singleton: a second daemon binding the same port fails
+/// with `AddrInUse`, which `bind_credential_endpoints` reports as "already served"
+/// so the redundant process exits instead of lingering headless.
+pub struct BoundEndpoint {
+    provider_id: String,
+    listener: tokio::net::TcpListener,
+    path: String,
+    auth: crate::plugin::EndpointAuth,
+}
+
+/// Try to bind `addr`. `Ok(Some(listener))` on success, `Ok(None)` when the port
+/// is already in use (another daemon owns it), `Err` for any other bind failure.
+async fn bind_or_yield(addr: SocketAddr) -> Result<Option<tokio::net::TcpListener>> {
+    match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => Ok(Some(listener)),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("Failed to bind {addr}")),
+    }
+}
+
+/// Bind every daemon-served provider's credential port. This is the daemon
+/// singleton gate, run before the PID file is claimed. Returns `Ok(None)` if any
+/// port is already owned by another daemon — the caller should then exit cleanly,
+/// leaving the existing owner authoritative (no PID-file churn, no orphan).
+pub async fn bind_credential_endpoints(
+    state: &SharedDaemonState,
+) -> Result<Option<Vec<BoundEndpoint>>> {
     let s = state.read().await;
+    let mut bound = Vec::new();
 
     for provider in s.registry.list() {
         // Providers that delegate credential delivery to a native tool (GCP via
@@ -641,38 +664,67 @@ pub async fn start_credential_endpoints(
             continue;
         }
         let endpoint = provider.credential_endpoint();
-        let provider_id = provider.id().to_string();
-        let state_clone = Arc::clone(&state);
+        let addr = SocketAddr::from(([127, 0, 0, 1], endpoint.port));
+        match bind_or_yield(addr).await? {
+            Some(listener) => {
+                tracing::info!(
+                    "Credential endpoint for {} bound on port {}",
+                    provider.id(),
+                    endpoint.port
+                );
+                bound.push(BoundEndpoint {
+                    provider_id: provider.id().to_string(),
+                    listener,
+                    path: endpoint.path,
+                    auth: endpoint.auth_mechanism,
+                });
+            }
+            None => {
+                tracing::warn!(
+                    "Credential port {} for {} already in use — another daemon owns it",
+                    endpoint.port,
+                    provider.id()
+                );
+                return Ok(None);
+            }
+        }
+    }
 
+    Ok(Some(bound))
+}
+
+/// Spawn the accept loops for already-bound endpoints. Returns the join handles.
+pub fn serve_bound_endpoints(
+    bound: Vec<BoundEndpoint>,
+    state: SharedDaemonState,
+) -> Vec<tokio::task::JoinHandle<()>> {
+    let mut handles = Vec::new();
+    for ep in bound {
+        let state_clone = Arc::clone(&state);
         let handle = tokio::spawn(async move {
-            if let Err(e) = serve_credential_endpoint(
-                &provider_id,
-                endpoint.port,
-                &endpoint.path,
-                endpoint.auth_mechanism,
+            if let Err(e) = accept_credential_connections(
+                &ep.provider_id,
+                ep.listener,
+                &ep.path,
+                ep.auth,
                 state_clone,
             )
             .await
             {
-                tracing::error!("Credential endpoint for {provider_id} failed: {e}");
+                tracing::error!("Credential endpoint for {} failed: {e}", ep.provider_id);
             }
         });
         handles.push(handle);
-
-        tracing::info!(
-            "Credential endpoint for {} on port {}",
-            provider.id(),
-            endpoint.port
-        );
     }
-
-    Ok(handles)
+    handles
 }
 
-/// Serve a single provider's credential endpoint
-async fn serve_credential_endpoint(
+/// Accept and serve credential requests on an already-bound listener. The bind
+/// (and its singleton semantics) happens in `bind_credential_endpoints`; this
+/// only runs the accept loop.
+async fn accept_credential_connections(
     provider_id: &str,
-    port: u16,
+    listener: tokio::net::TcpListener,
     path: &str,
     auth: crate::plugin::EndpointAuth,
     state: SharedDaemonState,
@@ -683,9 +735,6 @@ async fn serve_credential_endpoint(
     use hyper::service::service_fn;
     use hyper::{Request, Response, StatusCode};
     use hyper_util::rt::TokioIo;
-
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
 
     let expected_path = path.to_string();
     let provider_id = provider_id.to_string();
@@ -1083,16 +1132,27 @@ pub enum DaemonRequirement {
 /// and if the daemon is dead, spawns the daemon process without waiting.
 /// No TCP health check, no stop_daemon() call, no sleep. Returns immediately.
 pub fn spawn_daemon_if_dead() {
-    if !is_daemon_running() {
-        tracing::debug!("Daemon not running — spawning in background");
-        spawn_daemon_no_wait();
-    } else if daemon_version_mismatch() {
-        // Running but stale (auto-upgrade left old daemon code). Cycle it in the
-        // background — kill the old one, then fire-and-forget a fresh spawn.
-        tracing::info!("Daemon version differs from CLI — cycling in background");
-        stop_daemon();
-        spawn_daemon_no_wait();
+    if is_daemon_running() {
+        if daemon_version_mismatch() {
+            // Running but stale (auto-upgrade left old daemon code). Cycle it in
+            // the background — kill the old one, then fire-and-forget a fresh spawn.
+            tracing::info!("Daemon version differs from CLI — cycling in background");
+            stop_daemon();
+            spawn_daemon_no_wait();
+        }
+        return;
     }
+
+    // The PID file says no daemon, but a healthy one may still own the port — a
+    // transient race remnant, or a PID file not yet reclaimed. Don't pile on with
+    // a duplicate that would only fail to bind and exit.
+    if is_daemon_healthy() {
+        tracing::debug!("Credential port already served — not spawning a duplicate daemon");
+        return;
+    }
+
+    tracing::debug!("Daemon not running — spawning in background");
+    spawn_daemon_no_wait();
 }
 
 /// Spawn the daemon process without blocking. Unlike `start_daemon_background()`,
@@ -1216,6 +1276,26 @@ fn try_credential_fetch(url: &str, auth: &str) -> EndpointStatus {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+
+    // ── bind_or_yield singleton-gate tests ───────────────────────────
+
+    #[tokio::test]
+    async fn bind_or_yield_yields_none_when_port_already_owned() {
+        // Hold a port, then try to bind the same address: this is the second
+        // daemon's view. It must yield None (→ exit 0), not error or steal.
+        let held = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = held.local_addr().unwrap();
+        assert!(bind_or_yield(addr).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn bind_or_yield_returns_listener_on_free_port() {
+        // :0 picks a free port; binding it must succeed (the first daemon).
+        let listener = bind_or_yield(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .unwrap();
+        assert!(listener.is_some());
+    }
 
     // ── serve_action_for_current_state tests (a1) ────────────────────
     // Note: These tests use serial_test or similar isolation because

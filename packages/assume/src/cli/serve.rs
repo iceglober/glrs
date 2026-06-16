@@ -55,8 +55,12 @@ pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config)
             return Ok(());
         }
         daemon::ServeAction::RemoveStalePidAndStart => {
-            tracing::warn!("Removing stale PID file (process not glrs-assume or not healthy)");
-            daemon::remove_pid_file();
+            // Don't remove the PID file yet — reclaim it only after we've bound
+            // the credential port. If another daemon actually owns the port, we
+            // exit without disturbing its PID file.
+            tracing::warn!(
+                "Stale PID file present; will reclaim after binding the credential port"
+            );
         }
         daemon::ServeAction::StartFresh => {
             // Continue with normal startup
@@ -73,19 +77,33 @@ pub async fn run(args: ServeArgs, registry: PluginRegistry, cfg: config::Config)
 
     eprintln!("Starting glrs-assume daemon...");
 
-    // Write PID file + record our version so CLI invocations can detect a stale
-    // daemon left behind by an auto-upgrade and cycle it.
-    daemon::write_pid_file()?;
-    daemon::write_daemon_version();
-
-    // Build shared state
+    // Build shared state (loads tokens/contexts from disk; no network, no ports).
     let state: daemon::SharedDaemonState =
         Arc::new(RwLock::new(daemon::DaemonState::new(cfg, registry)));
 
+    // Bind the credential port(s) FIRST — this is the daemon singleton gate. If
+    // another daemon already owns the port (a startup race, or a second install
+    // firing its own daemon), the bind reports "already served" and we exit 0
+    // without touching the PID file, so the real owner stays authoritative and no
+    // headless orphan accumulates.
+    let bound = match daemon::bind_credential_endpoints(&state).await? {
+        Some(b) => b,
+        None => {
+            eprintln!("Another glrs-assume daemon already owns the credential port; exiting 0.");
+            return Ok(());
+        }
+    };
+
+    // We own the port — claim the PID file (overwriting any stale entry) and
+    // record our version so CLI invocations can detect a stale daemon left behind
+    // by an auto-upgrade and cycle it.
+    daemon::write_pid_file()?;
+    daemon::write_daemon_version();
+
     audit::log_event(audit::AuditEvent::DaemonStart, "daemon", "started");
 
-    // Start credential HTTP endpoints
-    let _endpoint_handles = daemon::start_credential_endpoints(Arc::clone(&state)).await?;
+    // Start the accept loops on the already-bound listeners.
+    let _endpoint_handles = daemon::serve_bound_endpoints(bound, Arc::clone(&state));
     eprintln!("Credential endpoints started");
 
     // Start RPC listener
