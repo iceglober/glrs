@@ -119,14 +119,26 @@ fn run_interactive(args: &[&str]) -> Result<(), ProviderError> {
     }
 }
 
-/// Interactive login for both the gcloud CLI (`auth login`) and applications
-/// (`auth application-default login`, which writes ADC). Satisfies reauth.
+/// Interactive login for both the gcloud CLI and applications, in a single
+/// browser visit. `--update-adc` writes the credentials obtained by `auth login`
+/// to the Application Default Credentials (ADC) well-known location too, so apps
+/// and the daemon's keep-warm both work without a second `auth application-default
+/// login` — which opened a second browser and, when GOOGLE_APPLICATION_CREDENTIALS
+/// points at the ADC file, an extra "Do you want to continue?" prompt in between.
+/// Satisfies reauth.
 pub fn login() -> Result<(), ProviderError> {
     if !is_available() {
         return Err(not_installed());
     }
-    run_interactive(&["auth", "login"])?;
-    run_interactive(&["auth", "application-default", "login"])?;
+    run_interactive(&["auth", "login", "--update-adc"])?;
+    // `--update-adc` writes ADC from the CLI credentials but, unlike `auth
+    // application-default login`, does not stamp a quota/billing project onto ADC.
+    // Restore it (best-effort, non-interactive) so client libraries bill the
+    // active project instead of warning and falling back to the resource-owning
+    // project. A failure here doesn't undo a successful login, so swallow it.
+    if let Some(project) = current_project() {
+        let _ = run(&["auth", "application-default", "set-quota-project", &project]);
+    }
     Ok(())
 }
 
