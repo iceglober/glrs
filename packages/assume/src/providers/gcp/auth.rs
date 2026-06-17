@@ -7,8 +7,8 @@ use crate::plugin::{AuthTokens, ProviderConfig, ProviderError};
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
 
-/// Run `gcloud auth login` + `gcloud auth application-default login` (interactive,
-/// satisfies reauth) and return a marker token. There is no glrs-held refresh
+/// Run `gcloud auth login --update-adc` (interactive, one browser, also writes
+/// ADC; satisfies reauth) and return a marker token. There is no glrs-held refresh
 /// token — gcloud owns the credential; the marker just records that GCP is set up.
 pub async fn login(_config: &ProviderConfig) -> Result<AuthTokens, ProviderError> {
     gcloud::login()?;
