@@ -1,5 +1,13 @@
 # @glrs-dev/assume
 
+## 0.16.3
+
+### Patch Changes
+
+- [#364](https://github.com/iceglober/glrs/pull/364) [`7542e14`](https://github.com/iceglober/glrs/commit/7542e14654e93264e1365ed842ef6b47f17fc260) Thanks [@iceglober](https://github.com/iceglober)! - fix(gcp): open only one browser on `gsa login gcp`
+
+  `gcloud::login()` ran two interactive OAuth flows back to back — `gcloud auth login` (CLI credentials) followed by `gcloud auth application-default login` (ADC) — so re-authenticating opened the browser twice, with an extra "Do you want to continue?" prompt in between when `GOOGLE_APPLICATION_CREDENTIALS` points at the ADC file. Collapse to a single `gcloud auth login --update-adc`, which writes ADC from the same flow, then restore the ADC quota project non-interactively (best-effort) since `--update-adc` does not stamp it.
+
 ## 0.16.2
 
 ### Patch Changes
